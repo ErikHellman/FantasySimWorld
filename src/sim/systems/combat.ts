@@ -7,7 +7,7 @@ import { MONSTERS } from '../data/monsters';
 import type { Character, FightMode, Id, Intent, Monster } from '../state';
 import {
   bumpEpoch, chronicle, firstName, getCharacter, getMonster, hasRecentStimulus, isFighting, nearbyCharacters,
-  placeNameAt, remember, say, setAnim, stimulate, type Ctx,
+  placeNameAt, remember, say, setAnim, stimulate, their, type Ctx,
 } from '../util';
 import { abortConversation } from './conversation';
 import { detach, killCharacter } from './death';
@@ -265,15 +265,15 @@ export function runFight(ctx: Ctx, c: Character, intent: Extract<Intent, { kind:
   if (c.act.phase === 'start') {
     c.act.phase = 'perform';
     c.act.sinceTick = state.tick;
-    if (foe && mode !== 'monster') {
+    // Only the one who starts it is reported; hitting back is not "going for" anyone.
+    const answering = foe?.intent?.kind === 'fight' && foe.intent.targetId === c.id;
+    if (foe && mode !== 'monster' && intent.source !== 'reflex' && !answering) {
       const where = placeNameAt(c.pos);
-      if (intent.source !== 'reflex') {
-        chronicle(ctx, 'conflict', mode === 'brawl'
-          ? `${firstName(c)} went for ${firstName(foe)} with their fists at ${where}.`
-          : `${c.profile.name} drew a weapon on ${foe.profile.name} at ${where}!`, [c.id, foe.id]);
-        if (mode === 'lethal') state.director.lastLethalTick = state.tick;
-        ctx.events.push({ type: 'emote', id: c.id, emote: 'anger' });
-      }
+      chronicle(ctx, 'conflict', mode === 'brawl'
+        ? `${firstName(c)} went for ${firstName(foe)} with ${their(c)} fists at ${where}.`
+        : `${c.profile.name} drew a weapon on ${foe.profile.name} at ${where}!`, [c.id, foe.id]);
+      if (mode === 'lethal') state.director.lastLethalTick = state.tick;
+      ctx.events.push({ type: 'emote', id: c.id, emote: 'anger' });
     }
   }
 
