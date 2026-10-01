@@ -1,0 +1,51 @@
+:root {
+  color-scheme: dark;
+  --panel: rgba(22, 26, 38, 0.88);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --text: #f1ede4;
+  --muted: #a9a595;
+  --accent: #f2c14e;
+  --good: #7fd18b;
+  --bad: #e8736a;
+  --love: #f08fb0;
+  font-family: 'Nunito', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #10162c;
+  color: var(--text);
+}
+
+#world {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui > * {
+  pointer-events: auto;
+}

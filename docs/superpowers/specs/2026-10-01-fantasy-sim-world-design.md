@@ -1,0 +1,178 @@
+# Fantasy Sim World — design and implementation plan
+
+## Context
+
+The repo is empty (README + .gitignore). The goal is a browser-only 3D world in the KayKit style where 10–12 LLM-driven fantasy characters live in a village, talk, form relationships, fight occasional monsters and, if pushed far enough, each other. The viewer is a spectator with a free top-down camera. The LLM is used only for decisions, through tool-calling on an OpenAI-compatible endpoint; everything real-time (walking, fighting, animation) runs locally.
+
+Decisions made with the owner:
+
+| Topic | Decision |
+|---|---|
+| LLM target | Local and cloud models equally: strict request queue, compact prompts, configurable concurrency |
+| Population | 10–12 characters |
+| Mortality | Permadeath; newcomers occasionally arrive |
+| World | One village plus surrounding wilds, as a KayKit hex diorama (hex tiles scaled ×7) |
+| Ambient audio | Mixer with named slots; the owner supplies the audio files, missing slots are silent |
+| Speech | Bubbles + chronicle now; a `SpeechBus` seam for TTS later |
+
+Stack: TypeScript, Vite, pnpm, three.js r186 (`three/webgpu` `WebGPURenderer`, automatic WebGL 2 fallback), Preact + signals for the HUD, IndexedDB via `idb`, Vitest.
+
+## Asset facts the design relies on
+
+Source: `/Users/hellman/Documents/The Complete KayKit Collection v7` (CC0). The used subset is processed into `public/assets/` and committed, so a clone runs without the collection.
+
+- **Characters** (`KayKit Adventurers 2.0/Characters/gltf/*.glb`): Knight, Barbarian, Mage, Ranger, Rogue, Rogue_Hooded, Druid, Engineer. Mesh + 23-bone skeleton only, 2.2–2.7 units tall, facing +Z. Texture variants in `Textures/<class>_texture_alt_{A,B,C}.png`; helmet, cape, hat are separate meshes that can be hidden.
+- **Shared rig**: every `Rig_Medium` character (Adventurers, Skeletons, fantasy Mystery characters) has an identical skeleton, so one clip set drives all of them. Clips: `KayKit Character Animations 1.1/Animations/gltf/Rig_Medium/Rig_Medium_{General,MovementBasic,MovementAdvanced,CombatMelee,CombatRanged,Simulation,Special,Tools}.glb`. Each file also embeds a mannequin mesh and a duplicate `T-Pose`.
+- **Weapons** are separate `.gltf` files (`KayKit Adventurers 2.0/Assets/gltf/`, `KayKit Skeletons 1.1/assets/gltf/`), grip at origin, parented to the hand-slot bone. three.js strips dots from bone names: `handslot.r` becomes `handslotr`.
+- **Monsters**: `KayKit Skeletons 1.1/characters/gltf/` Minion, Warrior, Rogue, Mage, Necromancer (all Rig_Medium), with `Skeletons_Spawn_Ground` and friends in `Rig_Medium_Special.glb`.
+- **Terrain and buildings**: `KayKit Medieval Hexagon Pack 1.0.1/Assets/gltf/` is miniature scale. At ×7 a hex is 14 units across (column pitch 14, row pitch 12.12) and a home is about 6.5 tall. Use its tiles, buildings and bridges only; its fences, carts and props are out of proportion at ×7. Water sits 1.4 below ground and bridge decks arc to 1.75 above it.
+- **Character-scale scenery**: Forest Nature Pack (`Color1` only), Halloween Bits (graveyard, crypt, fences, wagon, signposts, lanterns), Dungeon Pack (ruins, tables, benches, barrels, beds, torches), Resource Bits, RPG Tools (anvil, grindstone), plus campfire, tent, cauldron, training dummy and farm plots from the Mystery packs.
+- Environment packs have one 1024² palette atlas and one material per pack, 50–1,500 triangles per model.
+
+## Design
+
+### Principles
+
+1. **The local brain is the baseline; the LLM overrides it.** Every character always has a locally generated routine (daily schedule + needs), so nobody stands idle waiting for a response and the world lives with no endpoint configured.
+2. **The sim is headless plain data.** State is JSON-serialisable (ids, no classes or object references, RNG state included). The brain only submits commands, applied at tick boundaries. Given the same command stream, the sim is deterministic.
+3. **Renderer reconciles from state.** Entities, transforms and animation state are read from sim state every frame, interpolated between the last two ticks. Events are used only for one-shots (hit, speech line, death, sounds).
+4. Dependency rule: `core ← world ← sim ← brain`; `render`, `ui`, `audio` read sim types and `sim` imports none of them.
+
+### Simulation (`src/sim/`, `src/world/`)
+
+- Fixed 20 Hz tick; speed runs N ticks per frame (pause, 1×, 2×; 4× added in the last slice). One game hour is about one real minute at 1×.
+- **World**: hand-authored hex layout in TypeScript plus seeded scatter for trees, rocks and grass. Hexes are ground only; buildings are placed freely along roads. The sim is 2D; `heightAt(x, z)` is used only by the renderer (bridges).
+- **Places** are smart objects: entrance, door offset, activity slots with position, facing, animation and reservation. Buildings are closed shells, so activity slots are outdoors (tavern tables, anvil, market, campfire, training yard, farm, docks, forest clearing); interiors are only for sleeping.
+- **Navigation**: 1-unit square grid rasterised from obstacle footprints, water and bounds; A* with string-pulling; roads are cheaper; separation steering.
+- **Characters**: profile (name, class, backstory, traits, goals, speech style, voice profile), HP, needs (hunger, energy, social), three-item inventory (food, potion, gift), equipment, home, current plan and intent, relationships, memories.
+- **Cast**: 12 hand-authored profiles (two Knights, Barbarian, two Mages, two Rangers, Rogue, hooded Rogue, two Druids, Engineer) differentiated by texture variant, headgear and weapon, with a few seeded relationships. Newcomers come from a template pool that adds Paladin, Cleric, Witch, Tiefling, Lorekeeper and Farmers.
+- **Combat** is fully local: weapon profile per class (one-handed, two-handed, bow, magic, dagger), cooldowns matched to clip durations, range, HP. Ranged hits are instant with a render-only projectile. Being attacked triggers an immediate local defend reflex.
+- **Monsters and the night loop**: skeletons rise from the graveyard from dusk, a rare Necromancer leads larger groups. Monsters are local state machines. A watch rota keeps some characters awake, and an alarm stimulus wakes fighters.
+- **Director**: spawn and arrival rates follow population and recent deaths so the village neither empties nor idles.
+- **Death**: permadeath, a named gravestone, grief and grudge memories for those who knew the character, an obituary in the chronicle, and that character's pending requests cancelled.
+
+### Relationships and hostility
+
+- Per directed pair: affinity, trust, attraction, a label with hysteresis (stranger, acquaintance, friend, close friend, lover, rival, enemy) and a short text summary.
+- Changes come from sim events (fought side by side, gift, insult, attacked) and from a five-step feeling the LLM reports after each conversation, mapped to clamped numbers. Lovers require both sides' attraction and an accepted confession.
+- Hostility is an explicit ladder driven by a separate grievance value that rises on specific events and decays over days:
+
+| Rung | Unlocks |
+|---|---|
+| Tension | Prompt hints only |
+| Grudge | `confront` (a hostile conversation) |
+| Feud | `brawl` (unarmed, ends when one side yields at about 30% HP) |
+| Blood feud | `attack` (lethal), only with a recent trigger, a temper roll, a global cooldown and a population floor |
+
+- At the yield moment the LLM chooses `spare` or `finish`; spare is the default on timeout. Witnesses lose affinity for an aggressor; apology, gifts and time de-escalate.
+
+### Brain (`src/brain/`)
+
+- **Request kinds**, each offering only the tools that make sense. Every action tool has optional `thought` (stored as a memory) and `say` fields.
+
+| Kind | Trigger | Tools |
+|---|---|---|
+| `plan_day` | Waking | `set_plan` (4–6 blocks) |
+| `decide` | Plan block ends, notable stimulus, critical need | `go_to`, `do_activity`, `talk_to`, `give`, `continue`; `confront`, `brawl`, `attack` when the ladder unlocks them. Up to three ordered steps |
+| `react` | Monster nearby, attacked | `fight`, `flee` |
+| `converse` | Conversation | `conversation` (batched) or `reply` (turn by turn) |
+| `mercy` | Opponent yields | `spare`, `finish` |
+| `reflect` | Asleep | `reflection` |
+
+- **Scheduler and governor**: stimuli become requests with a priority (spoken to > threat > critical need > plan block ended > idle), coalesced per character. Cooldowns and time-to-live are in real time. The governor measures latency and scales trigger rates to keep demand near 70% of capacity, so cloud endpoints get richer behaviour and local models get sparser but never laggy behaviour. If a visible reaction waits too long the speed clamps to 1×.
+- **Staleness**: the prompt is built at dispatch time; each character has a context epoch (bumped when attacked, when a conversation starts, on death) and responses from an older epoch are discarded and their fetch aborted.
+- **LLM client**: plain `fetch` to `{baseUrl}/chat/completions`. Two wire protocols behind one internal tool-call contract: native tool-calling (primary), and `response_format: json_schema` for servers where tool-calling is unreliable. "Test connection" probes the endpoint and picks the protocol.
+- **Robustness**: static tool schemas with valid options listed in the prompt and repaired before rejecting (case, aliases, nearest name); a prompt token budget that drops the lowest-priority sections first; `<think>` blocks stripped; `arguments` accepted as string or object; timeout, retry, circuit breaker, `Retry-After`; `Authorization` omitted when the key is empty; request and token meter.
+- **Conversations** are a sim entity (approaching → hailed → awaiting lines → playing → ended). Hailing is a local reflex: the target stops, turns and waves. Two participants; bystanders get "overheard" memories. Two drivers behind a `ConversationDriver` interface:
+  - *Batched* (default at low capacity): the initiator's `talk_to` supplies the opening line and one call writes the remaining 3–5 lines plus each side's feeling.
+  - *Turn by turn* (when capacity allows): each character answers from its own memories.
+  - Lines play on local timers; a timeout falls back to templated small talk.
+- **Memory**: a per-character stream of `{time, text, importance, kind, subjects}`. Observations are templated by the sim; `thought` fields and conversation summaries are added. Retrieval scores recency, importance and subject overlap. Pruning is local so an offline world stays bounded. A nightly `reflect` call condenses the day and updates the self-summary and relationship summaries.
+
+### Rendering (`src/render/`)
+
+- `WebGPURenderer` with `?renderer=webgl|webgpu` override and the active backend shown in a debug HUD. All three.js imports stay in `render/`.
+- Scenery instanced per model in spatial chunks, one canonical material per pack. Buildings as individual meshes.
+- Characters via `SkeletonUtils.clone`, one `AnimationMixer` each, clips merged by name at runtime, weapons on hand-slot bones, `frustumCulled = false`. The sim emits abstract animation states; the renderer maps them to clips.
+- One shadowed directional sun plus hemisphere light on a day/night cycle; a fixed pool of point lights for lanterns and fires (intensity changes, never count changes).
+- DOM overlay with own world-to-screen projection for speech bubbles, name tags and health bars. Model text is always rendered as text.
+- Top-down camera: pan (drag, WASD), zoom, rotate, bounds, click a character to follow.
+
+### UI (`src/ui/`)
+
+Start overlay (also unlocks audio), clock and speed controls, chronicle feed, roster, read-only inspector (profile, needs, plan, last thought, memories, relationships), settings (endpoint presets for OpenAI, OpenRouter, Ollama and LM Studio; key, model, concurrency, custom headers, test connection; audio slots; export, import, reset), and an LLM log panel (prompt, raw response, parsed calls, validation result, latency, tokens).
+
+### Audio and speech (`src/audio/`, `src/speech/`)
+
+- Ambient mixer driven by camera position, zoom, time of day and nearby activity. Slots: `birds_day`, `wind`, `forest`, `river`, `shore`, `crickets_night`, `village_day`, `tavern`, `smithy`, `campfire`, and effects `sword_hit`, `arrow_shot`, `magic_cast`, `hurt`, `death`, `monster_spawn`. Files go in `public/audio/` (documented in `public/audio/README.md`); a missing file is a silent slot and the settings panel shows which slots are filled.
+- `SpeechBus`: every spoken line passes through it with speaker, text, emotion, `durationMs` and the character's voice profile. Sinks now: bubble and chronicle. A TTS sink (OpenAI-compatible `/audio/speech` or Web Speech, positional) can be added later without touching the sim, because line pacing already takes its duration from the bus.
+
+### Persistence (`src/persist/`)
+
+- One save document in IndexedDB, written with a single `put`, plus one rotating backup. Settings in a separate store; the API key never leaves the browser and is excluded from exports.
+- `saveVersion` with ordered migration functions; before a first release, an epoch bump discards old saves instead.
+- Save every 30 s, on day rollover, on deaths and on `visibilitychange` to hidden. The sim pauses while hidden. Paths, queued decisions and projectiles are recomputed on load.
+- `navigator.storage.persist()` and a Web Lock so a second tab cannot clobber the save.
+
+### Asset pipeline (`tools/`)
+
+- `tools/assets/build-assets.mjs`: copies the used models into `public/assets/`, strips mannequin meshes from animation files, and writes `src/generated/assetManifest.ts` including clip durations.
+- `tools/blender/*.py` (headless Blender 5.2, `/Applications/Blender.app`): generate pieces the collection lacks at character scale, in the KayKit palette — a wooden village fence and gate, and wildflower and mushroom clusters. More only where dressing the world shows a gap.
+
+## Layout
+
+```
+src/
+  main.ts
+  app/        loop.ts  wiring.ts  config.ts
+  core/       rng.ts  events.ts  ids.ts  math2d.ts  time.ts
+  world/      hex.ts  map.ts  places.ts  navgrid.ts  pathfind.ts  height.ts  scatter.ts
+  sim/        state.ts  sim.ts  commands.ts  events.ts  serialize.ts
+    systems/  clock needs intents movement activities perception memory conversation
+              relationships hostility combat monsters death arrivals director chronicle
+    data/     classes weapons activities monsters cast newcomers animTimings
+  brain/      scheduler.ts  governor.ts  situation.ts  utilityBrain.ts
+    prompts/  system decide planDay react converse mercy reflect budget
+    tools/    definitions.ts  validate.ts
+    llm/      client.ts  protocol.ts  parse.ts  probe.ts  transport.ts  usage.ts
+    memory/   retrieval.ts  reflection.ts  prune.ts
+  speech/     speechBus.ts  timing.ts  voices.ts
+  render/     renderer scene assets terrain scenery characters animation lighting
+              water camera fx overlay debug
+  audio/      engine.ts  ambient.ts  sfx.ts  slots.ts
+  ui/         App.tsx  store.ts  Hud  Roster  Inspector  Chronicle  Settings  BrainLog
+  persist/    db.ts  saveStore.ts  settingsStore.ts  migrations.ts  exportImport.ts  autosave.ts
+  generated/  assetManifest.ts
+tools/        assets/build-assets.mjs  blender/*.py  llm-probe.ts  mock-llm.mjs
+docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md
+```
+
+## Build order
+
+Each slice ends runnable in the browser, with tests passing and a commit on `claude/fantasy-sim-world-2044dc`. Sim and brain logic is written test-first.
+
+0. **Spec and scaffold.** Save this design as the spec file above; Vite + TypeScript + Vitest scaffold; update README.
+1. **Walking characters.** Asset script, renderer with backend override, a small hex patch, 12 cloned characters wandering with idle/walk crossfade and a weapon in hand, instanced trees, shadows, camera, fixed-tick loop with interpolation. Checks cloned skinned meshes, bone-attached weapons, instancing and shadows on both backends.
+2. **World and navigation.** Full map, places and slots, nav grid, A*, separation, bridge height, debug overlays (hex coordinates, nav grid, click to print position).
+3. **Life without LLM.** Clock and day/night lighting, needs, activities, intent executor, routine brain, sleeping, HUD with roster, inspector and chronicle.
+4. **Persistence and settings.** Autosave, export, import, reset, tab lock, settings panel.
+5. **LLM client.** Client, both protocols, tolerant parser, probe, mock server, `tools/llm-probe.ts` reporting latency and valid-call rate.
+6. **LLM decisions.** Scheduler, governor, prompt budget, `plan_day` and `decide`, memory stream and retrieval, speech bus with bubbles, LLM log panel.
+7. **Conversations and relationships.** Conversation entity, hail reflex, batched and turn-by-turn drivers, feeling-based changes, labels, gifts.
+8. **Combat, monsters, death, newcomers.** Skeleton spawns, reflexes and `react`, watch rota and alarm, gravestones, arrivals, director.
+9. **Hostility ladder.** Grievance, `confront`, `brawl`, lethal gate, `mercy`, witnesses.
+10. **Reflection and pruning.**
+11. **Audio and polish.** Ambient mixer and slots, Blender props, water, night lights, 4× speed.
+
+## Verification
+
+- **Unit tests** (`pnpm test`): hex maths, loop accumulator, a path between every pair of places, no slot in a blocked cell, needs bounded over 10 days, scheduler priority, coalescing and staleness, golden prompts, parser and repair cases against mocked fetch, conversation state machine and timeout fallback, label hysteresis, hostility gates, an import-rule test for the dependency rule.
+- **Determinism**: 2,000 ticks straight versus 1,000, save, load, 1,000 more, asserting deep equality.
+- **Soak**: a headless 200-day run with the routine brain, asserting the population stays in range, memory stays bounded and lethal attacks stay rare.
+- **In the browser** (`pnpm dev`, built-in browser pane): screenshots on both backends, no console errors, characters following routines, reload mid-walk resuming correctly, export and import.
+- **LLM end to end**: first against `tools/mock-llm.mjs`, then against a real endpoint. Ollama and LM Studio are installed on this machine but not running; I will ask before starting either, and for a cloud key if that path should be tested too.
+- `pnpm build` produces a static bundle that runs from `pnpm preview`.
+
+## Later, not in this plan
+
+Character speech (TTS sink), viewer interaction, orc raiders and large-rig bosses, block and dodge, embedding-based memory retrieval, LLM-generated newcomer profiles, seasons, a map editor.
