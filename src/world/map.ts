@@ -1,7 +1,8 @@
 import { distToSegment, type Vec2 } from '../core/math2d';
 import { hashString } from '../core/rng';
+import { BRIDGE_HALF_WIDTH, bridgeHeight, tileHeight } from './height';
 import {
-  DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_WIDTH,
+  DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_SCALE, HEX_WIDTH,
   dirVector, directionTo, hexAt, hexCenter, hexKey, maskHas, neighbor, type Hex,
 } from './hex';
 import { LAYOUT_ROWS, RIVERS, ROADS } from './layout';
@@ -40,11 +41,8 @@ export interface WorldMap {
   maxZ: number;
 }
 
-/** Half-width of the walkable-road strip and of the river channel, in world units. */
+/** Half-width of the road strip, in world units. */
 export const ROAD_HALF_WIDTH = 1.6;
-export const RIVER_HALF_WIDTH = 2.9;
-/** On a coast hex, ground this far from the centre towards a water edge is under water. */
-export const COAST_WATER_DISTANCE = 3.4;
 
 function parseLayout(): Terrain[][] {
   return LAYOUT_ROWS.map((line, row) => {
@@ -185,27 +183,64 @@ export function isOnRoad(x: number, z: number): boolean {
 
 export type Ground = 'void' | 'blocked' | 'water' | 'open';
 
+const TILE_ROTATION_STEP = -Math.PI / 3;
+/**
+ * Surfaces lower than this (model units) are under water. River beds are flat
+ * at -0.1; a beach slopes all the way down to the lake at -0.2.
+ */
+const RIVER_WATER_LEVEL = -0.075;
+const LAKE_WATER_LEVEL = -0.16;
+
+/** The direction (as a rotation about y) a bridge on this hex runs. */
+export function bridgeRotation(cell: HexCell): number {
+  for (let dir = 0; dir < DIR_COUNT; dir++) {
+    if (maskHas(cell.roadMask, dir)) {
+      const v = dirVector(dir);
+      return Math.atan2(v.x, v.z);
+    }
+  }
+  return 0;
+}
+
+/** A world offset from a hex centre, expressed in the frame of a model rotated by `rotation` about y. */
+function toLocal(dx: number, dz: number, rotation: number): Vec2 {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return { x: (dx * cos - dz * sin) / HEX_SCALE, z: (dx * sin + dz * cos) / HEX_SCALE };
+}
+
+function tileSurface(cell: HexCell, x: number, z: number): number | null {
+  const local = toLocal(x - cell.center.x, z - cell.center.z, cell.tile.rot * TILE_ROTATION_STEP);
+  // Right on a hex edge the sample can miss the tile; pull it slightly towards the centre.
+  return tileHeight(cell.tile.model, local.x, local.z) ?? tileHeight(cell.tile.model, local.x * 0.93, local.z * 0.93);
+}
+
+function bridgeDeck(cell: HexCell, x: number, z: number): number | null {
+  if (!cell.bridge) return null;
+  const local = toLocal(x - cell.center.x, z - cell.center.z, bridgeRotation(cell));
+  return Math.abs(local.x) <= BRIDGE_HALF_WIDTH ? bridgeHeight(local.x, local.z) : null;
+}
+
 /** What the terrain itself allows at a point (buildings and props are handled by the nav grid). */
 export function groundAt(x: number, z: number): Ground {
   const cell = cellAtPoint(x, z);
   if (!cell) return 'void';
   if (cell.terrain === 'water') return 'water';
   if (IMPASSABLE.has(cell.terrain)) return 'blocked';
-  const p = { x, z };
-  if (cell.riverMask) {
-    const onBridge = cell.bridge && distanceToSpokes(cell, cell.roadMask, p) <= ROAD_HALF_WIDTH + 0.4;
-    if (!onBridge && distanceToSpokes(cell, cell.riverMask, p) <= RIVER_HALF_WIDTH) return 'water';
-  }
-  if (cell.waterMask) {
-    for (let dir = 0; dir < DIR_COUNT; dir++) {
-      if (!maskHas(cell.waterMask, dir)) continue;
-      const v = dirVector(dir);
-      if ((x - cell.center.x) * v.x + (z - cell.center.z) * v.z > COAST_WATER_DISTANCE) return 'water';
-    }
-  }
-  return 'open';
+  if (bridgeDeck(cell, x, z) !== null) return 'open';
+  const height = tileSurface(cell, x, z);
+  return height !== null && height < (cell.riverMask ? RIVER_WATER_LEVEL : LAKE_WATER_LEVEL) ? 'water' : 'open';
 }
 
 export function isWalkableTerrain(x: number, z: number): boolean {
   return groundAt(x, z) === 'open';
+}
+
+/** Height of the ground (or bridge deck) in world units; 0 on plain grass. Used only for drawing. */
+export function groundHeight(x: number, z: number): number {
+  const cell = cellAtPoint(x, z);
+  if (!cell) return 0;
+  const surface = tileSurface(cell, x, z) ?? 0;
+  const deck = bridgeDeck(cell, x, z);
+  return Math.max(surface, deck ?? -Infinity) * HEX_SCALE;
 }

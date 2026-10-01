@@ -21,6 +21,15 @@ const ROOT = process.env.KAYKIT_DIR ?? path.join(os.homedir(), 'Documents/The Co
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(REPO, 'public/assets');
 const MANIFEST = path.join(REPO, 'src/generated/assetManifest.ts');
+const HEIGHTS = path.join(REPO, 'src/generated/tileHeights.ts');
+
+// Ground heights are sampled from the hex tiles (and the bridge) so the sim knows
+// exactly where water, sand and road are without loading any geometry.
+const TILE_GRID = { nx: 32, nz: 37, minX: -1, minZ: -1.16, maxX: 1, maxZ: 1.16 };
+const BRIDGE_GRID = { nx: 24, nz: 40, minX: -0.7, minZ: -1, maxX: 0.7, maxZ: 1 };
+const NO_GROUND = -128;
+const tileHeights = {};
+let bridgeHeights = '';
 const MODEL_PREFIX = 'M__';
 
 if (!fs.existsSync(ROOT)) {
@@ -61,6 +70,83 @@ function stripTextures(doc) {
   for (const texture of doc.getRoot().listTextures()) texture.dispose();
 }
 
+function transformPoint(m, x, y, z) {
+  return [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]];
+}
+
+/** Highest surface under each grid cell, as int8 hundredths of a model unit, base64 encoded. */
+function sampleHeights(root, grid) {
+  const data = new Int8Array(grid.nx * grid.nz).fill(NO_GROUND);
+  const cellX = (grid.maxX - grid.minX) / grid.nx;
+  const cellZ = (grid.maxZ - grid.minZ) / grid.nz;
+  root.traverse((node) => {
+    const mesh = node.getMesh();
+    if (!mesh) return;
+    const matrix = node.getWorldMatrix();
+    for (const primitive of mesh.listPrimitives()) {
+      const positions = primitive.getAttribute('POSITION');
+      const indices = primitive.getIndices();
+      const count = indices ? indices.getCount() : positions.getCount();
+      const point = (i) => {
+        const index = indices ? indices.getScalar(i) : i;
+        const p = positions.getElement(index, []);
+        return transformPoint(matrix, p[0], p[1], p[2]);
+      };
+      for (let t = 0; t < count; t += 3) {
+        const a = point(t);
+        const b = point(t + 1);
+        const c = point(t + 2);
+        const det = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+        if (Math.abs(det) < 1e-10) continue;
+        // Only faces that point up are ground; undersides and walls are not.
+        const normalY = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+        if (normalY <= 0) continue;
+        const x0 = Math.max(0, Math.floor((Math.min(a[0], b[0], c[0]) - grid.minX) / cellX));
+        const x1 = Math.min(grid.nx - 1, Math.floor((Math.max(a[0], b[0], c[0]) - grid.minX) / cellX));
+        const z0 = Math.max(0, Math.floor((Math.min(a[2], b[2], c[2]) - grid.minZ) / cellZ));
+        const z1 = Math.min(grid.nz - 1, Math.floor((Math.max(a[2], b[2], c[2]) - grid.minZ) / cellZ));
+        for (let iz = z0; iz <= z1; iz++) {
+          const z = grid.minZ + (iz + 0.5) * cellZ;
+          for (let ix = x0; ix <= x1; ix++) {
+            const x = grid.minX + (ix + 0.5) * cellX;
+            const l1 = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / det;
+            const l2 = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / det;
+            const l3 = 1 - l1 - l2;
+            if (l1 < -0.01 || l2 < -0.01 || l3 < -0.01) continue;
+            const y = Math.max(-127, Math.min(127, Math.round((l1 * a[1] + l2 * b[1] + l3 * c[1]) * 100)));
+            const i = iz * grid.nx + ix;
+            if (y > data[i]) data[i] = y;
+          }
+        }
+      }
+    }
+  });
+  // Close pinholes where a cell centre fell exactly between triangles.
+  for (let pass = 0; pass < 2; pass++) {
+    const copy = Int8Array.from(data);
+    for (let iz = 0; iz < grid.nz; iz++) {
+      for (let ix = 0; ix < grid.nx; ix++) {
+        if (copy[iz * grid.nx + ix] !== NO_GROUND) continue;
+        let sum = 0;
+        let count = 0;
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const x = ix + dx;
+            const z = iz + dz;
+            if (x < 0 || z < 0 || x >= grid.nx || z >= grid.nz) continue;
+            const value = copy[z * grid.nx + x];
+            if (value === NO_GROUND) continue;
+            sum += value;
+            count++;
+          }
+        }
+        if (count >= 5) data[iz * grid.nx + ix] = Math.round(sum / count);
+      }
+    }
+  }
+  return Buffer.from(data.buffer).toString('base64');
+}
+
 function boundsOf(node) {
   const { min, max } = getBounds(node);
   return [...min, ...max].map((n) => round(n));
@@ -98,6 +184,8 @@ async function buildBundle(bundle) {
       }
       scene.addChild(wrapper);
       models[id] = { bounds: boundsOf(wrapper) };
+      if (bundle.id === 'hex' && id.startsWith('hex_')) tileHeights[id] = sampleHeights(wrapper, TILE_GRID);
+      if (bundle.id === 'hex' && id === 'building_bridge_A') bridgeHeights = sampleHeights(wrapper, BRIDGE_GRID);
       mergeDocuments(out, doc);
     }
   }
@@ -239,6 +327,16 @@ async function main() {
     `// Generated by tools/assets/build-assets.mjs. Do not edit.\n` +
       `import type { AssetManifest } from '../core/assetTypes';\n\n` +
       `export const assetManifest: AssetManifest = ${JSON.stringify(manifest, null, 1)};\n`,
+  );
+  fs.writeFileSync(
+    HEIGHTS,
+    `// Generated by tools/assets/build-assets.mjs. Do not edit.\n` +
+      `// Top-surface heights of each hex tile (int8 hundredths of a model unit, base64; ${NO_GROUND} = no ground).\n` +
+      `export const TILE_GRID = ${JSON.stringify(TILE_GRID)};\n` +
+      `export const BRIDGE_GRID = ${JSON.stringify(BRIDGE_GRID)};\n` +
+      `export const NO_GROUND = ${NO_GROUND};\n` +
+      `export const BRIDGE_HEIGHTS = ${JSON.stringify(bridgeHeights)};\n` +
+      `export const TILE_HEIGHTS: Record<string, string> = ${JSON.stringify(tileHeights, null, 1)};\n`,
   );
   console.log(`total ${(total / 1024 / 1024).toFixed(1)} MB -> public/assets`);
 }
