@@ -239,7 +239,7 @@ export function planPrompt(state: SimState, c: Character, maxTokens: number): Pr
   const memories = retrieve(c, state.tick, { subjects: notable.map((o) => o.id), text: '' }, 8);
   const watch = state.tick < c.watchUntilTick ? 'You have the night watch at the watchtower tonight (from about 20:30); rest in the afternoon.' : '';
   const user = assemble([
-    { priority: 0, text: `${header(state, c)}\nYou have just woken up.` },
+    { priority: 0, text: `${header(state, c)}\nIt is morning and the day is ahead of you.` },
     { priority: 1, text: `Your usual work: ${c.jobs.join(', ')}. What you enjoy: ${c.hobbies.join(', ')}. ${watch}` },
     { priority: 2, text: notable.length > 0 ? `People on your mind:\n${notable.map((o) => personLine(state, c, o, false)).join('\n')}` : '' },
     { priority: 3, text: memories.length > 0 ? `Things you remember:\n${memoryLines(memories, time.day)}` : '' },

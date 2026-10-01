@@ -95,9 +95,11 @@ export class WorldView {
     actor.x = c.pos.x;
     actor.z = c.pos.z;
     actor.visible = !c.inside;
+    // Weapons are put away while sitting or working with a tool.
+    const atEase = c.anim === 'sit_chair' || c.anim === 'sit_floor' || c.anim === 'lie';
     actor.view.sync({
       x: c.pos.x, z: c.pos.z, facing: c.facing, anim: c.anim, animSeq: c.animSeq, visible: !c.inside,
-      mainHand: c.tool ?? c.look.mainHand, offHand: c.tool ? null : c.look.offHand,
+      mainHand: c.tool ?? (atEase ? null : c.look.mainHand), offHand: c.tool || atEase ? null : c.look.offHand,
     });
   }
 

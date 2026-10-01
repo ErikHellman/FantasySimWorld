@@ -84,9 +84,34 @@ export class Overlay {
     label.emoteUntil = performance.now() + 2200;
   }
 
+  /** Lifts speech bubbles that would cover one another, so a busy tavern stays readable. */
+  private spreadBubbles(bubbles: Array<{ label: Label; x: number; y: number }>): void {
+    if (bubbles.length === 0) return;
+    // Lowest on screen first: those keep their place, and the ones behind are raised above them.
+    bubbles.sort((a, b) => b.y - a.y);
+    const placed: Array<{ left: number; right: number; top: number; bottom: number }> = [];
+    for (const { label, x, y } of bubbles) {
+      const width = label.bubble.offsetWidth;
+      const height = label.bubble.offsetHeight;
+      const below = label.root.offsetHeight - height;
+      const left = x - width / 2;
+      const right = x + width / 2;
+      let bottom = y - below;
+      for (let pass = 0; pass < placed.length; pass++) {
+        const hit = placed.find((box) => left < box.right && right > box.left && bottom > box.top && bottom - height < box.bottom);
+        if (!hit) break;
+        bottom = hit.top - 4;
+      }
+      const lift = Math.min(260, y - below - bottom);
+      label.bubble.style.transform = lift > 0.5 ? `translateY(${-lift.toFixed(0)}px)` : '';
+      placed.push({ left, right, top: bottom - height, bottom });
+    }
+  }
+
   update(states: LabelState[], camera: THREE.Camera, cameraDistance: number, width: number, height: number): void {
     const now = performance.now();
     const seen = new Set<string>();
+    const bubbles: Array<{ label: Label; x: number; y: number }> = [];
     for (const state of states) {
       seen.add(state.id);
       const label = this.label(state.id);
@@ -108,9 +133,12 @@ export class Overlay {
       if (showName && label.name.textContent !== state.name) label.name.textContent = state.name;
       label.bar.style.display = state.hurt ? '' : 'none';
       if (state.hurt) label.fill.style.width = `${Math.round(Math.max(0, Math.min(1, state.hp)) * 100)}%`;
-      label.bubble.style.display = now < label.bubbleUntil ? '' : 'none';
+      const speaking = now < label.bubbleUntil;
+      label.bubble.style.display = speaking ? '' : 'none';
       label.emote.style.display = now < label.emoteUntil ? '' : 'none';
+      if (speaking) bubbles.push({ label, x: sx, y: sy });
     }
+    this.spreadBubbles(bubbles);
     for (const [id, label] of this.labels) {
       if (!seen.has(id)) {
         label.root.remove();

@@ -303,8 +303,8 @@ export class Brain {
         continue;
       }
 
-      const woke = c.stimuli.some((stimulus) => stimulus.kind === 'woke');
-      if (woke && mind.plannedDay !== time.day && time.hour >= 4 && time.hour < 12 && this.governor.allow(1)) {
+      // Each morning, once: a plan for the day in the character's own words.
+      if (mind.plannedDay !== time.day && time.hour >= 4.5 && time.hour < 11 && c.planDay === time.day && this.governor.allow(1)) {
         mind.plannedDay = time.day;
         this.requestPlan(c);
         continue;
@@ -386,9 +386,13 @@ export class Brain {
       key: `c:${id}`,
       character: id,
       ttlMs: 90_000,
+      onFail: () => {
+        // Try again later this morning.
+        this.mind(id).plannedDay = 0;
+      },
       build: () => {
         const self = getCharacter(this.state, id);
-        return self && !self.asleep ? planPrompt(this.state, self, this.promptBudget) : null;
+        return self && !self.asleep && !isFighting(self) ? planPrompt(this.state, self, this.promptBudget) : null;
       },
       apply: (response) => {
         const plan = interpretPlan(response.calls);

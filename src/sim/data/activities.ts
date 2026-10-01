@@ -28,7 +28,7 @@ const def = (d: ActivityDef): ActivityDef => d;
 
 export const ACTIVITIES: Record<ActivityId, ActivityDef> = {
   eat: def({ id: 'eat', label: 'eat a meal at the tavern', verb: 'eating', anim: 'sit_chair', minutes: [22, 30], needs: { hunger: 3.4, social: 0.25 }, kind: 'need' }),
-  drink: def({ id: 'drink', label: 'have a drink at the tavern', verb: 'drinking', anim: 'sit_chair', minutes: [40, 80], needs: { social: 0.45, energy: -0.02 }, kind: 'leisure' }),
+  drink: def({ id: 'drink', label: 'have a drink at the tavern', verb: 'drinking', anim: 'sit_chair', tool: 'weapons/mug_full', minutes: [40, 80], needs: { social: 0.45, energy: -0.02 }, kind: 'leisure' }),
   sleep: def({ id: 'sleep', label: 'sleep at home', verb: 'sleeping', anim: 'lie', minutes: [420, 480], needs: { energy: 0.24 }, heal: 0.22, indoors: true, kind: 'need' }),
   rest: def({ id: 'rest', label: 'sit and rest on a bench', verb: 'resting', anim: 'sit_chair', minutes: [25, 50], needs: { energy: 0.07, social: 0.08 }, heal: 0.05, kind: 'leisure' }),
   smith: def({ id: 'smith', label: 'work at the forge', verb: 'working the forge', anim: 'hammer', tool: 'tools/hammer', minutes: [90, 150], kind: 'work' }),
