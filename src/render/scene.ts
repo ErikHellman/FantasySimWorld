@@ -17,6 +17,8 @@ import { SceneryBuilder } from './scenery';
 import { Terrain } from './terrain';
 
 const GRAVE_MODELS = ['gravestone', 'gravemarker_A', 'gravemarker_B'];
+/** Props that give light at night, and how high above their base the light sits. */
+const LAMP_HEIGHTS: Record<string, number> = { post_lantern: 2.7, lantern_standing: 1.1, lantern_hanging: 0.4, torch_lit: 1.2, Campfire_Logs: 0.9 };
 const SEA_LEVEL = -1.55;
 
 interface Actor {
@@ -60,6 +62,10 @@ export class WorldView {
       });
     }
     this.scene.add(builder.build(), this.actorGroup, this.effects.group);
+    this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
+      const height = LAMP_HEIGHTS[model.model];
+      return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
+    })));
 
     // The valley sits in a sea that runs to the horizon.
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3f8fd6 }));
@@ -142,8 +148,8 @@ export class WorldView {
     this.syncGraves(state);
 
     for (const event of events) {
-      if (event.type === 'speech') this.overlay.say(event.speakerId, event.text, Math.max(2.6, event.durationTicks / 20), event.loud);
-      else if (event.type === 'emote') this.overlay.emote(event.id, event.emote);
+      if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
+      if (event.type === 'emote') this.overlay.emote(event.id, event.emote);
       else this.effects.handle(event, this.heightAt, (id) => id in state.monsters);
     }
   }

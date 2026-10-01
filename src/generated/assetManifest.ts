@@ -207,6 +207,26 @@ export const assetManifest: AssetManifest = {
       1.155
      ]
     },
+    "hex_river_crossing_A": {
+     "bounds": [
+      -1,
+      -1,
+      -1.155,
+      1,
+      0,
+      1.155
+     ]
+    },
+    "hex_river_crossing_B": {
+     "bounds": [
+      -1,
+      -1,
+      -1.155,
+      1,
+      0,
+      1.155
+     ]
+    },
     "hex_river_D": {
      "bounds": [
       -1,
@@ -288,26 +308,6 @@ export const assetManifest: AssetManifest = {
      ]
     },
     "hex_river_L": {
-     "bounds": [
-      -1,
-      -1,
-      -1.155,
-      1,
-      0,
-      1.155
-     ]
-    },
-    "hex_river_crossing_A": {
-     "bounds": [
-      -1,
-      -1,
-      -1.155,
-      1,
-      0,
-      1.155
-     ]
-    },
-    "hex_river_crossing_B": {
      "bounds": [
       -1,
       -1,
@@ -3712,16 +3712,6 @@ export const assetManifest: AssetManifest = {
       1
      ]
     },
-    "floor_dirt_small_D": {
-     "bounds": [
-      -1,
-      -0.1,
-      -1,
-      1,
-      0.038,
-      1
-     ]
-    },
     "floor_dirt_small_corner": {
      "bounds": [
       -1,
@@ -3729,6 +3719,16 @@ export const assetManifest: AssetManifest = {
       -1,
       1,
       0.054,
+      1
+     ]
+    },
+    "floor_dirt_small_D": {
+     "bounds": [
+      -1,
+      -0.1,
+      -1,
+      1,
+      0.038,
       1
      ]
     },
@@ -5630,6 +5630,111 @@ export const assetManifest: AssetManifest = {
       0.311,
       1.397,
       0.116
+     ]
+    }
+   }
+  },
+  "custom": {
+   "url": "assets/bundles/custom.glb",
+   "models": {
+    "fence_wood": {
+     "bounds": [
+      -2.173,
+      0,
+      -0.173,
+      2.16,
+      1.405,
+      0.173
+     ]
+    },
+    "fence_wood_broken": {
+     "bounds": [
+      -2.161,
+      0,
+      -0.181,
+      2.181,
+      1.404,
+      0.181
+     ]
+    },
+    "fence_wood_post": {
+     "bounds": [
+      -0.16,
+      0,
+      -0.16,
+      0.16,
+      1.36,
+      0.16
+     ]
+    },
+    "flowers_mixed": {
+     "bounds": [
+      -0.236,
+      -0.001,
+      -0.485,
+      0.246,
+      0.658,
+      0.472
+     ]
+    },
+    "flowers_red": {
+     "bounds": [
+      -0.203,
+      -0.001,
+      -0.364,
+      0.355,
+      0.661,
+      0.514
+     ]
+    },
+    "flowers_violet": {
+     "bounds": [
+      -0.401,
+      -0.001,
+      -0.512,
+      0.228,
+      0.661,
+      0.275
+     ]
+    },
+    "flowers_yellow": {
+     "bounds": [
+      -0.237,
+      -0.001,
+      -0.482,
+      0.464,
+      0.683,
+      0.265
+     ]
+    },
+    "mushrooms_brown": {
+     "bounds": [
+      -0.2,
+      0,
+      -0.2,
+      0.449,
+      0.484,
+      0.406
+     ]
+    },
+    "mushrooms_red": {
+     "bounds": [
+      -0.2,
+      0,
+      -0.2,
+      0.289,
+      0.484,
+      0.474
+     ]
+    },
+    "notice_board": {
+     "bounds": [
+      -0.95,
+      0,
+      -0.368,
+      0.95,
+      2.341,
+      0.368
      ]
     }
    }

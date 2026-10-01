@@ -153,14 +153,14 @@ function boundsOf(node) {
 }
 
 function listModels(source) {
-  const dir = path.join(ROOT, source.dir);
+  const dir = path.join(source.local ? REPO : ROOT, source.dir);
   return fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith('.gltf'))
-    .map((f) => f.replace(/\.gltf$/, ''))
-    .filter((name) => (!source.include || source.include.test(name)) && !(source.exclude && source.exclude.test(name)))
-    .sort()
-    .map((name) => ({ id: source.rename ? source.rename(name) : name, file: path.join(dir, `${name}.gltf`) }));
+    .filter((f) => /\.(gltf|glb)$/.test(f) && !f.endsWith('.gltf.glb'))
+    .map((f) => ({ name: f.replace(/\.(gltf|glb)$/, ''), file: path.join(dir, f) }))
+    .filter(({ name }) => (!source.include || source.include.test(name)) && !(source.exclude && source.exclude.test(name)))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ name, file }) => ({ id: source.rename ? source.rename(name) : name, file }));
 }
 
 async function buildBundle(bundle) {

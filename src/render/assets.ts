@@ -75,6 +75,23 @@ export class Assets {
     return material;
   }
 
+  /**
+   * Untextured materials (the props made in Blender) are given the same simple
+   * shading as everything else; glowing ones are left alone.
+   */
+  private flat(material: THREE.Material): THREE.Material {
+    const standard = material as THREE.MeshStandardMaterial;
+    if (!standard.isMeshStandardMaterial || standard.emissive.getHex() !== 0 || standard.transparent) return material;
+    const key = `flat:${standard.color.getHexString()}`;
+    let flat = this.materials.get(key);
+    if (!flat) {
+      flat = new THREE.MeshLambertMaterial({ color: standard.color });
+      flat.name = key;
+      this.materials.set(key, flat);
+    }
+    return flat;
+  }
+
   /** Swaps the stripped glTF materials (tagged with extras.tex) for the shared ones. */
   applyMaterials(root: THREE.Object3D, override?: (textureId: string) => string): void {
     root.traverse((object) => {
@@ -82,7 +99,7 @@ export class Assets {
       if (!mesh.isMesh) return;
       const swap = (material: THREE.Material): THREE.Material => {
         const tex = (material.userData as { tex?: string }).tex ?? material.name;
-        if (!tex || !assetManifest.textures[tex]) return material;
+        if (!tex || !assetManifest.textures[tex]) return this.flat(material);
         return this.material(override ? override(tex) : tex);
       };
       mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);

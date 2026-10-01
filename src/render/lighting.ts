@@ -12,18 +12,29 @@ interface Keyframe {
 
 /** Light colours through the day; values are interpolated between neighbours. */
 const KEYFRAMES: Keyframe[] = [
-  { hour: 0, sun: 0x8fa8ff, sunIntensity: 0.4, sky: 0x4c5c98, ground: 0x1c2238, ambient: 0.8, background: 0x10162c },
-  { hour: 4.6, sun: 0x8fa8ff, sunIntensity: 0.4, sky: 0x4c5c98, ground: 0x1c2238, ambient: 0.8, background: 0x10162c },
+  { hour: 0, sun: 0x8fa8ff, sunIntensity: 0.55, sky: 0x3d4f94, ground: 0x141a30, ambient: 0.62, background: 0x10162c },
+  { hour: 4.6, sun: 0x8fa8ff, sunIntensity: 0.55, sky: 0x3d4f94, ground: 0x141a30, ambient: 0.62, background: 0x10162c },
   { hour: 5.6, sun: 0xffb98a, sunIntensity: 1.7, sky: 0xe0c0b0, ground: 0x5f504a, ambient: 1.05, background: 0xf0c0a0 },
   { hour: 7, sun: 0xfff1d6, sunIntensity: 2.7, sky: 0xcfe6ff, ground: 0x6f7a5c, ambient: 1.25, background: 0x9fd4f2 },
   { hour: 12, sun: 0xffffff, sunIntensity: 3.0, sky: 0xd6ecff, ground: 0x7a8562, ambient: 1.35, background: 0x8fcdf0 },
   { hour: 17.5, sun: 0xffe9c4, sunIntensity: 2.6, sky: 0xcfe2f5, ground: 0x6f7a5c, ambient: 1.2, background: 0x9bcfee },
   { hour: 19.6, sun: 0xff9a5c, sunIntensity: 1.5, sky: 0xd9a58f, ground: 0x54433f, ambient: 0.98, background: 0xe59a6e },
-  { hour: 21, sun: 0x8fa8ff, sunIntensity: 0.45, sky: 0x4f60a0, ground: 0x1c2238, ambient: 0.82, background: 0x18203c },
-  { hour: 24, sun: 0x8fa8ff, sunIntensity: 0.4, sky: 0x4c5c98, ground: 0x1c2238, ambient: 0.8, background: 0x10162c },
+  { hour: 21, sun: 0x8fa8ff, sunIntensity: 0.6, sky: 0x4254a0, ground: 0x161c34, ambient: 0.66, background: 0x18203c },
+  { hour: 24, sun: 0x8fa8ff, sunIntensity: 0.55, sky: 0x3d4f94, ground: 0x141a30, ambient: 0.62, background: 0x10162c },
 ];
 
 const SHADOW_RANGE = 70;
+/** Point lights are a fixed pool (changing the number of lights recompiles shaders); they move to the lamps nearest the camera. */
+const LAMP_POOL = 6;
+const LAMP_COLOR = 0xffb45e;
+
+export interface Lamp {
+  x: number;
+  y: number;
+  z: number;
+  /** relative brightness */
+  power: number;
+}
 
 export class Lighting {
   readonly sun = new THREE.DirectionalLight(0xffffff, 3);
@@ -31,6 +42,8 @@ export class Lighting {
   readonly background = new THREE.Color(0x8fcdf0);
   /** 0 in full daylight, 1 at night; used for lamps and windows */
   night = 0;
+  private readonly lampLights: THREE.PointLight[] = [];
+  private lamps: Lamp[] = [];
   private readonly a = new THREE.Color();
   private readonly b = new THREE.Color();
   private readonly offset = new THREE.Vector3();
@@ -50,6 +63,35 @@ export class Lighting {
     this.sun.shadow.normalBias = 0.08;
     scene.add(this.sun, this.sun.target, this.hemisphere);
     scene.background = this.background;
+    for (let i = 0; i < LAMP_POOL; i++) {
+      const light = new THREE.PointLight(LAMP_COLOR, 0, 26, 1.6);
+      this.lampLights.push(light);
+      scene.add(light);
+    }
+  }
+
+  /** Where the lanterns, torches and fires are. */
+  setLamps(lamps: Lamp[]): void {
+    this.lamps = lamps;
+  }
+
+  private placeLamps(focus: THREE.Vector3): void {
+    if (this.night <= 0.02) {
+      for (const light of this.lampLights) light.intensity = 0;
+      return;
+    }
+    const nearest = [...this.lamps]
+      .sort((p, q) => (p.x - focus.x) ** 2 + (p.z - focus.z) ** 2 - ((q.x - focus.x) ** 2 + (q.z - focus.z) ** 2))
+      .slice(0, LAMP_POOL);
+    this.lampLights.forEach((light, index) => {
+      const lamp = nearest[index];
+      if (!lamp) {
+        light.intensity = 0;
+        return;
+      }
+      light.position.set(lamp.x, lamp.y, lamp.z);
+      light.intensity = this.night * 45 * lamp.power;
+    });
   }
 
   private mix(from: number, to: number, t: number, out: THREE.Color): THREE.Color {
@@ -70,7 +112,7 @@ export class Lighting {
     this.mix(from.ground, to.ground, t, this.hemisphere.groundColor);
     this.hemisphere.intensity = THREE.MathUtils.lerp(from.ambient, to.ambient, t);
     this.mix(from.background, to.background, t, this.background);
-    this.night = THREE.MathUtils.clamp(1 - (this.sun.intensity - 0.4) / 1.4, 0, 1);
+    this.night = THREE.MathUtils.clamp(1 - (this.sun.intensity - 0.6) / 1.2, 0, 1);
 
     // The sun (or moon) sweeps east to west; at night the moon takes a fixed high angle.
     const dayT = THREE.MathUtils.clamp((hour - 5.5) / 15, 0, 1);
@@ -95,5 +137,6 @@ export class Lighting {
     this.sun.target.position.set(fx, 0, fz);
     this.sun.position.set(fx, 0, fz).addScaledVector(this.offset, 180);
     this.sun.target.updateMatrixWorld();
+    this.placeLamps(focus);
   }
 }

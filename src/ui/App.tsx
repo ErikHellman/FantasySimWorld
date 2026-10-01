@@ -1,4 +1,4 @@
-import { useEffect } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
 import { BrainLog } from './BrainLog';
 import { Inspector } from './Inspector';
@@ -12,11 +12,12 @@ const SPEEDS = [
   { value: 4, label: '4×', title: 'Four times speed (3)' },
 ];
 
+// \uFE0F asks for the colour emoji form; without it some of these fall back to plain text glyphs.
 const KIND_ICON: Record<string, string> = {
-  world: '☀', social: '💬', romance: '❤', conflict: '⚡', combat: '⚔', death: '✝', arrival: '🚶',
+  world: '☀\uFE0F', social: '💬', romance: '❤\uFE0F', conflict: '⚡', combat: '⚔\uFE0F', death: '🪦', arrival: '🚶',
 };
 
-const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔', sleep: '💤', talk: '💬', hurt: '🩹' };
+const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔\uFE0F', sleep: '💤', talk: '💬', hurt: '🩹' };
 
 function TopBar() {
   const clock = ui.clock.value;
@@ -41,7 +42,7 @@ function TopBar() {
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
         {ui.graves.value.length > 0 && (
           <button class="pill" title="The graveyard" onClick={() => (ui.panel.value = ui.panel.value === 'graves' ? 'none' : 'graves')}>
-            ✝ {ui.graves.value.length}
+            🪦 {ui.graves.value.length}
           </button>
         )}
         <button
@@ -81,11 +82,37 @@ function Roster() {
   );
 }
 
+function Voices() {
+  return (
+    <ol>
+      {ui.voices.value.length === 0 && <li class="muted chron">Nobody has spoken yet.</li>}
+      {ui.voices.value.map((line) => {
+        const time = gameTime(line.tick);
+        return (
+          <li class="chron voice" key={line.id}>
+            <span class="chron-time">{formatClock(time.minuteOfDay)}</span>
+            <span class="chron-icon">{line.loud ? '📣' : '💬'}</span>
+            <span class="chron-text">
+              <button class="link" onClick={() => actions.select(line.speakerId)}>{line.speaker}</button>
+              {line.to && <span class="muted"> to {line.to}</span>}: {line.text}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function Chronicle() {
+  const [tab, setTab] = useState<'chronicle' | 'voices'>('chronicle');
   const entries = ui.chronicle.value.slice(-40).reverse();
   return (
     <aside class="panel chronicle">
-      <h2>Chronicle</h2>
+      <nav class="feed-tabs">
+        <button class={tab === 'chronicle' ? 'on' : ''} onClick={() => setTab('chronicle')}>Chronicle</button>
+        <button class={tab === 'voices' ? 'on' : ''} onClick={() => setTab('voices')}>Voices</button>
+      </nav>
+      {tab === 'voices' ? <Voices /> : (
       <ol>
         {entries.map((entry) => {
           const time = gameTime(entry.tick);
@@ -103,6 +130,7 @@ function Chronicle() {
           );
         })}
       </ol>
+      )}
     </aside>
   );
 }
@@ -187,7 +215,8 @@ export function App() {
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
       )}
-      {ui.alarm.value && <div class="alarm">⚔ The alarm has been raised</div>}
+      {ui.alarm.value && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
+      {ui.throttled.value && !ui.alarm.value && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>
   );
 }

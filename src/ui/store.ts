@@ -107,6 +107,10 @@ export const ui = {
   brainLog: signal<BrainLogEntry[]>([]),
   audioSlots: signal<AudioSlotStatus[]>([]),
   notice: signal<string | null>(null),
+  /** recent spoken lines, newest first */
+  voices: signal<Array<{ id: number; tick: number; speaker: string; speakerId: string; to: string | null; text: string; loud: boolean }>>([]),
+  /** the world is being held at 1x while the language model catches up */
+  throttled: signal(false),
   savedAt: signal(0),
   canSave: signal(true),
 };

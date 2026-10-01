@@ -91,6 +91,12 @@ export class Brain {
     return this.client !== null;
   }
 
+  /** True when the model has more waiting than it can clear soon; the app slows the world to 1x meanwhile. */
+  get backlogged(): boolean {
+    const queue = this.queue;
+    return queue !== null && queue.waiting > queue.concurrency * 2;
+  }
+
   /** Applies new settings; pass a disabled or incomplete configuration to fall back to local minds. */
   configure(settings: LlmSettings): void {
     this.queue?.clear();

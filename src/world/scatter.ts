@@ -19,7 +19,8 @@ const MEADOW_TREES = ['Tree_1_A', 'Tree_1_B', 'Tree_2_A', 'Tree_2_B', 'Tree_5_A'
 const BUSHES = ['Bush_1_A', 'Bush_1_B', 'Bush_1_C', 'Bush_2_A', 'Bush_2_B', 'Bush_3_A', 'Bush_3_B', 'Bush_4_A', 'Bush_4_B', 'Bush_4_C'];
 const ROCKS = ['Rock_1_A', 'Rock_1_B', 'Rock_1_C', 'Rock_2_A', 'Rock_2_B', 'Rock_3_A', 'Rock_3_B', 'Rock_3_C', 'Rock_4_A', 'Rock_5_A', 'Rock_6_A'];
 const GRASS = ['Grass_1_A', 'Grass_1_B', 'Grass_1_C', 'Grass_1_D', 'Grass_2_A', 'Grass_2_B', 'Grass_2_C', 'Grass_2_D'];
-const FLOWERS = ['flax_flower_A', 'flax_flower_B'];
+const FLOWERS = ['flowers_red', 'flowers_yellow', 'flowers_violet', 'flowers_mixed', 'flowers_mixed'];
+const MUSHROOMS = ['mushrooms_red', 'mushrooms_brown'];
 const WATER_PLANTS = ['waterlily_A', 'waterlily_B', 'waterplant_A', 'waterplant_B', 'waterplant_C'];
 
 function sizeOf(bundle: string, model: string): { width: number; height: number } {
@@ -89,11 +90,12 @@ function buildScatter(): Scatter {
       place(cell, 'forest', BUSHES, intRange(rng, 3, 6), { spacing: 1.0, roadGap: 2.6, solid: true });
       place(cell, 'forest', ROCKS, intRange(rng, 0, 2), { spacing: 1.0, roadGap: 2.6, solid: true });
       place(cell, 'forest', GRASS, intRange(rng, 6, 10), { spacing: 0, roadGap: 2.0, solid: false });
+      place(cell, 'custom', MUSHROOMS, intRange(rng, 0, 3), { spacing: 0, roadGap: 2.0, solid: false, scale: [1.2, 1.9] });
     } else if (cell.terrain === 'meadow') {
       if (cell.waterMask === 0) {
         place(cell, 'forest', MEADOW_TREES, chance(rng, 0.45) ? intRange(rng, 1, 2) : 0, { spacing: 1.7, roadGap: 4, solid: true, placeGap: 2 });
         place(cell, 'forest', BUSHES, intRange(rng, 0, 3), { spacing: 1.0, roadGap: 2.8, solid: true, placeGap: 1 });
-        place(cell, 'props', FLOWERS, intRange(rng, 0, 4), { spacing: 0, roadGap: 2.2, solid: false, placeGap: -2 });
+        place(cell, 'custom', FLOWERS, intRange(rng, 1, 5), { spacing: 0, roadGap: 2.2, solid: false, placeGap: -2, scale: [1.2, 1.8] });
       }
       place(cell, 'forest', ROCKS, chance(rng, 0.35) ? 1 : 0, { spacing: 1.0, roadGap: 2.8, solid: true, placeGap: 1 });
       place(cell, 'forest', GRASS, intRange(rng, 7, 13), { spacing: 0, roadGap: 2.0, solid: false, placeGap: -3 });

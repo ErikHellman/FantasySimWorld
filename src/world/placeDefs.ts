@@ -72,6 +72,8 @@ const stoolsAround = (cx: number, cz: number, r: number): PropDef[] => [
   { model: 'dungeon/stool', at: [cx, cz + r], block: 0 },
 ];
 
+const FLOWERS = ['custom/flowers_red', 'custom/flowers_yellow', 'custom/flowers_violet', 'custom/flowers_mixed'];
+
 interface HomeSpec {
   n: number;
   name: string;
@@ -98,6 +100,8 @@ function home(spec: HomeSpec): PlaceDef {
       { model: 'halloween/bench', at: [-2.6, front - 0.7], rot: 0, block: 0 },
       { model: 'dungeon/barrel_small', at: [2.9, front - 1.0] },
       { model: 'halloween/post_lantern', at: [3.6, front + 1.6], rot: 90, block: 0.3 },
+      { model: FLOWERS[spec.n % FLOWERS.length] as string, at: [1.5, front - 1.0], scale: 1.5, block: 0 },
+      { model: FLOWERS[(spec.n + 2) % FLOWERS.length] as string, at: [-1.3, front - 1.1], scale: 1.3, rot: 70, block: 0 },
     ],
     slots: [
       { activities: ['rest'], at: [-3.0, front - 0.7], face: 0, anim: 'sit_chair' },
@@ -147,9 +151,10 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'halloween/bench', at: [0, -4.4], rot: 0, block: 0 },
       { model: 'halloween/sign_both', at: [-5.5, 6.2], rot: 20, block: 0.3 },
       { model: 'halloween/post_lantern', at: [5.2, 5.6], rot: 270, block: 0.3 },
-      { model: 'props/flax_flower_A', at: [2.6, -2.2], block: 0 },
-      { model: 'props/flax_flower_B', at: [-2.4, -2.6], block: 0 },
-      { model: 'props/flax_flower_A', at: [-3.0, 4.6], block: 0 },
+      { model: 'custom/notice_board', at: [6.2, -2.4], rot: -35, block: 0.9 },
+      { model: 'custom/flowers_mixed', at: [2.6, -2.2], scale: 1.6, block: 0 },
+      { model: 'custom/flowers_yellow', at: [-2.4, -2.6], scale: 1.5, block: 0 },
+      { model: 'custom/flowers_red', at: [-3.0, 4.6], scale: 1.5, block: 0 },
     ],
     slots: [
       { activities: ['rest'], at: [-4.2, 1.0], face: 90, anim: 'sit_chair' },
@@ -252,6 +257,8 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'hex/target', at: [7.6, 0.4], scale: 7, rot: -20, block: 0.8 },
       { model: 'hex/weaponrack', at: [3.4, 2.6], scale: 7, rot: 0, block: 0.8 },
       { model: 'halloween/haybale', at: [1.6, 6.6], rot: 30 },
+      { model: 'custom/fence_wood', at: [-3.3, 10.2] },
+      { model: 'custom/fence_wood', at: [-7.8, 6.4], rot: 90 },
     ],
     slots: [
       { activities: ['train'], at: [-5.0, 7.3], face: 180 },
@@ -284,6 +291,10 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'halloween/haybale', at: [3.2, -0.6], rot: 10 },
       { model: 'halloween/haybale', at: [4.4, -2.4], rot: 80 },
       { model: 'halloween/scarecrow', at: [6.6, 1.6], rot: 30, block: 0.5 },
+      { model: 'custom/fence_wood', at: [0.4, 8.5] },
+      { model: 'custom/fence_wood_broken', at: [4.7, 8.5] },
+      { model: 'custom/fence_wood', at: [7.6, 6.2], rot: 90 },
+      { model: 'custom/fence_wood_post', at: [7.6, 3.9], block: 0.3 },
     ],
     slots: [
       { activities: ['farm'], at: [-0.9, 5.5], face: 180, anim: 'dig' },
@@ -330,9 +341,10 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'resource/Wood_Log_B', at: [2.4, 2.8], rot: -20, y: 0.3, block: 0 },
       { model: 'props/Potionstation', at: [4.8, -1.6], rot: -40 },
       { model: 'props/Cauldron', at: [5.4, 1.0], block: 0.7 },
-      { model: 'props/Mushroom', at: [-3.2, 5.2], scale: 1.6, block: 0 },
-      { model: 'props/Mushroom', at: [3.6, 5.8], scale: 1.3, block: 0 },
-      { model: 'props/Mushroom', at: [-1.2, -6.0], scale: 1.8, block: 0 },
+      { model: 'custom/mushrooms_red', at: [-3.2, 5.2], scale: 1.6, block: 0 },
+      { model: 'custom/mushrooms_brown', at: [3.6, 5.8], scale: 1.5, block: 0 },
+      { model: 'custom/mushrooms_red', at: [-1.2, -6.0], scale: 1.8, rot: 120, block: 0 },
+      { model: 'custom/flowers_violet', at: [-4.4, 3.6], scale: 1.5, block: 0 },
       { model: 'props/Basket_Mushrooms', at: [3.6, -3.2], block: 0 },
     ],
     slots: [

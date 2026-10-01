@@ -374,3 +374,8 @@ button.big { font-size: 17px; padding: 10px 26px; border-radius: 12px; margin: 1
   .inspector { top: auto; bottom: 10px; max-height: 55%; }
   .chronicle { display: none; }
 }
+
+.feed-tabs { display: flex; gap: 4px; margin: 0 6px 6px 0; }
+.feed-tabs button { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 10px; }
+.chron.voice .chron-text { color: #e9e4d6; }
+.alarm.calm { background: rgba(40, 60, 110, 0.92); animation: none; }

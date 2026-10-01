@@ -132,6 +132,9 @@ export const bundles = [
   },
 ];
 
+// Props made for this project with Blender (tools/blender/make_props.py); `local` paths are relative to the repo.
+bundles.push({ id: 'custom', sources: [{ dir: 'tools/blender/out', local: true }] });
+
 /** Rigged characters, one GLB each (mesh + skeleton, no clips). */
 export const characters = [
   ...['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue', 'Rogue_Hooded', 'Druid', 'Engineer'].map((name) => ({
