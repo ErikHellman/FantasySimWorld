@@ -20,7 +20,10 @@ function harness(responder: Responder, overrides: Partial<LlmSettings> = {}) {
     const body = JSON.parse(String(init?.body));
     const toolNames = (body.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
     requests.push({ tools: toolNames, text: body.messages.map((m: { content: string }) => m.content).join('\n') });
-    const reply = responder(toolNames, body);
+    // Morning plans are requested for everyone; answer them the same way in every test.
+    const reply = toolNames.includes('set_plan')
+      ? [{ name: 'set_plan', args: { blocks: [{ hour: 7, activity: 'eat' }, { hour: 8, activity: 'stroll' }, { hour: 22, activity: 'sleep' }] } }]
+      : responder(toolNames, body);
     const message = typeof reply === 'string'
       ? { content: reply }
       : { content: null, tool_calls: reply.map((call) => ({ type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } })) };
@@ -28,6 +31,13 @@ function harness(responder: Responder, overrides: Partial<LlmSettings> = {}) {
   }, 1000);
   brain.configure({ ...settings, ...overrides });
   const events: SimEvent[] = [];
+  /** Lets the morning's plan requests go out and come back, so each character is free for the test's own request. */
+  const settle = async (): Promise<void> => {
+    step(2);
+    brain.update(true);
+    await wait(15);
+    step(1);
+  };
   const step = (ticks = 1): void => {
     for (let i = 0; i < ticks; i++) {
       const tick = sim.step();
@@ -49,22 +59,23 @@ function harness(responder: Responder, overrides: Partial<LlmSettings> = {}) {
     }
     return lines;
   };
-  return { sim, brain, logs, requests, events, step, talk };
+  return { sim, brain, logs, requests, events, step, talk, settle };
 }
 
 describe('Brain', () => {
   it('turns a decide reply into intents for the character', async () => {
     const h = harness((tools) => (tools.includes('go_to') ? [{ name: 'go_to', args: { place: 'the chapel', thought: 'I need quiet.' } }, { name: 'do_activity', args: { activity: 'pray' } }] : []));
-    h.step(2);
-    const c = living(h.sim.state)[0]!;
+    await h.settle();
+    const c = living(h.sim.state).find((x) => !x.convoId && x.intent?.kind !== 'talk')!;
     c.stimuli.push({ kind: 'gift', tick: h.sim.state.tick, text: 'Someone left flowers at your door.', urgency: 1 });
-    h.brain.update();
+    h.brain.update(true);
     await wait();
     h.step(1);
     expect(c.intent).toMatchObject({ kind: 'go_to', placeId: 'chapel', source: 'llm' });
     expect(c.queue[0]).toMatchObject({ kind: 'activity', activity: 'pray' });
     expect(c.thought).toBe('I need quiet.');
-    expect(c.stimuli.length).toBe(0);
+    expect(c.stimuli.some((stimulus) => stimulus.text.includes('flowers'))).toBe(false);
+    expect(c.planSource).toBe('llm');
     expect(h.logs.find((record) => record.character === firstName(c) && record.kind === 'decide')).toMatchObject({ status: 'ok' });
     const sent = h.requests.find((request) => request.text.includes('Someone left flowers at your door.'))!;
     expect(sent.text).toContain(`You are ${c.profile.name}`);
@@ -72,10 +83,10 @@ describe('Brain', () => {
 
   it('drops an answer when the situation changed while the model was thinking', async () => {
     const h = harness(() => [{ name: 'go_to', args: { place: 'market' } }]);
-    h.step(2);
+    await h.settle();
     const c = living(h.sim.state).find((x) => !x.convoId && x.intent?.kind !== 'talk')!;
     c.stimuli.push({ kind: 'talked', tick: h.sim.state.tick, text: 'x', urgency: 1 });
-    h.brain.update();
+    h.brain.update(true);
     c.epoch += 1; // something happened to them in the meantime
     await wait();
     h.step(1);
@@ -88,10 +99,10 @@ describe('Brain', () => {
       { name: 'talk_to', args: { person: 'garrik', message: '"Fancy a drink?"', tone: 'cheerful' } },
       { name: 'go_to', args: { place: 'the moon' } },
     ]);
-    h.step(2);
+    await h.settle();
     const c = living(h.sim.state).find((x) => firstName(x) === 'Dorn')!;
     c.stimuli.push({ kind: 'need', tick: h.sim.state.tick, text: 'You feel lonely.', urgency: 1 });
-    h.brain.update();
+    h.brain.update(true);
     await wait();
     h.step(1);
     const garrick = living(h.sim.state).find((x) => firstName(x) === 'Garrick')!;

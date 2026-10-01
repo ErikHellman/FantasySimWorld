@@ -53,7 +53,11 @@ interface Mind {
   lastReactAt: number;
   plannedDay: number;
   reflectedDay: number;
+  /** after a failed plan or reflection, do not ask again before this time */
+  retryAt: number;
 }
+
+const RETRY_AFTER_MS = 60_000;
 
 const SCAN_INTERVAL_MS = 400;
 const MAX_TURN_LINES = 6;
@@ -123,7 +127,7 @@ export class Brain {
   private mind(id: Id): Mind {
     let mind = this.minds.get(id);
     if (!mind) {
-      mind = { lastDecideAt: -Infinity, lastReactAt: -Infinity, plannedDay: 0, reflectedDay: 0 };
+      mind = { lastDecideAt: -Infinity, lastReactAt: -Infinity, plannedDay: 0, reflectedDay: 0, retryAt: 0 };
       this.minds.set(id, mind);
     }
     return mind;
@@ -258,15 +262,18 @@ export class Brain {
     }
   }
 
-  /** Per rendered frame: keep the queue moving and look for characters with something to decide. */
-  update(): void {
+  /**
+   * Per rendered frame: keep the queue moving and, a few times a second, look
+   * for characters with something to decide. `force` scans at once.
+   */
+  update(force = false): void {
     const queue = this.queue;
     if (!queue) return;
     const paused = this.hooks.speed() === 0;
     queue.setPaused(paused);
     queue.pump();
     const now = performance.now();
-    if (paused || now - this.lastScan < SCAN_INTERVAL_MS) return;
+    if (paused || (!force && now - this.lastScan < SCAN_INTERVAL_MS)) return;
     this.lastScan = now;
     this.governor.refill(queue.capacity, now);
     if (this.governor.shouldRetune(now)) this.applyTuning();
@@ -296,7 +303,7 @@ export class Brain {
 
       if (c.asleep) {
         const night = time.hour < 12 ? time.day - 1 : time.day;
-        if (isNight(time.hour) && mind.reflectedDay !== night && c.lastReflectionDay !== night && c.memories.length > 4 && this.governor.allow(2)) {
+        if (isNight(time.hour) && mind.reflectedDay !== night && c.lastReflectionDay !== night && c.memories.length > 4 && now >= mind.retryAt && this.governor.allow(2)) {
           mind.reflectedDay = night;
           this.requestReflect(c, night);
         }
@@ -304,7 +311,7 @@ export class Brain {
       }
 
       // Each morning, once: a plan for the day in the character's own words.
-      if (mind.plannedDay !== time.day && time.hour >= 4.5 && time.hour < 11 && c.planDay === time.day && this.governor.allow(1)) {
+      if (mind.plannedDay !== time.day && time.hour >= 4.5 && time.hour < 11 && c.planDay === time.day && now >= mind.retryAt && this.governor.allow(1)) {
         mind.plannedDay = time.day;
         this.requestPlan(c);
         continue;
@@ -387,8 +394,10 @@ export class Brain {
       character: id,
       ttlMs: 90_000,
       onFail: () => {
-        // Try again later this morning.
-        this.mind(id).plannedDay = 0;
+        // Try again later this morning, but not at once.
+        const mind = this.mind(id);
+        mind.plannedDay = 0;
+        mind.retryAt = performance.now() + RETRY_AFTER_MS;
       },
       build: () => {
         const self = getCharacter(this.state, id);
@@ -415,8 +424,10 @@ export class Brain {
         return self && self.asleep ? reflectPrompt(this.state, self, this.promptBudget) : null;
       },
       onFail: () => {
-        // Let it be tried again later the same night.
-        this.mind(id).reflectedDay = 0;
+        // Let it be tried again later the same night, but not at once.
+        const mind = this.mind(id);
+        mind.reflectedDay = 0;
+        mind.retryAt = performance.now() + RETRY_AFTER_MS;
       },
       apply: (response) => {
         const call = response.calls.find((entry) => entry.name === 'reflection');
