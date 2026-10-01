@@ -244,14 +244,15 @@ export function feeling(value: unknown): Feeling | undefined {
 }
 
 /** Lines of a whole scripted conversation; speakers are matched by name and must be the two participants. */
-export function interpretConversation(calls: readonly ToolCall[], a: Character, b: Character): { lines: ConversationLine[]; topic: string; feelings: Record<Id, Feeling> } | null {
+export function interpretConversation(calls: readonly ToolCall[], a: Character, b: Character, startsWithInitiator = false): { lines: ConversationLine[]; topic: string; feelings: Record<Id, Feeling> } | null {
   const call = calls.find((entry) => entry.name === 'conversation');
   const raw = call?.args.lines;
   if (!call || !Array.isArray(raw)) return null;
   const lines: ConversationLine[] = [];
   const nameA = firstName(a).toLowerCase();
   const nameB = firstName(b).toLowerCase();
-  let expected = b.id; // the opening line was the initiator's
+  // Normally the opening line is already spoken, so the other person answers first.
+  let expected = startsWithInitiator ? a.id : b.id;
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
     const item = entry as Record<string, unknown>;

@@ -29,7 +29,8 @@ The world is saved in the browser (IndexedDB) every 30 seconds and at notable mo
 
 Open **Settings**, pick a preset or enter a base URL, choose a model ("List models" asks the server), and press **Test connection**. Requests go straight from the browser to the endpoint; the key is stored only in that browser and is never part of an exported save.
 
-- **Local models (Ollama, LM Studio)**: open the app from `localhost` so the server accepts the requests, use a model that supports tools, and set "Requests at once" to 1. For LM Studio, turn on CORS in its server settings.
+- **Local models (Ollama, LM Studio)**: open the app from `localhost` so the server accepts the requests, use a model that supports tools, and set "Requests at once" to 1. If LM Studio refuses the browser's requests, turn on CORS in its server settings.
+- **Reasoning models**: leave "Model reasoning" on Off. A model that thinks before every answer is several times slower and can spend its whole output budget on thinking.
 - **Cloud endpoints**: any that allow browser requests work directly. For one that does not, start the dev server with a proxy and use `/llm-proxy` as the base URL:
 
 ```bash
@@ -39,7 +40,7 @@ LLM_PROXY_TARGET=https://your-endpoint.example/v1 pnpm dev
 How the model is used:
 
 - It is asked only at decision points: on waking (a plan for the day), when something notable happens, when a plan block ends, in danger (fight or flee), in conversations, when a beaten opponent yields (spare or finish), and once a night to reflect.
-- Tool calls are sent natively, or as JSON-schema output for servers where tool calling is unreliable; the client detects which works.
+- Tool calls are sent natively. If a model answers in prose instead of calling its tool, the client switches to JSON-schema output, which local servers enforce with a grammar. Tested with `qwen/qwen3.6-35b-a3b` in LM Studio: 85% usable answers natively, 20 of 20 as JSON output, about 6 seconds each with reasoning off.
 - A governor measures the endpoint's speed and keeps demand below it, so a slow local model gets fewer, more important requests. "Max requests / minute" is a hard cap on top of that.
 - Every answer is checked against the world as it is by then. Stale, invalid or missing answers fall back to local behaviour.
 - The 🧠 pill in the top bar opens the decision log: each prompt, the raw reply, what was done with it, latency and tokens.

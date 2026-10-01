@@ -51,18 +51,20 @@ How to play:
 - Answer only by calling the tools you are given. No narration.
 - Anything said aloud is one or two short sentences in your own voice, with no stage directions and no quotation marks.
 - A "thought" is one private sentence in the first person.
-- Only name people and places that appear in the message.`;
+- Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.`;
 
 function level(value: number, words: [string, string, string]): string {
   return value < 0.34 ? words[0] : value < 0.67 ? words[1] : words[2];
 }
 
-/** Who this character is. The world rules come first and never change, so servers can cache them. */
+/**
+ * Who this character is. It opens the user message; the system message holds
+ * only the world rules, which never change, so a server can cache them (and
+ * the tool definitions) across all villagers.
+ */
 export function persona(c: Character): string {
   const p = c.profile;
   return [
-    WORLD,
-    '',
     `You are ${p.name}, ${p.age}, ${p.occupation} (${p.pronouns}). You are a ${CLASSES[c.classId].label}.`,
     `Background: ${p.backstory}`,
     `Personality: ${p.traits.join(', ')}. You are ${level(p.temper, ['slow to anger', 'even-tempered', 'quick-tempered'])}, ${level(p.bravery, ['timid', 'steady enough in danger', 'fearless'])} and ${level(p.sociability, ['solitary', 'sociable enough', 'very sociable'])}.`,
@@ -70,6 +72,13 @@ export function persona(c: Character): string {
     `What you want: ${p.goals.join('; ')}.`,
     c.summary ? `How you see yourself lately: ${c.summary}` : '',
   ].filter(Boolean).join('\n');
+}
+
+function asCharacter(c: Character, situation: string): ChatMessage[] {
+  return [
+    { role: 'system', content: WORLD },
+    { role: 'user', content: `WHO YOU ARE\n${persona(c)}\n\nNOW\n${situation}` },
+  ];
 }
 
 function needWords(c: Character): string {
@@ -115,7 +124,11 @@ function capital(text: string): string {
 
 function memoryLines(memories: readonly Memory[], nowDay: number): string {
   return memories
-    .map((memory) => `- ${memory.day === nowDay ? 'Today' : memory.day === nowDay - 1 ? 'Yesterday' : `Day ${memory.day}`}: ${memory.text}`)
+    .map((memory) => {
+      const clock = formatClock(gameTime(memory.tick).minuteOfDay);
+      const when = memory.day === nowDay ? `Earlier today (${clock})` : memory.day === nowDay - 1 ? `Yesterday (${clock})` : `Day ${memory.day}`;
+      return `- ${when}: ${memory.text}`;
+    })
     .join('\n');
 }
 
@@ -138,9 +151,14 @@ function activityList(): string {
 function header(state: SimState, c: Character): string {
   const time = gameTime(state.tick);
   const inventory = `${c.inventory.food} food, ${c.inventory.potion} healing potion${c.inventory.potion === 1 ? '' : 's'}, ${c.inventory.gift} small gift${c.inventory.gift === 1 ? '' : 's'}`;
+  const monsters = monsterList(state).filter((m) => m.phase !== 'dying');
+  const danger = monsters.length === 0
+    ? 'All is quiet: there are no monsters about.'
+    : `The dead are abroad: ${monsters.length} of them, the nearest ${Math.round(Math.min(...monsters.map((m) => dist(m.pos, c.pos))))} paces from you.`;
   return [
     `It is day ${time.day}, ${formatClock(time.minuteOfDay)} (${partOfDay(time.hour)}). You are at ${placeNameAt(c.pos)}, ${describeActivity(state, c)}.`,
     `You are ${needWords(c)}. You carry ${inventory}.`,
+    danger,
   ].join('\n');
 }
 
@@ -161,14 +179,15 @@ function people(state: SimState, c: Character): { near: Character[]; far: Charac
   return { near, far };
 }
 
-/** Removes stimuli that only repeat one another, newest last. */
-function recentEvents(c: Character): string[] {
+/** Recent stimuli, without repeats, each with how long ago it was; newest last. */
+function recentEvents(state: SimState, c: Character): string[] {
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const stimulus of c.stimuli) {
     if (seen.has(stimulus.text)) continue;
     seen.add(stimulus.text);
-    lines.push(stimulus.text);
+    const minutes = Math.round((state.tick - stimulus.tick) / 20);
+    lines.push(`${stimulus.text} (${minutes <= 2 ? 'just now' : `${minutes} minutes ago`})`);
   }
   return lines;
 }
@@ -177,7 +196,7 @@ function recentEvents(c: Character): string[] {
 export function decidePrompt(state: SimState, c: Character, maxTokens: number): Prompt {
   const time = gameTime(state.tick);
   const { near, far } = people(state, c);
-  const events = recentEvents(c);
+  const events = recentEvents(state, c);
   const cue = { subjects: [...near.map((o) => o.id), ...c.stimuli.flatMap((s) => (s.subjectId ? [s.subjectId] : []))], text: `${events.join(' ')} ${placeNameAt(c.pos)}` };
   const memories = retrieve(c, state.tick, cue, 7);
 
@@ -191,7 +210,6 @@ export function decidePrompt(state: SimState, c: Character, maxTokens: number): 
   const user = assemble([
     { priority: 0, text: header(state, c) },
     { priority: 0, text: events.length > 0 ? `What has just happened:\n${events.map((line) => `- ${line}`).join('\n')}` : '' },
-    { priority: 1, text: c.outcome ? `Last thing you did: ${c.outcome}` : '' },
     { priority: 1, text: near.length > 0 ? `People near you:\n${near.map((o) => personLine(state, c, o, true)).join('\n')}` : 'Nobody is near you.' },
     { priority: 4, text: far.length > 0 ? `Elsewhere:\n${far.slice(0, 5).map((o) => personLine(state, c, o, true)).join('\n')}` : '' },
     { priority: 3, text: memories.length > 0 ? `Things you remember:\n${memoryLines(memories, time.day)}` : '' },
@@ -205,7 +223,7 @@ export function decidePrompt(state: SimState, c: Character, maxTokens: number): 
       }`,
     },
   ], maxTokens);
-  return { messages: [{ role: 'system', content: persona(c) }, { role: 'user', content: user }], tools, maxCalls: 3 };
+  return { messages: asCharacter(c, user), tools, maxCalls: 3 };
 }
 
 /** "Danger: fight or flee?" */
@@ -218,14 +236,14 @@ export function reactPrompt(state: SimState, c: Character): Prompt {
   const weapon = CLASSES[c.classId].weapon;
   const lines = [
     header(state, c),
-    recentEvents(c).map((line) => `- ${line}`).join('\n'),
+    recentEvents(state, c).map((line) => `- ${line}`).join('\n'),
     monsters.length > 0 ? `Close by: ${[...kinds].map(([label, count]) => `${count} ${label}${count > 1 ? 's' : ''}`).join(', ')}.` : '',
     attacker ? `${firstName(attacker)} is attacking you. ${capital(feelingWords(rel(c, attacker.id)))}.` : '',
     allies.length > 0 ? `Fighting beside you: ${allies.map(firstName).join(', ')}.` : 'Nobody is fighting beside you.',
     `You fight ${weapon.style === 'melee' ? 'hand to hand' : `at range with ${weapon.style === 'magic' ? 'magic' : 'a bow'}`}.`,
     'Decide now: fight, or flee to your home. One tool call. If you shout something, keep it to a few words.',
   ];
-  return { messages: [{ role: 'system', content: persona(c) }, { role: 'user', content: lines.filter(Boolean).join('\n') }], tools: [FIGHT, FLEE], maxCalls: 1 };
+  return { messages: asCharacter(c, lines.filter(Boolean).join('\n')), tools: [FIGHT, FLEE], maxCalls: 1 };
 }
 
 /** "Plan your day." */
@@ -246,7 +264,7 @@ export function planPrompt(state: SimState, c: Character, maxTokens: number): Pr
     { priority: 0, text: activityList() },
     { priority: 0, text: 'Plan your day with set_plan: four to seven blocks from now until bedtime, each with the hour it starts. Include meals (eat) and end with sleep. Let the plan reflect what is on your mind, not only your duties.' },
   ], maxTokens);
-  return { messages: [{ role: 'system', content: persona(c) }, { role: 'user', content: user }], tools: [SET_PLAN], maxCalls: 1 };
+  return { messages: asCharacter(c, user), tools: [SET_PLAN], maxCalls: 1 };
 }
 
 function brief(c: Character): string {
@@ -265,7 +283,7 @@ function toneWords(tone: Conversation['tone'], a: Character, b: Character): stri
 
 const SCENE = `You write short, natural conversations between two villagers in a small fantasy village, as a playwright would. Each speaks in their own voice and acts from their own personality, mood, memories and feelings about the other. Conversations may go badly: people can be cold, evasive, jealous, angry or hurt. Not every talk ends warmly, and a romantic approach is only welcomed if the other person feels the same.
 
-Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. Answer only by calling the conversation tool.`;
+Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. The village is small: nobody lives here but the people named in the message, and the only monsters are the walking dead that rise from the graveyard at night. Answer only by calling the conversation tool.`;
 
 /** One call that writes the rest of a conversation for both speakers. */
 export function conversationPrompt(state: SimState, convo: Conversation, a: Character, b: Character, maxTokens: number): Prompt {
@@ -285,8 +303,14 @@ export function conversationPrompt(state: SimState, convo: Conversation, a: Char
     { priority: 0, text: `Day ${time.day}, ${formatClock(time.minuteOfDay)} (${partOfDay(time.hour)}), at ${placeNameAt(a.pos)}. ${toneWords(convo.tone, a, b)}` },
     { priority: 0, text: `THE ONE WHO STARTED IT\n${side(a, b)}` },
     { priority: 0, text: `THE OTHER\n${side(b, a)}` },
-    { priority: 0, text: `${firstName(a)} opens with: ${opening}` },
-    { priority: 0, text: `Write the three to five lines that follow, alternating speakers and starting with ${firstName(b)}, and bring the conversation to a natural end. Then say what it was about and how each now feels about the other.` },
+    { priority: 2, text: `Others in the village, whom they may mention: ${living(state).filter((o) => o.id !== a.id && o.id !== b.id).map((o) => `${firstName(o)} (${o.profile.occupation})`).join(', ')}.` },
+    { priority: 0, text: opening ? `${firstName(a)} opens with: ${opening}` : '' },
+    {
+      priority: 0,
+      text: opening
+        ? `Write the three to five lines that follow, alternating speakers and starting with ${firstName(b)}, and bring the conversation to a natural end. Then say what it was about and how each now feels about the other.`
+        : `Write the whole conversation: four to six lines, alternating speakers and starting with ${firstName(a)}, about whatever is on ${firstName(a)}'s mind, brought to a natural end. Then say what it was about and how each now feels about the other.`,
+    },
   ], maxTokens);
   return { messages: [{ role: 'system', content: SCENE }, { role: 'user', content: user }], tools: [CONVERSATION], maxCalls: 1 };
 }
@@ -295,7 +319,9 @@ export function conversationPrompt(state: SimState, convo: Conversation, a: Char
 export function replyPrompt(state: SimState, convo: Conversation, lines: ReadonlyArray<{ speakerId: Id; text: string }>, self: Character, other: Character, maxTokens: number): Prompt {
   const time = gameTime(state.tick);
   const memories = retrieve(self, state.tick, { subjects: [other.id], text: lines.map((line) => line.text).join(' ') }, 5);
-  const transcript = lines.map((line) => `${line.speakerId === self.id ? 'You' : firstName(other)}: ${line.text}`).join('\n');
+  const transcript = lines.length > 0
+    ? lines.map((line) => `${line.speakerId === self.id ? 'You' : firstName(other)}: ${line.text}`).join('\n')
+    : '(nothing has been said yet; you speak first)';
   const remaining = 6 - lines.length;
   const user = assemble([
     { priority: 0, text: header(state, self) },
@@ -304,7 +330,7 @@ export function replyPrompt(state: SimState, convo: Conversation, lines: Readonl
     { priority: 0, text: `The conversation so far:\n${transcript}` },
     { priority: 0, text: `Say your next line with reply.${remaining <= 2 ? ' The conversation should end now: set end to true.' : ' Set end to true when the conversation has run its course.'}` },
   ], maxTokens);
-  return { messages: [{ role: 'system', content: persona(self) }, { role: 'user', content: user }], tools: [REPLY], maxCalls: 1 };
+  return { messages: asCharacter(self, user), tools: [REPLY], maxCalls: 1 };
 }
 
 /** The beaten opponent has yielded: spare or finish? */
@@ -320,7 +346,7 @@ export function mercyPrompt(state: SimState, attacker: Character, victim: Charac
     watching.length > 0 ? `Watching: ${watching.join(', ')}.` : 'Nobody else is watching.',
     'If you kill them, it is murder: the village will never forgive it. Decide: spare or finish. One tool call.',
   ].filter(Boolean).join('\n\n');
-  return { messages: [{ role: 'system', content: persona(attacker) }, { role: 'user', content: user }], tools: [SPARE, FINISH], maxCalls: 1 };
+  return { messages: asCharacter(attacker, user), tools: [SPARE, FINISH], maxCalls: 1 };
 }
 
 /** End-of-day reflection: what does this character take from today? */
@@ -335,7 +361,7 @@ export function reflectPrompt(state: SimState, c: Character, maxTokens: number):
     { priority: 1, text: others.length > 0 ? `The people involved:\n${others.map((o) => personLine(state, c, o, false)).join('\n')}` : '' },
     { priority: 0, text: 'Record what you take from the day with reflection.' },
   ], maxTokens);
-  return { messages: [{ role: 'system', content: persona(c) }, { role: 'user', content: user }], tools: [REFLECTION], maxCalls: 1 };
+  return { messages: asCharacter(c, user), tools: [REFLECTION], maxCalls: 1 };
 }
 
 /** The whole prompt as readable text, for the decision log. */

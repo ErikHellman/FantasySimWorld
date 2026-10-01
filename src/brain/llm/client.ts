@@ -15,9 +15,15 @@ interface Capabilities {
   maxTokensField: 'max_tokens' | 'max_completion_tokens';
   temperature: boolean;
   jsonSchema: boolean;
+  /** the server accepts reasoning_effort */
+  reasoningEffort: boolean;
   /** consecutive replies in the tools protocol that contained no usable call */
   toolMisses: number;
+  /** multiplier on the output token limit, raised when answers get cut off */
+  tokenScale: number;
 }
+
+const MAX_TOKEN_SCALE = 6;
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, '');
@@ -74,7 +80,9 @@ export class LlmClient {
       maxTokensField: 'max_tokens',
       temperature: true,
       jsonSchema: true,
+      reasoningEffort: true,
       toolMisses: 0,
+      tokenScale: 1,
     };
   }
 
@@ -99,8 +107,10 @@ export class LlmClient {
   private body(request: LlmRequest): Record<string, unknown> {
     const caps = this.capabilities;
     const body: Record<string, unknown> = { model: this.settings.model, stream: false };
-    body[caps.maxTokensField] = request.maxTokens ?? this.settings.maxTokens;
+    body[caps.maxTokensField] = Math.round((request.maxTokens ?? this.settings.maxTokens) * caps.tokenScale);
     if (caps.temperature) body.temperature = request.temperature ?? this.settings.temperature;
+    // Models that reason before answering are asked not to: a villager's next step does not need it.
+    if (caps.reasoningEffort && this.settings.reasoning !== 'default') body.reasoning_effort = this.settings.reasoning === 'off' ? 'none' : 'low';
 
     if (caps.protocol === 'tools') {
       body.messages = request.messages;
@@ -110,11 +120,12 @@ export class LlmClient {
     }
 
     // JSON protocol: the tools are described in the prompt and the output is constrained to calls.
+    // The description goes in the system message, ahead of anything that varies, so servers can cache it.
     const messages = request.messages.map((message) => ({ ...message }));
     const instruction = describeTools(request.tools, request.maxCalls);
-    const last = messages[messages.length - 1];
-    if (last && last.role === 'user') last.content = `${last.content}\n\n${instruction}`;
-    else messages.push({ role: 'user', content: instruction });
+    const system = messages.find((message) => message.role === 'system');
+    if (system) system.content = `${system.content}\n\n${instruction}`;
+    else messages.unshift({ role: 'system', content: instruction });
     body.messages = messages;
     body.response_format = caps.jsonSchema
       ? { type: 'json_schema', json_schema: { name: 'tool_calls', strict: true, schema: callsSchema(request.tools, request.maxCalls) } }
@@ -132,6 +143,10 @@ export class LlmClient {
     }
     if (caps.maxTokensField === 'max_tokens' && text.includes('max_tokens') && text.includes('max_completion_tokens')) {
       caps.maxTokensField = 'max_completion_tokens';
+      return true;
+    }
+    if (caps.reasoningEffort && this.settings.reasoning !== 'default' && (text.includes('reasoning_effort') || text.includes('reasoning'))) {
+      caps.reasoningEffort = false;
       return true;
     }
     if (caps.temperature && text.includes('temperature')) {
@@ -192,19 +207,33 @@ export class LlmClient {
         const choice = payload.choices?.[0];
         const message = choice?.message ?? {};
         const content = typeof message.content === 'string' ? message.content : '';
+        // Some servers put the whole constrained answer in the reasoning channel and leave content empty.
+        const reasoning = typeof message.reasoning_content === 'string' ? message.reasoning_content : typeof message.reasoning === 'string' ? message.reasoning : '';
         const protocol = this.capabilities.protocol;
-        const calls: ToolCall[] = (protocol === 'tools' ? callsFromMessage(message, request.tools) : callsFromText(content, request.tools)).slice(0, request.maxCalls);
-        const raw = JSON.stringify(message.tool_calls ? { content: message.content ?? null, tool_calls: message.tool_calls } : content);
+        let calls: ToolCall[] = protocol === 'tools' ? callsFromMessage(message, request.tools) : callsFromText(content, request.tools);
+        if (calls.length === 0 && reasoning) calls = callsFromText(reasoning, request.tools);
+        calls = calls.slice(0, request.maxCalls);
+        const raw = JSON.stringify(message.tool_calls && (message.tool_calls as unknown[]).length > 0
+          ? { content: message.content ?? null, tool_calls: message.tool_calls }
+          : content || reasoning.slice(-600));
 
         if (calls.length === 0) {
-          // A model that keeps ignoring its tools is switched to constrained JSON instead.
-          if (protocol === 'tools' && this.settings.protocol === 'auto' && ++this.capabilities.toolMisses >= 2) {
+          const truncated = choice?.finish_reason === 'length';
+          if (truncated) {
+            // Cut off (often by a model thinking aloud first): give it more room and try once more.
+            if (this.capabilities.tokenScale < MAX_TOKEN_SCALE) {
+              this.capabilities.tokenScale = Math.min(MAX_TOKEN_SCALE, this.capabilities.tokenScale * 2);
+              if (attempt < MAX_ADAPTATIONS) continue;
+            }
+            throw new LlmError('truncated', 'The answer was cut off before it finished (raise the output token limit).', undefined, undefined, raw);
+          }
+          // A model that answers in prose despite its tools is switched to constrained JSON, which
+          // servers enforce with a grammar (measured on a local Qwen: 85% usable natively, 100% as JSON).
+          if (protocol === 'tools' && this.settings.protocol === 'auto' && ++this.capabilities.toolMisses >= 1) {
             this.capabilities.protocol = 'json';
             if (attempt < MAX_ADAPTATIONS) continue;
           }
-          throw new LlmError(choice?.finish_reason === 'length' ? 'truncated' : 'no_call', choice?.finish_reason === 'length'
-            ? 'The answer was cut off before it finished (raise the output token limit).'
-            : 'The model answered without calling a tool.', undefined, undefined, raw);
+          throw new LlmError('no_call', 'The model answered without calling a tool.', undefined, undefined, raw);
         }
         this.capabilities.toolMisses = 0;
         return {

@@ -8,6 +8,7 @@ const HUNGER_PER_MINUTE = -0.11;
 const ENERGY_PER_MINUTE = -0.092;
 const SOCIAL_PER_MINUTE = -0.075;
 const HP_PER_MINUTE = 0.03;
+const STIMULUS_LIFETIME = minutesToTicks(100);
 
 function warn(ctx: Ctx, c: Character, text: string): void {
   if (!hasRecentStimulus(c, 'need', ctx.state.tick - minutesToTicks(90))) stimulate(ctx, c, 'need', text, 1);
@@ -24,7 +25,10 @@ export function updateNeeds(ctx: Ctx): void {
     const fighting = c.intent?.kind === 'fight';
     if (!fighting && c.needs.hunger > 20) c.hp = Math.min(maxHp(c), c.hp + HP_PER_MINUTE * dt);
 
-    if (ctx.state.tick % 40 !== 0 || c.asleep) continue;
+    if (ctx.state.tick % 40 !== 0) continue;
+    // What happened hours ago is memory, not news: it no longer calls for a reaction.
+    if (c.stimuli.length > 0) c.stimuli = c.stimuli.filter((stimulus) => ctx.state.tick - stimulus.tick < STIMULUS_LIFETIME);
+    if (c.asleep) continue;
     if (c.needs.hunger < 18) warn(ctx, c, 'You are very hungry.');
     else if (c.needs.energy < 14) warn(ctx, c, 'You are exhausted and need sleep.');
     else if (c.needs.social < 12 && c.profile.sociability > 0.4) warn(ctx, c, 'You feel lonely and want company.');

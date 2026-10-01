@@ -1,5 +1,7 @@
 export type WireProtocol = 'auto' | 'tools' | 'json';
 export type ConversationMode = 'auto' | 'batched' | 'turns';
+/** Whether models that can "think" before answering should: off is much faster and enough for a villager. */
+export type ReasoningMode = 'off' | 'low' | 'default';
 
 export interface LlmSettings {
   enabled: boolean;
@@ -11,6 +13,7 @@ export interface LlmSettings {
   concurrency: number;
   protocol: WireProtocol;
   conversations: ConversationMode;
+  reasoning: ReasoningMode;
   temperature: number;
   maxTokens: number;
   /** extra request headers, one "Name: value" per line */
@@ -40,8 +43,9 @@ export const DEFAULT_SETTINGS: Settings = {
     concurrency: 2,
     protocol: 'auto',
     conversations: 'auto',
+    reasoning: 'off',
     temperature: 0.8,
-    maxTokens: 500,
+    maxTokens: 600,
     headers: '',
     requestsPerMinute: 40,
   },

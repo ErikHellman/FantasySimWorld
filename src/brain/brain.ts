@@ -285,6 +285,7 @@ export class Brain {
     if (!queue) return;
     const state = this.state;
     const time = gameTime(state.tick);
+    const deciders: Array<{ c: Character; mind: Mind; urgency: number }> = [];
     for (const c of living(state)) {
       const key = `c:${c.id}`;
       if (queue.has(key) || c.convoId || c.combat.yielded || c.combat.mercyUntilTick > 0) continue;
@@ -319,7 +320,14 @@ export class Brain {
 
       if (urgency < 0) continue;
       const cooldown = urgency >= 2 ? 6_000 : urgency >= 1 ? 18_000 : 40_000 * this.governor.patience();
-      if (now - mind.lastDecideAt < cooldown || !this.governor.allow(urgency >= 1 ? 1 : 2)) continue;
+      if (now - mind.lastDecideAt >= cooldown) deciders.push({ c, mind, urgency });
+    }
+
+    // Whoever has waited longest for a decision goes first, so a slow model is shared fairly
+    // rather than spent on the same few villagers.
+    deciders.sort((a, b) => b.urgency - a.urgency || (a.mind.lastDecideAt < b.mind.lastDecideAt ? -1 : a.mind.lastDecideAt > b.mind.lastDecideAt ? 1 : 0));
+    for (const { c, mind, urgency } of deciders) {
+      if (!this.governor.allow(urgency >= 1 ? 1 : 2)) break;
       mind.lastDecideAt = now;
       this.requestDecide(c);
     }
@@ -464,7 +472,8 @@ export class Brain {
       const convo = this.state.conversations[convoId];
       if (!convo) return;
       this.turns.set(convoId, convo.lines.map((line) => ({ ...line })));
-      this.requestReply(convoId, convo.b);
+      // Whoever has not spoken yet goes first: the initiator if there is no opening line.
+      this.requestReply(convoId, convo.lines.length === 0 ? convo.a : convo.b);
       return;
     }
     const useLocal = (): void => this.sim.enqueue({ type: 'conversation_local', convoId });
@@ -485,10 +494,10 @@ export class Brain {
         const a = getCharacter(this.state, convo?.a);
         const b = getCharacter(this.state, convo?.b);
         if (!convo || convo.closed || !a || !b) return { status: 'stale', summary: 'the conversation was already over' };
-        const script = interpretConversation(response.calls, a, b);
+        const script = interpretConversation(response.calls, a, b, convo.lines.length === 0);
         if (!script) return { status: 'fallback', summary: 'the lines could not be read' };
         this.sim.enqueue({ type: 'conversation_lines', convoId, lines: script.lines, topic: script.topic, feelings: script.feelings, closed: true });
-        return { status: 'ok', summary: `${firstName(a)} & ${firstName(b)} on ${script.topic || 'this and that'} (${script.lines.length + 1} lines)` };
+        return { status: 'ok', summary: `${firstName(a)} & ${firstName(b)} on ${script.topic || 'this and that'} (${script.lines.length + convo.lines.length} lines)` };
       },
     });
   }

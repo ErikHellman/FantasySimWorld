@@ -129,6 +129,25 @@ describe('Brain', () => {
     expect(h.logs.some((record) => record.kind === 'converse' && record.status === 'ok')).toBe(true);
   });
 
+  it('writes the opening line too when a villager starts a chat on their own', async () => {
+    const h = harness((tools, body) => {
+      if (!tools.includes('conversation')) return [{ name: 'continue', args: {} }];
+      expect(body.messages[1]!.content).toContain('Write the whole conversation');
+      return [{ name: 'conversation', args: {
+        lines: [{ speaker: 'Rowan', text: 'The comfrey is early this year.' }, { speaker: 'Isolde', text: 'Is that a good sign?' }, { speaker: 'Rowan', text: 'It is a sign. Good is up to us.' }],
+        topic: 'early comfrey', initiator_feels: 'better', other_feels: 'better',
+      } }];
+    });
+    await h.settle();
+    const rowan = living(h.sim.state).find((x) => firstName(x) === 'Rowan')!;
+    const isolde = living(h.sim.state).find((x) => firstName(x) === 'Isolde')!;
+    // An empty opener is what the routine brain produces.
+    h.sim.enqueue({ type: 'set_intents', id: rowan.id, epoch: rowan.epoch, intents: [{ kind: 'talk', targetId: isolde.id, opener: '', tone: 'friendly', source: 'routine' }] });
+    const lines = await h.talk(rowan.id, isolde.id);
+    expect(lines.map((line) => line.text)).toEqual(['The comfrey is early this year.', 'Is that a good sign?', 'It is a sign. Good is up to us.']);
+    expect(lines.map((line) => line.speakerId)).toEqual([rowan.id, isolde.id, rowan.id]);
+  });
+
   it('falls back to local lines when the model answers with nonsense', async () => {
     const h = harness(() => 'I would rather write a poem.');
     h.step(2);

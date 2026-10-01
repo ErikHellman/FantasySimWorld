@@ -25,14 +25,17 @@ function seated(c: Character): boolean {
 export function startConversation(ctx: Ctx, a: Character, b: Character, tone: TalkTone, opener: string): Conversation {
   const { state } = ctx;
   const script = opener ? genericContinuation(state, a, b, tone) : localScript(state, a, b, tone);
-  const first = opener || script.opener;
+  // With no opening line given and a model to wait for, the whole conversation is left for it to
+  // write; the locally written one (opener included) is kept as the fallback.
+  const awaitOpener = !opener && state.tuning.scriptWaitTicks > 0;
+  const localOpener: ConversationLine = { speakerId: a.id, text: opener || script.opener };
   const convo: Conversation = {
     id: newId(state, 'v'),
     a: a.id,
     b: b.id,
     tone,
     phase: 'hail',
-    lines: [{ speakerId: a.id, text: first }],
+    lines: awaitOpener ? [] : [localOpener],
     index: 0,
     lineEndTick: 0,
     startedTick: state.tick,
@@ -41,7 +44,11 @@ export function startConversation(ctx: Ctx, a: Character, b: Character, tone: Ta
     author: 'local',
     topic: script.topic,
     feelings: {},
-    fallback: { lines: script.lines, topic: script.topic, feelings: { [a.id]: script.feelings[0], [b.id]: script.feelings[1] } },
+    fallback: {
+      lines: awaitOpener ? [localOpener, ...script.lines] : script.lines,
+      topic: script.topic,
+      feelings: { [a.id]: script.feelings[0], [b.id]: script.feelings[1] },
+    },
   };
   state.conversations[convo.id] = convo;
   a.convoId = convo.id;
@@ -68,6 +75,13 @@ function speak(ctx: Ctx, convo: Conversation): void {
 
 function useFallback(convo: Conversation): void {
   const room = Math.max(0, MAX_LINES - convo.lines.length);
+  if (convo.lines.length === 0) {
+    // Nothing was said yet: the local conversation is used whole, opener and all.
+    convo.lines.push(...convo.fallback.lines.slice(0, room));
+    convo.closed = true;
+    convo.topic = convo.fallback.topic;
+    return;
+  }
   // The local lines were written to follow the opener; keep speakers alternating whatever came since.
   const last = convo.lines[convo.lines.length - 1]?.speakerId ?? convo.a;
   const first = last === convo.a ? convo.b : convo.a;
@@ -241,9 +255,17 @@ export function updateConversations(ctx: Ctx): void {
       a.act.path = [];
       a.facing = facingTo(a.pos, b.pos);
       if (!seated(b)) b.facing = facingTo(b.pos, a.pos);
+      if (state.tuning.scriptWaitTicks === 0 && !convo.closed) useFallback(convo);
+      if (convo.lines.length === 0) {
+        // Face to face, but the opening line has not been written yet.
+        convo.phase = 'await';
+        convo.index = -1;
+        convo.awaitUntilTick = state.tick + state.tuning.scriptWaitTicks;
+        ctx.events.push({ type: 'conversation_waiting', convoId: convo.id }, { type: 'emote', id: a.id, emote: 'thinking' });
+        continue;
+      }
       convo.phase = 'play';
       convo.index = 0;
-      if (state.tuning.scriptWaitTicks === 0) useFallback(convo);
       speak(ctx, convo);
       continue;
     }

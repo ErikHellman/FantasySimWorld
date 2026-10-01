@@ -74,10 +74,6 @@ export function createState(seed: number = DEFAULT_SEED): SimState {
   }
   for (const a of cast) {
     for (const id of Object.keys(a.relationships)) a.relationships[id]!.label = labelFor(a.relationships[id]!, false);
-    a.memories.push({
-      tick: 0, day: 1, kind: 'reflection', importance: 8, subjects: [],
-      text: `${a.profile.backstory}`,
-    });
   }
   state.chronicle.push({ tick: 0, kind: 'world', text: 'A new day dawns over the valley.', ids: [] });
   return state;

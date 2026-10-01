@@ -82,6 +82,7 @@ for (let i = 0; i < runs; i++) {
     console.log(`${String(i + 1).padStart(3)} ${test.kind.padEnd(9)} ${Math.round(response.latencyMs).toString().padStart(6)} ms  ${problem ? `UNUSABLE (${problem})` : 'ok'}  ${response.calls.map((call) => `${call.name}(${JSON.stringify(call.args).slice(0, 110)})`).join(' ')}`);
   } catch (error) {
     console.log(`${String(i + 1).padStart(3)} ${test.kind.padEnd(9)}   FAILED  ${error instanceof LlmError ? `${error.kind}: ${error.message}` : String(error)}`);
+    if (process.env.LLM_DEBUG && error instanceof LlmError && error.raw) console.log(`      raw: ${error.raw.slice(0, 1200)}`);
     if (error instanceof LlmError && error.kind === 'network') break;
   }
 }

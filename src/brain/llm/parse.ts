@@ -93,6 +93,45 @@ function callFrom(value: unknown, tools: readonly ToolDef[]): ToolCall | null {
   return null;
 }
 
+/**
+ * Last resort for models that answer in plain text instead of calling the tool:
+ * - a play script ("Kael: ...", "Elowen: ...") when the conversation tool was offered;
+ * - a bare tool name followed by "key: value" lines ("flee", "say: Run!");
+ * - plain prose when the only tool offered takes a single line of speech.
+ */
+function callsFromProse(text: string, tools: readonly ToolDef[]): ToolCall[] {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  if (tools.some((tool) => tool.name === 'conversation')) {
+    const script = lines
+      .map((line) => /^\**([A-Z][\w'-]{1,20})\**\s*:\s*(.+)$/.exec(line))
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => ({ speaker: match[1] as string, text: (match[2] as string).replace(/^["“]|["”]$/g, '') }));
+    if (script.length >= 2) return [{ name: 'conversation', args: { lines: script, topic: '' } }];
+  }
+
+  const first = (lines[0] as string).toLowerCase().replace(/[^a-z_]/g, '');
+  const named = tools.find((tool) => tool.name === first);
+  if (named) {
+    const args: Record<string, unknown> = {};
+    for (const line of lines.slice(1)) {
+      const match = /^["']?(\w+)["']?\s*[:=]\s*(.+)$/.exec(line);
+      if (match && (match[1] as string) in named.parameters.properties) {
+        const value = (match[2] as string).replace(/^["']|["'],?$/g, '');
+        args[match[1] as string] = value === 'true' ? true : value === 'false' ? false : value;
+      }
+    }
+    return [{ name: named.name, args }];
+  }
+
+  const only = tools.length === 1 ? tools[0] : undefined;
+  if (only?.name === 'reply' && text.length <= 400 && !text.includes('{')) {
+    return [{ name: 'reply', args: { text: lines.join(' ').replace(/^(You|\w+):\s*/, ''), feeling: 'same', end: false } }];
+  }
+  return [];
+}
+
 /** Finds tool calls written into the text of a reply. */
 export function callsFromText(text: string, tools: readonly ToolDef[]): ToolCall[] {
   const calls: ToolCall[] = [];
@@ -111,8 +150,9 @@ export function callsFromText(text: string, tools: readonly ToolDef[]): ToolCall
     const call = callFrom(object, tools);
     if (call) calls.push(call);
   };
-  for (const block of jsonBlocks(stripThinking(text))) visit(looseJson(block));
-  return calls;
+  const cleaned = stripThinking(text);
+  for (const block of jsonBlocks(cleaned)) visit(looseJson(block));
+  return calls.length > 0 ? calls : callsFromProse(cleaned, tools);
 }
 
 /** Tool calls from an OpenAI-style assistant message, falling back to its text. */

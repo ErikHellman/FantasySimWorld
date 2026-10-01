@@ -54,4 +54,31 @@ describe('tolerant parsing', () => {
     expect(callsFromText('{"go_to": {"place": "chapel"}}', tools)).toEqual([{ name: 'go_to', args: { place: 'chapel' } }]);
     expect(callsFromText('I think I will just rest.', tools)).toEqual([]);
   });
+
+  it('accepts a play script, a bare tool name, or a plain spoken line when that is what the model wrote', () => {
+    const conversation: ToolDef = { name: 'conversation', description: '', parameters: { type: 'object', properties: { lines: {}, topic: {} } } };
+    const script = 'Kael: Just the usual tug of the tide, Elowen.\n\nElowen: I see. Your answers are as elusive as your fish.\n\n**Kael**: "And yet here I stand."';
+    expect(callsFromText(script, [conversation])).toEqual([{
+      name: 'conversation',
+      args: { topic: '', lines: [
+        { speaker: 'Kael', text: 'Just the usual tug of the tide, Elowen.' },
+        { speaker: 'Elowen', text: 'I see. Your answers are as elusive as your fish.' },
+        { speaker: 'Kael', text: 'And yet here I stand.' },
+      ] },
+    }]);
+
+    const react: ToolDef[] = [
+      { name: 'fight', description: '', parameters: { type: 'object', properties: { say: {}, thought: {} } } },
+      { name: 'flee', description: '', parameters: { type: 'object', properties: { say: {}, thought: {} } } },
+    ];
+    expect(callsFromText('flee\nthought: I am too old for this.\nsay: The wind calls for rest.\nnote: ignored', react)).toEqual([
+      { name: 'flee', args: { thought: 'I am too old for this.', say: 'The wind calls for rest.' } },
+    ]);
+
+    const reply: ToolDef = { name: 'reply', description: '', parameters: { type: 'object', properties: { text: {}, feeling: {}, end: {} } } };
+    expect(callsFromText('You always did have a sharp tongue.', [reply])).toEqual([
+      { name: 'reply', args: { text: 'You always did have a sharp tongue.', feeling: 'same', end: false } },
+    ]);
+    expect(callsFromText('You always did have a sharp tongue.', tools)).toEqual([]);
+  });
 });

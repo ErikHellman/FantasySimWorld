@@ -106,6 +106,14 @@ export function SettingsPanel() {
             </select>
           </label>
           <label>
+            Model reasoning
+            <select value={llm.reasoning} title="Models that think before answering are much slower. Off asks them not to." onChange={(event) => setLlm({ reasoning: event.currentTarget.value as LlmSettings['reasoning'] })}>
+              <option value="off">Off (fastest)</option>
+              <option value="low">Low</option>
+              <option value="default">Model default</option>
+            </select>
+          </label>
+          <label>
             Temperature
             <input type="number" min="0" max="2" step="0.1" value={llm.temperature} onInput={(event) => setLlm({ temperature: Number(event.currentTarget.value) })} />
           </label>

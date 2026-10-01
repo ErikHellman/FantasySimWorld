@@ -65,7 +65,7 @@ describe('LlmClient', () => {
     expect(bodies.length).toBe(1);
   });
 
-  it('switches to JSON output when a model keeps ignoring its tools', async () => {
+  it('switches to JSON output when a model ignores its tools', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const client = new LlmClient(settings({ protocol: 'auto' }), async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -73,14 +73,56 @@ describe('LlmClient', () => {
       if (body.tools) return json({ choices: [{ message: { content: 'I shall wander to the tavern.' } }] });
       return json({ choices: [{ message: { content: '{"calls":[{"tool":"go_to","args":{"place":"tavern"}}]}' } }] });
     });
-    await expect(client.complete(request)).rejects.toMatchObject({ kind: 'no_call' });
     const response = await client.complete(request);
     expect(response.protocol).toBe('json');
+    expect(bodies.length).toBe(2);
     expect(response.calls).toEqual([{ name: 'go_to', args: { place: 'tavern' } }]);
     const last = bodies[bodies.length - 1]!;
     expect(last.tools).toBeUndefined();
     expect((last.response_format as { type: string }).type).toBe('json_schema');
     expect(JSON.stringify(last.messages)).toContain('Reply with JSON only');
+  });
+
+  it('asks reasoning models not to think, and stops asking if the server objects', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = new LlmClient(settings(), async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if ('reasoning_effort' in body) return json({ error: { message: "Unrecognized request argument supplied: reasoning_effort" } }, 400);
+      return json(toolReply);
+    });
+    await client.complete(request);
+    expect(bodies[0]!.reasoning_effort).toBe('none');
+    expect(bodies[1]!.reasoning_effort).toBeUndefined();
+    const untouched = new LlmClient(settings({ reasoning: 'default' }), async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return json(toolReply);
+    });
+    await untouched.complete(request);
+    expect(bodies[bodies.length - 1]!.reasoning_effort).toBeUndefined();
+  });
+
+  it('finds the answer when a server puts it in the reasoning channel', async () => {
+    const client = new LlmClient(settings({ protocol: 'json' }), async () => json({
+      choices: [{ finish_reason: 'stop', message: { content: '', reasoning_content: '{"calls": [{"tool": "go_to", "args": {"place": "tavern"}}]}', tool_calls: [] } }],
+    }));
+    expect((await client.complete(request)).calls).toEqual([{ name: 'go_to', args: { place: 'tavern' } }]);
+  });
+
+  it('gives a cut-off answer more room and tries again, without changing protocol', async () => {
+    const limits: number[] = [];
+    const client = new LlmClient(settings({ protocol: 'auto', maxTokens: 300 }), async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, number>;
+      limits.push(body.max_tokens!);
+      if (body.max_tokens! < 1000) return json({ choices: [{ finish_reason: 'length', message: { content: '', reasoning_content: 'Thinking Process: 1. Analyse' } }] });
+      return json(toolReply);
+    });
+    const response = await client.complete(request);
+    expect(limits).toEqual([300, 600, 1200]);
+    expect(response.protocol).toBe('tools');
+    // The larger limit is remembered.
+    await client.complete(request);
+    expect(limits[limits.length - 1]).toBe(1200);
   });
 
   it('reports HTTP errors with Retry-After and network failures clearly', async () => {
