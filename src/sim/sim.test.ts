@@ -73,21 +73,24 @@ describe('simulation', () => {
 });
 
 describe('long run', () => {
-  it('keeps the village populated and killings rare over 60 days', () => {
-    for (const seed of [11, 23]) {
-      const sim = new Sim(createState(seed));
-      let lowest = 12;
-      for (let i = 0; i < TICKS_PER_DAY * 60; i++) {
-        sim.step();
-        if (i % 2000 === 0) lowest = Math.min(lowest, sim.state.order.length);
-      }
-      const dead = Object.values(sim.state.dead);
-      const murders = dead.filter((record) => record.killerId !== null).length;
-      expect(lowest, `seed ${seed} lowest population`).toBeGreaterThanOrEqual(7);
-      expect(sim.state.order.length, `seed ${seed} final population`).toBeGreaterThanOrEqual(9);
-      expect(dead.length, `seed ${seed} deaths`).toBeLessThan(30);
-      expect(murders, `seed ${seed} murders`).toBeLessThanOrEqual(4);
-      for (const c of living(sim.state)) expect(c.memories.length).toBeLessThanOrEqual(140);
+  it('keeps the village populated, memories bounded and killings rare over 200 days', () => {
+    const sim = new Sim(createState(11));
+    let lowest = 12;
+    let longestMemory = 0;
+    for (let i = 0; i < TICKS_PER_DAY * 200; i++) {
+      sim.step();
+      if (i % 2000 !== 0) continue;
+      lowest = Math.min(lowest, sim.state.order.length);
+      for (const c of living(sim.state)) longestMemory = Math.max(longestMemory, c.memories.length);
     }
-  }, 120_000);
+    const dead = Object.values(sim.state.dead);
+    const murders = dead.filter((record) => record.killerId !== null).length;
+    expect(lowest, 'lowest population').toBeGreaterThanOrEqual(7);
+    expect(sim.state.order.length, 'final population').toBeGreaterThanOrEqual(9);
+    expect(dead.length, 'deaths').toBeLessThan(90);
+    expect(murders, 'murders').toBeLessThanOrEqual(10);
+    expect(longestMemory).toBeLessThanOrEqual(140);
+    expect(sim.state.chronicle.length).toBeLessThanOrEqual(600);
+    expect(JSON.stringify(sim.state).length, 'save size').toBeLessThan(3_000_000);
+  }, 180_000);
 });

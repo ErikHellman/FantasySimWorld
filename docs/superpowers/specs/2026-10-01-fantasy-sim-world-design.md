@@ -176,3 +176,16 @@ Each slice ends runnable in the browser, with tests passing and a commit on `cla
 ## Later, not in this plan
 
 Character speech (TTS sink), viewer interaction, orc raiders and large-rig bosses, block and dodge, embedding-based memory retrieval, LLM-generated newcomer profiles, seasons, a map editor.
+
+## Implementation notes
+
+What was built follows the design above, with these differences:
+
+- **The local routine brain lives in the sim** (`src/sim/systems/routine.ts`) rather than in `src/brain/`, so a headless sim is alive on its own and the long-run tests need nothing else.
+- **Module layout** is a little flatter than planned: prompts are one file (`src/brain/prompts.ts`), the orchestrator is `src/brain/brain.ts`, and the request queue is `src/brain/llm/queue.ts`.
+- **Ground heights are sampled by the asset build** (`src/generated/tileHeights.ts`), so the world layer itself knows where water, sand, roads and the bridge deck are; the plan had this as a render-only concern.
+- **Rivers and lake edges are not shaded specially**; the KayKit water tiles and a sea plane are used as they are.
+- **Romance has a fixed "chemistry" per pair**, so attraction can grow between some pairs and never between others.
+- **A killer is not exiled**; the village's hostility towards them is the consequence.
+- **No automated browser test** was added; rendering was checked by hand on both backends.
+- **Not yet run against a real model.** The LLM path is covered by unit tests with a scripted model and was run end to end in the browser against `tools/mock-llm.mjs`. `tools/llm-probe.ts` measures a real endpoint.

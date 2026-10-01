@@ -144,7 +144,9 @@ export function hpFraction(c: Character, maxHp: number): number {
 
 export function placeNameAt(pos: Vec2): string {
   const place = nearestPlace(pos, 16);
-  return place ? place.name : 'the open fields';
+  if (place) return place.name;
+  const landmark = nearestPlace(pos, 80);
+  return landmark ? `the fields near ${landmark.name}` : 'the wilds';
 }
 
 export function nearbyCharacters(state: SimState, pos: Vec2, radius: number, exceptId?: Id): Character[] {

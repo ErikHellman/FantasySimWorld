@@ -207,7 +207,7 @@ export function resolveMercy(ctx: Ctx, attacker: Character, spare: boolean, line
   victim.combat.yielded = false;
   ctx.state.director.lastLethalTick = ctx.state.tick;
   startFlee(ctx, victim, 'reflex');
-  adjust(ctx, victim, attacker.id, { grievance: 30, affinity: -40, trust: -45 });
+  adjust(ctx, victim, attacker.id, { grievance: 48, affinity: -60, trust: -55 });
   adjust(ctx, attacker, victim.id, { grievance: -45 });
   remember(ctx, attacker, `I drew steel on ${firstName(victim)} at ${where}. They yielded, and I let them live.`, 9, 'event', [victim.id]);
   remember(ctx, victim, `${firstName(attacker)} tried to kill me at ${where}. I begged, and was spared.`, 10, 'event', [attacker.id]);
