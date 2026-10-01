@@ -1,0 +1,340 @@
+import type { ActivityId } from '../../world/places';
+import type { Profile } from '../state';
+import type { ClassId } from './classes';
+
+/** A character as authored: who they are, how they look and where they live. */
+export interface CastEntry {
+  key: string;
+  classId: ClassId;
+  /** model override (defaults to the class model) */
+  model?: string;
+  texture?: string;
+  hide?: string[];
+  mainHand?: string | null;
+  offHand?: string | null;
+  homeId?: string;
+  jobs?: ActivityId[];
+  hobbies?: ActivityId[];
+  profile: Profile;
+}
+
+/** A relationship that exists before the simulation starts. Applied one way. */
+export interface SeedBond {
+  from: string;
+  to: string;
+  affinity?: number;
+  trust?: number;
+  attraction?: number;
+  grievance?: number;
+  familiarity?: number;
+  kin?: boolean;
+  summary: string;
+}
+
+export const CAST: readonly CastEntry[] = [
+  {
+    key: 'aldric', classId: 'knight', homeId: 'home_2',
+    jobs: ['watch', 'train'], hobbies: ['pray', 'drink', 'stroll'],
+    profile: {
+      name: 'Aldric Vane', pronouns: 'he/him', age: 41, occupation: 'captain of the village watch',
+      backstory: 'A veteran who came home from the border wars to keep his own village safe. Widowed young; he has never spoken of it. Three winters ago a patrol he led lost Garrick\'s brother to the dead, and he still carries it.',
+      traits: ['dutiful', 'stern', 'protective', 'privately lonely'],
+      goals: ['keep everyone alive through the nights', 'train Brenna to replace him one day', 'make peace with Garrick, though he will not say so'],
+      speechStyle: 'Measured and formal, short sentences, never raises his voice.',
+      temper: 0.35, bravery: 0.9, sociability: 0.45,
+      voice: { pitch: 0.75, rate: 0.9, timbre: 'low, gravelly, calm' },
+    },
+  },
+  {
+    key: 'brenna', classId: 'knight', texture: 'knight_texture_alt_A', hide: ['Knight_Helmet', 'Knight_HelmetVisor'], homeId: 'home_6',
+    offHand: 'shield_round', jobs: ['train', 'watch'], hobbies: ['drink', 'stroll', 'shop'],
+    profile: {
+      name: 'Brenna Ashdown', pronouns: 'she/her', age: 24, occupation: 'guard of the watch',
+      backstory: 'A miller\'s daughter who talked her way into the watch at seventeen. Aldric trained her and she would follow him anywhere, but she is tired of being treated as the junior.',
+      traits: ['eager', 'idealistic', 'competitive', 'blunt'],
+      goals: ['prove herself in a real fight', 'earn Aldric\'s respect as an equal', 'work up the nerve to tell Kael she likes him'],
+      speechStyle: 'Quick and direct, a little too loud, laughs easily.',
+      temper: 0.5, bravery: 0.8, sociability: 0.7,
+      voice: { pitch: 1.15, rate: 1.1, timbre: 'bright, energetic' },
+    },
+  },
+  {
+    key: 'garrick', classId: 'barbarian', homeId: 'home_1',
+    jobs: ['chop_wood', 'mine'], hobbies: ['drink', 'train', 'relax'],
+    profile: {
+      name: 'Garrick Stonefist', pronouns: 'he/him', age: 36, occupation: 'woodcutter and miner',
+      backstory: 'Came down from the hill clans with his brother Halric. Halric died on one of Aldric\'s patrols three winters ago, and Garrick has never forgiven the captain for coming back without him.',
+      traits: ['boisterous', 'proud', 'quick to anger', 'fiercely loyal'],
+      goals: ['hear Aldric admit he failed Halric', 'out-drink and out-work everyone', 'look after Dorn, his only real friend'],
+      speechStyle: 'Loud, hearty, swears by his ancestors, speaks before he thinks.',
+      temper: 0.85, bravery: 0.95, sociability: 0.75,
+      voice: { pitch: 0.65, rate: 1.0, timbre: 'booming, rough' },
+    },
+  },
+  {
+    key: 'elowen', classId: 'mage', homeId: 'home_4',
+    jobs: ['brew', 'trade'], hobbies: ['pray', 'rest', 'stroll'],
+    profile: {
+      name: 'Elowen Mistral', pronouns: 'she/her', age: 33, occupation: 'enchantress and scholar',
+      backstory: 'Left the academy in the city under a cloud and settled here with her younger brother Theron. She is studying why the dead in the old graveyard will not stay buried.',
+      traits: ['curious', 'aloof', 'dry-witted', 'perfectionist'],
+      goals: ['understand what wakes the dead at night', 'keep Theron out of trouble', 'be left alone to work, mostly'],
+      speechStyle: 'Precise and wry, long words, rarely says more than she means.',
+      temper: 0.3, bravery: 0.5, sociability: 0.35,
+      voice: { pitch: 1.0, rate: 0.95, timbre: 'cool, articulate' },
+    },
+  },
+  {
+    key: 'theron', classId: 'mage', texture: 'mage_texture_alt_B', homeId: 'home_4',
+    mainHand: 'wand', offHand: 'spellbook_open', jobs: ['trade', 'brew'], hobbies: ['drink', 'stroll', 'shop'],
+    profile: {
+      name: 'Theron Mistral', pronouns: 'he/him', age: 29, occupation: 'hedge mage and market charmer',
+      backstory: 'Elowen\'s younger brother. Talented but lazy; he sells charms at the market and has lived in his sister\'s shadow all his life.',
+      traits: ['charming', 'reckless', 'funny', 'envious'],
+      goals: ['do one thing his sister cannot', 'win Mira\'s attention', 'avoid hard work'],
+      speechStyle: 'Playful and teasing, full of jokes, deflects anything serious.',
+      temper: 0.55, bravery: 0.6, sociability: 0.85,
+      voice: { pitch: 1.05, rate: 1.15, timbre: 'light, quick, amused' },
+    },
+  },
+  {
+    key: 'sylvi', classId: 'ranger', homeId: 'home_3',
+    jobs: ['forage', 'watch'], hobbies: ['relax', 'train', 'stroll'],
+    profile: {
+      name: 'Sylvi Fenwick', pronouns: 'she/her', age: 27, occupation: 'hunter and forager',
+      backstory: 'Grew up in the western forest and knows every path in it. She is more at ease among trees than people, and has quietly loved Kael for two years without saying a word.',
+      traits: ['quiet', 'observant', 'kind', 'shy'],
+      goals: ['tell Kael how she feels, someday', 'keep the forest paths safe', 'find where the skeletons come from'],
+      speechStyle: 'Soft-spoken, few words, notices small details.',
+      temper: 0.2, bravery: 0.7, sociability: 0.3,
+      voice: { pitch: 1.1, rate: 0.85, timbre: 'soft, gentle' },
+    },
+  },
+  {
+    key: 'kael', classId: 'ranger', texture: 'ranger_texture_alt_A', homeId: 'home_7',
+    jobs: ['fish', 'forage'], hobbies: ['drink', 'relax', 'stroll'],
+    profile: {
+      name: 'Kael Thornwood', pronouns: 'he/him', age: 31, occupation: 'fisherman and archer',
+      backstory: 'A drifter who arrived five summers ago and never left. He fishes the lake, tells tall stories at the tavern and flirts with everyone.',
+      traits: ['easygoing', 'flirtatious', 'a storyteller', 'avoids responsibility'],
+      goals: ['enjoy life without being tied down', 'catch the great pike of the lake', 'stay on everyone\'s good side'],
+      speechStyle: 'Relaxed and warm, tells stories, compliments people.',
+      temper: 0.3, bravery: 0.6, sociability: 0.8,
+      voice: { pitch: 0.9, rate: 1.0, timbre: 'warm, easy' },
+    },
+  },
+  {
+    key: 'mira', classId: 'rogue', homeId: 'home_6',
+    jobs: ['trade', 'fish'], hobbies: ['drink', 'shop', 'stroll'],
+    profile: {
+      name: 'Mira Quickfingers', pronouns: 'she/her', age: 26, occupation: 'market trader',
+      backstory: 'Runs the best stall at the market and knows everybody\'s business. Few know she was a cutpurse in the city before she came here; Vex is one of them.',
+      traits: ['witty', 'charming', 'opportunistic', 'a gossip'],
+      goals: ['keep her past buried', 'turn a profit', 'know every secret in the village'],
+      speechStyle: 'Fast, teasing, full of gossip and bargains.',
+      temper: 0.45, bravery: 0.5, sociability: 0.9,
+      voice: { pitch: 1.2, rate: 1.2, timbre: 'lively, sly' },
+    },
+  },
+  {
+    key: 'vex', classId: 'scout', homeId: 'home_2',
+    jobs: ['watch', 'forage'], hobbies: ['relax', 'train', 'stroll'],
+    profile: {
+      name: 'Vex', pronouns: 'they/them', age: 30, occupation: 'scout of the watch',
+      backstory: 'Nobody knows Vex\'s full name. They once hunted thieves for the city guard and recognised Mira the day she arrived. They have said nothing so far.',
+      traits: ['taciturn', 'suspicious', 'sardonic', 'loyal to very few'],
+      goals: ['watch Mira until she slips', 'keep the night watch sharp', 'trust no one too quickly'],
+      speechStyle: 'Terse, dry, speaks in clipped remarks from under the hood.',
+      temper: 0.6, bravery: 0.75, sociability: 0.2,
+      voice: { pitch: 0.9, rate: 0.9, timbre: 'low, flat, wary' },
+    },
+  },
+  {
+    key: 'rowan', classId: 'druid', homeId: 'home_5',
+    jobs: ['forage', 'brew', 'farm'], hobbies: ['pray', 'relax', 'rest'],
+    profile: {
+      name: 'Rowan Oakheart', pronouns: 'he/him', age: 58, occupation: 'herbalist and keeper of the glade',
+      backstory: 'The oldest person in the village and its healer. He tends the shrine in the Whispering Glade and has buried more friends than he likes to count.',
+      traits: ['gentle', 'wise', 'cryptic', 'stubborn'],
+      goals: ['keep the peace between neighbours', 'pass his craft to Isolde', 'see the graveyard quiet before he dies'],
+      speechStyle: 'Slow and kindly, speaks in proverbs and plant metaphors.',
+      temper: 0.15, bravery: 0.55, sociability: 0.5,
+      voice: { pitch: 0.8, rate: 0.8, timbre: 'old, warm, unhurried' },
+    },
+  },
+  {
+    key: 'isolde', classId: 'druid', texture: 'druid_texture_alt_C', homeId: 'home_3',
+    jobs: ['brew', 'forage', 'farm'], hobbies: ['pray', 'shop', 'relax'],
+    profile: {
+      name: 'Isolde Briar', pronouns: 'she/her', age: 23, occupation: 'apprentice herbalist',
+      backstory: 'Rowan\'s apprentice, taken in after the fever took her parents. She is gifted with plants and terrified of the night attacks.',
+      traits: ['earnest', 'anxious', 'compassionate', 'self-doubting'],
+      goals: ['become a healer worthy of Rowan', 'stop being afraid', 'make a real friend her own age'],
+      speechStyle: 'Polite and hesitant, apologises too much, warm once she relaxes.',
+      temper: 0.25, bravery: 0.3, sociability: 0.6,
+      voice: { pitch: 1.25, rate: 1.0, timbre: 'young, tentative' },
+    },
+  },
+  {
+    key: 'dorn', classId: 'engineer', homeId: 'home_1',
+    jobs: ['smith', 'mine'], hobbies: ['drink', 'shop', 'rest'],
+    profile: {
+      name: 'Dorn Copperkettle', pronouns: 'he/him', age: 45, occupation: 'blacksmith and tinkerer',
+      backstory: 'A dwarf smith who keeps the village in tools and blades and is forever building some contraption that almost works. Garrick\'s drinking companion and the only one who can talk him down.',
+      traits: ['gruff', 'generous', 'obsessive', 'fond of terrible jokes'],
+      goals: ['finish his mechanical bell for the watchtower', 'keep Garrick from doing something stupid', 'forge a blade worth remembering'],
+      speechStyle: 'Gruff and practical, grumbles, slips in bad puns.',
+      temper: 0.5, bravery: 0.65, sociability: 0.65,
+      voice: { pitch: 0.7, rate: 0.95, timbre: 'gruff, dry' },
+    },
+  },
+];
+
+export const SEED_BONDS: readonly SeedBond[] = [
+  { from: 'elowen', to: 'theron', affinity: 45, trust: 30, familiarity: 90, kin: true, summary: 'My younger brother. Clever, careless, and my responsibility.' },
+  { from: 'theron', to: 'elowen', affinity: 35, trust: 45, grievance: 15, familiarity: 90, kin: true, summary: 'My sister. Brilliant, and she never lets me forget it.' },
+  { from: 'aldric', to: 'brenna', affinity: 45, trust: 50, familiarity: 65, summary: 'My best recruit. Too eager, but she will be captain one day.' },
+  { from: 'brenna', to: 'aldric', affinity: 55, trust: 65, familiarity: 65, summary: 'The captain taught me everything. I wish he would stop treating me like a child.' },
+  { from: 'garrick', to: 'aldric', affinity: -32, trust: -25, grievance: 54, familiarity: 55, summary: 'He led my brother Halric out and came back without him.' },
+  { from: 'aldric', to: 'garrick', affinity: -8, trust: 5, grievance: 12, familiarity: 55, summary: 'He blames me for Halric. He is not wrong to grieve.' },
+  { from: 'garrick', to: 'dorn', affinity: 55, trust: 60, familiarity: 75, summary: 'My drinking brother. The only one who tells me when I am being a fool.' },
+  { from: 'dorn', to: 'garrick', affinity: 52, trust: 45, familiarity: 75, summary: 'Big-hearted oaf. Someone has to keep him out of trouble.' },
+  { from: 'rowan', to: 'isolde', affinity: 60, trust: 55, familiarity: 80, summary: 'My apprentice, and as near to a daughter as I have.' },
+  { from: 'isolde', to: 'rowan', affinity: 65, trust: 75, familiarity: 80, summary: 'He took me in when I had no one. I owe him everything.' },
+  { from: 'vex', to: 'mira', affinity: -22, trust: -45, grievance: 32, familiarity: 40, summary: 'A city cutpurse playing at honest trader. I am watching her.' },
+  { from: 'mira', to: 'vex', affinity: -12, trust: -25, grievance: 10, familiarity: 40, summary: 'Vex knows what I was. I do not know why they keep quiet, and it frightens me.' },
+  { from: 'sylvi', to: 'kael', affinity: 40, trust: 30, attraction: 55, familiarity: 45, summary: 'I have loved him for two years and never said so.' },
+  { from: 'kael', to: 'sylvi', affinity: 30, trust: 35, attraction: 22, familiarity: 45, summary: 'Quiet Sylvi. Good company on the forest paths.' },
+  { from: 'brenna', to: 'kael', affinity: 28, trust: 15, attraction: 40, familiarity: 30, summary: 'He makes me laugh. I think I like him more than I should.' },
+  { from: 'kael', to: 'brenna', affinity: 25, trust: 20, attraction: 25, familiarity: 30, summary: 'All fire, that one. Fun to tease.' },
+  { from: 'theron', to: 'mira', affinity: 35, trust: 15, attraction: 38, familiarity: 45, summary: 'The sharpest tongue at the market. I cannot tell if she likes me or my coin.' },
+  { from: 'mira', to: 'theron', affinity: 32, trust: 10, attraction: 28, familiarity: 45, summary: 'Charming, useless, and oddly sweet.' },
+  { from: 'aldric', to: 'vex', affinity: 25, trust: 50, familiarity: 55, summary: 'My scout. Says little, misses nothing.' },
+  { from: 'vex', to: 'aldric', affinity: 30, trust: 55, familiarity: 55, summary: 'The captain. One of the few I would follow.' },
+  { from: 'sylvi', to: 'isolde', affinity: 30, trust: 35, familiarity: 50, summary: 'My housemate. She worries too much, but she is kind.' },
+  { from: 'isolde', to: 'sylvi', affinity: 32, trust: 40, familiarity: 50, summary: 'Sylvi is so calm. I wish I had her courage.' },
+];
+
+/** People who may arrive later, in order of preference. */
+export const NEWCOMERS: readonly CastEntry[] = [
+  {
+    key: 'halvard', classId: 'paladin',
+    profile: {
+      name: 'Halvard Dawnmere', pronouns: 'he/him', age: 38, occupation: 'wandering paladin',
+      backstory: 'A knight of a faraway order who heard that the dead walk in this valley and came to put them down.',
+      traits: ['righteous', 'earnest', 'inflexible', 'courteous'],
+      goals: ['cleanse the graveyard', 'find a place worth staying in', 'atone for an oath he broke'],
+      speechStyle: 'Formal and solemn, speaks of duty and light.',
+      temper: 0.4, bravery: 0.95, sociability: 0.5,
+      voice: { pitch: 0.8, rate: 0.9, timbre: 'noble, steady' },
+    },
+  },
+  {
+    key: 'hesper', classId: 'witch',
+    profile: {
+      name: 'Hesper Nightbloom', pronouns: 'she/her', age: 34, occupation: 'travelling witch',
+      backstory: 'Sells remedies and curses from village to village. She was run out of the last one and is in no hurry to explain why.',
+      traits: ['sharp', 'mischievous', 'proud', 'secretly lonely'],
+      goals: ['find somewhere she is not feared', 'trade recipes with the local herbalists', 'get even with anyone who crosses her'],
+      speechStyle: 'Sly and theatrical, enjoys unsettling people.',
+      temper: 0.65, bravery: 0.55, sociability: 0.55,
+      voice: { pitch: 1.1, rate: 1.0, timbre: 'smoky, amused' },
+    },
+  },
+  {
+    key: 'tobin', classId: 'farmer',
+    profile: {
+      name: 'Tobin Haybarrow', pronouns: 'he/him', age: 44, occupation: 'farmer',
+      backstory: 'Lost his farm downriver to a flood and came up the valley looking for land and steady work.',
+      traits: ['patient', 'plain-spoken', 'hard-working', 'superstitious'],
+      goals: ['get a field of his own', 'make friends at the tavern', 'stay well away from the graveyard'],
+      speechStyle: 'Slow, plain country speech, talks about weather and soil.',
+      temper: 0.3, bravery: 0.4, sociability: 0.6,
+      voice: { pitch: 0.85, rate: 0.85, timbre: 'rustic, mild' },
+    },
+  },
+  {
+    key: 'maren', classId: 'cleric',
+    profile: {
+      name: 'Maren Holloway', pronouns: 'she/her', age: 30, occupation: 'cleric',
+      backstory: 'Sent by her temple to tend the chapel, which has had no priest for years. She has more doubts than her superiors know.',
+      traits: ['compassionate', 'principled', 'doubting', 'a good listener'],
+      goals: ['bring comfort to the grieving', 'reopen the chapel properly', 'find her faith again'],
+      speechStyle: 'Gentle and attentive, asks questions, quotes scripture sparingly.',
+      temper: 0.2, bravery: 0.6, sociability: 0.7,
+      voice: { pitch: 1.05, rate: 0.9, timbre: 'calm, kind' },
+    },
+  },
+  {
+    key: 'zariel', classId: 'tiefling',
+    profile: {
+      name: 'Zariel Emberhorn', pronouns: 'they/them', age: 28, occupation: 'sellsword',
+      backstory: 'A horned sellsword used to cold welcomes. They take guard work where they can get it and expect to be cheated.',
+      traits: ['guarded', 'proud', 'sarcastic', 'honourable in their own way'],
+      goals: ['earn enough coin to stop moving', 'be judged for deeds, not horns', 'find one person who is not afraid of them'],
+      speechStyle: 'Dry and defensive, quick with a cutting remark.',
+      temper: 0.7, bravery: 0.85, sociability: 0.4,
+      voice: { pitch: 0.95, rate: 1.0, timbre: 'husky, sardonic' },
+    },
+  },
+  {
+    key: 'quill', classId: 'lorekeeper',
+    profile: {
+      name: 'Quill Farrow', pronouns: 'he/him', age: 52, occupation: 'lorekeeper',
+      backstory: 'A scholar chasing a half-burnt chronicle that mentions this valley and the thing buried under its graveyard.',
+      traits: ['absent-minded', 'enthusiastic', 'tactless', 'endlessly curious'],
+      goals: ['read the inscriptions in the old ruins', 'write the history of the valley', 'find someone who will listen to it'],
+      speechStyle: 'Rambling and excitable, loses his thread, loves a footnote.',
+      temper: 0.25, bravery: 0.35, sociability: 0.75,
+      voice: { pitch: 1.0, rate: 1.2, timbre: 'reedy, eager' },
+    },
+  },
+  {
+    key: 'ulfa', classId: 'barbarian', texture: 'barbarian_texture_alt_A', mainHand: 'axe_1handed', offHand: 'shield_round_barbarian',
+    profile: {
+      name: 'Ulfa Ironbraid', pronouns: 'she/her', age: 33, occupation: 'hill-clan warrior',
+      backstory: 'A shieldmaiden of the hill clans, come looking for kin who went down to the valley years ago.',
+      traits: ['bold', 'honest to a fault', 'competitive', 'generous'],
+      goals: ['find what became of her clansmen', 'test herself against the dead', 'out-drink the locals'],
+      speechStyle: 'Loud and frank, laughs at danger, hates flattery.',
+      temper: 0.7, bravery: 0.95, sociability: 0.7,
+      voice: { pitch: 0.9, rate: 1.05, timbre: 'strong, hearty' },
+    },
+  },
+  {
+    key: 'nell', classId: 'farmer', model: 'Farmer_B',
+    profile: {
+      name: 'Nell Haybarrow', pronouns: 'she/her', age: 22, occupation: 'farmhand',
+      backstory: 'Left a crowded family farm to make her own way. Cheerful, restless and curious about everyone.',
+      traits: ['cheerful', 'restless', 'nosy', 'brave when it counts'],
+      goals: ['see more of the world than a turnip field', 'make friends', 'learn to use a bow'],
+      speechStyle: 'Chatty and bright, asks a lot of questions.',
+      temper: 0.35, bravery: 0.55, sociability: 0.85,
+      voice: { pitch: 1.25, rate: 1.15, timbre: 'sunny, quick' },
+    },
+  },
+  {
+    key: 'corwin', classId: 'knight', texture: 'knight_texture_alt_C',
+    profile: {
+      name: 'Corwin Hale', pronouns: 'he/him', age: 35, occupation: 'former soldier',
+      backstory: 'A deserter from a lost war who wants only a quiet post and no questions.',
+      traits: ['weary', 'reliable', 'haunted', 'dryly funny'],
+      goals: ['do honest work', 'sleep through a night', 'never be an officer again'],
+      speechStyle: 'Tired and wry, understates everything.',
+      temper: 0.4, bravery: 0.75, sociability: 0.45,
+      voice: { pitch: 0.8, rate: 0.9, timbre: 'worn, quiet' },
+    },
+  },
+  {
+    key: 'lys', classId: 'ranger', texture: 'ranger_texture_alt_B',
+    profile: {
+      name: 'Lys Marrow', pronouns: 'they/them', age: 26, occupation: 'trapper',
+      backstory: 'A trapper from the high woods who trades furs and keeps to themself.',
+      traits: ['independent', 'wary', 'practical', 'gentle with animals'],
+      goals: ['trade for the winter', 'learn whether the valley is safe to settle', 'avoid being drawn into feuds'],
+      speechStyle: 'Brief and practical, uncomfortable with small talk.',
+      temper: 0.35, bravery: 0.7, sociability: 0.3,
+      voice: { pitch: 1.0, rate: 0.9, timbre: 'quiet, even' },
+    },
+  },
+];

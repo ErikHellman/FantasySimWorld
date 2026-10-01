@@ -49,3 +49,85 @@ body {
 #ui > * {
   pointer-events: auto;
 }
+
+/* Floating labels over characters */
+.tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.tag-name {
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(20, 22, 32, 0.62);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.tag.selected .tag-name {
+  background: var(--accent);
+  color: #23200f;
+}
+
+.tag-bar {
+  width: 38px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(20, 22, 32, 0.7);
+  overflow: hidden;
+}
+
+.tag-fill {
+  height: 100%;
+  background: var(--good);
+}
+
+.tag.hostile .tag-fill {
+  background: var(--bad);
+}
+
+.tag-bubble {
+  max-width: 230px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: #fffdf4;
+  color: #2a2620;
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  margin-bottom: 3px;
+}
+
+.tag-bubble.loud {
+  font-weight: 800;
+  background: #ffe9a8;
+}
+
+.tag-emote {
+  font-size: 20px;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.tag-emote.pop {
+  animation: emote-pop 2.2s ease-out forwards;
+}
+
+@keyframes emote-pop {
+  0% { transform: translateY(8px) scale(0.4); opacity: 0; }
+  12% { transform: translateY(0) scale(1.25); opacity: 1; }
+  22% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translateY(-14px); opacity: 0; }
+}

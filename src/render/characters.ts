@@ -2,19 +2,12 @@ import * as THREE from 'three/webgpu';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { lerp, lerpAngle } from '../core/math2d';
 import { ANIMS, type AnimDef, type AnimId } from '../sim/data/anims';
+import type { Look } from '../sim/state';
 import type { Assets } from './assets';
 
 const FADE_SECONDS = 0.18;
 
-export interface ActorLook {
-  model: string;
-  /** texture id override (recolour); null keeps the model's own */
-  texture: string | null;
-  /** mesh names to hide (helmet, cape, hat) */
-  hide: readonly string[];
-  mainHand: string | null;
-  offHand: string | null;
-}
+export type ActorLook = Look;
 
 /** What the view needs from a sim entity each tick. */
 export interface ActorSnapshot {
@@ -24,6 +17,9 @@ export interface ActorSnapshot {
   anim: AnimId;
   animSeq: number;
   visible: boolean;
+  /** what is in each hand right now ("bundle/model", or a weapons model id) */
+  mainHand: string | null;
+  offHand: string | null;
 }
 
 /**
@@ -43,6 +39,7 @@ export class ActorView {
   private fresh = true;
   private readonly hands: { r: THREE.Object3D | null; l: THREE.Object3D | null };
   private held: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };
+  private heldId: { r: string | null; l: string | null } = { r: null, l: null };
 
   constructor(private readonly assets: Assets, look: ActorLook) {
     const template = assets.character(look.model);
@@ -65,12 +62,12 @@ export class ActorView {
     this.root.add(model);
     this.mixer = new THREE.AnimationMixer(model);
     this.hands = { r: model.getObjectByName('handslotr') ?? null, l: model.getObjectByName('handslotl') ?? null };
-    this.hold('r', look.mainHand);
-    this.hold('l', look.offHand);
   }
 
   /** Puts a weapon or tool model in a hand (null empties it). */
   hold(hand: 'r' | 'l', modelId: string | null): void {
+    if (this.heldId[hand] === modelId) return;
+    this.heldId[hand] = modelId;
     const slot = this.hands[hand];
     const existing = this.held[hand];
     if (existing) existing.removeFromParent();
@@ -119,6 +116,8 @@ export class ActorView {
     this.prev = this.fresh ? { x: snapshot.x, z: snapshot.z, facing: snapshot.facing } : this.next;
     this.next = { x: snapshot.x, z: snapshot.z, facing: snapshot.facing };
     this.root.visible = snapshot.visible;
+    this.hold('r', snapshot.mainHand);
+    this.hold('l', snapshot.offHand);
     if (snapshot.anim !== this.anim || snapshot.animSeq !== this.animSeq) {
       this.play(snapshot.anim, this.fresh);
       this.anim = snapshot.anim;
