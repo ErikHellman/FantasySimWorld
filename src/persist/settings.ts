@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
     temperature: 0.8,
     maxTokens: 500,
     headers: '',
-    requestsPerMinute: 0,
+    requestsPerMinute: 40,
   },
   audio: { muted: false, master: 0.8, ambient: 0.7, effects: 0.8 },
 };

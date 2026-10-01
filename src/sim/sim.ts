@@ -130,6 +130,11 @@ function applyCommand(ctx: Ctx, command: Command): void {
       if (c) c.thought = command.text.slice(0, 240);
       break;
     }
+    case 'clear_stimuli': {
+      const c = getCharacter(state, command.id);
+      if (c) c.stimuli = c.stimuli.filter((stimulus) => stimulus.tick > command.throughTick);
+      break;
+    }
     case 'tuning':
       Object.assign(state.tuning, command.tuning);
       break;

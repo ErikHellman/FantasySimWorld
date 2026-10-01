@@ -15,4 +15,6 @@ export type Command =
   | { type: 'mercy'; attackerId: Id; spare: boolean; say?: string }
   | { type: 'reflection'; id: Id; summary: string; insights: string[]; relationships: Array<{ id: Id; summary: string }> }
   | { type: 'thought'; id: Id; text: string }
+  /** The brain has taken these stimuli into a decision; drop everything up to and including `throughTick`. */
+  | { type: 'clear_stimuli'; id: Id; throughTick: number }
   | { type: 'tuning'; tuning: Partial<Tuning> };

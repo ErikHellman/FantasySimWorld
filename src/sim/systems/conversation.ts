@@ -68,7 +68,12 @@ function speak(ctx: Ctx, convo: Conversation): void {
 
 function useFallback(convo: Conversation): void {
   const room = Math.max(0, MAX_LINES - convo.lines.length);
-  convo.lines.push(...convo.fallback.lines.slice(0, room));
+  // The local lines were written to follow the opener; keep speakers alternating whatever came since.
+  const last = convo.lines[convo.lines.length - 1]?.speakerId ?? convo.a;
+  const first = last === convo.a ? convo.b : convo.a;
+  const count = convo.lines.length > 1 ? Math.min(2, convo.fallback.lines.length) : convo.fallback.lines.length;
+  const lines = convo.fallback.lines.slice(-count).map((line, index) => ({ speakerId: index % 2 === 0 ? first : last, text: line.text }));
+  convo.lines.push(...lines.slice(0, room));
   convo.closed = true;
   if (!convo.topic) convo.topic = convo.fallback.topic;
 }

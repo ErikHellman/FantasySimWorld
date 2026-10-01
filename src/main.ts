@@ -1,5 +1,8 @@
 import { h, render } from 'preact';
 import { GameLoop } from './app/loop';
+import { Brain } from './brain/brain';
+import { LlmClient } from './brain/llm/client';
+import { probe } from './brain/llm/probe';
 import { Autosaver } from './persist/autosave';
 import { clearSaves, loadSave, loadSettings, saveSettings, writeSave } from './persist/db';
 import { downloadSave, readSaveFile } from './persist/exportImport';
@@ -37,12 +40,20 @@ async function start(): Promise<void> {
   if (!ui.canSave.value) ui.notice.value = 'This world is already open in another tab. Changes here will not be saved.';
 
   let uiTimer = 0;
-  const loop = new GameLoop(sim, {
+  let logId = 0;
+  const brain = new Brain(sim, {
+    speed: () => loop.speed,
+    status: (status) => (ui.llm.value = status),
+    log: (record) => (ui.brainLog.value = [{ id: ++logId, ...record }, ...ui.brainLog.value].slice(0, 150)),
+  });
+  const loop: GameLoop = new GameLoop(sim, {
     onTick: (events) => {
       view.sync(sim.state, events);
       autosaver.handle(events);
+      brain.handle(events);
     },
     onFrame: (realDt, simDt, alpha) => {
+      brain.update();
       uiTimer += realDt;
       if (uiTimer >= UI_REFRESH_SECONDS) {
         uiTimer = 0;
@@ -54,6 +65,7 @@ async function start(): Promise<void> {
     },
   });
   loop.speed = 0;
+  brain.configure(settings.llm);
 
   const select = (id: string | null): void => {
     ui.selectedId.value = id;
@@ -73,8 +85,19 @@ async function start(): Promise<void> {
   };
   actions.select = select;
   actions.applySettings = (next) => {
+    const llmChanged = JSON.stringify(next.llm) !== JSON.stringify(ui.settings.value.llm);
     ui.settings.value = next;
     void saveSettings(next);
+    if (llmChanged) brain.configure(next.llm);
+  };
+  actions.testConnection = async (candidate) => (await probe(candidate.llm)).message;
+  actions.listModels = async (candidate) => {
+    try {
+      return await new LlmClient(candidate.llm).listModels();
+    } catch (error) {
+      console.warn('Could not list models', error);
+      return [];
+    }
   };
   actions.exportSave = () => downloadSave(sim.state);
   actions.importSave = (file) => {
@@ -100,11 +123,12 @@ async function start(): Promise<void> {
       const events = sim.step();
       view.sync(sim.state, events);
       autosaver.handle(events);
+      brain.handle(events);
     }
     refreshUi(sim.state);
     return sim.state.tick;
   };
-  (window as unknown as { __debug: unknown }).__debug = { sim, view, loop, renderer, ui, actions, advance };
+  (window as unknown as { __debug: unknown }).__debug = { sim, view, loop, renderer, ui, actions, advance, brain };
   console.info(`Fantasy Sim World: ${backend} backend${save ? ', resumed from save' : ', new world'}`);
 }
 
