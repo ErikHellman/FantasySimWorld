@@ -1,5 +1,14 @@
 # Fantasy Sim World: move the simulation to a Rust backend
 
+## Progress
+
+- **Phase 0 (artefacts and scaffold): done**, except the deployment check, which needs the owner's Fly.io account: `fly deploy`, then `node tools/sse-probe.mjs https://<app>.fly.dev 120` (and again with `INITIAL_SPEED=0` for the idle timeout, and across a `fly deploy`), and `curl -sI --http2` for HTTP/2. Notes on what was built:
+  - Crates are named `fsw-core`, `fsw-world`, `fsw-sim`, `fsw-brain`, `fsw-server` (a crate called `core` would shadow Rust's own); the directories keep the names above.
+  - The save fixtures (`export-day-1.json`, mid-conversation; `export-day-2.json`, skeletons out) come from `tools/make-export-fixture.ts`, which runs the TypeScript `Sim` and `Brain` against `tools/mock-llm.mjs` and writes exactly what the browser's Export writes. Neither has graves or corpses yet; add an export from a long-running browser world when one exists.
+  - The golden world fixtures also hold `hexAt`, `roadDistance` and `nearestWalkable` samples and 340 routes (raw A* cells via the new `findRoute`, and smoothed). The nav costs are base64 of the raw little-endian `f32`s.
+  - `AUTH_MODE=token`: `/auth/token` is a form that POSTs the token (so it never sits in a URL or a proxy log) and sets an HttpOnly cookie; `/api/*` also accepts `Authorization: Bearer`. `INITIAL_SPEED=0` starts paused so the idle stream can be tested.
+  - The tick schedule (`TickClock`: 12 ticks per wake at most, skip ahead past 200 owed) is final and tested with paused tokio time.
+
 ## Context
 
 Today the whole system runs in one browser tab: the 20 Hz headless simulation (`src/sim`, `src/world`, `src/core`), the LLM brain (`src/brain`), persistence in IndexedDB (`src/persist`), the three.js renderer and the Preact HUD. One tab equals one private world, the API key sits in the browser, and the browser talks to the LLM endpoint directly (CORS workarounds fill the README). The owner wants one shared world that several authenticated people watch at the same time, each from their own camera, on a server that is cheap to run.

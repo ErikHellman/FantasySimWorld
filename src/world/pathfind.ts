@@ -68,13 +68,28 @@ class Heap {
  * nearest `to`, or null when there is no route.
  */
 export function findPath(from: Vec2, to: Vec2): Vec2[] | null {
+  const route = findRoute(from, to);
+  if (!route) return null;
+  return route.direct ? route.cells : smooth(route.start, route.cells);
+}
+
+export interface Route {
+  start: Vec2;
+  /** cell centres from the first step to the goal (the goal itself last), before smoothing */
+  cells: Vec2[];
+  /** true when no search was needed and `cells` is just the goal */
+  direct: boolean;
+}
+
+/** The A* part of findPath, unsmoothed (exported for the world fixtures the Rust port is checked against). */
+export function findRoute(from: Vec2, to: Vec2): Route | null {
   const start = nearestWalkable(from);
   const goal = nearestWalkable(to);
   if (!start || !goal) return null;
   const startIndex = cellIndex(start.x, start.z);
   const goalIndex = cellIndex(goal.x, goal.z);
   if (startIndex < 0 || goalIndex < 0) return null;
-  if (startIndex === goalIndex || lineOfWalk(start, goal)) return [goal];
+  if (startIndex === goalIndex || lineOfWalk(start, goal)) return { start, cells: [goal], direct: true };
 
   stamp++;
   const { width, height, cost } = navGrid;
@@ -126,7 +141,7 @@ export function findPath(from: Vec2, to: Vec2): Vec2[] | null {
   for (let index = goalIndex; index !== -1; index = cameFrom[index] as number) cells.push(cellCenter(index));
   cells.reverse();
   cells[cells.length - 1] = goal;
-  return smooth(start, cells);
+  return { start, cells, direct: false };
 }
 
 /** Drops waypoints that can be skipped in a straight walkable line. */

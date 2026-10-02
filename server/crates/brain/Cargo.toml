@@ -1,0 +1,16 @@
+[package]
+name = "fsw-brain"
+description = "The language-model brain: queue, governor, prompts, validation (port of src/brain)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+fsw-core.workspace = true
+fsw-world.workspace = true
+fsw-sim.workspace = true
+
+[lints]
+workspace = true

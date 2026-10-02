@@ -7,6 +7,7 @@
 //   each material keeps the texture id in extras.tex so the runtime can share materials.
 // - Animation files lose their mannequin meshes and are merged onto a single skeleton.
 // - src/generated/assetManifest.ts lists everything, with bounds and clip durations.
+// - server/data/*.json carries the same manifest and the tile heights for the Rust server.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,6 +17,7 @@ import { Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, getBounds, mergeDocuments, prune, resample, unpartition } from '@gltf-transform/functions';
 import { animations, bundles, characters, extraTextures } from './asset-list.mjs';
+import { writeServerData } from './server-data.mjs';
 
 const ROOT = process.env.KAYKIT_DIR ?? path.join(os.homedir(), 'Documents/The Complete KayKit Collection v7');
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -338,6 +340,7 @@ async function main() {
       `export const BRIDGE_HEIGHTS = ${JSON.stringify(bridgeHeights)};\n` +
       `export const TILE_HEIGHTS: Record<string, string> = ${JSON.stringify(tileHeights, null, 1)};\n`,
   );
+  writeServerData(REPO, manifest, { TILE_GRID, BRIDGE_GRID, NO_GROUND, BRIDGE_HEIGHTS: bridgeHeights, TILE_HEIGHTS: tileHeights });
   console.log(`total ${(total / 1024 / 1024).toFixed(1)} MB -> public/assets`);
 }
 

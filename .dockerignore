@@ -1,0 +1,8 @@
+.git
+node_modules
+dist
+server/target
+server/crates/*/tests
+docs
+tools/blender
+*.log
