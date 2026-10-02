@@ -41,7 +41,6 @@ pub mod worlds;
 
 pub use brain_log::{BrainLogWrite, UsageRow};
 pub use commands::CommandRecord;
-pub use settings::ApiKey;
 pub use snapshots::{LoadedSnapshot, SnapshotReason, SnapshotSaved, SnapshotWrite, Tier};
 pub use users::{LoginOutcome, SessionRecord, User};
 pub use worlds::World;

@@ -27,23 +27,52 @@ In the browser (WebGPU or WebGL 2):
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
-The admin panel (🛠) has the speed, export, import and "new world", the language model settings, the allowlist and refused sign-ins, and the server's health.
+The admin panel (🛠) has the speed, export, import and "new world", the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health.
 
-Server settings come from the environment: `AUTH_TOKEN` (16+ characters) or Google and Apple sign-in ([docs/sign-in.md](docs/sign-in.md)), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN` (the address in the browser; sign-in and the CSRF check use it), `STATIC_DIR` (the web build, default `dist`), `DATA_DIR` (default `data`), `INITIAL_SPEED` (0, 1, 2 or 4 for a new world), `LLM_API_KEY` (seeds the model key once) and `LOG_FORMAT=pretty`. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
+Server settings come from the environment: `AUTH_TOKEN` (16+ characters) or Google and Apple sign-in ([docs/sign-in.md](docs/sign-in.md)), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN` (the address in the browser; sign-in and the CSRF check use it), `STATIC_DIR` (the web build, default `dist`), `DATA_DIR` (default `data`), `INITIAL_SPEED` (0, 1, 2 or 4 for a new world), the `LLM_*` variables ([below](#connecting-a-language-model)) and `LOG_FORMAT=pretty`. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
 ## Connecting a language model
 
-Open **🛠 Admin → Language model**, pick a preset or enter a base URL, choose a model ("List models" asks that endpoint), and press **Test connection**, then **Save** with **Enabled** on. The server makes every request; the key is stored on the server, shown only as its last characters, never sent to a browser and never part of an export. A fresh server starts with the model off.
+The language model is configured only with environment variables on the server. Nothing about it can be set or changed from a browser. The server reads them at start, so a change takes effect on the next restart. Without `LLM_BASE_URL` and `LLM_MODEL` the model is off and the villagers follow their built-in routines. A value the server cannot use (a number out of range, an unknown choice, or only one of the two) stops it at start with a message naming the variable.
 
-- **Local models (Ollama, LM Studio)**: run them where the server can reach them, use a model that supports tools, and set "Requests at once" to 1.
-- **Reasoning models**: leave "Model reasoning" on Off. A model that thinks before every answer is several times slower and can spend its whole output budget on thinking.
-- **Daily caps**: requests and tokens per day, spread evenly through the day so the village does not go quiet in the evening. A world that runs around the clock asks a fast model about 20,000 times a day.
+| Variable | Default | What it is |
+| --- | --- | --- |
+| `LLM_BASE_URL` | none | An OpenAI-compatible chat completions endpoint that supports tool calling, e.g. `https://api.openai.com/v1`. Set it together with `LLM_MODEL`. |
+| `LLM_MODEL` | none | The model's name at that endpoint |
+| `LLM_API_KEY` | none | The endpoint's key, sent as `Authorization: Bearer`. Local models need none. |
+| `LLM_CONCURRENCY` | `2` | Requests at once, 1 to 16 |
+| `LLM_REQUESTS_PER_MINUTE` | `40` | A hard cap per real minute; `0` is no cap |
+| `LLM_MAX_REQUESTS_PER_DAY` | `0` | Requests per UTC day, spread through the day; `0` is no cap |
+| `LLM_MAX_TOKENS_PER_DAY` | `0` | Prompt plus completion tokens per UTC day, spread through the day; `0` is no cap |
+| `LLM_PROTOCOL` | `auto` | How tool calls travel: `tools` (native), `json` (JSON-schema output) or `auto` (detect) |
+| `LLM_CONVERSATIONS` | `auto` | `batched` (one request per conversation), `turns` (one per line) or `auto` (chosen by speed) |
+| `LLM_REASONING` | `off` | For models that think before answering: `off`, `low` or `default` (the model's own) |
+| `LLM_TEMPERATURE` | `0.8` | 0 to 2 |
+| `LLM_MAX_TOKENS` | `600` | Output tokens per answer, 100 to 4000 |
+| `LLM_HEADERS` | none | Extra request headers, one `Name: value` per line (or separated by a literal `\n`) |
+
+The server makes every request. The key and header values never reach a browser and are never part of an export. **🛠 Admin → Language model** shows the configuration the server is running with (the key only as its last four characters) and has **Test connection**, which asks the model for one real decision.
+
+```bash
+# A hosted model (on Fly.io: fly secrets set LLM_API_KEY=… LLM_BASE_URL=… LLM_MODEL=…)
+LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=<model> LLM_API_KEY=sk-… \
+  AUTH_TOKEN=dev-token-0123456789 STATIC_DIR=../dist cargo run --release
+
+# Ollama or LM Studio, where the server can reach it (LM Studio is http://localhost:1234/v1)
+LLM_BASE_URL=http://localhost:11434/v1 LLM_MODEL=<model> LLM_CONCURRENCY=1 \
+  AUTH_TOKEN=dev-token-0123456789 STATIC_DIR=../dist cargo run --release
+```
+
+- **Local models (Ollama, LM Studio)**: use a model that supports tools and set `LLM_CONCURRENCY=1`.
+- **Reasoning models**: leave `LLM_REASONING` at `off`. A model that thinks before every answer is several times slower and can spend its whole output budget on thinking.
+- **Daily caps**: `LLM_MAX_REQUESTS_PER_DAY` and `LLM_MAX_TOKENS_PER_DAY` are spread evenly through the day so the village does not go quiet in the evening. A world that runs around the clock asks a fast model about 20,000 times a day.
+- **Upgrading from a version with model settings in the admin panel**: the settings and key it saved are deleted from the database on the first start, so set the `LLM_*` variables before deploying.
 
 How the model is used:
 
 - It is asked only at decision points: on waking (a plan for the day), when something notable happens, when a plan block ends, in danger (fight or flee), in conversations, when a beaten opponent yields (spare or finish), and once a night to reflect.
 - Tool calls are sent natively. If a model answers in prose instead of calling its tool, the client switches to JSON-schema output, which local servers enforce with a grammar. Tested with `qwen/qwen3.6-35b-a3b` in LM Studio: 85% usable answers natively, 20 of 20 as JSON output, about 6 seconds each with reasoning off.
-- A governor measures the endpoint's speed and keeps demand below it, so a slow local model gets fewer, more important requests. "Max requests / minute" is a hard cap on top of that. While the model has a backlog, a world running faster than 1× holds at 1×.
+- A governor measures the endpoint's speed and keeps demand below it, so a slow local model gets fewer, more important requests. `LLM_REQUESTS_PER_MINUTE` is a hard cap on top of that. While the model has a backlog, a world running faster than 1× holds at 1×.
 - Every answer is checked against the world as it is by then. Stale, invalid or missing answers fall back to the routines.
 - The 🧠 pill in the top bar opens the decision log for admins: each prompt, the raw reply, the commands it produced, latency and tokens.
 
@@ -53,10 +82,14 @@ To measure a model before letting it run the village (real prompts from a world 
 cd server && cargo run --release -p fsw-brain --bin probe -- http://localhost:11434/v1 <model> 20
 ```
 
-To try the whole path with no model at all, run the mock endpoint and use `http://localhost:8787/v1` (model `mock`) as the base URL:
+To try the whole path with no model at all, run the mock endpoint and start the server with it:
 
 ```bash
 node tools/mock-llm.mjs
+```
+
+```bash
+cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock AUTH_TOKEN=dev-token-0123456789 STATIC_DIR=../dist cargo run --release
 ```
 
 ## Sound

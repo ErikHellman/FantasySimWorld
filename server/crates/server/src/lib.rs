@@ -30,7 +30,7 @@ pub struct AppState {
     pub backlog_drops: AtomicU32,
     pub store: Store,
     pub auth: Auth,
-    /// the language-model brain (off until an admin enables it)
+    /// the language-model brain (off unless `LLM_BASE_URL` and `LLM_MODEL` are set)
     pub brain: Brain,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,

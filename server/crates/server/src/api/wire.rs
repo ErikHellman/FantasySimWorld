@@ -654,7 +654,8 @@ pub enum ReasoningMode {
     Default,
 }
 
-/// `GET /api/admin/settings/llm`. The API key is write-only: only whether one is set, and its last characters.
+/// `GET /api/admin/settings/llm`: the model the server was started with, from its `LLM_*` environment
+/// variables. Read-only. The API key itself is never sent: only whether one is set, and its last characters.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmSettingsView {
@@ -670,7 +671,7 @@ pub struct LlmSettingsView {
     pub reasoning: ReasoningMode,
     pub temperature: f64,
     pub max_tokens: u32,
-    /// extra request headers, one "Name: value" per line
+    /// the names of the extra request headers, one per line (their values stay on the server)
     pub headers: String,
     /// 0 = no cap
     pub requests_per_minute: u32,
@@ -680,39 +681,11 @@ pub struct LlmSettingsView {
     pub max_tokens_per_day: u32,
 }
 
-/// `PUT /api/admin/settings/llm`. Leave `apiKey` out to keep the stored key; send "" to clear it.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct LlmSettingsUpdate {
-    pub enabled: bool,
-    pub base_url: String,
-    pub model: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub api_key: Option<String>,
-    pub concurrency: u32,
-    pub protocol: WireProtocol,
-    pub conversations: ConversationMode,
-    pub reasoning: ReasoningMode,
-    pub temperature: f64,
-    pub max_tokens: u32,
-    pub headers: String,
-    pub requests_per_minute: u32,
-    pub max_requests_per_day: u32,
-    pub max_tokens_per_day: u32,
-}
-
 /// `POST /api/admin/llm/test`
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct LlmTestResult {
     pub ok: bool,
     pub message: String,
-}
-
-/// `GET /api/admin/llm/models`
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct ModelList {
-    pub models: Vec<String>,
 }
 
 /// `GET /api/admin/allowlist` rows.
@@ -853,9 +826,7 @@ pub fn typescript() -> String {
         ConversationMode,
         ReasoningMode,
         LlmSettingsView,
-        LlmSettingsUpdate,
         LlmTestResult,
-        ModelList,
         AllowlistEntry,
         AllowlistAdd,
         AuthAttempt,

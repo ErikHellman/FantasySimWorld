@@ -32,9 +32,8 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/world/import", post(world::import).layer(DefaultBodyLimit::max(IMPORT_LIMIT)))
         .route("/world/export", get(world::export))
         .route("/health", get(world::health))
-        .route("/settings/llm", get(llm::get_settings).put(llm::put_settings))
+        .route("/settings/llm", get(llm::get_settings))
         .route("/llm/test", post(llm::test))
-        .route("/llm/models", get(llm::models))
         .route("/brain-log", get(llm::brain_log))
         .route_layer(middleware::from_fn(auth::middleware::require_admin));
 

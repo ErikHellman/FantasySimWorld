@@ -18,7 +18,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::wire::{BrainLogRecord, LlmState, LlmStatus, LogStatus, RequestKind};
-use crate::store::settings::{LLM, LLM_CAPABILITIES};
+use crate::store::settings::LLM_CAPABILITIES;
 use crate::store::{BrainLogWrite, Store, now_ms, utc_day};
 use crate::world_task::{Outgoing, World, WorldInput};
 
@@ -144,21 +144,6 @@ impl WorldLink for Link {
     }
 }
 
-/// The settings an admin last saved (the defaults, with the model off, on a fresh deploy).
-pub async fn load_settings(store: &Store) -> LlmSettings {
-    match store.setting(LLM).await {
-        Ok(Some(value)) => serde_json::from_value(value).unwrap_or_default(),
-        _ => LlmSettings::default(),
-    }
-}
-
-pub async fn load_key(store: &Store) -> ApiKey {
-    match store.api_key().await {
-        Ok(Some(key)) => ApiKey::new(key.expose()),
-        _ => ApiKey::default(),
-    }
-}
-
 async fn load_learned(store: &Store) -> Option<LearnedCapabilities> {
     serde_json::from_value(store.setting(LLM_CAPABILITIES).await.ok()??).ok()
 }
@@ -174,13 +159,6 @@ async fn load_usage(store: &Store) -> Option<DailyUsage> {
     })
 }
 
-/// Applies the stored settings (after an admin saved new ones, or at boot).
-pub async fn reconfigure(brain: &Brain, store: &Store) {
-    let settings = load_settings(store).await;
-    let key = load_key(store).await;
-    brain.configure(settings, key, load_learned(store).await, load_usage(store).await);
-}
-
 pub fn transport() -> Arc<dyn LlmTransport> {
     match ReqwestTransport::new() {
         Ok(transport) => Arc::new(transport),
@@ -191,16 +169,11 @@ pub fn transport() -> Arc<dyn LlmTransport> {
     }
 }
 
-/// Builds the brain over the running world and configures it from the store.
-pub async fn start(world: Arc<World>, store: Store, seed_key: Option<String>) -> Brain {
-    if let Some(key) = seed_key
-        && matches!(store.api_key().await, Ok(None))
-        && let Err(error) = store.set_api_key(Some(&key)).await
-    {
-        tracing::error!(%error, "cannot store LLM_API_KEY");
-    }
+/// Builds the brain over the running world with the model from the environment,
+/// plus what the store remembers: learned capabilities and today's usage.
+pub async fn start(world: Arc<World>, store: Store, settings: LlmSettings, key: ApiKey) -> Brain {
     let brain = Brain::new(Arc::new(Link { world, store: store.clone() }), transport());
-    reconfigure(&brain, &store).await;
+    brain.configure(settings, key, load_learned(&store).await, load_usage(&store).await);
     brain
 }
 

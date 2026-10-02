@@ -342,7 +342,6 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 .dialog .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 12px; }
 .dialog .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .dialog .row input { flex: 1; }
-.presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .test-result { flex: 1; font-size: 12px; color: var(--muted); }
 .file-button { display: inline-block !important; margin: 0 !important; border: 1px solid var(--panel-border); background: rgba(255, 255, 255, 0.07); border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: 13px !important; font-weight: 400 !important; }
 .file-button input { display: none; }
