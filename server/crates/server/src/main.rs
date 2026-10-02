@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use fsw_server::config::{AuthMode, Config};
 use fsw_server::store::{self, Store};
-use fsw_server::{AppState, digest, router, world_task};
+use fsw_server::{AppState, brain_task, digest, router, world_task};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -48,7 +48,9 @@ async fn main() -> ExitCode {
         }
     };
     let maintenance = store::maintenance::spawn(store.clone(), shutdown.clone());
-    let app = match AppState::new(config.clone(), world, store.clone(), shutdown.clone()) {
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm_api_key.clone()).await;
+    let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
+    let app = match AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone()) {
         Ok(app) => app,
         Err(message) => {
             tracing::error!(message, "cannot set up sign-in");
@@ -76,6 +78,7 @@ async fn main() -> ExitCode {
     shutdown.cancel();
     let _ = world_task.await;
     let _ = digest.await;
+    let _ = thinking.await;
     let _ = maintenance.await;
     // Last: flush the chronicle, checkpoint the WAL, stop the store thread.
     store.close().await;

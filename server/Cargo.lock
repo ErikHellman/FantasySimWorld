@@ -505,6 +505,7 @@ dependencies = [
  "fsw-core",
  "fsw-sim",
  "fsw-world",
+ "parking_lot",
  "proptest",
  "regex",
  "reqwest",

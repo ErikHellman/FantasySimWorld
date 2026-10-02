@@ -8,7 +8,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use fsw_server::config::Config;
 use fsw_server::store::Store;
-use fsw_server::{AppState, router, world_task};
+use fsw_server::{AppState, brain_task, router, world_task};
 use http_body_util::BodyExt;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -36,7 +36,8 @@ async fn app(name: &str) -> (axum::Router, CancellationToken, tempfile::TempDir)
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
-    (router(AppState::new(config, world, store, shutdown.clone()).unwrap()), shutdown, data)
+    let brain = brain_task::start(world.clone(), store.clone(), None).await;
+    (router(AppState::new(config, world, store, brain, shutdown.clone()).unwrap()), shutdown, data)
 }
 
 fn get(uri: &str) -> Request<Body> {
@@ -289,6 +290,39 @@ async fn a_quick_reconnect_replays_the_missed_ticks() {
     let (boot, tick) = id.rsplit_once(':').unwrap();
     let next = format!("id: {boot}:{}", tick.parse::<u64>().unwrap() + 1);
     assert!(seen.contains(&next), "{seen}");
+}
+
+#[tokio::test]
+async fn model_settings_keep_the_key_to_themselves() {
+    let (app, _, _data) = app("llm").await;
+    let current = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
+    assert!(current.contains(r#""enabled":false"#) && current.contains(r#""apiKeySet":false"#), "{current}");
+
+    let update = r#"{"enabled":false,"baseUrl":" http://127.0.0.1:9/v1 ","model":"m","apiKey":"sk-secret-9876",
+        "concurrency":99,"protocol":"json","conversations":"turns","reasoning":"low","temperature":0.5,"maxTokens":10,
+        "headers":"","requestsPerMinute":10,"maxRequestsPerDay":100,"maxTokensPerDay":0}"#;
+    let saved = app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", update)).await.unwrap();
+    assert_eq!(saved.status(), StatusCode::OK);
+    let saved = text(saved).await;
+    assert!(!saved.contains("sk-secret"), "{saved}");
+    assert!(saved.contains(r#""apiKeyHint":"…9876""#), "{saved}");
+    assert!(saved.contains(r#""baseUrl":"http://127.0.0.1:9/v1""#), "{saved}");
+    assert!(saved.contains(r#""concurrency":16"#) && saved.contains(r#""maxTokens":100"#), "{saved}");
+
+    // Leaving the key out keeps it; an empty one clears it.
+    let keep = update.replace(r#""apiKey":"sk-secret-9876","#, "");
+    let kept = text(app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", &keep)).await.unwrap()).await;
+    assert!(kept.contains(r#""apiKeySet":true"#), "{kept}");
+    let clear = update.replace("sk-secret-9876", "");
+    let cleared =
+        text(app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", &clear)).await.unwrap()).await;
+    assert!(cleared.contains(r#""apiKeySet":false"#), "{cleared}");
+
+    let test = text(app.clone().oneshot(json_request("POST", "/api/admin/llm/test", r#"{"model":""}"#)).await.unwrap());
+    assert!(test.await.contains(r#""ok":false"#));
+    let log = app.oneshot(authed("/api/admin/brain-log?limit=5")).await.unwrap();
+    assert_eq!(log.status(), StatusCode::OK);
+    assert_eq!(text(log).await, "[]");
 }
 
 #[test]

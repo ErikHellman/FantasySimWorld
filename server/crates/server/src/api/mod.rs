@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Response};
 use crate::store::StoreError;
 use wire::ApiError;
 
+pub mod llm;
 pub mod router;
 pub mod stream;
 pub mod wire;

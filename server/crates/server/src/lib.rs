@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 pub mod api;
 pub mod auth;
+pub mod brain_task;
 pub mod config;
 pub mod digest;
 pub mod encode;
@@ -15,6 +16,7 @@ pub mod world_task;
 
 use auth::Auth;
 use config::Config;
+use fsw_brain::brain::Brain;
 use store::Store;
 use world_task::World;
 
@@ -28,6 +30,8 @@ pub struct AppState {
     pub backlog_drops: AtomicU32,
     pub store: Store,
     pub auth: Auth,
+    /// the language-model brain (off until an admin enables it)
+    pub brain: Brain,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,
 }
@@ -38,6 +42,7 @@ impl AppState {
         config: Config,
         world: Arc<World>,
         store: Store,
+        brain: Brain,
         shutdown: CancellationToken,
     ) -> Result<Arc<Self>, String> {
         let auth = Auth::new(&config)?;
@@ -49,6 +54,7 @@ impl AppState {
             backlog_drops: AtomicU32::new(0),
             store,
             auth,
+            brain,
             shutdown,
         }))
     }

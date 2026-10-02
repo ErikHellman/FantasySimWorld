@@ -20,7 +20,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use fsw_server::config::{AppleEndpoints, AuthMode, Config};
 use fsw_server::store::Store;
-use fsw_server::{AppState, router, world_task};
+use fsw_server::{AppState, brain_task, router, world_task};
 use http_body_util::BodyExt;
 use jsonwebtoken::jwk::{Jwk, JwkSet};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -185,7 +185,8 @@ async fn app() -> TestApp {
     store.seed_admins(&config.admin_emails).await.unwrap();
     let shutdown = CancellationToken::new();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
-    let state = AppState::new(config, world, store.clone(), shutdown).unwrap();
+    let brain = brain_task::start(world.clone(), store.clone(), None).await;
+    let state = AppState::new(config, world, store.clone(), brain, shutdown).unwrap();
     TestApp { router: router(state), store, fake, apple_key, _data: data }
 }
 

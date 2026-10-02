@@ -107,6 +107,8 @@ pub struct Config {
     /// `INITIAL_SPEED`: 0, 1 (default), 2 or 4. 0 starts paused, which leaves only
     /// keep-alives on the stream (for checking a proxy's idle timeout).
     pub initial_speed: u8,
+    /// `LLM_API_KEY`: stored as the model's API key at boot when none is stored yet
+    pub llm_api_key: Option<String>,
 }
 
 impl Config {
@@ -177,6 +179,7 @@ impl Config {
             trust_proxy,
             pretty_logs: get("LOG_FORMAT") == Some("pretty"),
             initial_speed,
+            llm_api_key: get("LLM_API_KEY").map(str::to_owned),
         })
     }
 

@@ -394,6 +394,11 @@ pub async fn start(
     Ok((world, task))
 }
 
+/// The speed the clock runs at: the chosen one, or 1x while the brain is backlogged.
+fn effective_speed(chosen: u8, throttled: bool) -> u8 {
+    if throttled && chosen > 1 { 1 } else { chosen }
+}
+
 /// The world as it was after one wake, for the store.
 #[derive(Default)]
 struct Wake {
@@ -415,6 +420,11 @@ async fn run(
     // Commands waiting for the next tick, with their source, for the record.
     let mut pending: Vec<(Command, &'static str)> = Vec::new();
     loop {
+        // The brain holds the world at 1x while the model has a backlog; the chosen speed is kept.
+        let effective = effective_speed(world.core.read().speed, world.throttled.load(Ordering::Relaxed));
+        if effective != clock.speed() {
+            clock.set_speed(effective, Instant::now());
+        }
         let save_deadline = save_point_at.unwrap_or_else(|| Instant::now() + Duration::from_secs(3600));
         tokio::select! {
             () = shutdown.cancelled() => break,
@@ -426,7 +436,7 @@ async fn run(
                         pending.push((command, source));
                     }
                     WorldInput::Speed(speed) => {
-                        clock.set_speed(speed, Instant::now());
+                        clock.set_speed(effective_speed(speed, world.throttled.load(Ordering::Relaxed)), Instant::now());
                         world.core.write().speed = speed;
                         let tick = world.core.read().tick();
                         clock_tx.send_replace(WorldClock { tick, speed, last_tick_at: Instant::now() });
