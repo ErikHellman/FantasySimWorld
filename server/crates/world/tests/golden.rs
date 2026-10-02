@@ -40,7 +40,9 @@ fn nav_grid_costs_decode() {
     assert_eq!((width, height), (273, 187));
     let bytes = base64::engine::general_purpose::STANDARD.decode(nav["costF32Base64"].as_str().unwrap()).unwrap();
     assert_eq!(bytes.len(), width * height * 4);
-    let costs: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let (words, rest) = bytes.as_chunks::<4>();
+    assert!(rest.is_empty());
+    let costs: Vec<f32> = words.iter().map(|&word| f32::from_le_bytes(word)).collect();
     let walkable = costs.iter().filter(|&&c| c > 0.0).count();
     assert_eq!(walkable as u64, nav["walkable"].as_u64().unwrap());
     // Road and grass are the only costs.
