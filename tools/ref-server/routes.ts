@@ -143,7 +143,7 @@ export function createHandler(host: WorldHost, identity: Identity) {
       res.flushHeaders();
       req.socket.setNoDelay(true);
       const lastEventId = req.headers['last-event-id'];
-      host.connect(res, url.searchParams.get('viewer') || randomUUID(), me.role, Array.isArray(lastEventId) ? lastEventId[0] : lastEventId);
+      host.connect(req, res, url.searchParams.get('viewer') || randomUUID(), me.role, Array.isArray(lastEventId) ? lastEventId[0] : lastEventId);
       return;
     }
     if (path === '/api/me' && method === 'GET') return json(res, 200, me);

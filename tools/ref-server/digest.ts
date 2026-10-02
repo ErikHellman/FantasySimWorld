@@ -35,7 +35,8 @@ export function rosterOf(state: SimState): RosterEntry[] {
     name: c.profile.name,
     role: c.profile.occupation,
     status: describeActivity(state, c),
-    hp: c.hp / CLASSES[c.classId].maxHp,
+    // Two decimals: enough for a health bar, and slow regeneration does not resend the roster every second.
+    hp: Math.round((c.hp / CLASSES[c.classId].maxHp) * 100) / 100,
     mood: moodOf(c),
     partner: c.partnerId !== null,
   }));

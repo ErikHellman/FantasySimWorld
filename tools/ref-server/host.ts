@@ -2,7 +2,7 @@
 // encoder, the replay ring and the connected viewers. Single-threaded, so a
 // connection set up between two wakes always sees a consistent world.
 import { randomBytes } from 'node:crypto';
-import type { ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { Brain, type BrainLogRecord as TsBrainLogRecord } from '../../src/brain/brain';
 import type {
@@ -67,7 +67,7 @@ export class WorldHost {
   private timer: ReturnType<typeof setTimeout> | null = null;
   lastTickAt = Date.now();
   lastWakeAt = Date.now();
-  /** wake lateness in ms, newest last */
+  /** how late each wake was, in ms, newest last */
   readonly jitter: number[] = [];
   backlogDrops = 0;
 
@@ -115,11 +115,19 @@ export class WorldHost {
   }
 
   start(): void {
+    let deadline = performance.now();
     const loop = (): void => {
       const now = performance.now();
+      // Timers may fire a little early; a tick must not run before its deadline.
+      if (now < deadline) {
+        this.timer = setTimeout(loop, deadline - now);
+        return;
+      }
+      this.jitter.push(now - deadline);
+      if (this.jitter.length > 1200) this.jitter.shift();
       this.wake(now);
-      const next = this.clock.nextWake(performance.now());
-      this.timer = setTimeout(loop, Math.max(0, next - performance.now()));
+      deadline = this.clock.nextWake(performance.now());
+      this.timer = setTimeout(loop, Math.max(0, deadline - performance.now()));
     };
     this.timer = setTimeout(loop, 0);
   }
@@ -129,9 +137,6 @@ export class WorldHost {
   }
 
   private wake(now: number): void {
-    const deadline = this.clock.nextWake(now) - 50;
-    this.jitter.push(Math.max(0, now - deadline));
-    if (this.jitter.length > 1200) this.jitter.shift();
     this.lastWakeAt = Date.now();
     const ticks = this.clock.due(now, this.playSpeed);
     for (let i = 0; i < ticks; i++) this.step();
@@ -187,6 +192,10 @@ export class WorldHost {
   // ---- viewers -------------------------------------------------------------
 
   private write(viewer: Viewer, text: string): void {
+    if (viewer.res.writableEnded) {
+      this.viewers.delete(viewer);
+      return;
+    }
     if (viewer.res.writableLength > MAX_BUFFERED) {
       this.backlogDrops++;
       viewer.res.destroy();
@@ -223,7 +232,7 @@ export class WorldHost {
   }
 
   /** Opens a stream: hello, then a replay of what was missed or a snapshot, then the current status and detail. */
-  connect(res: ServerResponse, viewerId: string, role: Role, lastEventId: string | undefined): void {
+  connect(req: IncomingMessage, res: ServerResponse, viewerId: string, role: Role, lastEventId: string | undefined): void {
     const viewer: Viewer = { res, viewer: viewerId, role, lastDetail: '' };
     res.write('retry: 500\n\n');
     this.viewers.add(viewer);
@@ -237,7 +246,12 @@ export class WorldHost {
     res.write(sseEvent('roster', rosterOf(state)));
     this.touchWatch(viewerId);
     this.sendDetail(viewer);
-    res.on('close', () => this.viewers.delete(viewer));
+    // Bun's node:http reports a closed connection on the request, Node on both.
+    const gone = (): void => {
+      this.viewers.delete(viewer);
+    };
+    req.on('close', gone);
+    res.on('close', gone);
   }
 
   private status() {
