@@ -49,9 +49,11 @@ pub async fn watch(State(app): State<Arc<AppState>>, Json(body): Json<WatchReque
 pub async fn character(
     State(app): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<Json<CharacterDetail>, Response> {
+) -> Result<Json<CharacterDetail>, ApiFailure> {
     let core = app.world.core.read();
-    detail_of(&core.sim.state, &id).map(Json).ok_or_else(|| error(StatusCode::NOT_FOUND, "no such villager"))
+    detail_of(&core.sim.state, &id)
+        .map(Json)
+        .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such villager".into()))
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`: history from the database, oldest first.
