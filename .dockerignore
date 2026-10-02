@@ -6,3 +6,5 @@ server/crates/*/tests
 docs
 tools/blender
 *.log
+.env
+.env.*

@@ -7,3 +7,5 @@ server/target
 server/data/*.db*
 server/data/backup
 tools/audio/.cache
+.env
+.env.*
