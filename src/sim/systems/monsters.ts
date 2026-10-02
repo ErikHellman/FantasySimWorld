@@ -3,7 +3,7 @@ import { secondsToTicks } from '../../core/time';
 import { intRange, nextFloat, pick, range, weightedPick } from '../../core/rng';
 import { nearestWalkable } from '../../world/navgrid';
 import { getPlace } from '../../world/places';
-import { animSeconds } from '../data/anims';
+import { animSeconds } from '../../render/anims';
 import { MONSTERS, type MonsterKind } from '../data/monsters';
 import type { Character, Monster } from '../state';
 import { newId } from '../state';

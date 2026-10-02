@@ -1,85 +1,12 @@
 import { signal } from '@preact/signals';
+import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
-import { DEFAULT_SETTINGS, type Settings } from '../persist/settings';
-import { ACTIVITIES } from '../sim/data/activities';
-import { CLASSES } from '../sim/data/classes';
-import { describeActivity } from '../sim/describe';
-import type { ChronicleEntry, Character, Memory, RelationLabel, SimState } from '../sim/state';
-import { rungOf } from '../sim/systems/relationships';
-import { blockAt } from '../sim/systems/routine';
-import { living } from '../sim/util';
+import type {
+  BrainLogRecord, CharacterDetail, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry, Snapshot, Status, Utterance,
+} from '../generated/api';
+import type { ConnectionState } from '../net/stream';
 
-export interface RosterEntry {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  hp: number;
-  mood: 'ok' | 'fight' | 'sleep' | 'talk' | 'hurt';
-  partner: boolean;
-}
-
-export interface RelationRow {
-  id: string;
-  name: string;
-  label: RelationLabel;
-  affinity: number;
-  attraction: number;
-  grievance: number;
-  rung: string;
-  summary: string;
-  alive: boolean;
-}
-
-export interface CharacterDetail {
-  id: string;
-  name: string;
-  pronouns: string;
-  age: number;
-  occupation: string;
-  className: string;
-  backstory: string;
-  traits: string[];
-  goals: string[];
-  status: string;
-  thought: string;
-  summary: string;
-  hp: number;
-  maxHp: number;
-  needs: { hunger: number; energy: number; social: number };
-  inventory: { food: number; potion: number; gift: number };
-  home: string;
-  kills: number;
-  planSource: string;
-  plan: Array<{ time: string; text: string; current: boolean }>;
-  relations: RelationRow[];
-  memories: Memory[];
-}
-
-export interface LlmStatus {
-  state: 'off' | 'ready' | 'busy' | 'error';
-  inFlight: number;
-  queued: number;
-  requests: number;
-  failures: number;
-  tokens: number;
-  latencyMs: number;
-  protocol: string;
-  message: string;
-}
-
-export interface BrainLogEntry {
-  id: number;
-  time: string;
-  character: string;
-  kind: string;
-  status: 'ok' | 'fallback' | 'error' | 'stale';
-  latencyMs: number;
-  tokens: number;
-  summary: string;
-  prompt: string;
-  response: string;
-}
+export type { CharacterDetail, RelationRow, RosterEntry } from '../generated/api';
 
 export interface AudioSlotStatus {
   id: string;
@@ -87,12 +14,32 @@ export interface AudioSlotStatus {
   loaded: boolean;
 }
 
+/** A spoken line in the Voices feed. */
+export interface VoiceLine {
+  id: number;
+  tick: number;
+  speaker: string;
+  speakerId: string;
+  to: string | null;
+  text: string;
+  loud: boolean;
+}
+
+const VOICES_KEPT = 80;
+const CHRONICLE_KEPT = 400;
+const BRAIN_LOG_KEPT = 150;
+
 export const ui = {
   loading: signal<string | null>('Loading the valley…'),
   started: signal(false),
   backend: signal(''),
+  /** who is watching; null until /api/me answers */
+  me: signal<Me | null>(null),
+  connection: signal<ConnectionState>('connecting'),
   clock: signal({ day: 1, time: '06:00', part: 'early morning' }),
+  /** the world's speed as the server runs it (0 = paused) */
   speed: signal(1),
+  viewers: signal(0),
   population: signal(0),
   monsters: signal(0),
   alarm: signal(false),
@@ -100,130 +47,109 @@ export const ui = {
   selectedId: signal<string | null>(null),
   detail: signal<CharacterDetail | null>(null),
   chronicle: signal<ChronicleEntry[]>([]),
-  graves: signal<Array<{ name: string; day: number; cause: string }>>([]),
-  panel: signal<'none' | 'settings' | 'brain' | 'graves'>('none'),
-  settings: signal<Settings>(DEFAULT_SETTINGS),
+  /** older chronicle entries exist on the server */
+  chronicleMore: signal(true),
+  graves: signal<Grave[]>([]),
+  panel: signal<'none' | 'settings' | 'admin' | 'brain' | 'graves'>('none'),
+  audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
-  brainLog: signal<BrainLogEntry[]>([]),
+  brainLog: signal<BrainLogRecord[]>([]),
   audioSlots: signal<AudioSlotStatus[]>([]),
   notice: signal<string | null>(null),
   /** recent spoken lines, newest first */
-  voices: signal<Array<{ id: number; tick: number; speaker: string; speakerId: string; to: string | null; text: string; loud: boolean }>>([]),
+  voices: signal<VoiceLine[]>([]),
   /** the world is being held at 1x while the language model catches up */
   throttled: signal(false),
-  savedAt: signal(0),
-  canSave: signal(true),
 };
+
+export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
 
 /** Things the UI can ask the app to do; filled in by main.ts. */
 export interface UiActions {
   start(): void;
   setSpeed(speed: number): void;
   select(id: string | null): void;
-  applySettings(settings: Settings): void;
-  testConnection(settings: Settings): Promise<string>;
-  listModels(settings: Settings): Promise<string[]>;
-  exportSave(): void;
-  importSave(file: File): void;
-  resetWorld(): void;
+  applyAudio(settings: AudioSettings): void;
 }
 
 export const actions: UiActions = {
   start: () => {},
   setSpeed: () => {},
   select: () => {},
-  applySettings: () => {},
-  testConnection: async () => '',
-  listModels: async () => [],
-  exportSave: () => {},
-  importSave: () => {},
-  resetWorld: () => {},
+  applyAudio: () => {},
 };
 
-function moodOf(c: Character): RosterEntry['mood'] {
-  if (c.intent?.kind === 'fight' || c.intent?.kind === 'flee') return 'fight';
-  if (c.asleep) return 'sleep';
-  if (c.convoId) return 'talk';
-  if (c.hp < CLASSES[c.classId].maxHp * 0.5) return 'hurt';
-  return 'ok';
+let voiceId = 0;
+const voiceLine = (u: Utterance): VoiceLine => ({
+  id: ++voiceId, tick: u.tick, speaker: u.speakerName, speakerId: u.speakerId, to: u.toName, text: u.text, loud: u.loud,
+});
+
+/** Everything the HUD shows, from a fresh snapshot. */
+export function fromSnapshot(snapshot: Snapshot): void {
+  ui.speed.value = snapshot.speed;
+  ui.roster.value = snapshot.roster;
+  ui.population.value = snapshot.roster.length;
+  ui.chronicle.value = snapshot.chronicle;
+  ui.chronicleMore.value = true;
+  ui.graves.value = snapshot.graves;
+  ui.alarm.value = snapshot.alarm;
+  ui.llm.value = snapshot.llm;
+  ui.voices.value = snapshot.voices.map(voiceLine);
+  setClock(snapshot.tick);
 }
 
-function detailOf(state: SimState, c: Character): CharacterDetail {
-  const hour = gameTime(state.tick).hour;
-  const current = blockAt(c.plan, hour);
-  const relations: RelationRow[] = Object.keys(c.relationships)
-    .map((id) => {
-      const r = c.relationships[id]!;
-      const other = state.characters[id];
-      const dead = state.dead[id];
-      return {
-        id,
-        name: other ? other.profile.name : dead ? `${dead.name} †` : '',
-        label: r.label,
-        affinity: r.affinity,
-        attraction: r.attraction,
-        grievance: r.grievance,
-        rung: rungOf(r),
-        summary: r.summary,
-        alive: other !== undefined,
-      };
-    })
-    .filter((row) => row.name && (row.alive || Math.abs(row.affinity) >= 25))
-    .sort((a, b) => Math.abs(b.affinity) + b.grievance + b.attraction - (Math.abs(a.affinity) + a.grievance + a.attraction));
-  return {
-    id: c.id,
-    name: c.profile.name,
-    pronouns: c.profile.pronouns,
-    age: c.profile.age,
-    occupation: c.profile.occupation,
-    className: CLASSES[c.classId].label,
-    backstory: c.profile.backstory,
-    traits: c.profile.traits,
-    goals: c.profile.goals,
-    status: describeActivity(state, c),
-    thought: c.thought,
-    summary: c.summary,
-    hp: c.hp,
-    maxHp: CLASSES[c.classId].maxHp,
-    needs: { ...c.needs },
-    inventory: { ...c.inventory },
-    home: c.homeId,
-    kills: c.kills,
-    planSource: c.planSource,
-    plan: c.plan.map((block, index) => ({
-      time: formatClock(block.hour * 60),
-      text: `${ACTIVITIES[block.activity].label}${block.note ? ` — ${block.note}` : ''}`,
-      current: index === current,
-    })),
-    relations,
-    memories: c.memories.slice(-40).reverse(),
-  };
+export function fromStatus(status: Status): void {
+  ui.llm.value = status.llm;
+  ui.viewers.value = status.viewers;
+  ui.speed.value = status.speed;
+  ui.throttled.value = status.throttled;
+  ui.population.value = status.population;
+  ui.monsters.value = status.monsters;
+  ui.alarm.value = status.alarm;
 }
 
-/** Copies what the HUD shows out of the sim state. Called a few times a second, not every tick. */
-export function refreshUi(state: SimState): void {
-  const time = gameTime(state.tick);
-  ui.clock.value = { day: time.day, time: formatClock(time.minuteOfDay), part: partOfDay(time.hour) };
-  const everyone = living(state);
-  ui.population.value = everyone.length;
-  ui.monsters.value = Object.values(state.monsters).filter((m) => m.phase !== 'dying').length;
-  ui.alarm.value = state.tick < state.director.alarmUntilTick;
-  ui.roster.value = everyone.map((c) => ({
-    id: c.id,
-    name: c.profile.name,
-    role: c.profile.occupation,
-    status: describeActivity(state, c),
-    hp: c.hp / CLASSES[c.classId].maxHp,
-    mood: moodOf(c),
-    partner: c.partnerId !== null,
-  }));
-  const selected = ui.selectedId.value ? state.characters[ui.selectedId.value] : undefined;
-  if (ui.selectedId.value && !selected) ui.selectedId.value = null;
-  ui.detail.value = selected ? detailOf(state, selected) : null;
-  if (ui.chronicle.value.length !== state.chronicle.length || ui.chronicle.value[ui.chronicle.value.length - 1] !== state.chronicle[state.chronicle.length - 1]) {
-    ui.chronicle.value = state.chronicle.slice(-120);
+export function addChronicle(entry: ChronicleEntry): void {
+  ui.chronicle.value = [...ui.chronicle.value, entry].slice(-CHRONICLE_KEPT);
+}
+
+/** A new grave takes its plot from whoever lay there before (a full graveyard reuses its oldest plot). */
+export function addGrave(grave: Grave): void {
+  ui.graves.value = [...ui.graves.value.filter((existing) => existing.plot !== grave.plot), grave];
+}
+
+export function addVoice(utterance: Utterance): void {
+  ui.voices.value = [voiceLine(utterance), ...ui.voices.value].slice(0, VOICES_KEPT);
+}
+
+export function addBrainLog(records: readonly BrainLogRecord[]): void {
+  const byId = new Map(ui.brainLog.value.map((record) => [record.id, record]));
+  for (const record of records) byId.set(record.id, record);
+  ui.brainLog.value = [...byId.values()].sort((a, b) => b.id - a.id).slice(0, BRAIN_LOG_KEPT);
+}
+
+export function setClock(tick: number): void {
+  const time = gameTime(tick);
+  const next = { day: time.day, time: formatClock(time.minuteOfDay), part: partOfDay(time.hour) };
+  const clock = ui.clock.value;
+  if (clock.day !== next.day || clock.time !== next.time || clock.part !== next.part) ui.clock.value = next;
+}
+
+/** Audio settings live in this browser only. */
+const AUDIO_KEY = 'fsw.audio';
+
+export function loadAudioSettings(): AudioSettings {
+  try {
+    const stored = localStorage.getItem(AUDIO_KEY);
+    return stored ? { ...DEFAULT_AUDIO, ...(JSON.parse(stored) as Partial<AudioSettings>) } : DEFAULT_AUDIO;
+  } catch {
+    return DEFAULT_AUDIO;
   }
-  if (ui.graves.value.length !== state.graves.length) {
-    ui.graves.value = state.graves.map((grave) => ({ name: grave.name, day: grave.day, cause: grave.cause }));
+}
+
+export function saveAudioSettings(settings: AudioSettings): void {
+  try {
+    localStorage.setItem(AUDIO_KEY, JSON.stringify(settings));
+  } catch {
+    // storage blocked: the settings last until the page closes
   }
 }

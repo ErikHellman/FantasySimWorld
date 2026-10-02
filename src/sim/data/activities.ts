@@ -1,5 +1,5 @@
 import type { ActivityId } from '../../world/places';
-import type { AnimId } from './anims';
+import type { AnimId } from '../../render/anims';
 import type { ItemId, Needs } from '../state';
 
 export interface ActivityDef {

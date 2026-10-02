@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANIMS } from '../sim/data/anims';
+import { ANIMS } from '../render/anims';
 import { isWalkable, nearestWalkable } from './navgrid';
 import { findPath, pathLength } from './pathfind';
 import { homes, places } from './places';

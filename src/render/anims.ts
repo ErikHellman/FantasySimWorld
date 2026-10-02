@@ -1,4 +1,4 @@
-import { assetManifest } from '../../generated/assetManifest';
+import { assetManifest } from '../generated/assetManifest';
 
 /**
  * Abstract animation states the sim puts on characters and monsters. The

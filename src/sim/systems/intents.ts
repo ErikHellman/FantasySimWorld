@@ -4,7 +4,7 @@ import { chance, intRange, pick, range } from '../../core/rng';
 import { nearestWalkable } from '../../world/navgrid';
 import { findPlace, getPlace, getSlot, slotsFor, type ActivityId, type Slot } from '../../world/places';
 import { ACTIVITIES, ITEM_CAP } from '../data/activities';
-import { ANIMS, type AnimId } from '../data/anims';
+import { ANIMS, type AnimId } from '../../render/anims';
 import { CLASSES, RUN_SPEED, WALK_SPEED } from '../data/classes';
 import type { Act, Character, Intent, ItemId, Relationship } from '../state';
 import {

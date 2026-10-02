@@ -26,7 +26,7 @@ function Relation({ row }: { row: RelationRow }) {
       <div class="relation-head">
         {row.alive ? <button class="link" onClick={() => actions.select(row.id)}>{row.name}</button> : <span class="muted">{row.name}</span>}
         <span class={`badge ${LABEL_CLASS[row.label] ?? ''}`}>{row.label}</span>
-        {row.rung !== 'calm' && <span class="badge bad" title="How far the hostility has gone">{row.rung.replace('_', ' ')}</span>}
+        {row.rung !== 'calm' && <span class="badge bad" title="How far the hostility has gone">{row.rung}</span>}
       </div>
       <div class="affinity" title={`Affinity ${Math.round(row.affinity)}`}>
         <span class="affinity-mid" />

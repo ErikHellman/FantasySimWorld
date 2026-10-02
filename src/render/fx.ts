@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { SimEvent } from '../sim/events';
+import type { WireEvent } from '../generated/api';
 import type { Assets } from './assets';
 
 interface Projectile {
@@ -20,7 +20,7 @@ interface Burst {
 
 const MAX_EFFECTS = 40;
 
-/** Short-lived visuals for one-shot sim events: arrows, spell bolts, impact flashes. */
+/** Short-lived visuals for one-shot events: arrows, spell bolts, impact flashes. */
 export class Effects {
   readonly group = new THREE.Group();
   private readonly projectiles: Projectile[] = [];
@@ -47,7 +47,7 @@ export class Effects {
     this.bursts.push({ mesh, age: 0, life, grow });
   }
 
-  handle(event: SimEvent, heightAt: (x: number, z: number) => number, isMonster: (id: string) => boolean): void {
+  handle(event: WireEvent, heightAt: (x: number, z: number) => number, isMonster: (id: string) => boolean): void {
     if (event.type === 'attack' && event.ranged && this.projectiles.length < MAX_EFFECTS) {
       const from = new THREE.Vector3(event.from.x, heightAt(event.from.x, event.from.z) + 1.3, event.from.z);
       const to = new THREE.Vector3(event.to.x, heightAt(event.to.x, event.to.z) + 1.1, event.to.z);
