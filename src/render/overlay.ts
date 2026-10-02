@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { Emote } from '../sim/events';
+import type { Emote } from '../generated/api';
 
 const EMOTE_GLYPH: Record<Emote, string> = {
   heart: '❤', anger: '💢', alert: '❗', thinking: '…', sleep: '💤', grief: '💧', laugh: '😄', broken_heart: '💔', gift: '🎁',

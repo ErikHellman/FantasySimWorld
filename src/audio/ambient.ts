@@ -1,7 +1,5 @@
 import { isNight } from '../core/time';
-import type { SimEvent } from '../sim/events';
-import type { SimState } from '../sim/state';
-import { living } from '../sim/util';
+import type { AmbientCounts, WireEvent } from '../generated/api';
 import { worldMap } from '../world/map';
 import { getPlace } from '../world/places';
 import type { AudioEngine } from './engine';
@@ -33,20 +31,17 @@ function placeDistance(id: string, listener: Listener): number {
   return Math.hypot(place.origin.x - listener.x, place.origin.z - listener.z);
 }
 
-function doing(state: SimState, activity: string): number {
-  return living(state).filter((c) => c.intent?.kind === 'activity' && c.intent.activity === activity && c.act.phase === 'perform').length;
-}
-
 /**
  * Decides how loud each ambient loop is from where the camera is looking, how
- * far it is zoomed out, the time of day and what the villagers are doing.
+ * far it is zoomed out, the time of day and what the villagers are doing (the
+ * server's counts, from `status`).
  */
-export function ambientLevels(state: SimState, hour: number, listener: Listener): Record<string, number> {
+export function ambientLevels(counts: AmbientCounts, hour: number, listener: Listener): Record<string, number> {
   const closeness = Math.max(0.25, Math.min(1, 1.35 - listener.distance / 130));
   const dark = isNight(hour) ? 1 : hour > 19.5 ? (hour - 19.5) / 1.5 : hour < 6.5 ? (6.5 - hour) / 1 : 0;
   const day = 1 - Math.min(1, dark);
-  const awake = living(state).filter((c) => !c.asleep).length;
-  const atTavern = doing(state, 'eat') + doing(state, 'drink');
+  const awake = counts.awake;
+  const atTavern = counts.eating + counts.drinking;
   return {
     birds_day: day * 0.8 * (0.5 + 0.5 * near(nearest(forestCells, listener.x, listener.z), 60)),
     wind: 0.25 + 0.5 * (1 - closeness),
@@ -56,13 +51,13 @@ export function ambientLevels(state: SimState, hour: number, listener: Listener)
     crickets_night: Math.min(1, dark) * 0.9,
     village_day: day * near(placeDistance('green', listener), 70) * Math.min(1, awake / 8) * closeness,
     tavern: near(placeDistance('tavern', listener), 32) * Math.min(1, atTavern / 3) * closeness,
-    smithy: near(placeDistance('smithy', listener), 32) * Math.min(1, doing(state, 'smith')) * closeness,
-    campfire: near(placeDistance('glade', listener), 26) * closeness * (doing(state, 'relax') > 0 || dark > 0.5 ? 1 : 0.4),
+    smithy: near(placeDistance('smithy', listener), 32) * Math.min(1, counts.smithing) * closeness,
+    campfire: near(placeDistance('glade', listener), 26) * closeness * (counts.relaxing > 0 || dark > 0.5 ? 1 : 0.4),
   };
 }
 
 /** Plays effects for a tick's events, quieter the further they are from where the camera looks. */
-export function playEffects(engine: AudioEngine, events: readonly SimEvent[], state: SimState, listener: Listener): void {
+export function playEffects(engine: AudioEngine, events: readonly WireEvent[], isVillager: (id: string) => boolean, listener: Listener): void {
   const volumeAt = (x: number, z: number): number => near(Math.hypot(x - listener.x, z - listener.z), 30 + listener.distance);
   for (const event of events) {
     if (event.type === 'attack') {
@@ -70,7 +65,7 @@ export function playEffects(engine: AudioEngine, events: readonly SimEvent[], st
       else if (event.ranged) engine.play('arrow_shot', volumeAt(event.from.x, event.from.z));
     } else if (event.type === 'hit') {
       engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
-      if (state.characters[event.targetId]) engine.play('hurt', volumeAt(event.pos.x, event.pos.z) * 0.7);
+      if (isVillager(event.targetId)) engine.play('hurt', volumeAt(event.pos.x, event.pos.z) * 0.7);
     } else if (event.type === 'death') {
       engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'monster_spawn') {

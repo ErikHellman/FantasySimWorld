@@ -1,5 +1,14 @@
-import type { AudioSettings } from '../persist/settings';
 import { AUDIO_EXTENSIONS, AUDIO_SLOTS, type AudioSlot } from './slots';
+
+/** Per viewer, kept in this browser. */
+export interface AudioSettings {
+  muted: boolean;
+  master: number;
+  ambient: number;
+  effects: number;
+}
+
+export const DEFAULT_AUDIO: AudioSettings = { muted: false, master: 0.8, ambient: 0.7, effects: 0.8 };
 
 interface Loop {
   slot: AudioSlot;
@@ -23,7 +32,7 @@ export class AudioEngine {
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly loops = new Map<string, Loop>();
   private readonly lastPlayed = new Map<string, number>();
-  private settings: AudioSettings = { muted: false, master: 0.8, ambient: 0.7, effects: 0.8 };
+  private settings: AudioSettings = DEFAULT_AUDIO;
   /** called when the set of loaded slots changes */
   onLoaded: ((loaded: ReadonlySet<string>) => void) | null = null;
 

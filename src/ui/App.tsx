@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
+import { api } from '../net/api';
+import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { Inspector } from './Inspector';
 import { SettingsPanel } from './Settings';
-import { actions, ui } from './store';
+import { actions, isAdmin, ui } from './store';
 
 const SPEEDS = [
   { value: 0, label: '❚❚', title: 'Pause (space)' },
@@ -19,9 +21,15 @@ const KIND_ICON: Record<string, string> = {
 
 const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔\uFE0F', sleep: '💤', talk: '💬', hurt: '🩹' };
 
+const togglePanel = (panel: typeof ui.panel.value): void => {
+  ui.panel.value = ui.panel.value === panel ? 'none' : panel;
+};
+
 function TopBar() {
   const clock = ui.clock.value;
   const llm = ui.llm.value;
+  const admin = isAdmin();
+  const connection = ui.connection.value;
   return (
     <header class="topbar">
       <div class="brand">Fantasy Sim World</div>
@@ -30,29 +38,41 @@ function TopBar() {
         <span class="clock-time">{clock.time}</span>
         <span class="clock-part">{clock.part}</span>
       </div>
-      <div class="speeds" role="group" aria-label="Simulation speed">
-        {SPEEDS.map((speed) => (
-          <button class={ui.speed.value === speed.value ? 'on' : ''} title={speed.title} onClick={() => actions.setSpeed(speed.value)}>
-            {speed.label}
-          </button>
-        ))}
-      </div>
+      {admin ? (
+        <div class="speeds" role="group" aria-label="Simulation speed">
+          {SPEEDS.map((speed) => (
+            <button class={ui.speed.value === speed.value ? 'on' : ''} title={speed.title} onClick={() => actions.setSpeed(speed.value)}>
+              {speed.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        ui.speed.value !== 1 && <div class="pill" title="The world's speed, set by an admin">{ui.speed.value === 0 ? '❚❚ paused' : `${ui.speed.value}×`}</div>
+      )}
       <div class="pills">
+        {connection !== 'live' && <span class="pill danger" title="The connection to the server">{connection === 'down' ? 'offline' : 'reconnecting…'}</span>}
+        <span class="pill" title="People watching">👁 {ui.viewers.value}</span>
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
         {ui.graves.value.length > 0 && (
-          <button class="pill" title="The graveyard" onClick={() => (ui.panel.value = ui.panel.value === 'graves' ? 'none' : 'graves')}>
+          <button class="pill" title="The graveyard" onClick={() => togglePanel('graves')}>
             🪦 {ui.graves.value.length}
           </button>
         )}
         <button
           class={`pill llm ${llm.state}`}
-          title={llm.message || 'Language model status. Click for the decision log.'}
-          onClick={() => (ui.panel.value = ui.panel.value === 'brain' ? 'none' : 'brain')}
+          title={llm.message || (admin ? 'Language model status. Click for the decision log.' : 'Language model status')}
+          disabled={!admin}
+          onClick={() => togglePanel('brain')}
         >
           🧠 {llm.state === 'off' ? 'local minds' : llm.state === 'error' ? 'LLM error' : llm.inFlight + llm.queued > 0 ? `thinking ${llm.inFlight}+${llm.queued}` : 'LLM ready'}
         </button>
-        <button class="pill" title="Settings" onClick={() => (ui.panel.value = ui.panel.value === 'settings' ? 'none' : 'settings')}>
+        {admin && (
+          <button class="pill" title="Run the world: model, access, saves" onClick={() => togglePanel('admin')}>
+            🛠 Admin
+          </button>
+        )}
+        <button class="pill" title="Settings" onClick={() => togglePanel('settings')}>
           ⚙ Settings
         </button>
       </div>
@@ -103,9 +123,29 @@ function Voices() {
   );
 }
 
+const PAGE = 40;
+
 function Chronicle() {
   const [tab, setTab] = useState<'chronicle' | 'voices'>('chronicle');
-  const entries = ui.chronicle.value.slice(-40).reverse();
+  const [shown, setShown] = useState(PAGE);
+  const [busy, setBusy] = useState(false);
+  const all = ui.chronicle.value;
+  const entries = all.slice(-shown).reverse();
+  const earlier = async (): Promise<void> => {
+    if (all.length < shown + PAGE && ui.chronicleMore.value) {
+      setBusy(true);
+      try {
+        const page = await api.chronicle(all[0]?.tick ?? Number.MAX_SAFE_INTEGER, PAGE * 2);
+        ui.chronicle.value = [...page.entries, ...ui.chronicle.value];
+        ui.chronicleMore.value = page.more;
+      } catch (error) {
+        ui.notice.value = `Could not load earlier entries: ${String(error)}`;
+      } finally {
+        setBusy(false);
+      }
+    }
+    setShown(shown + PAGE);
+  };
   return (
     <aside class="panel chronicle">
       <nav class="feed-tabs">
@@ -129,6 +169,9 @@ function Chronicle() {
             </li>
           );
         })}
+        {(all.length > shown || ui.chronicleMore.value) && (
+          <li class="chron"><button class="link muted" disabled={busy} onClick={() => void earlier()}>{busy ? 'Loading…' : 'Earlier…'}</button></li>
+        )}
       </ol>
       )}
     </aside>
@@ -172,11 +215,12 @@ function StartOverlay() {
         ) : (
           <button class="primary big" onClick={() => actions.start()}>Enter the valley</button>
         )}
-        {!loading && ui.settings.value.llm.enabled === false && (
+        {!loading && ui.llm.value.state === 'off' && (
           <p class="muted small-text">
-            The villagers are running on their built-in routines. Connect a language model in Settings to give them minds of their own.
+            The villagers are running on their built-in routines{isAdmin() ? '. Connect a language model in Admin to give them minds of their own.' : '.'}
           </p>
         )}
+        {!loading && ui.me.value && <p class="muted small-text">Signed in as {ui.me.value.displayName || ui.me.value.email}.</p>}
       </div>
     </div>
   );
@@ -187,12 +231,13 @@ export function App() {
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      if (event.code === 'Space') {
+      const admin = isAdmin();
+      if (event.code === 'Space' && admin) {
         event.preventDefault();
         actions.setSpeed(ui.speed.value === 0 ? 1 : 0);
-      } else if (event.code === 'Digit1') actions.setSpeed(1);
-      else if (event.code === 'Digit2') actions.setSpeed(2);
-      else if (event.code === 'Digit3') actions.setSpeed(4);
+      } else if (event.code === 'Digit1' && admin) actions.setSpeed(1);
+      else if (event.code === 'Digit2' && admin) actions.setSpeed(2);
+      else if (event.code === 'Digit3' && admin) actions.setSpeed(4);
       else if (event.code === 'Escape') {
         if (ui.panel.value !== 'none') ui.panel.value = 'none';
         else actions.select(null);
@@ -210,7 +255,8 @@ export function App() {
       <Chronicle />
       <Inspector />
       {ui.panel.value === 'settings' && <SettingsPanel />}
-      {ui.panel.value === 'brain' && <BrainLog />}
+      {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
+      {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
       {ui.panel.value === 'graves' && <Graves />}
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
