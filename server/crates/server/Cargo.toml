@@ -17,6 +17,7 @@ async-stream = "0.3.6"
 axum = "0.8.9"
 fsw-brain.workspace = true
 fsw-sim.workspace = true
+fsw-world.workspace = true
 futures-util = "0.3.34"
 getrandom = "0.4.3"
 serde.workspace = true

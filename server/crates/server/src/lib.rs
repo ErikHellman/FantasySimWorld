@@ -19,7 +19,7 @@ pub struct AppState {
     pub config: Config,
     /// random per start; prefixes stream event ids
     pub boot_id: String,
-    /// hash of the static world layout (filled in once the world is ported, phase 1)
+    /// hash of the static world layout (`fsw_world::navgrid::world_hash`)
     pub world_hash: String,
     pub clock: watch::Receiver<WorldClock>,
     pub frames: broadcast::Sender<Arc<FrameBatch>>,
@@ -34,7 +34,7 @@ impl AppState {
         Arc::new(Self {
             config,
             boot_id: new_boot_id(),
-            world_hash: "unported".into(),
+            world_hash: fsw_world::navgrid::world_hash(),
             clock: world.clock,
             frames: world.frames,
             viewers: AtomicU32::new(0),

@@ -119,3 +119,16 @@ export function lineOfWalk(a: Vec2, b: Vec2): boolean {
   }
   return true;
 }
+
+/**
+ * FNV-1a over the nav costs' little-endian bytes, as 8 hex digits. The nav grid
+ * depends on the map, every place and the solid scatter, so two builds of the
+ * world that agree on this agree on the layout. The server sends its own in
+ * `hello` (`world_hash` in server/crates/world/src/navgrid.rs).
+ */
+export function worldHash(): string {
+  const bytes = new Uint8Array(navGrid.cost.buffer, navGrid.cost.byteOffset, navGrid.cost.byteLength);
+  let h = 2166136261;
+  for (const byte of bytes) h = Math.imul(h ^ byte, 16777619);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}

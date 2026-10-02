@@ -8,6 +8,10 @@
   - The golden world fixtures also hold `hexAt`, `roadDistance` and `nearestWalkable` samples and 340 routes (raw A* cells via the new `findRoute`, and smoothed). The nav costs are base64 of the raw little-endian `f32`s.
   - `AUTH_MODE=token`: `/auth/token` is a form that POSTs the token (so it never sits in a URL or a proxy log) and sets an HttpOnly cookie; `/api/*` also accepts `Authorization: Bearer`. `INITIAL_SPEED=0` starts paused so the idle stream can be tested.
   - The tick schedule (`TickClock`: 12 ticks per wake at most, skip ahead past 200 owed) is final and tested with paused tokio time.
+- **Phase 1 (core and world in Rust): done.** `fsw-core` (`jsmath`, `rng`, `time`, `math2d`) and `fsw-world` (`hex`, `layout`, `tiles`, `height`, `map`, `place_defs`, `places`, `scatter`, `navgrid`, `pathfind`, `assets`) reproduce every golden fixture: the ground and road masks, nav costs bit for bit, places, scatter and all 340 routes and 2,000 `nearestWalkable` lookups (`tests/golden.rs` replays the dump's own RNG to rebuild the sample points). Notes:
+  - The world is static and built lazily on first use (`fsw_world::init()` forces it); the module-level functions mirror the TypeScript exports (`ground_at`, `places()`, `find_path`, …). A* keeps its scratch buffers per thread.
+  - `world_hash()` (FNV-1a over the nav costs' bytes) is in `hello`; `worldHash()` in `src/world/navgrid.ts` computes the same and `navgrid.json` records it.
+  - `world.test.ts`'s check that slot animations exist moves to the sim crate, which owns the animation table.
 
 ## Context
 

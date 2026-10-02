@@ -10,7 +10,7 @@ import type { Vec2 } from '../src/core/math2d';
 import { nextFloat, pick, range, type RngHolder } from '../src/core/rng';
 import { hexAt } from '../src/world/hex';
 import { groundAt, isOnRoad, roadDistance, worldMap } from '../src/world/map';
-import { CELL, navGrid, nearestWalkable } from '../src/world/navgrid';
+import { CELL, navGrid, nearestWalkable, worldHash } from '../src/world/navgrid';
 import { findPath, findRoute } from '../src/world/pathfind';
 import { places } from '../src/world/places';
 import { scatter } from '../src/world/scatter';
@@ -79,6 +79,7 @@ write('navgrid.json', {
   width: navGrid.width,
   height: navGrid.height,
   walkable: navGrid.cost.reduce((n, c) => n + (c > 0 ? 1 : 0), 0),
+  hash: worldHash(),
   costF32Base64: Buffer.from(navGrid.cost.buffer, navGrid.cost.byteOffset, navGrid.cost.byteLength).toString('base64'),
 });
 
