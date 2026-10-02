@@ -5,6 +5,7 @@ A browser-only 3D world in the KayKit style. A dozen fantasy villagers follow th
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated locally and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
 The design is in [docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md).
+The plan for moving the simulation, the language model and all state to a Rust server with authenticated viewers is in [docs/superpowers/specs/2026-10-02-backend-migration-plan.md](docs/superpowers/specs/2026-10-02-backend-migration-plan.md).
 
 ## Run
 
@@ -74,7 +75,24 @@ pnpm build
 ```
 
 - `pnpm test` runs the unit tests, including a save/load determinism check and a 200-day headless run.
-- `bun tools/soak.ts 30 1337 --log` runs the world headlessly for 30 days and prints its chronicle.
+- `bun tools/soak.ts 30 1337 --log` runs the world headlessly for 30 days and prints its chronicle. `--json` prints the end-of-run statistics as JSON; `--trace` prints one line per tick (RNG state, positions, intents) for diffing two implementations.
+
+## The server (in progress)
+
+The simulation is moving to a Rust server that runs one shared world for several viewers ([the plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md)). Phase 0 is in place: the Cargo workspace under `server/`, a 20 Hz tick loop that streams empty frames, token sign-in, the wire types and the fixtures the port is checked against. The browser game above is unchanged.
+
+```bash
+cd server
+AUTH_TOKEN=dev-token-0123456789 LOG_FORMAT=pretty cargo run
+```
+
+With the server running, `pnpm dev` forwards `/api` and `/auth` to it (`SERVER_URL` overrides `http://localhost:8080`); open `/auth/token` once to sign in. Settings come from the environment: `AUTH_TOKEN` (required, 16+ characters), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN`, `STATIC_DIR` (the web build, default `dist`), `DATA_DIR`, `INITIAL_SPEED` (0, 1, 2 or 4) and `LOG_FORMAT=pretty`.
+
+- `cd server && cargo test` runs the server tests, including a check that `src/generated/api.ts` matches the Rust wire types. `cargo run --bin export-api` rewrites it.
+- `bun tools/dump-world.ts` writes the world layer's output to `server/crates/world/tests/golden/`, the reference the Rust world must reproduce.
+- `bun tools/make-export-fixture.ts` runs the world with the brain against the mock endpoint and writes a save export into `server/crates/sim/tests/fixtures/`, which the Rust sim must keep reading.
+- `bun tools/assets/export-server-data.ts` writes `server/data/*.json` (model bounds, clip durations, tile heights) from `src/generated`; `pnpm assets` writes them too.
+- `AUTH_TOKEN=… node tools/sse-probe.mjs <url> [seconds]` checks that the event stream reaches a client through a hosting proxy unbuffered. `Dockerfile` and `fly.toml` deploy the server to Fly.io for that check.
 
 ## How it is put together
 
@@ -88,7 +106,8 @@ pnpm build
 | `src/ui` | The HUD (Preact) |
 | `src/audio`, `src/speech` | Ambient mixer and the speech bus |
 | `src/persist` | IndexedDB saves, settings, export and import |
-| `tools` | Asset build, Blender prop generator, headless soak, LLM probe, mock endpoint |
+| `tools` | Asset build, Blender prop generator, headless soak, LLM probe, mock endpoint, server fixtures and stream probe |
+| `server` | The Rust server (Cargo workspace: `core`, `world`, `sim`, `brain`, `server`), being built |
 
 The sim depends only on `core` and `world`; the brain talks to it through commands applied at tick boundaries, so a run is reproducible for a given command stream.
 

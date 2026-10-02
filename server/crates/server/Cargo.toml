@@ -1,0 +1,38 @@
+[package]
+name = "fsw-server"
+description = "The shared-world server: runs the sim, streams it to viewers, keeps it in SQLite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+default-run = "fsw-server"
+
+[[bin]]
+name = "fsw-server"
+path = "src/main.rs"
+
+[dependencies]
+async-stream = "0.3.6"
+axum = "0.8.9"
+fsw-brain.workspace = true
+fsw-sim.workspace = true
+futures-util = "0.3.34"
+getrandom = "0.4.3"
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net"] }
+tokio-stream = "0.1.19"
+tokio-util = "0.7.19"
+tower-http = { version = "0.7.1", features = ["fs", "compression-gzip", "compression-br", "set-header", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+ts-rs = "12.0.1"
+
+[dev-dependencies]
+http-body-util = "0.1.5"
+tower = { version = "0.5.3", features = ["util"] }
+tokio = { version = "1.53.1", features = ["test-util"] }
+
+[lints]
+workspace = true

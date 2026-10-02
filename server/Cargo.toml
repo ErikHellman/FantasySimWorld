@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/world", "crates/sim", "crates/brain", "crates/server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "UNLICENSED"
+
+[workspace.dependencies]
+fsw-core = { path = "crates/core" }
+fsw-world = { path = "crates/world" }
+fsw-sim = { path = "crates/sim" }
+fsw-brain = { path = "crates/brain" }
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip: parse every f64 back to the exact bits JavaScript wrote (fixtures, saves).
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+await_holding_lock = "deny"
+
+# The 200-day soak runs 5.76 M ticks; keep it fast in debug test builds too.
+[profile.dev.package.fsw-sim]
+opt-level = 3
+[profile.dev.package.fsw-world]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
