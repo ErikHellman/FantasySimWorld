@@ -15,6 +15,8 @@ use crate::AppState;
 use crate::api::wire::{ApiError, Me, Role};
 use crate::config::AuthMode;
 
+pub mod provider;
+
 const COOKIE_MAX_AGE_SECONDS: u32 = 30 * 24 * 3600;
 
 /// `__Host-` cookies must be `Secure`, which browsers refuse on plain http (local development).

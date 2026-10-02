@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 pub mod api;
 pub mod auth;
 pub mod config;
+pub mod store;
 pub mod world_task;
 
 use config::Config;
