@@ -52,6 +52,7 @@ pub fn router(app: Arc<AppState>) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf));
 
     let sign_in = Router::new()
+        .route("/providers", get(auth::providers))
         .route("/token", get(auth::token::form).post(auth::token::login))
         .route("/{provider}/start", get(auth::flow::start))
         .route("/{provider}/callback", get(auth::flow::callback_get).post(auth::flow::callback_post))

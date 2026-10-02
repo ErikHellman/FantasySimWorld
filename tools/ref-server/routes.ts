@@ -116,6 +116,11 @@ export function createHandler(host: WorldHost, identity: Identity) {
     // Stand-ins for the sign-in pages: there is nothing to sign in to, so go straight back.
     if (path.startsWith('/auth/')) {
       const back = url.searchParams.get('return_to') ?? '/';
+      if (path === '/auth/providers') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ token: true, google: false, apple: false }));
+        return;
+      }
       if (path === '/auth/token') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end('<!doctype html><meta charset="utf-8"><title>Sign in</title><p>The reference server needs no sign-in. <a href="/">Back to the valley</a></p>');

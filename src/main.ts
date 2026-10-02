@@ -31,7 +31,7 @@ async function start(): Promise<void> {
   const root = document.getElementById('ui') as HTMLElement;
   const params = new URLSearchParams(location.search);
   if (location.pathname === '/login') {
-    render(h(Login, { returnTo: params.get('return_to') ?? '/' }), root);
+    render(h(Login, { returnTo: params.get('return_to') ?? '/', error: params.get('error') }), root);
     return;
   }
   if (location.pathname === '/no-access') {

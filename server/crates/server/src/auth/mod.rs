@@ -15,7 +15,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
 use crate::AppState;
-use crate::api::wire::{Me, Role};
+use crate::api::wire::{Me, Role, SignInOptions};
 use crate::config::{AuthMode, Config};
 
 pub mod allowlist;
@@ -122,6 +122,16 @@ pub fn safe_return(path: Option<&str>) -> &str {
         }
         _ => "/",
     }
+}
+
+/// `GET /auth/providers`
+pub async fn providers(State(app): State<Arc<AppState>>) -> Json<SignInOptions> {
+    Json(match &app.config.auth {
+        AuthMode::Token(_) => SignInOptions { token: true, google: false, apple: false },
+        AuthMode::Oidc(oidc) => {
+            SignInOptions { token: false, google: oidc.google.is_some(), apple: oidc.apple.is_some() }
+        }
+    })
 }
 
 /// `GET /api/me`

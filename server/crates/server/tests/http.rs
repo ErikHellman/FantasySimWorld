@@ -74,6 +74,9 @@ async fn api_needs_the_token() {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(text(response).await.contains(r#""role":"admin""#));
 
+    let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
+    assert_eq!(text(providers).await, r#"{"token":true,"google":false,"apple":false}"#);
+
     let response = app.oneshot(authed("/api/nothing-here")).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

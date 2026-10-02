@@ -575,3 +575,11 @@ async fn sign_in_is_rate_limited_per_address() {
     // The API is not affected.
     assert_eq!(app.send(Request::get("/api/me").body(Body::empty()).unwrap()).await.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn the_login_page_learns_which_providers_are_on() {
+    let app = app().await;
+    let response = app.get("/auth/providers", "").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(text(response).await, r#"{"token":false,"google":true,"apple":true}"#);
+}

@@ -597,6 +597,17 @@ pub struct Me {
     pub role: Role,
 }
 
+/// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct SignInOptions {
+    /// `/auth/token` works (`AUTH_MODE=token`)
+    pub token: bool,
+    /// `/auth/google/start` works
+    pub google: bool,
+    /// `/auth/apple/start` works
+    pub apple: bool,
+}
+
 /// `GET /api/chronicle?before=<tick>&limit=<n>`
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct ChroniclePage {
@@ -797,6 +808,7 @@ pub fn typescript() -> String {
     decl!(
         Vec2,
         Role,
+        SignInOptions,
         Hello,
         EntityKind,
         Look,

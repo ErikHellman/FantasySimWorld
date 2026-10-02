@@ -141,7 +141,7 @@ function LlmSection() {
   });
   const test = (): Promise<void> => run('Asking the model to make a decision…', async () => (await api.admin.testLlm(draft)).message);
   const listModels = (): Promise<void> => run('Fetching the model list…', async () => {
-    const list = (await api.admin.models()).models;
+    const list = (await api.admin.models(draft.baseUrl)).models;
     setModels(list);
     return list.length > 0 ? `${list.length} models available.` : 'The server returned no models. Type the name by hand.';
   });

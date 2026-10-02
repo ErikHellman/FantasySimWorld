@@ -1,6 +1,7 @@
 import type {
   AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BrainLogRecord, CharacterDetail, ChroniclePage, HealthReport,
-  LlmSettingsUpdate, LlmSettingsView, LlmTestResult, Me, ModelList, NewWorldRequest, SpeedRequest, WatchRequest,
+  LlmSettingsUpdate, LlmSettingsView, LlmTestResult, Me, ModelList, NewWorldRequest, SignInOptions, SpeedRequest,
+  WatchRequest,
 } from '../generated/api';
 
 /** A failed request: the HTTP status and the server's `ApiError` message. */
@@ -34,6 +35,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 /** Typed calls to the server's REST routes. */
 export const api = {
+  /** which sign-in buttons to offer; needs no session */
+  providers: () => request<SignInOptions>('GET', '/auth/providers'),
   me: () => request<Me>('GET', '/api/me'),
   logout: () => request<void>('POST', '/api/logout'),
   watch: (body: WatchRequest) => request<void>('POST', '/api/watch', body),
@@ -45,7 +48,9 @@ export const api = {
     saveLlmSettings: (body: LlmSettingsUpdate) => request<LlmSettingsView>('PUT', '/api/admin/settings/llm', body),
     /** tests the draft when given (the stored key unless the draft has one), else the stored settings */
     testLlm: (draft?: LlmSettingsUpdate) => request<LlmTestResult>('POST', '/api/admin/llm/test', draft ?? {}),
-    models: () => request<ModelList>('GET', '/api/admin/llm/models'),
+    /** the models at `baseUrl` (a draft), or at the saved base URL */
+    models: (baseUrl?: string) =>
+      request<ModelList>('GET', `/api/admin/llm/models${baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : ''}`),
     brainLog: () => request<BrainLogRecord[]>('GET', '/api/admin/brain-log'),
     allowlist: () => request<AllowlistEntry[]>('GET', '/api/admin/allowlist'),
     allow: (body: AllowlistAdd) => request<AllowlistEntry>('POST', '/api/admin/allowlist', body),
