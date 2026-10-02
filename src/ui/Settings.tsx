@@ -1,6 +1,16 @@
+import { SOUND_CREDITS } from '../audio/credits';
 import type { AudioSettings } from '../audio/engine';
 import { api } from '../net/api';
 import { actions, ui } from './store';
+
+type Toggle = 'ambientOn' | 'effectsOn' | 'musicOn';
+type Volume = 'ambient' | 'effects' | 'music';
+
+const CATEGORIES: readonly { on: Toggle; volume: Volume; label: string; hint: string }[] = [
+  { on: 'ambientOn', volume: 'ambient', label: 'Ambience', hint: 'Birds, wind, water, the village and the tavern, by where the camera looks' },
+  { on: 'effectsOn', volume: 'effects', label: 'Effects', hint: 'Blows, spells, cries and the alarm bell' },
+  { on: 'musicOn', volume: 'music', label: 'Music', hint: 'Background music that follows what you are watching' },
+];
 
 /** This viewer's own settings: sound (kept in this browser) and signing out. */
 export function SettingsPanel() {
@@ -28,19 +38,39 @@ export function SettingsPanel() {
           <input type="checkbox" checked={audio.muted} onChange={(event) => setAudio({ muted: event.currentTarget.checked })} />
           Mute
         </label>
-        <div class="grid">
-          <label>Master<input type="range" min="0" max="1" step="0.05" value={audio.master} onInput={(event) => setAudio({ master: Number(event.currentTarget.value) })} /></label>
-          <label>Ambience<input type="range" min="0" max="1" step="0.05" value={audio.ambient} onInput={(event) => setAudio({ ambient: Number(event.currentTarget.value) })} /></label>
-          <label>Effects<input type="range" min="0" max="1" step="0.05" value={audio.effects} onInput={(event) => setAudio({ effects: Number(event.currentTarget.value) })} /></label>
+        <label>Master<input type="range" min="0" max="1" step="0.05" value={audio.master} onInput={(event) => setAudio({ master: Number(event.currentTarget.value) })} /></label>
+        <div class="sound-rows">
+          {CATEGORIES.map(({ on, volume, label, hint }) => (
+            <div class="sound-row">
+              <label class="check" title={hint}>
+                <input type="checkbox" checked={audio[on]} onChange={(event) => setAudio({ [on]: event.currentTarget.checked })} />
+                {label}
+              </label>
+              <input
+                type="range" min="0" max="1" step="0.05" aria-label={`${label} volume`} disabled={!audio[on]} value={audio[volume]}
+                onInput={(event) => setAudio({ [volume]: Number(event.currentTarget.value) })}
+              />
+            </div>
+          ))}
         </div>
         <details>
           <summary>
             Sound files: {ui.audioSlots.value.filter((slot) => slot.loaded).length} of {ui.audioSlots.value.length} found
           </summary>
-          <p class="muted">Put audio files in <code>public/audio/</code> named after the slot (for example <code>birds_day.ogg</code>). Missing slots are silent.</p>
+          <p class="muted">The files are in <code>public/audio/</code>, named after the slot (music in <code>public/audio/music/</code>), and are rebuilt with <code>pnpm audio</code>. Missing files are silent.</p>
           <ul class="slots">
             {ui.audioSlots.value.map((slot) => (
               <li class={slot.loaded ? 'ok' : ''}>{slot.loaded ? '●' : '○'} <code>{slot.id}</code> <span class="muted">{slot.label}</span></li>
+            ))}
+          </ul>
+        </details>
+        <details>
+          <summary>Sound credits</summary>
+          <ul class="slots">
+            {SOUND_CREDITS.map((credit) => (
+              <li>
+                <a href={credit.url} target="_blank" rel="noreferrer">{credit.title}</a> <span class="muted">by {credit.author}, {credit.license}</span>
+              </li>
             ))}
           </ul>
         </details>
