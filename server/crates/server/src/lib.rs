@@ -12,7 +12,9 @@ pub mod config;
 pub mod store;
 pub mod world_task;
 
+use auth::Auth;
 use config::Config;
+use store::Store;
 use world_task::{FrameBatch, WorldClock, WorldHandles};
 
 /// Shared by every request handler.
@@ -26,13 +28,22 @@ pub struct AppState {
     pub frames: broadcast::Sender<Arc<FrameBatch>>,
     pub viewers: AtomicU32,
     pub backlog_drops: AtomicU32,
+    pub store: Store,
+    pub auth: Auth,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,
 }
 
 impl AppState {
-    pub fn new(config: Config, world: WorldHandles, shutdown: CancellationToken) -> Arc<Self> {
-        Arc::new(Self {
+    /// Fails only when sign-in cannot be set up (an unusable Apple key, no TLS backend).
+    pub fn new(
+        config: Config,
+        world: WorldHandles,
+        store: Store,
+        shutdown: CancellationToken,
+    ) -> Result<Arc<Self>, String> {
+        let auth = Auth::new(&config)?;
+        Ok(Arc::new(Self {
             config,
             boot_id: new_boot_id(),
             world_hash: "unported".into(),
@@ -40,8 +51,10 @@ impl AppState {
             frames: world.frames,
             viewers: AtomicU32::new(0),
             backlog_drops: AtomicU32::new(0),
+            store,
+            auth,
             shutdown,
-        })
+        }))
     }
 }
 

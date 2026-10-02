@@ -266,9 +266,9 @@ fn flush_chronicle(conn: &mut Connection, pending: &mut Vec<(i64, ChronicleEntry
 }
 
 fn checkpoint(conn: &Connection) {
-    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))) {
-        Ok((0, pages)) => tracing::info!(pages, "checkpointed the WAL"),
-        Ok((busy, _)) => tracing::warn!(busy, "WAL checkpoint was blocked by a reader"),
+    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get::<_, i64>(0)) {
+        Ok(0) => tracing::info!("checkpointed the WAL"),
+        Ok(_) => tracing::warn!("WAL checkpoint was blocked by a reader"),
         Err(error) => tracing::error!(%error, "WAL checkpoint failed"),
     }
     let _ = conn.execute_batch("PRAGMA optimize");
