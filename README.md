@@ -5,6 +5,7 @@ A browser-only 3D world in the KayKit style. A dozen fantasy villagers follow th
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated locally and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
 The design is in [docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md).
+The plan for moving the simulation, the language model and all state to a Rust server with authenticated viewers is in [docs/superpowers/specs/2026-10-02-backend-migration-plan.md](docs/superpowers/specs/2026-10-02-backend-migration-plan.md).
 
 ## Run
 
