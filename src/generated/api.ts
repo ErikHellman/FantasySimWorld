@@ -7,6 +7,23 @@ export type Vec2 = { x: number, z: number, };
 export type Role = "admin" | "viewer";
 
 /**
+ * `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
+ */
+export type SignInOptions = { 
+/**
+ * `/auth/token` works (`AUTH_MODE=token`)
+ */
+token: boolean, 
+/**
+ * `/auth/google/start` works
+ */
+google: boolean, 
+/**
+ * `/auth/apple/start` works
+ */
+apple: boolean, };
+
+/**
  * First event on every connection.
  */
 export type Hello = { 
@@ -412,6 +429,7 @@ export type StreamEvents = {
   snapshot: Snapshot;
   tick: TickFrame;
   status: Status;
+  roster: RosterEntry[];
   detail: CharacterDetail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;

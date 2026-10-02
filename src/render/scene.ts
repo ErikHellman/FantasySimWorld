@@ -1,9 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { gameTime } from '../core/time';
-import { CLASSES } from '../sim/data/classes';
-import { MONSTERS } from '../sim/data/monsters';
-import type { SimEvent } from '../sim/events';
-import type { Character, Look, Monster, SimState } from '../sim/state';
+import type { WireEvent } from '../generated/api';
+import type { ViewEntity, ViewWorld } from '../net/viewWorld';
 import { getPlace, places } from '../world/places';
 import { scatter } from '../world/scatter';
 import type { Assets } from './assets';
@@ -23,17 +20,11 @@ const SEA_LEVEL = -1.55;
 
 interface Actor {
   view: ActorView;
-  name: string;
-  hostile: boolean;
-  maxHp: number;
-  hp: number;
-  x: number;
-  z: number;
-  visible: boolean;
-  selectable: boolean;
+  /** the entity as last synced (the view world updates it in place) */
+  entity: ViewEntity;
 }
 
-/** The 3D view of a SimState: built once, then reconciled with the state every tick. */
+/** The 3D view of the world: built once, then reconciled with the view world every tick. */
 export class WorldView {
   readonly scene = new THREE.Scene();
   readonly rig: CameraRig;
@@ -43,6 +34,7 @@ export class WorldView {
   readonly overlay: Overlay;
   private readonly actors = new Map<string, Actor>();
   private readonly graves = new Map<string, THREE.Object3D>();
+  private gravesVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -78,96 +70,48 @@ export class WorldView {
     this.rig.lookAt(green.origin.x, green.origin.z + 8, 78);
   }
 
-  private ensure(id: string, look: Look, name: string, hostile: boolean, maxHp: number, selectable: boolean): Actor {
-    let actor = this.actors.get(id);
-    if (!actor) {
-      const view = new ActorView(this.assets, look);
-      this.actorGroup.add(view.root);
-      actor = { view, name, hostile, maxHp, hp: maxHp, x: 0, z: 0, visible: true, selectable };
-      this.actors.set(id, actor);
-    }
-    return actor;
-  }
-
-  private syncCharacter(c: Character): void {
-    const actor = this.ensure(c.id, c.look, c.profile.name.split(' ')[0] as string, false, CLASSES[c.classId].maxHp, true);
-    actor.hp = c.hp;
-    actor.x = c.pos.x;
-    actor.z = c.pos.z;
-    actor.visible = !c.inside;
-    // Weapons are put away while sitting or working with a tool.
-    const atEase = c.anim === 'sit_chair' || c.anim === 'sit_floor' || c.anim === 'lie';
-    actor.view.sync({
-      x: c.pos.x, z: c.pos.z, facing: c.facing, anim: c.anim, animSeq: c.animSeq, visible: !c.inside,
-      mainHand: c.tool ?? (atEase ? null : c.look.mainHand), offHand: c.tool || atEase ? null : c.look.offHand,
-    });
-  }
-
-  private syncMonster(m: Monster): void {
-    const def = MONSTERS[m.kind];
-    const actor = this.ensure(m.id, m.look, def.label, true, def.maxHp, false);
-    actor.hp = Math.max(0, m.hp);
-    actor.x = m.pos.x;
-    actor.z = m.pos.z;
-    actor.visible = true;
-    actor.view.sync({
-      x: m.pos.x, z: m.pos.z, facing: m.facing, anim: m.anim, animSeq: m.animSeq, visible: true,
-      mainHand: m.look.mainHand, offHand: m.look.offHand,
-    });
-  }
-
-  /** Brings the view in line with the state after a sim tick, and plays the tick's events. */
-  sync(state: SimState, events: readonly SimEvent[]): void {
-    const present = new Set<string>();
-    for (const id of state.order) {
-      const c = state.characters[id];
-      if (!c) continue;
-      present.add(id);
-      this.syncCharacter(c);
-    }
-    for (const id in state.monsters) {
-      present.add(id);
-      this.syncMonster(state.monsters[id] as Monster);
-    }
-    for (const corpse of state.corpses) {
-      const id = `corpse:${corpse.id}`;
-      present.add(id);
-      const actor = this.ensure(id, corpse.look, '', false, 1, false);
-      actor.visible = false; // no label
-      actor.view.sync({
-        x: corpse.pos.x, z: corpse.pos.z, facing: corpse.facing, anim: corpse.anim, animSeq: 0, visible: true,
-        mainHand: corpse.look.mainHand, offHand: corpse.look.offHand,
-      });
+  /** Brings the view in line with the world after a tick, and plays the tick's events. */
+  sync(world: ViewWorld, events: readonly WireEvent[]): void {
+    for (const entity of world.entities.values()) {
+      let actor = this.actors.get(entity.id);
+      if (!actor) {
+        const view = new ActorView(this.assets, entity.look);
+        this.actorGroup.add(view.root);
+        actor = { view, entity };
+        this.actors.set(entity.id, actor);
+      }
+      actor.entity = entity;
+      actor.view.sync(entity);
     }
     for (const [id, actor] of this.actors) {
-      if (!present.has(id)) {
+      if (!world.entities.has(id)) {
         actor.view.dispose();
         this.actors.delete(id);
       }
     }
-    if (this.selectedId && !state.characters[this.selectedId]) this.selectedId = null;
+    if (this.selectedId && !world.entities.has(this.selectedId)) this.selectedId = null;
 
-    this.syncGraves(state);
+    this.syncGraves(world);
 
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
       if (event.type === 'emote') this.overlay.emote(event.id, event.emote);
-      else this.effects.handle(event, this.heightAt, (id) => id in state.monsters);
+      else this.effects.handle(event, this.heightAt, (id) => world.isMonster(id));
     }
   }
 
-  private syncGraves(state: SimState): void {
-    if (this.graves.size === state.graves.length) return;
+  /** Graves are keyed `plot:characterId`, so a reused plot gets its new stone. */
+  private syncGraves(world: ViewWorld): void {
+    if (this.gravesVersion === world.gravesVersion) return;
+    this.gravesVersion = world.gravesVersion;
     const yard = getPlace('graveyard');
-    const wanted = new Set(state.graves.map((grave) => `${grave.plot}:${grave.characterId}`));
     for (const [key, object] of this.graves) {
-      if (!wanted.has(key)) {
+      if (!world.graves.has(key)) {
         object.removeFromParent();
         this.graves.delete(key);
       }
     }
-    for (const grave of state.graves) {
-      const key = `${grave.plot}:${grave.characterId}`;
+    for (const [key, grave] of world.graves) {
       const plot = yard.gravePlots[grave.plot];
       if (this.graves.has(key) || !plot) continue;
       const stone = this.assets.model('halloween', GRAVE_MODELS[grave.plot % GRAVE_MODELS.length] as string).clone();
@@ -183,26 +127,27 @@ export class WorldView {
   }
 
   /** Per rendered frame: camera, light, interpolated actors, effects and labels. */
-  frame(dt: number, simDt: number, alpha: number, state: SimState): void {
+  frame(dt: number, simDt: number, alpha: number, hour: number): void {
     this.rig.update(dt);
-    this.lighting.update(gameTime(state.tick).hour, this.rig.target, this.rig.distance);
+    this.lighting.update(hour, this.rig.target, this.rig.distance);
     this.effects.update(simDt);
 
     const labels: LabelState[] = [];
     for (const [id, actor] of this.actors) {
       actor.view.update(simDt, alpha, this.heightAt);
-      if (!actor.name) continue;
+      const entity = actor.entity;
+      if (!entity.name) continue; // corpses have no label
       const position = actor.view.root.position;
       labels.push({
         id,
-        name: actor.name,
+        name: entity.name,
         x: position.x,
         y: position.y + actor.view.height + 0.35,
         z: position.z,
-        visible: actor.visible,
-        hp: actor.hp / actor.maxHp,
-        hurt: actor.hp < actor.maxHp * 0.97,
-        hostile: actor.hostile,
+        visible: entity.visible,
+        hp: entity.hp / entity.maxHp,
+        hurt: entity.hp < entity.maxHp * 0.97,
+        hostile: entity.hostile,
         selected: id === this.selectedId,
       });
     }
@@ -215,7 +160,7 @@ export class WorldView {
     let best: string | null = null;
     let bestDistance = 46;
     for (const [id, actor] of this.actors) {
-      if (!actor.selectable || !actor.visible) continue;
+      if (actor.entity.kind !== 'villager' || !actor.entity.visible) continue;
       const position = actor.view.root.position;
       this.projected.set(position.x, position.y + actor.view.height * 0.5, position.z).project(this.rig.camera);
       if (this.projected.z > 1) continue;

@@ -7,5 +7,9 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+[dependencies]
+libm = "0.2.16"
+serde.workspace = true
+
 [lints]
 workspace = true

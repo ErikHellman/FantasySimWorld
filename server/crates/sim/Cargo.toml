@@ -10,10 +10,13 @@ license.workspace = true
 [dependencies]
 fsw-core.workspace = true
 fsw-world.workspace = true
-
-[dev-dependencies]
+indexmap = { version = "2", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
+
+[[bin]]
+name = "soak"
+path = "src/bin/soak.rs"
 
 [lints]
 workspace = true

@@ -1,53 +1,80 @@
-//! Phase 0: the committed browser exports are well-formed. Phase 2 deserialises
-//! them into the ported `SimState` (and keeps doing so for good).
+//! The committed browser exports load into the Rust `SimState`, survive a
+//! round trip unchanged, and keep running (for good: these are permanent).
 
+use fsw_sim::{SaveFile, Sim};
+use indexmap::IndexMap;
+use serde::de::IgnoredAny;
 use serde_json::Value;
 
-fn fixtures() -> Vec<(String, Value)> {
+fn fixtures() -> Vec<(String, String)> {
     let dir = format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
     let mut found: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.extension().is_some_and(|e| e == "json"))
-        .map(|path| {
-            let text = std::fs::read_to_string(&path).unwrap();
-            (path.file_name().unwrap().to_string_lossy().into_owned(), serde_json::from_str(&text).unwrap())
-        })
+        .map(|path| (path.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&path).unwrap()))
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(found.len() >= 2, "expected the committed export fixtures");
     found
 }
 
-#[test]
-fn exports_are_version_1_saves() {
-    let found = fixtures();
-    assert!(found.len() >= 2, "expected the committed export fixtures");
-    for (name, save) in found {
-        assert_eq!(save["version"], 1, "{name}");
-        assert!(save["savedAt"].is_u64(), "{name}");
-        let state = &save["state"];
-        for key in [
-            "seed",
-            "rng",
-            "tick",
-            "nextId",
-            "characters",
-            "order",
-            "monsters",
-            "conversations",
-            "graves",
-            "corpses",
-            "dead",
-            "chronicle",
-            "slots",
-            "director",
-            "tuning",
-        ] {
-            assert!(!state[key].is_null(), "{name}: state.{key}");
+/// JSON equality where `70` and `70.0` are the same number.
+fn same(a: &Value, b: &Value, at: &str) {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => assert_eq!(x.as_f64(), y.as_f64(), "{at}"),
+        (Value::Array(x), Value::Array(y)) => {
+            assert_eq!(x.len(), y.len(), "{at}: length");
+            for (i, (x, y)) in x.iter().zip(y).enumerate() {
+                same(x, y, &format!("{at}[{i}]"));
+            }
         }
-        // The RNG is a u32 and must survive as one.
-        assert!(state["rng"].as_u64().is_some_and(|rng| rng <= u64::from(u32::MAX)), "{name}");
-        let order = state["order"].as_array().unwrap();
-        assert!(order.iter().all(|id| state["characters"][id.as_str().unwrap()].is_object()), "{name}");
+        (Value::Object(x), Value::Object(y)) => {
+            let keys = |m: &serde_json::Map<String, Value>| {
+                let mut keys: Vec<_> = m.keys().cloned().collect();
+                keys.sort();
+                keys
+            };
+            assert_eq!(keys(x), keys(y), "{at}: keys");
+            for (key, value) in x {
+                same(value, &y[key], &format!("{at}.{key}"));
+            }
+        }
+        _ => assert_eq!(a, b, "{at}"),
+    }
+}
+
+#[test]
+fn exports_load_and_round_trip_unchanged() {
+    for (name, text) in fixtures() {
+        let save: SaveFile = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(save.version, 1, "{name}");
+        let original: Value = serde_json::from_str(&text).unwrap();
+        same(&serde_json::to_value(&save).unwrap(), &original, &name);
+        // Key order of the id maps is part of the state (it decides iteration order).
+        #[derive(serde::Deserialize)]
+        struct Keys {
+            state: KeyedState,
+        }
+        #[derive(serde::Deserialize)]
+        struct KeyedState {
+            characters: IndexMap<String, IgnoredAny>,
+            monsters: IndexMap<String, IgnoredAny>,
+        }
+        let keys: Keys = serde_json::from_str(&text).unwrap();
+        assert!(save.state.characters.keys().eq(keys.state.characters.keys()), "{name}");
+        assert!(save.state.monsters.keys().eq(keys.state.monsters.keys()), "{name}");
+    }
+}
+
+#[test]
+fn exports_keep_running() {
+    for (name, text) in fixtures() {
+        let save: SaveFile = serde_json::from_str(&text).unwrap();
+        let mut sim = Sim::new(save.state);
+        for _ in 0..4000 {
+            sim.step();
+        }
+        assert!(sim.state.order.len() >= 7, "{name}");
     }
 }

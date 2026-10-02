@@ -1,0 +1,98 @@
+# Deploying the server
+
+One container runs everything: the shared world, the language-model brain, the event stream to every viewer, sign-in, and the web client's files. The world lives in one SQLite file on a persistent volume. These steps use [Fly.io](https://fly.io) (`fly.toml` is in the repository); any host with a persistent volume and a proxy that passes server-sent events through unbuffered works the same way with the `Dockerfile`.
+
+## What it costs to run
+
+One `shared-cpu-1x` machine with 512 MB and a 3 GB volume. Measured locally: about 17 MB of memory for the server with a few viewers (Litestream adds about 40 MB), well under 1% of a CPU, and 1 to 6 KB/s per viewer. The database grows to roughly 180 MB in a month and stays under half a gigabyte for a year with the retention rules below. The language model is the only cost that scales with use; see "The language model" for the caps.
+
+## First deployment
+
+```bash
+fly launch --no-deploy --copy-config --name <your-app>    # keeps fly.toml, picks the region
+fly volumes create data --size 3 --region <region>         # the same region as primary_region
+fly secrets set AUTH_TOKEN=$(openssl rand -hex 24) PUBLIC_ORIGIN=https://<your-app>.fly.dev
+fly deploy
+```
+
+Open `https://<your-app>.fly.dev/auth/token`, paste the token, and you are an admin of a brand-new world (paused worlds and speeds are set in **🛠 Admin**). Everyone who has the token is an admin; for real accounts switch to Google and Apple ([sign-in.md](sign-in.md)).
+
+To check that the event stream reaches browsers unbuffered through Fly's proxy (headers flushed at once, keep-alives through idle periods, reconnection across a deploy):
+
+```bash
+AUTH_TOKEN=… node tools/sse-probe.mjs https://<your-app>.fly.dev 120
+curl -sI --http2 https://<your-app>.fly.dev/healthz        # HTTP/2 to the client
+```
+
+## Settings
+
+Secrets (`fly secrets set NAME=value`):
+
+| Name | What it is |
+| --- | --- |
+| `AUTH_TOKEN` | The shared token for `AUTH_MODE=token` (16+ characters) |
+| `PUBLIC_ORIGIN` | The address people use, e.g. `https://village.example.com`; sign-in redirects and the CSRF check use it |
+| `AUTH_MODE`, `AUTH_PROVIDERS`, `ADMIN_EMAILS` | Google and Apple sign-in and the first admins ([sign-in.md](sign-in.md)) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
+| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_SERVICES_ID`, `APPLE_PRIVATE_KEY` | Apple sign-in |
+| `LLM_API_KEY` | Optional: the model endpoint's key, stored in the database on the first start that has none (an admin can change it later; it is never sent to a browser) |
+| `BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Optional: Litestream backups (set by `fly storage create`) |
+
+Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`), `TRUST_PROXY=true` (take the visitor's address from `Fly-Client-IP` for the sign-in rate limit; only behind a proxy that sets it), `INITIAL_SPEED` (0, 1, 2 or 4: the speed of a brand-new world; afterwards the speed an admin chose is kept), `LOG_FORMAT` (`json`, or `pretty` for people), `RUST_LOG` (`info` by default).
+
+Sessions need no secret: a session is 32 random bytes in an HttpOnly cookie, and the database keeps only its SHA-256.
+
+## Data, backups and restarts
+
+Everything lives in `/data/world.db` (SQLite in WAL mode): world snapshots, the chronicle, the command record, the decision log, settings, users, sessions and the allowlist.
+
+- **Snapshots** (zstd-compressed): every 30 seconds, 1.5 seconds after a notable event (a death, an arrival, the end of an attack, a new game day), and on shutdown, import and new world. Kept: the newest 20 of the 30-second ones (about ten minutes), the event ones for 24 hours, the first one of each game day for 14 days, and one per real day forever (a few hundred KB each). The newest snapshot is never removed.
+- **Restarts and deploys**: on SIGTERM the server stops the world, writes a final snapshot and closes the database; on start it resumes from the newest snapshot, at the same tick. Viewers' pages reconnect by themselves. A deploy pauses the world for the 10 to 30 seconds the new machine takes to start.
+- **Nightly copy**: once a day the server writes a consistent copy to `/data/backup/latest.db` (`VACUUM INTO`). It protects against a bad write, not against losing the volume.
+- **Retention** (checked hourly): the command record is kept 2 days, the decision log 30 days (prompts and replies only for the newest 5,000 rows), refused sign-ins 90 days; expired sessions are removed. The chronicle is kept whole.
+- **Litestream** (recommended): with a bucket configured, [Litestream](https://litestream.io) streams every change to object storage within a second, and a machine that starts with an empty volume restores from it first. On Fly.io:
+
+  ```bash
+  fly storage create      # a Tigris bucket; sets BUCKET_NAME and the AWS_* secrets
+  fly deploy
+  ```
+
+  Without `BUCKET_NAME` the container runs the server alone.
+
+  To restore by hand (to look at an old state, or onto a new volume):
+
+  ```bash
+  litestream restore -config deploy/litestream.yml -o world.db /data/world.db                     # newest
+  litestream restore -config deploy/litestream.yml -timestamp 2026-10-01T12:00:00Z -o world.db /data/world.db
+  ```
+
+  (with `DATA_DIR=/data` and the bucket's `BUCKET_NAME` and `AWS_*` variables in the environment).
+
+- **Export and import**: **🛠 Admin → Export save** downloads the world as JSON (the same format the old browser version wrote); **Import save** replaces the running world with one. Neither includes the model's key.
+
+The volume belongs to one machine, so there is exactly one machine: do not scale the app out. Scaling up (`fly scale vm`, `fly scale memory`) is fine.
+
+## Health
+
+- `/healthz` (no sign-in; Fly's health check) answers `ok tick <n>`, or 503 when the world has not ticked for 5 seconds while running.
+- **🛠 Admin → Server health** (`GET /api/admin/health`): the tick, tick timing jitter (median and 99th percentile), how often the clock fell behind and skipped ahead, viewers dropped for falling behind, the database size, the age of the newest snapshot, and the model's requests, failures and tokens in the last 24 hours.
+- Logs are JSON lines (`fly logs`); notable events carry an `event` field: `sign_in`, `sign_in_refused`, `sign_in_error`, `token_refused`, `allowlist_add`, `allowlist_remove`, `user_removed`, `rate_limited`, `csrf_refused`, `clock_skip`, `prune`, `backup`.
+
+## The language model
+
+It is off on a fresh deployment. An admin turns it on in **🛠 Admin → Language model** (base URL, model, key, then **Test connection**). Running around the clock, a village asks a fast model for about 20,000 decisions a day, so set the daily caps there: requests per day and tokens per day are spread evenly through the day (with half an hour's worth as a burst), so the village does not go quiet in the evening once a cap is near. **Enabled** off is the kill switch: villagers fall back to their routines at once. The decision log (🧠) shows every request.
+
+To measure a model before letting it run the village:
+
+```bash
+cd server && cargo run --release -p fsw-brain --bin probe -- <base-url> <model> 20
+```
+
+## Building the image elsewhere
+
+```bash
+docker build -t fantasy-sim-world .
+docker run --rm -p 8080:8080 -v fsw-data:/data -e AUTH_TOKEN=dev-token-0123456789 -e PUBLIC_ORIGIN=http://localhost:8080 fantasy-sim-world
+```
+
+The image builds the web client with Node, the server with Rust (dependencies cached in their own layer by `cargo-chef`, so a code change rebuilds only the server's own crates), and runs on `debian:bookworm-slim` as an unprivileged user. `deploy/entrypoint.sh` hands the mounted volume to that user, restores from Litestream if needed, and starts the server (under Litestream when a bucket is set).

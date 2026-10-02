@@ -1,8 +1,8 @@
 # Fantasy Sim World
 
-A browser-only 3D world in the KayKit style. A dozen fantasy villagers follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. You watch from a free top-down camera.
+A 3D world in the KayKit style. A dozen fantasy villagers follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who signs in watches the same village from their own free top-down camera.
 
-Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated locally and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
+Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated by the server and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
 The design is in [docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md).
 The plan for moving the simulation, the language model and all state to a Rust server with authenticated viewers is in [docs/superpowers/specs/2026-10-02-backend-migration-plan.md](docs/superpowers/specs/2026-10-02-backend-migration-plan.md).
@@ -11,48 +11,49 @@ The plan for moving the simulation, the language model and all state to a Rust s
 
 ```bash
 pnpm install
+pnpm build                      # the web client, into dist/
+cd server
+AUTH_TOKEN=dev-token-0123456789 STATIC_DIR=../dist LOG_FORMAT=pretty cargo run --release
 ```
 
-```bash
-pnpm dev
-```
+Open <http://localhost:8080/auth/token>, paste the token, and you are watching (as an admin) a world that keeps running while the server does. Every tab and every person watches the same world. The world, its history and the settings live in `server/data/world.db`; stop the server with Ctrl-C and it resumes where it was.
 
-Open the printed URL in a browser with WebGPU or WebGL 2.
+For work on the client, run `pnpm dev` next to the server: it serves the client with hot reload and forwards `/api` and `/auth` to `http://localhost:8080` (`SERVER_URL` changes it). Open `/auth/token` on the dev server's port once to sign in.
+
+In the browser (WebGPU or WebGL 2):
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
-- Space pauses; 1, 2 and 3 set the speed.
-- `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots.
+- Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
+- `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
-The world is saved in the browser (IndexedDB) every 30 seconds and at notable moments, and resumes where it left off. Settings has export, import and "new world".
+The admin panel (🛠) has the speed, export, import and "new world", the language model settings, the allowlist and refused sign-ins, and the server's health.
+
+Server settings come from the environment: `AUTH_TOKEN` (16+ characters) or Google and Apple sign-in ([docs/sign-in.md](docs/sign-in.md)), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN` (the address in the browser; sign-in and the CSRF check use it), `STATIC_DIR` (the web build, default `dist`), `DATA_DIR` (default `data`), `INITIAL_SPEED` (0, 1, 2 or 4 for a new world), `LLM_API_KEY` (seeds the model key once) and `LOG_FORMAT=pretty`. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
 ## Connecting a language model
 
-Open **Settings**, pick a preset or enter a base URL, choose a model ("List models" asks the server), and press **Test connection**. Requests go straight from the browser to the endpoint; the key is stored only in that browser and is never part of an exported save.
+Open **🛠 Admin → Language model**, pick a preset or enter a base URL, choose a model ("List models" asks that endpoint), and press **Test connection**, then **Save** with **Enabled** on. The server makes every request; the key is stored on the server, shown only as its last characters, never sent to a browser and never part of an export. A fresh server starts with the model off.
 
-- **Local models (Ollama, LM Studio)**: open the app from `localhost` so the server accepts the requests, use a model that supports tools, and set "Requests at once" to 1. If LM Studio refuses the browser's requests, turn on CORS in its server settings.
+- **Local models (Ollama, LM Studio)**: run them where the server can reach them, use a model that supports tools, and set "Requests at once" to 1.
 - **Reasoning models**: leave "Model reasoning" on Off. A model that thinks before every answer is several times slower and can spend its whole output budget on thinking.
-- **Cloud endpoints**: any that allow browser requests work directly. For one that does not, start the dev server with a proxy and use `/llm-proxy` as the base URL:
-
-```bash
-LLM_PROXY_TARGET=https://your-endpoint.example/v1 pnpm dev
-```
+- **Daily caps**: requests and tokens per day, spread evenly through the day so the village does not go quiet in the evening. A world that runs around the clock asks a fast model about 20,000 times a day.
 
 How the model is used:
 
 - It is asked only at decision points: on waking (a plan for the day), when something notable happens, when a plan block ends, in danger (fight or flee), in conversations, when a beaten opponent yields (spare or finish), and once a night to reflect.
 - Tool calls are sent natively. If a model answers in prose instead of calling its tool, the client switches to JSON-schema output, which local servers enforce with a grammar. Tested with `qwen/qwen3.6-35b-a3b` in LM Studio: 85% usable answers natively, 20 of 20 as JSON output, about 6 seconds each with reasoning off.
-- A governor measures the endpoint's speed and keeps demand below it, so a slow local model gets fewer, more important requests. "Max requests / minute" is a hard cap on top of that.
-- Every answer is checked against the world as it is by then. Stale, invalid or missing answers fall back to local behaviour.
-- The 🧠 pill in the top bar opens the decision log: each prompt, the raw reply, what was done with it, latency and tokens.
+- A governor measures the endpoint's speed and keeps demand below it, so a slow local model gets fewer, more important requests. "Max requests / minute" is a hard cap on top of that. While the model has a backlog, a world running faster than 1× holds at 1×.
+- Every answer is checked against the world as it is by then. Stale, invalid or missing answers fall back to the routines.
+- The 🧠 pill in the top bar opens the decision log for admins: each prompt, the raw reply, the commands it produced, latency and tokens.
 
-To measure a model before letting it run the village:
+To measure a model before letting it run the village (real prompts from a world a few days in):
 
 ```bash
-bun tools/llm-probe.ts http://localhost:11434/v1 <model> 20
+cd server && cargo run --release -p fsw-brain --bin probe -- http://localhost:11434/v1 <model> 20
 ```
 
-To try the whole path with no model at all, run the mock endpoint and point the app at `http://localhost:8787/v1`:
+To try the whole path with no model at all, run the mock endpoint and use `http://localhost:8787/v1` (model `mock`) as the base URL:
 
 ```bash
 node tools/mock-llm.mjs
@@ -62,37 +63,20 @@ node tools/mock-llm.mjs
 
 The game has an ambient mixer but ships no audio. Put your own files in `public/audio/`, named after the slots listed in [public/audio/README.md](public/audio/README.md); missing slots are silent, and Settings shows which were found.
 
-Character speech is not implemented yet, but the seam is in place: every spoken line passes through `SpeechBus` ([src/speech/speechBus.ts](src/speech/speechBus.ts)) with the speaker's voice profile, position and duration, so a text-to-speech sink can be added without touching the simulation.
+Character speech is not implemented yet, but the seam is in place: every spoken line arrives from the server complete, with the speaker's voice profile, position and duration, and passes through `SpeechBus` ([src/speech/speechBus.ts](src/speech/speechBus.ts)), so a text-to-speech sink can be added in the browser without touching the server.
 
 ## Tests and tools
 
 ```bash
-pnpm test
+pnpm typecheck && pnpm test     # the client
+cd server && cargo test         # the server
 ```
 
-```bash
-pnpm build
-```
-
-- `pnpm test` runs the unit tests, including a save/load determinism check and a 200-day headless run.
-- `bun tools/soak.ts 30 1337 --log` runs the world headlessly for 30 days and prints its chronicle. `--json` prints the end-of-run statistics as JSON; `--trace` prints one line per tick (RNG state, positions, intents) for diffing two implementations.
-
-## The server (in progress)
-
-The simulation is moving to a Rust server that runs one shared world for several viewers ([the plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md)). Phase 0 is in place: the Cargo workspace under `server/`, a 20 Hz tick loop that streams empty frames, token sign-in, the wire types and the fixtures the port is checked against. The browser game above is unchanged.
-
-```bash
-cd server
-AUTH_TOKEN=dev-token-0123456789 LOG_FORMAT=pretty cargo run
-```
-
-With the server running, `pnpm dev` forwards `/api` and `/auth` to it (`SERVER_URL` overrides `http://localhost:8080`); open `/auth/token` once to sign in. Settings come from the environment: `AUTH_TOKEN` (required, 16+ characters), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN`, `STATIC_DIR` (the web build, default `dist`), `DATA_DIR`, `INITIAL_SPEED` (0, 1, 2 or 4) and `LOG_FORMAT=pretty`.
-
-- `cd server && cargo test` runs the server tests, including a check that `src/generated/api.ts` matches the Rust wire types. `cargo run --bin export-api` rewrites it.
-- `bun tools/dump-world.ts` writes the world layer's output to `server/crates/world/tests/golden/`, the reference the Rust world must reproduce.
-- `bun tools/make-export-fixture.ts` runs the world with the brain against the mock endpoint and writes a save export into `server/crates/sim/tests/fixtures/`, which the Rust sim must keep reading.
+- `pnpm test` covers the client's stream playback, the view of the world it builds from the stream, the world layer, and the architecture rules (the browser never reaches the simulation, the brain or saves).
+- `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run; `cargo test -- --ignored` adds the 200-day soak), old browser saves still loading, the prompts byte for byte, the brain against a fake model, sign-in against a fake OpenID provider, the store, and the HTTP routes. It also checks that `src/generated/api.ts` matches the Rust wire types (`cargo run --bin export-api` rewrites it).
+- `cargo run --release -p fsw-sim --bin soak -- 30 1337 --log` runs the world headlessly for 30 days and prints its chronicle; `--json` prints statistics, `--trace` one line per tick.
+- `AUTH_TOKEN=… node tools/sse-probe.mjs <url> [seconds]` checks that the event stream reaches a client through a hosting proxy unbuffered.
 - `bun tools/assets/export-server-data.ts` writes `server/data/*.json` (model bounds, clip durations, tile heights) from `src/generated`; `pnpm assets` writes them too.
-- `AUTH_TOKEN=… node tools/sse-probe.mjs <url> [seconds]` checks that the event stream reaches a client through a hosting proxy unbuffered. `Dockerfile` and `fly.toml` deploy the server to Fly.io for that check.
 
 ## How it is put together
 
@@ -100,16 +84,18 @@ With the server running, `pnpm dev` forwards `/api` and `/auth` to it (`SERVER_U
 | --- | --- |
 | `src/core` | Seeded RNG, 2D maths, game time |
 | `src/world` | The hex map, places and activity spots, scatter, navigation grid, pathfinding |
-| `src/sim` | The simulation: plain JSON state stepped at 20 Hz, with no rendering or network |
-| `src/brain` | The LLM client, request queue, governor, prompts, tools and their validation |
-| `src/render` | three.js scene, actors, effects, labels, camera, lighting |
-| `src/ui` | The HUD (Preact) |
+| `src/net` | The event stream, the world as this viewer knows it, the jitter buffer, REST calls |
+| `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table |
+| `src/ui` | The HUD, admin panel, login and no-access pages (Preact) |
 | `src/audio`, `src/speech` | Ambient mixer and the speech bus |
-| `src/persist` | IndexedDB saves, settings, export and import |
-| `tools` | Asset build, Blender prop generator, headless soak, LLM probe, mock endpoint, server fixtures and stream probe |
-| `server` | The Rust server (Cargo workspace: `core`, `world`, `sim`, `brain`, `server`), being built |
+| `src/generated` | Wire types (from the Rust server), asset manifest, tile heights |
+| `tools` | Asset build, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
+| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, sign-in, SQLite store) |
+| `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
-The sim depends only on `core` and `world`; the brain talks to it through commands applied at tick boundaries, so a run is reproducible for a given command stream.
+On the server the sim depends only on `core` and `world`; the brain reads the world and talks to the sim through commands applied at tick boundaries, so a run is reproducible for a given command stream. The browser depends on `core`, `world`, `net` and `generated`, never on the sim.
+
+The TypeScript simulation, brain, browser saves and reference server that the Rust port was checked against are kept at the `ts-sim-reference` tag (`git checkout ts-sim-reference`), with the tools that compare the two (`bun tools/soak.ts … --trace`, `python3 tools/soak-parity.py`, and the fixture writers).
 
 ## Assets
 

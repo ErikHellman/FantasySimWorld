@@ -8,10 +8,8 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-fsw-core.workspace = true
-
-[dev-dependencies]
 base64 = "0.23.1"
+fsw-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

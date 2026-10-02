@@ -5,3 +5,4 @@ dist
 .vite
 server/target
 server/data/*.db*
+server/data/backup

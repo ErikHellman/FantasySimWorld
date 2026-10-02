@@ -6,7 +6,7 @@
 //!
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
-//! `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
+//! `roster` (a list of [`RosterEntry`]), `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
 //! `world_reset` [`WorldReset`]. Event ids are `"<bootId>:<tick>"`.
 
 use serde::{Deserialize, Serialize};
@@ -597,6 +597,17 @@ pub struct Me {
     pub role: Role,
 }
 
+/// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct SignInOptions {
+    /// `/auth/token` works (`AUTH_MODE=token`)
+    pub token: bool,
+    /// `/auth/google/start` works
+    pub google: bool,
+    /// `/auth/apple/start` works
+    pub apple: bool,
+}
+
 /// `GET /api/chronicle?before=<tick>&limit=<n>`
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct ChroniclePage {
@@ -797,6 +808,7 @@ pub fn typescript() -> String {
     decl!(
         Vec2,
         Role,
+        SignInOptions,
         Hello,
         EntityKind,
         Look,
@@ -854,7 +866,7 @@ pub fn typescript() -> String {
     out.push_str(
         "/** Payload of each named event on `GET /api/stream`. */\n\
          export type StreamEvents = {\n  \
-         hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  \
+         hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
          detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n};\n",
     );
     out

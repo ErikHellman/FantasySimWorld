@@ -1,0 +1,14 @@
+# Streams the world database to S3-compatible storage (on Fly.io: `fly storage
+# create`, which sets BUCKET_NAME, AWS_ENDPOINT_URL_S3 and the AWS_* keys).
+# Read by deploy/entrypoint.sh only when BUCKET_NAME is set.
+dbs:
+  - path: ${DATA_DIR}/world.db
+    replicas:
+      - type: s3
+        bucket: ${BUCKET_NAME}
+        path: world.db
+        endpoint: ${AWS_ENDPOINT_URL_S3}
+        region: ${AWS_REGION}
+        # A full snapshot a day bounds how much WAL a restore replays; keep a week of them.
+        snapshot-interval: 24h
+        retention: 168h

@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@preact/signals": "^2.11.3",
-    "idb": "^8.0.3",
     "preact": "^11.0.0",
     "three": "^0.186.1"
   },
@@ -24,7 +23,6 @@
     "@gltf-transform/functions": "^4.5.1",
     "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
-    "fake-indexeddb": "^6.2.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",
     "vitest": "^5.0.3"

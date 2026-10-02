@@ -1,39 +1,99 @@
-//! Who may watch. Phase 0 has the shared-token mode only; Google and Apple
-//! sign-in with an allowlist replace it in phase 5.
+//! Who may watch.
+//!
+//! `AUTH_MODE=token`: one shared secret, everyone is an admin (local work,
+//! first deployment). `AUTH_MODE=oidc`: Google and/or Apple sign-in, limited
+//! to the allowlist, with server-side sessions. Every `/api` route needs a
+//! viewer ([`middleware::require_viewer`]), `/api/admin` an admin, and every
+//! mutating `/api` request passes the CSRF check.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use axum::Form;
 use axum::Json;
-use axum::extract::{Request, State};
+use axum::extract::{Extension, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use axum::middleware::Next;
-use axum::response::{Html, IntoResponse, Redirect, Response};
-use serde::Deserialize;
+use axum::response::{IntoResponse, Response};
 
 use crate::AppState;
-use crate::api::wire::{ApiError, Me, Role};
-use crate::config::AuthMode;
+use crate::api::wire::{Me, Role, SignInOptions};
+use crate::config::{AuthMode, Config};
 
-const COOKIE_MAX_AGE_SECONDS: u32 = 30 * 24 * 3600;
+pub mod allowlist;
+pub mod apple;
+pub mod flow;
+pub mod google;
+pub mod middleware;
+pub mod provider;
+pub mod rate_limit;
+pub mod session;
+pub mod token;
 
-/// `__Host-` cookies must be `Secure`, which browsers refuse on plain http (local development).
-fn cookie_name(app: &AppState) -> &'static str {
-    if app.config.secure_cookies() { "__Host-fsw_token" } else { "fsw_token" }
+use provider::{Provider, ProviderKind};
+
+/// How long sign-in HTTP calls (discovery, keys, token exchange) may take.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Who is asking; in the request extensions of every `/api` handler.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Viewer {
+    /// `None` for the token holder
+    pub user_id: Option<i64>,
+    /// empty for the token holder
+    pub email: String,
+    pub display_name: String,
+    pub role: Role,
+    /// the session's database key; `None` in token mode
+    pub session: Option<[u8; 32]>,
 }
 
-/// Compares without an early exit, so response timing says nothing about the token.
-fn same(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+/// Sign-in state shared by the handlers.
+pub struct Auth {
+    providers: Vec<Provider>,
+    pub flows: flow::Flows,
+    pub limiter: rate_limit::RateLimiter,
+    /// for discovery, keys and token exchanges (rustls on aws-lc-rs, no redirects)
+    pub http: reqwest::Client,
 }
 
-fn presented_token<'a>(app: &AppState, headers: &'a HeaderMap) -> Option<&'a str> {
-    if let Some(bearer) =
-        headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "))
-    {
-        return Some(bearer.trim());
+impl Auth {
+    pub fn new(config: &Config) -> Result<Self, String> {
+        let http = reqwest::Client::builder()
+            .timeout(HTTP_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("fantasy-sim-world")
+            .build()
+            .map_err(|e| format!("HTTP client: {e}"))?;
+        let mut providers = Vec::new();
+        if let AuthMode::Oidc(oidc) = &config.auth {
+            if let Some(google) = &oidc.google {
+                providers.push(Provider::Google(google::Google::new(google.clone())));
+            }
+            if let Some(apple) = &oidc.apple {
+                providers.push(Provider::Apple(apple::Apple::new(apple.clone()).map_err(|e| e.to_string())?));
+            }
+        }
+        Ok(Self { providers, flows: flow::Flows::default(), limiter: rate_limit::RateLimiter::default(), http })
     }
-    let name = cookie_name(app);
+
+    /// An enabled provider.
+    pub fn provider(&self, kind: ProviderKind) -> Option<&Provider> {
+        self.providers.iter().find(|p| p.kind() == kind)
+    }
+}
+
+/// The viewer behind a request, by the configured mode; plus a renewed session cookie, if any.
+pub async fn authenticate(
+    app: &AppState,
+    headers: &HeaderMap,
+) -> crate::store::Result<Option<(Viewer, Option<HeaderValue>)>> {
+    match &app.config.auth {
+        AuthMode::Token(_) => Ok(token::viewer(&app.config, headers).map(|v| (v, None))),
+        AuthMode::Oidc(_) => session::authenticate(app, headers).await,
+    }
+}
+
+/// A cookie's value by name.
+pub fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(header::COOKIE)
         .iter()
@@ -44,68 +104,55 @@ fn presented_token<'a>(app: &AppState, headers: &'a HeaderMap) -> Option<&'a str
         .map(|(_, value)| value)
 }
 
-fn authorized(app: &AppState, headers: &HeaderMap) -> bool {
-    let AuthMode::Token(expected) = &app.config.auth;
-    presented_token(app, headers).is_some_and(|token| same(token.as_bytes(), expected.as_bytes()))
+/// Compares without an early exit, so response timing says nothing about a secret.
+pub fn same(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// Middleware for `/api`: 401 unless the request carries the token.
-pub async fn require_viewer(State(app): State<Arc<AppState>>, request: Request, next: Next) -> Response {
-    if authorized(&app, request.headers()) {
-        next.run(request).await
-    } else {
-        (StatusCode::UNAUTHORIZED, Json(ApiError { error: "not signed in".into() })).into_response()
-    }
-}
-
-/// `GET /api/me`
-pub async fn me() -> Json<Me> {
-    Json(Me { email: String::new(), display_name: "Token holder".into(), role: Role::Admin })
-}
-
-/// `GET /auth/token`: a form, so the token never ends up in a URL (and so in proxy logs).
-pub async fn token_form() -> Html<&'static str> {
-    Html(concat!(
-        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>",
-        "<title>Sign in</title><body style='font:16px system-ui;max-width:24rem;margin:4rem auto;padding:0 1rem'>",
-        "<form method=post action=/auth/token><p><label>Access token<br>",
-        "<input name=token type=password autofocus required style='width:100%;font:inherit'></label></p>",
-        "<p><button>Enter the valley</button></p></form>"
-    ))
-}
-
-#[derive(Deserialize)]
-pub struct TokenLogin {
-    token: String,
-    #[serde(default)]
-    return_to: Option<String>,
-}
-
-/// Only paths on this site: "/x" but not "//evil.example" or "/\evil.example".
-fn safe_return(path: Option<&str>) -> &str {
+/// Only paths on this site: "/x" but not "//evil.example", "/\evil.example" or anything with control characters.
+pub fn safe_return(path: Option<&str>) -> &str {
     match path {
-        Some(p) if p.starts_with('/') && !p.starts_with("//") && !p.starts_with("/\\") => p,
+        Some(p)
+            if p.starts_with('/')
+                && !p.starts_with("//")
+                && !p.contains('\\')
+                && !p.chars().any(|c| c.is_control() || c.is_whitespace()) =>
+        {
+            p
+        }
         _ => "/",
     }
 }
 
-/// `POST /auth/token`: sets the cookie and goes back to the app.
-pub async fn token_login(State(app): State<Arc<AppState>>, Form(login): Form<TokenLogin>) -> Response {
-    let AuthMode::Token(expected) = &app.config.auth;
-    if !same(login.token.trim().as_bytes(), expected.as_bytes()) {
-        tracing::info!(event = "token_refused", "wrong access token");
-        return (StatusCode::UNAUTHORIZED, Html("Wrong token. <a href=/auth/token>Try again</a>.")).into_response();
+/// `GET /auth/providers`
+pub async fn providers(State(app): State<Arc<AppState>>) -> Json<SignInOptions> {
+    Json(match &app.config.auth {
+        AuthMode::Token(_) => SignInOptions { token: true, google: false, apple: false },
+        AuthMode::Oidc(oidc) => {
+            SignInOptions { token: false, google: oidc.google.is_some(), apple: oidc.apple.is_some() }
+        }
+    })
+}
+
+/// `GET /api/me`
+pub async fn me(Extension(viewer): Extension<Viewer>) -> Json<Me> {
+    Json(Me { email: viewer.email, display_name: viewer.display_name, role: viewer.role })
+}
+
+/// `POST /api/logout`: ends this session and clears the cookie.
+pub async fn logout(State(app): State<Arc<AppState>>, Extension(viewer): Extension<Viewer>) -> Response {
+    if let Some(id) = viewer.session
+        && let Err(error) = app.store.delete_session(id).await
+    {
+        tracing::error!(%error, "could not delete a session");
+        return crate::api::error(StatusCode::SERVICE_UNAVAILABLE, "try again");
     }
-    let secure = if app.config.secure_cookies() { "; Secure" } else { "" };
-    let cookie = format!(
-        "{}={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={COOKIE_MAX_AGE_SECONDS}{secure}",
-        cookie_name(&app),
-        expected
-    );
-    let mut response = Redirect::to(safe_return(login.return_to.as_deref())).into_response();
-    response
-        .headers_mut()
-        .insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("token is a valid header value"));
+    let clear = match &app.config.auth {
+        AuthMode::Token(_) => token::clear_cookie(&app.config),
+        AuthMode::Oidc(_) => session::clear_cookie(&app.config),
+    };
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().append(header::SET_COOKIE, clear);
     response
 }
 
@@ -125,7 +172,20 @@ mod tests {
         assert_eq!(safe_return(Some("/world?x=1")), "/world?x=1");
         assert_eq!(safe_return(Some("//evil.example")), "/");
         assert_eq!(safe_return(Some("/\\evil.example")), "/");
+        assert_eq!(safe_return(Some("/a\\b")), "/");
+        assert_eq!(safe_return(Some("/\tevil")), "/");
         assert_eq!(safe_return(Some("https://evil.example")), "/");
+        assert_eq!(safe_return(Some("world")), "/");
         assert_eq!(safe_return(None), "/");
+    }
+
+    #[test]
+    fn cookies_by_name() {
+        let mut headers = HeaderMap::new();
+        headers.append(header::COOKIE, HeaderValue::from_static("a=1; session=xyz"));
+        headers.append(header::COOKIE, HeaderValue::from_static("b=2"));
+        assert_eq!(cookie(&headers, "session"), Some("xyz"));
+        assert_eq!(cookie(&headers, "b"), Some("2"));
+        assert_eq!(cookie(&headers, "sess"), None);
     }
 }
