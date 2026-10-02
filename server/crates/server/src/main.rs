@@ -34,6 +34,9 @@ async fn main() -> ExitCode {
         tracing::error!(%error, "cannot seed ADMIN_EMAILS");
         return ExitCode::FAILURE;
     }
+    if config.auth == AuthMode::Off {
+        tracing::warn!(bind = %config.bind, "AUTH_MODE=off: anyone who can reach this server is an admin (local development only)");
+    }
     if matches!(config.auth, AuthMode::Oidc(_)) && config.admin_emails.is_empty() {
         tracing::warn!("AUTH_MODE=oidc without ADMIN_EMAILS: only people already on the allowlist can sign in");
     }

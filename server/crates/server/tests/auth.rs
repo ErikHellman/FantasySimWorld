@@ -581,5 +581,5 @@ async fn the_login_page_learns_which_providers_are_on() {
     let app = app().await;
     let response = app.get("/auth/providers", "").await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(text(response).await, r#"{"token":false,"google":true,"apple":true}"#);
+    assert_eq!(text(response).await, r#"{"open":false,"token":false,"google":true,"apple":true}"#);
 }

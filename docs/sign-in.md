@@ -1,11 +1,12 @@
 # Signing in with Google and Apple
 
-The server never runs without sign-in. It has two modes:
+The server has three modes:
 
+- `AUTH_MODE=off`: no sign-in; everyone is an admin. For local development only: the server refuses to start unless it listens on a loopback address (the default becomes `127.0.0.1:8080`) and `PUBLIC_ORIGIN` is `http://localhost` or a loopback IP, so a deployment can never run open.
 - `AUTH_MODE=token` (the default): one shared secret in `AUTH_TOKEN` (16+ characters). Whoever opens `/auth/token` and types it gets a cookie and is an admin. Good for local work and a first deployment.
 - `AUTH_MODE=oidc`: Google and/or Apple sign-in, and only e-mail addresses on the allowlist get in.
 
-This page is about the second. Set `PUBLIC_ORIGIN` to the address people type (for example `https://village.example.com`): the redirect URIs below are built from it and must match exactly.
+This page is about the last. Set `PUBLIC_ORIGIN` to the address people type (for example `https://village.example.com`): the redirect URIs below are built from it and must match exactly.
 
 ## Google
 

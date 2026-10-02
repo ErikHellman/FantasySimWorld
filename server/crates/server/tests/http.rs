@@ -26,18 +26,15 @@ fn static_dir(name: &str) -> PathBuf {
 
 /// The router in token mode, with its database in a temporary directory (kept while the guard lives).
 async fn app(name: &str) -> (axum::Router, CancellationToken, tempfile::TempDir) {
-    app_with(name, &[]).await
+    app_with(name, &[("AUTH_TOKEN", TOKEN)]).await
 }
 
-/// [`app`] with more environment variables.
-async fn app_with(name: &str, env: &[(&str, &str)]) -> (axum::Router, CancellationToken, tempfile::TempDir) {
+/// The router with these settings, plus a throwaway web build and database.
+async fn app_with(name: &str, settings: &[(&str, &str)]) -> (axum::Router, CancellationToken, tempfile::TempDir) {
     let data = tempfile::tempdir().unwrap();
-    let mut vars = vec![
-        ("AUTH_TOKEN".to_string(), TOKEN.to_string()),
-        ("STATIC_DIR".to_string(), static_dir(name).display().to_string()),
-        ("DATA_DIR".to_string(), data.path().display().to_string()),
-    ];
-    vars.extend(env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+    let mut vars: Vec<(String, String)> = settings.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    vars.push(("STATIC_DIR".to_string(), static_dir(name).display().to_string()));
+    vars.push(("DATA_DIR".to_string(), data.path().display().to_string()));
     let config = Config::from_vars(vars).unwrap();
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
@@ -81,7 +78,7 @@ async fn api_needs_the_token() {
     assert!(text(response).await.contains(r#""role":"admin""#));
 
     let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"token":true,"google":false,"apple":false}"#);
+    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"google":false,"apple":false}"#);
 
     let response = app.oneshot(authed("/api/nothing-here")).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -208,6 +205,32 @@ async fn token_holder_is_an_admin_and_mutations_need_json() {
     assert!(logout.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("fsw_token=; "));
 }
 
+#[tokio::test]
+async fn with_sign_in_off_everyone_is_an_admin() {
+    let (app, _, _data) = app_with("off", &[("AUTH_MODE", "off")]).await;
+    let me = app.clone().oneshot(get("/api/me")).await.unwrap();
+    assert_eq!(me.status(), StatusCode::OK);
+    assert_eq!(text(me).await, r#"{"email":"","displayName":"Local developer","role":"admin"}"#);
+    assert_eq!(app.clone().oneshot(get("/api/admin/attempts")).await.unwrap().status(), StatusCode::OK);
+
+    let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
+    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"google":false,"apple":false}"#);
+    assert_eq!(app.clone().oneshot(get("/auth/token")).await.unwrap().status(), StatusCode::NOT_FOUND);
+
+    // The CSRF rule still holds.
+    let form = Request::post("/api/watch")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("viewer=a"))
+        .unwrap();
+    assert_eq!(app.clone().oneshot(form).await.unwrap().status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    let logout =
+        Request::post("/api/logout").header(header::CONTENT_TYPE, "application/json").body(Body::from("{}")).unwrap();
+    let logout = app.oneshot(logout).await.unwrap();
+    assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    assert!(logout.headers().get(header::SET_COOKIE).is_none());
+}
+
 fn json_request(method: &str, uri: &str, body: &str) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -313,6 +336,7 @@ async fn the_model_is_off_without_its_environment() {
 #[tokio::test]
 async fn model_settings_come_from_the_environment_and_cannot_be_changed() {
     let env = [
+        ("AUTH_TOKEN", TOKEN),
         ("LLM_BASE_URL", "http://127.0.0.1:9/v1/"),
         ("LLM_MODEL", "m"),
         ("LLM_API_KEY", "sk-secret-9876"),

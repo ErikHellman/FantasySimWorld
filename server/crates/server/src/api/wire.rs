@@ -600,6 +600,8 @@ pub struct Me {
 /// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct SignInOptions {
+    /// `AUTH_MODE=off`: no sign-in needed (local development)
+    pub open: bool,
     /// `/auth/token` works (`AUTH_MODE=token`)
     pub token: bool,
     /// `/auth/google/start` works
