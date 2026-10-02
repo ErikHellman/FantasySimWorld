@@ -191,15 +191,23 @@ const TILE_ROTATION_STEP = -Math.PI / 3;
 const RIVER_WATER_LEVEL = -0.075;
 const LAKE_WATER_LEVEL = -0.16;
 
-/** The direction (as a rotation about y) a bridge on this hex runs. */
-export function bridgeRotation(cell: HexCell): number {
+/**
+ * The bridge model's deck runs between two opposite hex edges, along direction 1
+ * in the model's own frame (60° from +x), not along z.
+ */
+const BRIDGE_MODEL_DIR = 1;
+
+/** The edge direction the road (and so the bridge) on this hex runs along. */
+function bridgeDir(cell: HexCell): number {
   for (let dir = 0; dir < DIR_COUNT; dir++) {
-    if (maskHas(cell.roadMask, dir)) {
-      const v = dirVector(dir);
-      return Math.atan2(v.x, v.z);
-    }
+    if (maskHas(cell.roadMask, dir)) return dir;
   }
-  return 0;
+  return BRIDGE_MODEL_DIR;
+}
+
+/** The rotation about y that lines the bridge model on this hex up with the road. */
+export function bridgeRotation(cell: HexCell): number {
+  return (bridgeDir(cell) - BRIDGE_MODEL_DIR) * TILE_ROTATION_STEP;
 }
 
 /** A world offset from a hex centre, expressed in the frame of a model rotated by `rotation` about y. */
@@ -217,8 +225,13 @@ function tileSurface(cell: HexCell, x: number, z: number): number | null {
 
 function bridgeDeck(cell: HexCell, x: number, z: number): number | null {
   if (!cell.bridge) return null;
-  const local = toLocal(x - cell.center.x, z - cell.center.z, bridgeRotation(cell));
-  return Math.abs(local.x) <= BRIDGE_HALF_WIDTH ? bridgeHeight(local.x, local.z) : null;
+  const dx = x - cell.center.x;
+  const dz = z - cell.center.z;
+  // The deck runs along the road, so its width is measured square to the road.
+  const along = dirVector(bridgeDir(cell));
+  if (Math.abs(dx * along.z - dz * along.x) / HEX_SCALE > BRIDGE_HALF_WIDTH) return null;
+  const local = toLocal(dx, dz, bridgeRotation(cell));
+  return bridgeHeight(local.x, local.z);
 }
 
 /** What the terrain itself allows at a point (buildings and props are handled by the nav grid). */

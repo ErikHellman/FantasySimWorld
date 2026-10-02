@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use fsw_core::jsmath::{atan2, cos, sin};
+use fsw_core::jsmath::{cos, sin};
 use fsw_core::math2d::dist_to_segment;
 use fsw_core::rng::hash_string;
 use fsw_core::{Vec2, vec2};
@@ -282,15 +282,18 @@ const TILE_ROTATION_STEP: f64 = -std::f64::consts::PI / 3.0;
 const RIVER_WATER_LEVEL: f64 = -0.075;
 const LAKE_WATER_LEVEL: f64 = -0.16;
 
-/// The direction (as a rotation about y) a bridge on this hex runs.
+/// The bridge model's deck runs between two opposite hex edges, along direction 1
+/// in the model's own frame (60° from +x), not along z.
+const BRIDGE_MODEL_DIR: u8 = 1;
+
+/// The edge direction the road (and so the bridge) on this hex runs along.
+fn bridge_dir(cell: &HexCell) -> u8 {
+    (0..DIR_COUNT).find(|&dir| mask_has(cell.road_mask, dir)).unwrap_or(BRIDGE_MODEL_DIR)
+}
+
+/// The rotation about y that lines the bridge model on this hex up with the road.
 pub fn bridge_rotation(cell: &HexCell) -> f64 {
-    for dir in 0..DIR_COUNT {
-        if mask_has(cell.road_mask, dir) {
-            let v = dir_vector(dir);
-            return atan2(v.x, v.z);
-        }
-    }
-    0.0
+    f64::from(i32::from(bridge_dir(cell)) - i32::from(BRIDGE_MODEL_DIR)) * TILE_ROTATION_STEP
 }
 
 /// A world offset from a hex centre, expressed in the frame of a model rotated by `rotation` about y.
@@ -311,8 +314,15 @@ fn bridge_deck(cell: &HexCell, x: f64, z: f64) -> Option<f64> {
     if !cell.bridge {
         return None;
     }
-    let local = to_local(x - cell.center.x, z - cell.center.z, bridge_rotation(cell));
-    if local.x.abs() <= BRIDGE_HALF_WIDTH { bridge_height(local.x, local.z) } else { None }
+    let dx = x - cell.center.x;
+    let dz = z - cell.center.z;
+    // The deck runs along the road, so its width is measured square to the road.
+    let along = dir_vector(bridge_dir(cell));
+    if (dx * along.z - dz * along.x).abs() / HEX_SCALE > BRIDGE_HALF_WIDTH {
+        return None;
+    }
+    let local = to_local(dx, dz, bridge_rotation(cell));
+    bridge_height(local.x, local.z)
 }
 
 /// What the terrain itself allows at a point (buildings and props are handled by the nav grid).

@@ -71,7 +71,7 @@ pub fn tile_height(model: &str, x: f64, z: f64) -> Option<f64> {
     sample(heights.tiles.get(model)?, &heights.tile_grid, x, z)
 }
 
-/// Height of the bridge deck at a point in the bridge's own frame (it runs along z); `None` off the bridge.
+/// Height of the bridge deck at a point in the bridge model's own frame; `None` off the bridge.
 pub fn bridge_height(x: f64, z: f64) -> Option<f64> {
     let heights = &*HEIGHTS;
     sample(&heights.bridge, &heights.bridge_grid, x, z)

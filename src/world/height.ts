@@ -44,7 +44,7 @@ export function tileHeight(model: string, x: number, z: number): number | null {
   return sample(data, TILE_GRID, x, z);
 }
 
-/** Height of the bridge deck at a point in the bridge's own frame (it runs along z); null off the bridge. */
+/** Height of the bridge deck at a point in the bridge model's own frame; null off the bridge. */
 export function bridgeHeight(x: number, z: number): number | null {
   return sample(bridge, BRIDGE_GRID, x, z);
 }
