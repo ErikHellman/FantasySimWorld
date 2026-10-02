@@ -19,7 +19,10 @@ axum = "0.8.9"
 base64 = "0.22"
 fsw-brain.workspace = true
 fsw-sim.workspace = true
+fsw-core.workspace = true
 fsw-world.workspace = true
+indexmap = "2"
+parking_lot = "0.12"
 futures-util = "0.3.34"
 getrandom = "0.4.3"
 # One crypto backend everywhere: aws-lc-rs (rustls via reqwest, jsonwebtoken, our own hashing).

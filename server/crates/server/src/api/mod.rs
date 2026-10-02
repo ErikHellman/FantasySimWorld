@@ -8,6 +8,7 @@ use wire::ApiError;
 pub mod router;
 pub mod stream;
 pub mod wire;
+pub mod world;
 
 /// An `/api` error answer: the status with an [`ApiError`] body.
 pub fn error(status: StatusCode, message: &str) -> Response {

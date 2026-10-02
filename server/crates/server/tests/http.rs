@@ -35,7 +35,7 @@ async fn app(name: &str) -> (axum::Router, CancellationToken, tempfile::TempDir)
     .unwrap();
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
-    let (world, _task) = world_task::spawn(1, shutdown.clone());
+    let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
     (router(AppState::new(config, world, store, shutdown.clone()).unwrap()), shutdown, data)
 }
 
@@ -125,6 +125,8 @@ async fn stream_says_hello_then_ticks() {
         }
     }
     assert!(seen.starts_with("event: hello\n"), "{seen}");
+    assert!(seen.contains("event: snapshot\n"), "{seen}");
+    assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
     assert!(seen.contains(r#""protocolVersion":1"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
@@ -194,6 +196,99 @@ async fn token_holder_is_an_admin_and_mutations_need_json() {
     let logout = app.oneshot(logout).await.unwrap();
     assert_eq!(logout.status(), StatusCode::NO_CONTENT);
     assert!(logout.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("fsw_token=; "));
+}
+
+fn json_request(method: &str, uri: &str, body: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_owned()))
+        .unwrap()
+}
+
+/// Reads stream events until `done` says enough, or fails after 5 s.
+async fn read_events(body: &mut Body, done: impl Fn(&str) -> bool) -> String {
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !done(&seen) {
+        let frame = tokio::time::timeout_at(deadline, body.frame()).await.expect(&seen).unwrap().unwrap();
+        if let Ok(data) = frame.into_data() {
+            seen.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    seen
+}
+
+#[tokio::test]
+async fn the_world_answers_its_rest_calls() {
+    let (app, _, _data) = app("world").await;
+    let detail = app.clone().oneshot(authed("/api/characters/c1")).await.unwrap();
+    assert_eq!(detail.status(), StatusCode::OK);
+    assert!(text(detail).await.contains(r#""name":"Aldric Vane""#));
+    assert_eq!(app.clone().oneshot(authed("/api/characters/c99")).await.unwrap().status(), StatusCode::NOT_FOUND);
+
+    let page = text(app.clone().oneshot(authed("/api/chronicle?limit=5")).await.unwrap()).await;
+    assert!(page.contains("A new day dawns over the valley."), "{page}");
+
+    let speed = app.clone().oneshot(json_request("POST", "/api/admin/speed", r#"{"speed":3}"#)).await.unwrap();
+    assert_eq!(speed.status(), StatusCode::BAD_REQUEST);
+    let speed = app.clone().oneshot(json_request("POST", "/api/admin/speed", r#"{"speed":4}"#)).await.unwrap();
+    assert_eq!(speed.status(), StatusCode::NO_CONTENT);
+
+    let health = text(app.clone().oneshot(authed("/api/admin/health")).await.unwrap()).await;
+    assert!(health.contains(r#""dbBytes""#), "{health}");
+
+    // Export, then import the export: the same world comes back.
+    let export = app.clone().oneshot(authed("/api/admin/world/export")).await.unwrap();
+    assert_eq!(export.status(), StatusCode::OK);
+    assert!(export.headers()[header::CONTENT_DISPOSITION].to_str().unwrap().contains("fantasy-sim-world-day1.json"));
+    let save = text(export).await;
+    assert!(save.starts_with(r#"{"version":1,"savedAt":"#));
+    let imported = app.clone().oneshot(json_request("POST", "/api/admin/world/import", &save)).await.unwrap();
+    assert_eq!(imported.status(), StatusCode::NO_CONTENT);
+    let bad = app.clone().oneshot(json_request("POST", "/api/admin/world/import", r#"{"version":1}"#)).await.unwrap();
+    assert_eq!(bad.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn watching_sends_details_and_a_new_world_resets_viewers() {
+    let (app, _, _data) = app("watch").await;
+    let stream = app.clone().oneshot(authed("/api/stream?viewer=tab1")).await.unwrap();
+    let mut body = stream.into_body();
+    read_events(&mut body, |seen| seen.contains("event: snapshot")).await;
+    let watch = json_request("POST", "/api/watch", r#"{"viewer":"tab1","id":"c2"}"#);
+    assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let seen = read_events(&mut body, |seen| seen.contains("event: detail")).await;
+    assert!(seen.contains(r#""name":"Brenna Ashdown""#), "{seen}");
+
+    let reset = app.clone().oneshot(json_request("POST", "/api/admin/world/new", r#"{"seed":5}"#)).await.unwrap();
+    assert_eq!(reset.status(), StatusCode::NO_CONTENT);
+    let seen = read_events(&mut body, |seen| seen.contains("event: world_reset")).await;
+    assert!(seen.contains(r#"{"reason":"new_world"}"#), "{seen}");
+}
+
+#[tokio::test]
+async fn a_quick_reconnect_replays_the_missed_ticks() {
+    let (app, _, _data) = app("replay").await;
+    let stream = app.clone().oneshot(authed("/api/stream")).await.unwrap();
+    let mut body = stream.into_body();
+    let seen = read_events(&mut body, |seen| seen.matches("event: tick").count() >= 2).await;
+    let id = seen.lines().rev().find_map(|line| line.strip_prefix("id: ")).unwrap().to_owned();
+    drop(body);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let again = Request::get("/api/stream")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header("last-event-id", &id)
+        .body(Body::empty())
+        .unwrap();
+    let mut body = app.oneshot(again).await.unwrap().into_body();
+    let seen = read_events(&mut body, |seen| seen.matches("event: tick").count() >= 3).await;
+    assert!(!seen.contains("event: snapshot"), "{seen}");
+    let (boot, tick) = id.rsplit_once(':').unwrap();
+    let next = format!("id: {boot}:{}", tick.parse::<u64>().unwrap() + 1);
+    assert!(seen.contains(&next), "{seen}");
 }
 
 #[test]

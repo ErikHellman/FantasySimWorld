@@ -412,6 +412,7 @@ export type StreamEvents = {
   snapshot: Snapshot;
   tick: TickFrame;
   status: Status;
+  roster: RosterEntry[];
   detail: CharacterDetail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;

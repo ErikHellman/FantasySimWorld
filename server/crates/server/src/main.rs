@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use fsw_server::config::{AuthMode, Config};
 use fsw_server::store::{self, Store};
-use fsw_server::{AppState, router, world_task};
+use fsw_server::{AppState, digest, router, world_task};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -39,7 +39,14 @@ async fn main() -> ExitCode {
     }
 
     let shutdown = CancellationToken::new();
-    let (world, world_task) = world_task::spawn(config.initial_speed, shutdown.clone());
+    let (world, world_task) = match world_task::start(store.clone(), config.initial_speed, shutdown.clone()).await {
+        Ok(started) => started,
+        Err(error) => {
+            tracing::error!(%error, "cannot start the world");
+            store.close().await;
+            return ExitCode::FAILURE;
+        }
+    };
     let maintenance = store::maintenance::spawn(store.clone(), shutdown.clone());
     let app = match AppState::new(config.clone(), world, store.clone(), shutdown.clone()) {
         Ok(app) => app,
@@ -58,7 +65,9 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    tracing::info!(bind = %config.bind, origin = %config.public_origin, static_dir = %config.static_dir.display(), db = %store.path().display(), boot = %app.boot_id, "listening");
+    let boot = app.world.core.read().boot_id.clone();
+    tracing::info!(bind = %config.bind, origin = %config.public_origin, static_dir = %config.static_dir.display(), db = %store.path().display(), boot, "listening");
+    let digest = digest::task::spawn(app.clone(), shutdown.clone());
 
     tokio::spawn(stop_on_signal(shutdown.clone()));
     // The peer address feeds the sign-in rate limit (unless TRUST_PROXY takes it from headers).
@@ -66,6 +75,7 @@ async fn main() -> ExitCode {
     let served = axum::serve(listener, service).with_graceful_shutdown(shutdown.clone().cancelled_owned()).await;
     shutdown.cancel();
     let _ = world_task.await;
+    let _ = digest.await;
     let _ = maintenance.await;
     // Last: flush the chronicle, checkpoint the WAL, stop the store thread.
     store.close().await;

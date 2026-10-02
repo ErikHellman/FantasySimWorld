@@ -6,7 +6,7 @@
 //!
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
-//! `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
+//! `roster` (a list of [`RosterEntry`]), `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
 //! `world_reset` [`WorldReset`]. Event ids are `"<bootId>:<tick>"`.
 
 use serde::{Deserialize, Serialize};
@@ -854,7 +854,7 @@ pub fn typescript() -> String {
     out.push_str(
         "/** Payload of each named event on `GET /api/stream`. */\n\
          export type StreamEvents = {\n  \
-         hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  \
+         hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
          detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n};\n",
     );
     out
