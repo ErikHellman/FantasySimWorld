@@ -1,4 +1,4 @@
-import type { AnimId } from './anims';
+import type { AnimId } from '../../render/anims';
 import type { WeaponStyle } from './classes';
 
 export type MonsterKind = 'skeleton_minion' | 'skeleton_warrior' | 'skeleton_rogue' | 'skeleton_mage' | 'necromancer';

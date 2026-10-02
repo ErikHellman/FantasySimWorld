@@ -1,7 +1,7 @@
 import { clamp, dist, type Vec2 } from '../../core/math2d';
 import { secondsToTicks } from '../../core/time';
 import { chance, intRange, pick } from '../../core/rng';
-import { ANIMS, animSeconds, type AnimDef, type AnimId } from '../data/anims';
+import { ANIMS, animSeconds, type AnimDef, type AnimId } from '../../render/anims';
 import { CLASSES, FISTS, RUN_SPEED, type Weapon } from '../data/classes';
 import { MONSTERS } from '../data/monsters';
 import type { Character, FightMode, Id, Intent, Monster } from '../state';

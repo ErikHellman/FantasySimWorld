@@ -1,20 +1,21 @@
 import * as THREE from 'three/webgpu';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { lerp, lerpAngle } from '../core/math2d';
-import { ANIMS, type AnimDef, type AnimId } from '../sim/data/anims';
-import type { Look } from '../sim/state';
+import type { Look } from '../generated/api';
+import { ANIMS, type AnimDef, type AnimId } from './anims';
 import type { Assets } from './assets';
 
 const FADE_SECONDS = 0.18;
 
 export type ActorLook = Look;
 
-/** What the view needs from a sim entity each tick. */
+/** What the view needs from an entity each tick. */
 export interface ActorSnapshot {
   x: number;
   z: number;
   facing: number;
-  anim: AnimId;
+  /** an AnimId; anything else plays as idle */
+  anim: string;
   animSeq: number;
   visible: boolean;
   /** what is in each hand right now ("bundle/model", or a weapons model id) */
@@ -24,7 +25,7 @@ export interface ActorSnapshot {
 
 /**
  * One animated character or monster. Positions are interpolated between the
- * last two sim ticks; animation state is reconciled from the sim every tick.
+ * last two ticks; animation state is reconciled from the stream every tick.
  */
 export class ActorView {
   readonly root = new THREE.Group();
@@ -32,7 +33,7 @@ export class ActorView {
   private readonly mixer: THREE.AnimationMixer;
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
-  private anim: AnimId | null = null;
+  private anim: string | null = null;
   private animSeq = -1;
   private prev = { x: 0, z: 0, facing: 0 };
   private next = { x: 0, z: 0, facing: 0 };
@@ -92,8 +93,8 @@ export class ActorView {
     return action;
   }
 
-  private play(anim: AnimId, immediate: boolean): void {
-    const def: AnimDef = ANIMS[anim];
+  private play(anim: string, immediate: boolean): void {
+    const def: AnimDef = ANIMS[anim as AnimId] ?? ANIMS.idle;
     const action = this.action(def);
     action.reset();
     action.setLoop(def.loop ? THREE.LoopRepeat : THREE.LoopOnce, def.loop ? Infinity : 1);
@@ -111,7 +112,7 @@ export class ActorView {
     this.current = action;
   }
 
-  /** Called once per sim tick with the entity's new state. */
+  /** Called once per tick with the entity's new state. */
   sync(snapshot: ActorSnapshot): void {
     this.prev = this.fresh ? { x: snapshot.x, z: snapshot.z, facing: snapshot.facing } : this.next;
     this.next = { x: snapshot.x, z: snapshot.z, facing: snapshot.facing };

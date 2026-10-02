@@ -1,6 +1,6 @@
 import type { Vec2 } from '../core/math2d';
 import type { ActivityId } from '../world/places';
-import type { AnimId } from './data/anims';
+import type { AnimId } from '../render/anims';
 import type { ClassId } from './data/classes';
 import type { MonsterKind } from './data/monsters';
 

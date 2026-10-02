@@ -1,7 +1,7 @@
 import { dist, facingTo } from '../../core/math2d';
 import { minutesToTicks, secondsToTicks } from '../../core/time';
 import { chance } from '../../core/rng';
-import { ANIMS } from '../data/anims';
+import { ANIMS } from '../../render/anims';
 import { WALK_SPEED } from '../data/classes';
 import { genericContinuation, localScript } from '../data/smalltalk';
 import type { Character, Conversation, ConversationLine, Feeling, Id, TalkTone } from '../state';

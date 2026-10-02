@@ -1,7 +1,7 @@
 import { clamp, dist, type Vec2 } from '../core/math2d';
 import { gameTime, secondsToTicks, type GameTime } from '../core/time';
 import { nearestPlace } from '../world/places';
-import type { AnimId } from './data/anims';
+import type { AnimId } from '../render/anims';
 import type { SimEvent } from './events';
 import type {
   Character, ChronicleKind, Id, Memory, MemoryKind, Monster, Relationship, SimState, Stimulus, StimulusKind,
