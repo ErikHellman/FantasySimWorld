@@ -1,5 +1,5 @@
-//! The stream encoder (port of `tools/ref-server/encode.ts`, which spells out
-//! the rules): what each entity looks like on the wire, how a tick's changes
+//! The stream encoder (port of the reference server's `tools/ref-server/encode.ts`
+//! at the `ts-sim-reference` tag): what each entity looks like on the wire, how a tick's changes
 //! become a `tick` frame, and which sim events viewers get.
 //!
 //! - Ids: villagers and monsters keep their sim ids; a corpse is
@@ -392,6 +392,36 @@ impl Tracker {
     }
 }
 
+/// Seed and length of the frames in `tests/fixtures/server-frames.json`.
+pub const FRAMES_FIXTURE: (u32, usize) = (99, 600);
+
+/// What the web client's tests replay through its view of the world: the
+/// snapshot of a fresh world, the frames of its first ticks, and the entities
+/// at the end (JSON; `cargo run --bin export-frames` writes it).
+pub fn frames_fixture() -> String {
+    let (seed, ticks) = FRAMES_FIXTURE;
+    let mut sim = fsw_sim::Sim::new(fsw_sim::create_state(seed));
+    let mut tracker = Tracker::new(&sim.state);
+    let start = sim.state.tick;
+    let entities = tracker.entities();
+    let frames: Vec<TickFrame> = (0..ticks)
+        .map(|_| {
+            let events = sim.step();
+            tracker.frame(&sim.state, &events)
+        })
+        .collect();
+    let fixture = serde_json::json!({
+        "seed": seed,
+        "tick": start,
+        "entities": entities,
+        "frames": frames,
+        "expected": entities_of(&sim.state),
+    });
+    let mut out = serde_json::to_string(&fixture).expect("frames serialise");
+    out.push('\n');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,5 +481,15 @@ mod tests {
         let d = character_dyn(c);
         assert_eq!(d.mh.as_deref(), Some("tools/hammer"));
         assert!(d.oh.is_none());
+    }
+
+    #[test]
+    fn the_clients_frame_fixture_is_current() {
+        const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../tests/fixtures/server-frames.json");
+        let committed = std::fs::read_to_string(PATH).unwrap_or_default();
+        assert!(
+            committed == frames_fixture(),
+            "tests/fixtures/server-frames.json is stale; run `cargo run --bin export-frames` in server/ and commit the result"
+        );
     }
 }

@@ -9,27 +9,25 @@ import { describe, expect, it } from 'vitest';
  *   generated <- net                      the stream, the view world, playback, REST calls
  *   render draws net's ViewWorld; ui shows net's data and calls its REST helpers
  *
- * and nothing the client reaches may import the simulation, the brain, the
- * browser saves or the old game loop (src/sim, src/brain, src/persist,
- * src/app). Those stay in the repository as the reference for the Rust port
- * until phase 7, under their old rule (core <- world <- sim <- brain). three.js
- * stays inside render/.
+ * The simulation, the brain and the saves live on the server (server/crates);
+ * the TypeScript versions are kept at the `ts-sim-reference` tag and must not
+ * come back. three.js stays inside render/.
  */
 const SRC = join(__dirname, '..', 'src');
 const SERVER_ONLY = ['sim', 'brain', 'persist', 'app'];
 const ALLOWED: Record<string, string[]> = {
   core: ['core', 'generated'],
   world: ['core', 'world', 'generated'],
+  generated: ['core', 'generated'],
   net: ['net', 'generated'],
   render: ['core', 'world', 'render', 'generated', 'net'],
   audio: ['core', 'world', 'audio', 'generated'],
   speech: ['core', 'speech', 'generated'],
   ui: ['core', 'ui', 'net', 'audio', 'generated'],
   'main.ts': ['core', 'world', 'render', 'audio', 'speech', 'net', 'ui', 'generated'],
-  // The reference sim; it reads animation timings from render/anims.ts, which moved there from sim/data.
-  sim: ['core', 'world', 'sim', 'generated', 'render/anims.ts'],
-  brain: ['core', 'world', 'sim', 'brain', 'persist'],
 };
+/** Packages the client no longer needs: saves and the model's key live on the server. */
+const GONE_PACKAGES = ['idb', 'fake-indexeddb'];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -63,7 +61,10 @@ describe('architecture', () => {
     const problems: string[] = [];
     for (const path of all) {
       const allowed = ALLOWED[layerOf(path)];
-      if (!allowed) continue;
+      if (!allowed) {
+        problems.push(`${posix(path)} is in no known layer`);
+        continue;
+      }
       for (const spec of imports(path)) {
         if (!spec.startsWith('.')) continue;
         const target = resolveImport(path, spec);
@@ -74,6 +75,15 @@ describe('architecture', () => {
         if (!allowed.includes(layerOf(target)) && !allowed.includes(posix(target))) problems.push(`${posix(path)} imports ${spec}`);
       }
     }
+    expect(problems).toEqual([]);
+  });
+
+  it('has no simulation, brain, saves or game loop of its own', () => {
+    expect(SERVER_ONLY.filter((dir) => existsSync(join(SRC, dir)))).toEqual([]);
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    expect(GONE_PACKAGES.filter((name) => name in deps)).toEqual([]);
+    const problems = all.filter((path) => imports(path).some((spec) => GONE_PACKAGES.includes(spec))).map(posix);
     expect(problems).toEqual([]);
   });
 

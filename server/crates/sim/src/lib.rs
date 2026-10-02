@@ -1,4 +1,6 @@
-//! The deterministic 20 Hz village simulation (port of `src/sim`).
+//! The deterministic 20 Hz village simulation (port of `src/sim`; the TypeScript
+//! original is kept at the `ts-sim-reference` tag, as are the other `src/…`
+//! and `tools/…` files that comments in these crates name).
 //!
 //! `SimState` is plain data with the exact JSON shape of the TypeScript sim,
 //! so browser exports load unchanged (`tests/fixtures/export-day-*.json`).

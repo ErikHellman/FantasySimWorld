@@ -4,8 +4,8 @@
 //!   cargo run --release -p fsw-sim --bin soak -- [days] [seed] [--log | --json | --trace]
 //!
 //! `--trace` prints one line per tick (tick, RNG state, every position to 1e-6
-//! and every intent kind); diff it against `bun tools/soak.ts … --trace` to find
-//! the first tick where the two implementations part ways.
+//! and every intent kind); diff it against `bun tools/soak.ts … --trace` (at the
+//! `ts-sim-reference` tag) to find the first tick where the two implementations part ways.
 
 use std::collections::BTreeMap;
 use std::io::Write;

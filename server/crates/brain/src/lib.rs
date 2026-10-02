@@ -1,4 +1,5 @@
-//! The language-model brain (port of `src/brain`): the client, its request
+//! The language-model brain (port of `src/brain`, kept at the `ts-sim-reference`
+//! tag): the client, its request
 //! queue and the governor (none of which touch the sim), and the prompts,
 //! validation and orchestrator that connect a model to the village.
 

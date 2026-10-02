@@ -1,10 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Entity, Snapshot, TickFrame } from '../src/generated/api';
 import { Playback } from '../src/net/playback';
 import { ViewWorld } from '../src/net/viewWorld';
-import { createState } from '../src/sim/create';
-import { Sim } from '../src/sim/sim';
-import { DeltaTracker, entitiesOf } from '../tools/ref-server/encode';
 
 const entity = (id: string, x: number): Entity => ({
   static: { id, kind: 'villager', name: id, look: { model: 'Knight', texture: null, hide: [], mainHand: 'sword', offHand: null }, maxHp: 100, hostile: false, voice: null },
@@ -38,15 +37,17 @@ describe('view world', () => {
     expect(world.gravesVersion).toBe(version + 2);
   });
 
-  it('follows the reference server frame for frame', () => {
-    const sim = new Sim(createState(99));
-    const tracker = new DeltaTracker(sim.state);
+  it('follows the server frame for frame', () => {
+    // Written by the Rust encoder (`cargo run --bin export-frames` in server/); a server test keeps it current.
+    const fixture = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'server-frames.json'), 'utf8')) as {
+      tick: number; entities: Entity[]; frames: TickFrame[]; expected: Entity[];
+    };
     const world = new ViewWorld();
-    world.reset(snapshot(sim.state.tick, tracker.entities()));
-    for (let i = 0; i < 600; i++) world.apply(tracker.frame(sim.state, sim.step()));
-    const expected = entitiesOf(sim.state);
-    expect([...world.entities.keys()]).toEqual(expected.map((e) => e.static.id));
-    for (const e of expected) {
+    world.reset(snapshot(fixture.tick, fixture.entities));
+    for (const frame of fixture.frames) world.apply(frame);
+    expect(world.tick).toBe(fixture.frames.at(-1)!.t);
+    expect([...world.entities.keys()]).toEqual(fixture.expected.map((e) => e.static.id));
+    for (const e of fixture.expected) {
       const view = world.entities.get(e.static.id)!;
       expect([Math.round(view.x * 100), Math.round(view.z * 100)]).toEqual(e.dyn.p);
       expect([view.anim, view.animSeq, view.mainHand, view.offHand]).toEqual([e.dyn.a[0], e.dyn.a[1], e.dyn.mh, e.dyn.oh]);

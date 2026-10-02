@@ -1,5 +1,6 @@
 //! The authored cast, embedded from `data/cast.json` (written from
-//! `src/sim/data/cast.ts` by `bun tools/export-cast.ts`).
+//! `src/sim/data/cast.ts` by `bun tools/export-cast.ts` at the `ts-sim-reference`
+//! tag; edit the JSON directly now).
 
 use std::sync::LazyLock;
 

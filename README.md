@@ -89,12 +89,13 @@ cd server && cargo test         # the server
 | `src/ui` | The HUD, admin panel, login and no-access pages (Preact) |
 | `src/audio`, `src/speech` | Ambient mixer and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights |
-| `src/sim`, `src/brain`, `src/persist`, `src/app` | The TypeScript simulation, LLM brain, browser saves and game loop: no longer loaded by the browser, kept as the reference for the Rust port and run by the reference server |
-| `tools` | Reference server, asset build, Blender prop generator, headless soak, LLM probe, mock endpoint, server fixtures and stream probe |
+| `tools` | Asset build, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
 | `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, sign-in, SQLite store) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
 On the server the sim depends only on `core` and `world`; the brain reads the world and talks to the sim through commands applied at tick boundaries, so a run is reproducible for a given command stream. The browser depends on `core`, `world`, `net` and `generated`, never on the sim.
+
+The TypeScript simulation, brain, browser saves and reference server that the Rust port was checked against are kept at the `ts-sim-reference` tag (`git checkout ts-sim-reference`), with the tools that compare the two (`bun tools/soak.ts … --trace`, `python3 tools/soak-parity.py`, and the fixture writers).
 
 ## Assets
 

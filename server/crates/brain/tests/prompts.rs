@@ -1,5 +1,6 @@
 //! The Rust prompts against the TypeScript brain's, word for word, for a fixed
-//! world (`tests/fixtures/prompts.json`, written by `bun tools/make-prompt-fixture.ts`).
+//! world (`tests/fixtures/prompts.json`, written by `bun tools/make-prompt-fixture.ts`
+//! at the `ts-sim-reference` tag).
 
 use fsw_brain::prompts::{
     Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,

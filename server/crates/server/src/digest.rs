@@ -1,6 +1,6 @@
 //! The HUD's view of the world, rendered on the server because the client has
 //! no sim helpers: the roster, the status line and the inspector's
-//! `CharacterDetail` (port of `tools/ref-server/digest.ts`).
+//! `CharacterDetail` (port of `tools/ref-server/digest.ts` at the `ts-sim-reference` tag).
 
 use fsw_core::time::{format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
