@@ -41,7 +41,7 @@ export type LlmConfig = LlmSettings & { maxRequestsPerDay: number; maxTokensPerD
 const OFF: LlmStatus = { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' };
 
 export class WorldHost {
-  bootId = randomBytes(6).toString('hex');
+  bootId = randomBytes(4).toString('hex');
   readonly hash = worldHash();
   speed: number;
   sim!: Sim;
@@ -102,7 +102,7 @@ export class WorldHost {
     this.brain.configure(this.llmConfig);
     if (reason) {
       // A new boot id, so no viewer tries to replay ticks of the old world into the new one.
-      this.bootId = randomBytes(6).toString('hex');
+      this.bootId = randomBytes(4).toString('hex');
       this.broadcast(sseEvent('world_reset', { reason }));
       for (const viewer of this.viewers) viewer.res.end();
       this.viewers.clear();
