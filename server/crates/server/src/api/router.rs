@@ -4,35 +4,48 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Json;
 use axum::Router;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
 use crate::api::stream;
-use crate::api::wire::ApiError;
 use crate::auth;
 
 /// `/healthz` fails when the world has not ticked for this long (unless paused).
 const STALE_AFTER: Duration = Duration::from_secs(5);
 
 pub fn router(app: Arc<AppState>) -> Router {
+    let admin = Router::new()
+        .route("/allowlist", get(auth::allowlist::list).post(auth::allowlist::add).delete(auth::allowlist::remove))
+        .route("/attempts", get(auth::allowlist::attempts))
+        .route_layer(middleware::from_fn(auth::middleware::require_admin));
+
+    // Layers run outside in: CSRF first, then the session, then the handler.
     let api = Router::new()
         .route("/stream", get(stream::stream))
         .route("/me", get(auth::me))
+        .route("/logout", post(auth::logout))
+        .nest("/admin", admin)
         .fallback(api_not_found)
-        .layer(middleware::from_fn_with_state(app.clone(), auth::require_viewer));
+        .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::require_viewer))
+        .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf));
+
+    let sign_in = Router::new()
+        .route("/token", get(auth::token::form).post(auth::token::login))
+        .route("/{provider}/start", get(auth::flow::start))
+        .route("/{provider}/callback", get(auth::flow::callback_get).post(auth::flow::callback_post))
+        .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::rate_limit));
 
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/auth/token", get(auth::token_form).post(auth::token_login))
+        .nest("/auth", sign_in)
         .nest("/api", api)
         .merge(static_files(&app.config.static_dir))
         .layer(TraceLayer::new_for_http())
@@ -48,7 +61,7 @@ async fn healthz(State(app): State<Arc<AppState>>) -> Response {
 }
 
 async fn api_not_found() -> Response {
-    (StatusCode::NOT_FOUND, Json(ApiError { error: "no such endpoint".into() })).into_response()
+    super::error(StatusCode::NOT_FOUND, "no such endpoint")
 }
 
 /// The Vite build. `/assets` holds hashed bundles and the model packs: cached

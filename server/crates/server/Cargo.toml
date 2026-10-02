@@ -14,12 +14,20 @@ path = "src/main.rs"
 
 [dependencies]
 async-stream = "0.3.6"
+aws-lc-rs = "1"
 axum = "0.8.9"
+base64 = "0.22"
 fsw-brain.workspace = true
 fsw-sim.workspace = true
 fsw-world.workspace = true
 futures-util = "0.3.34"
 getrandom = "0.4.3"
+# One crypto backend everywhere: aws-lc-rs (rustls via reqwest, jsonwebtoken, our own hashing).
+jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
+# Without its bundled reqwest 0.12; token requests go through our reqwest 0.13 client.
+oauth2 = { version = "5", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net"] }
@@ -29,9 +37,11 @@ tower-http = { version = "0.7.1", features = ["fs", "compression-gzip", "compres
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
 ts-rs = "12.0.1"
+zstd = "0.14"
 
 [dev-dependencies]
 http-body-util = "0.1.5"
+tempfile = "3"
 tower = { version = "0.5.3", features = ["util"] }
 tokio = { version = "1.53.1", features = ["test-util"] }
 

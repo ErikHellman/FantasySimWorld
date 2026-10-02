@@ -5,17 +5,20 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Extension, State};
 use axum::http::HeaderName;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::AppState;
-use crate::api::wire::{Hello, PROTOCOL_VERSION, Role};
+use crate::api::wire::{Hello, PROTOCOL_VERSION};
+use crate::auth::{Viewer, session};
 
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 const RETRY: Duration = Duration::from_millis(500);
+/// How often an open stream checks that its session still exists (sign-out, allowlist removal).
+pub const SESSION_RECHECK: Duration = Duration::from_secs(60);
 
 /// Counts a viewer for as long as their stream lives.
 struct ViewerGuard(Arc<AppState>);
@@ -33,7 +36,7 @@ impl Drop for ViewerGuard {
     }
 }
 
-pub async fn stream(State(app): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn stream(State(app): State<Arc<AppState>>, Extension(viewer): Extension<Viewer>) -> impl IntoResponse {
     // Subscribe before reading the clock so no tick falls between the two.
     let mut frames = app.frames.subscribe();
     let clock = app.clock.borrow().clone();
@@ -45,7 +48,7 @@ pub async fn stream(State(app): State<Arc<AppState>>) -> impl IntoResponse {
         protocol_version: PROTOCOL_VERSION,
         world_hash: app.world_hash.clone(),
         viewers: app.viewers.load(Ordering::Relaxed),
-        role: Role::Admin,
+        role: viewer.role,
     };
 
     let events = async_stream::stream! {
@@ -53,9 +56,17 @@ pub async fn stream(State(app): State<Arc<AppState>>) -> impl IntoResponse {
         let boot = &app.boot_id;
         let hello = serde_json::to_string(&hello).expect("hello always serialises");
         yield Ok::<_, Infallible>(Event::default().event("hello").id(format!("{boot}:{}", clock.tick)).retry(RETRY).data(hello));
+        let mut recheck = tokio::time::interval_at(tokio::time::Instant::now() + SESSION_RECHECK, SESSION_RECHECK);
         loop {
             let batch = tokio::select! {
                 () = app.shutdown.cancelled() => break,
+                _ = recheck.tick() => {
+                    if session::still_valid(&app, &viewer).await {
+                        continue;
+                    }
+                    tracing::info!(event = "stream_signed_out", "session ended; closing the stream");
+                    break;
+                }
                 batch = frames.recv() => batch,
             };
             match batch {
