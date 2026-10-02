@@ -1,7 +1,8 @@
 /**
- * Named sound slots. The files are supplied by whoever runs the game: drop
- * `<id>.ogg` (or .mp3 / .wav) into public/audio/ and it is picked up on the
- * next load. A slot with no file is simply silent.
+ * Named sound slots, played from public/audio/<id>.ogg (or .mp3 / .wav). The
+ * shipped files are built by `pnpm audio` from tools/audio/sources.ts; any of
+ * them can be replaced by dropping in another file. A slot with no file is
+ * simply silent.
  */
 export interface AudioSlot {
   id: string;

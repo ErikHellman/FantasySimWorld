@@ -61,7 +61,9 @@ node tools/mock-llm.mjs
 
 ## Sound
 
-The game has an ambient mixer but ships no audio. Put your own files in `public/audio/`, named after the slots listed in [public/audio/README.md](public/audio/README.md); missing slots are silent, and Settings shows which were found.
+The game ships ambient loops, effects and background music, all CC0, public domain or CC BY ([credits](public/audio/CREDITS.md)). The ambience follows the camera, the time of day and what the villagers are doing. The music follows what you are watching, from calm day, evening and night pieces to tension when the alarm is up or monsters are near, battle when a fight is in view, and grief after a death, with short victory and defeat stings. Settings turns ambience, effects and music on or off, and sets their volumes, in this browser only.
+
+The files are built by `pnpm audio` (`tools/audio/build-audio.ts`, which needs ffmpeg and bsdtar) from the sources listed in `tools/audio/sources.ts`. To swap a sound, change its entry there and rebuild, or drop your own file into `public/audio/` under the slot's name ([public/audio/README.md](public/audio/README.md)).
 
 Character speech is not implemented yet, but the seam is in place: every spoken line arrives from the server complete, with the speaker's voice profile, position and duration, and passes through `SpeechBus` ([src/speech/speechBus.ts](src/speech/speechBus.ts)), so a text-to-speech sink can be added in the browser without touching the server.
 

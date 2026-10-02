@@ -1,14 +1,28 @@
+import { MusicPlayer } from './music';
 import { AUDIO_EXTENSIONS, AUDIO_SLOTS, type AudioSlot } from './slots';
 
 /** Per viewer, kept in this browser. */
 export interface AudioSettings {
   muted: boolean;
   master: number;
+  ambientOn: boolean;
   ambient: number;
+  effectsOn: boolean;
   effects: number;
+  musicOn: boolean;
+  music: number;
 }
 
-export const DEFAULT_AUDIO: AudioSettings = { muted: false, master: 0.8, ambient: 0.7, effects: 0.8 };
+export const DEFAULT_AUDIO: AudioSettings = {
+  muted: false,
+  master: 0.8,
+  ambientOn: true,
+  ambient: 0.7,
+  effectsOn: true,
+  effects: 0.8,
+  musicOn: true,
+  music: 0.45,
+};
 
 interface Loop {
   slot: AudioSlot;
@@ -21,14 +35,16 @@ const BASE = import.meta.env.BASE_URL;
 
 /**
  * Web Audio playback for the named slots: looping ambience with a gain per
- * loop, and one-shot effects. Created on the first user gesture (browsers do
- * not allow sound before that).
+ * loop, and one-shot effects; and the background music, through `music`.
+ * Created on the first user gesture (browsers do not allow sound before that).
  */
 export class AudioEngine {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private ambient: GainNode | null = null;
   private effects: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  readonly music = new MusicPlayer();
   private readonly buffers = new Map<string, AudioBuffer>();
   private readonly loops = new Map<string, Loop>();
   private readonly lastPlayed = new Map<string, number>();
@@ -53,10 +69,13 @@ export class AudioEngine {
     this.master = context.createGain();
     this.ambient = context.createGain();
     this.effects = context.createGain();
+    this.musicBus = context.createGain();
     this.ambient.connect(this.master);
     this.effects.connect(this.master);
+    this.musicBus.connect(this.master);
     this.master.connect(context.destination);
     this.apply(this.settings);
+    this.music.attach(context, this.musicBus);
     await Promise.all(AUDIO_SLOTS.map((slot) => this.load(slot)));
     this.onLoaded?.(this.loaded);
   }
@@ -95,11 +114,13 @@ export class AudioEngine {
 
   apply(settings: AudioSettings): void {
     this.settings = settings;
-    if (!this.context || !this.master || !this.ambient || !this.effects) return;
+    this.music.setEnabled(settings.musicOn);
+    if (!this.context || !this.master || !this.ambient || !this.effects || !this.musicBus) return;
     const now = this.context.currentTime;
     this.master.gain.setTargetAtTime(settings.muted ? 0 : settings.master, now, 0.1);
-    this.ambient.gain.setTargetAtTime(settings.ambient, now, 0.1);
-    this.effects.gain.setTargetAtTime(settings.effects, now, 0.1);
+    this.ambient.gain.setTargetAtTime(settings.ambientOn ? settings.ambient : 0, now, 0.1);
+    this.effects.gain.setTargetAtTime(settings.effectsOn ? settings.effects : 0, now, 0.1);
+    this.musicBus.gain.setTargetAtTime(settings.musicOn ? settings.music : 0, now, 0.1);
   }
 
   /** Sets how loud each ambient loop should be (0..1); missing ids fade out. */
@@ -118,7 +139,7 @@ export class AudioEngine {
   play(id: string, volume: number): void {
     const context = this.context;
     const buffer = this.buffers.get(id);
-    if (!context || !buffer || !this.effects || volume <= 0.02 || context.state !== 'running') return;
+    if (!context || !buffer || !this.effects || !this.settings.effectsOn || volume <= 0.02 || context.state !== 'running') return;
     const now = context.currentTime;
     if (now - (this.lastPlayed.get(id) ?? -1) < 0.08) return;
     this.lastPlayed.set(id, now);
@@ -134,6 +155,7 @@ export class AudioEngine {
 
   /** Suspends sound while the simulation is paused. */
   setPaused(paused: boolean): void {
+    this.music.setPaused(paused);
     if (!this.context) return;
     if (paused && this.context.state === 'running') void this.context.suspend();
     else if (!paused && this.context.state === 'suspended') void this.context.resume();

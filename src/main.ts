@@ -1,6 +1,8 @@
 import { h, render } from 'preact';
 import { ambientLevels, playEffects } from './audio/ambient';
 import { AudioEngine } from './audio/engine';
+import { MoodTracker } from './audio/mood';
+import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
 import type { AmbientCounts, WireEvent } from './generated/api';
@@ -22,6 +24,8 @@ import { worldHash } from './world/navgrid';
 
 const UI_REFRESH_SECONDS = 0.25;
 const MAX_FRAME_SECONDS = 0.1;
+/** monsters this close to where the camera looks make the music tense */
+const MONSTERS_NEAR = 60;
 
 const here = (): string => location.pathname + location.search;
 const toLogin = (): void => location.replace(`/login?return_to=${encodeURIComponent(here())}`);
@@ -75,11 +79,20 @@ async function start(): Promise<void> {
   const audio = new AudioEngine();
   ui.audio.value = loadAudioSettings();
   audio.apply(ui.audio.value);
-  const publishSlots = (loaded: ReadonlySet<string>): void => {
-    ui.audioSlots.value = AUDIO_SLOTS.map((slot) => ({ id: slot.id, label: slot.label, loaded: loaded.has(slot.id) }));
+  const publishSlots = (): void => {
+    const loaded = audio.loaded;
+    const music = audio.music.loaded;
+    ui.audioSlots.value = [
+      ...AUDIO_SLOTS.map((slot) => ({ id: slot.id, label: slot.label, loaded: loaded.has(slot.id) })),
+      ...MUSIC_TRACKS.map((track) => ({ id: `music/${track.id}`, label: `${track.title} (${track.moods.join(', ')})`, loaded: music.has(track.id) })),
+    ];
   };
-  publishSlots(new Set());
+  publishSlots();
   audio.onLoaded = publishSlots;
+  audio.music.onFound = publishSlots;
+  // Background music follows what the viewer is watching: the camera's surroundings and the selected villager.
+  const mood = new MoodTracker();
+  const seconds = (): number => performance.now() / 1000;
   const listener = (): { x: number; z: number; distance: number } => ({ x: view.rig.target.x, z: view.rig.target.z, distance: view.rig.distance });
   let ambient: AmbientCounts = { awake: 0, eating: 0, drinking: 0, smithing: 0, relaxing: 0 };
 
@@ -110,7 +123,10 @@ async function start(): Promise<void> {
       else if (event.type === 'grave') addGrave(event.grave);
     }
     speech.handle(events);
-    if (!fast) playEffects(audio, events, (id) => world.isVillager(id), listener());
+    if (!fast) {
+      playEffects(audio, events, (id) => world.isVillager(id), listener());
+      mood.noteEvents(events, listener(), ui.selectedId.value, seconds());
+    }
   };
 
   const playback = new Playback({
@@ -177,6 +193,20 @@ async function start(): Promise<void> {
     audio.apply(settings);
   };
 
+  const updateMusic = (hour: number): void => {
+    const spot = listener();
+    let monstersNear = 0;
+    for (const entity of world.entities.values()) {
+      if (entity.kind === 'monster' && entity.hp > 0 && Math.hypot(entity.x - spot.x, entity.z - spot.z) < MONSTERS_NEAR) monstersNear++;
+    }
+    const selectedId = ui.selectedId.value;
+    const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
+    audio.music.setMood(mood.update({ hour, alarm: ui.alarm.value, monstersNear, selectedMood }, seconds()));
+    const sting = mood.takeSting();
+    if (sting) audio.music.playSting(sting);
+    audio.music.update();
+  };
+
   let last = performance.now();
   let uiTimer = 0;
   let audioTimer = 0;
@@ -190,6 +220,7 @@ async function start(): Promise<void> {
     if (audioTimer >= 0.5) {
       audioTimer = 0;
       audio.mix(ambientLevels(ambient, hour, listener()));
+      updateMusic(hour);
     }
     uiTimer += dt;
     if (uiTimer >= UI_REFRESH_SECONDS) {
@@ -210,7 +241,7 @@ async function start(): Promise<void> {
   stream.open();
 
   // For poking at the world from the browser console.
-  (window as unknown as { __debug: unknown }).__debug = { world, view, playback, stream, renderer: handle?.renderer, ui, actions };
+  (window as unknown as { __debug: unknown }).__debug = { world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood };
   console.info(`Fantasy Sim World: ${backend} backend, watching as ${ui.me.value.role}`);
 }
 
