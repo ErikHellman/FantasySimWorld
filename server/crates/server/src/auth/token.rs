@@ -24,7 +24,7 @@ pub fn cookie_name(config: &Config) -> &'static str {
 fn expected(config: &Config) -> Option<&str> {
     match &config.auth {
         AuthMode::Token(token) => Some(token),
-        AuthMode::Oidc(_) => None,
+        AuthMode::Oidc(_) | AuthMode::Off => None,
     }
 }
 

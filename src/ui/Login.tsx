@@ -9,15 +9,33 @@ function problem(error: string | null): string | null {
   return `Sign-in did not work (${error}). Try again.`;
 }
 
+/** Only paths on this site, like the server's `safe_return`: "/x" but not "//evil.example" or "javascript:…". */
+function onSite(path: string): string {
+  return path.startsWith('/') && !path.startsWith('//') && !/[\\\s\p{Cc}]/u.test(path) ? path : '/';
+}
+
 /** Where a viewer who is not signed in lands. The sign-in itself happens on the server. */
 export function Login({ returnTo, error }: { returnTo: string; error: string | null }) {
   const back = encodeURIComponent(returnTo);
   // Until the server answers, offer every way in; a server that does not know `/auth/providers` gets the same.
-  const [options, setOptions] = useState<SignInOptions>({ token: true, google: true, apple: true });
+  const [options, setOptions] = useState<SignInOptions>({ open: false, token: true, google: true, apple: true });
   useEffect(() => {
     api.providers().then(setOptions, () => {});
   }, []);
   const message = problem(error);
+  if (options.open) {
+    return (
+      <div class="start">
+        <div class="start-card">
+          <h1>Fantasy Sim World</h1>
+          <p>Sign-in is off on this server (local development).</p>
+          <div class="signin">
+            <a class="button primary big" href={onSite(returnTo)}>Enter the valley</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div class="start">
       <div class="start-card">

@@ -2,7 +2,8 @@
 //!
 //! `AUTH_MODE=token`: one shared secret, everyone is an admin (local work,
 //! first deployment). `AUTH_MODE=oidc`: Google and/or Apple sign-in, limited
-//! to the allowlist, with server-side sessions. Every `/api` route needs a
+//! to the allowlist, with server-side sessions. `AUTH_MODE=off`: no sign-in,
+//! everyone is an admin; the configuration allows it on this machine only. Every `/api` route needs a
 //! viewer ([`middleware::require_viewer`]), `/api/admin` an admin, and every
 //! mutating `/api` request passes the CSRF check.
 
@@ -87,8 +88,20 @@ pub async fn authenticate(
     headers: &HeaderMap,
 ) -> crate::store::Result<Option<(Viewer, Option<HeaderValue>)>> {
     match &app.config.auth {
+        AuthMode::Off => Ok(Some((open_viewer(), None))),
         AuthMode::Token(_) => Ok(token::viewer(&app.config, headers).map(|v| (v, None))),
         AuthMode::Oidc(_) => session::authenticate(app, headers).await,
+    }
+}
+
+/// Everyone, when sign-in is off: an admin with no database row, like the token holder.
+fn open_viewer() -> Viewer {
+    Viewer {
+        user_id: None,
+        email: String::new(),
+        display_name: "Local developer".into(),
+        role: Role::Admin,
+        session: None,
     }
 }
 
@@ -127,9 +140,10 @@ pub fn safe_return(path: Option<&str>) -> &str {
 /// `GET /auth/providers`
 pub async fn providers(State(app): State<Arc<AppState>>) -> Json<SignInOptions> {
     Json(match &app.config.auth {
-        AuthMode::Token(_) => SignInOptions { token: true, google: false, apple: false },
+        AuthMode::Off => SignInOptions { open: true, token: false, google: false, apple: false },
+        AuthMode::Token(_) => SignInOptions { open: false, token: true, google: false, apple: false },
         AuthMode::Oidc(oidc) => {
-            SignInOptions { token: false, google: oidc.google.is_some(), apple: oidc.apple.is_some() }
+            SignInOptions { open: false, token: false, google: oidc.google.is_some(), apple: oidc.apple.is_some() }
         }
     })
 }
@@ -148,11 +162,14 @@ pub async fn logout(State(app): State<Arc<AppState>>, Extension(viewer): Extensi
         return crate::api::error(StatusCode::SERVICE_UNAVAILABLE, "try again");
     }
     let clear = match &app.config.auth {
-        AuthMode::Token(_) => token::clear_cookie(&app.config),
-        AuthMode::Oidc(_) => session::clear_cookie(&app.config),
+        AuthMode::Off => None,
+        AuthMode::Token(_) => Some(token::clear_cookie(&app.config)),
+        AuthMode::Oidc(_) => Some(session::clear_cookie(&app.config)),
     };
     let mut response = StatusCode::NO_CONTENT.into_response();
-    response.headers_mut().append(header::SET_COOKIE, clear);
+    if let Some(clear) = clear {
+        response.headers_mut().append(header::SET_COOKIE, clear);
+    }
     response
 }
 

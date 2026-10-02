@@ -20,6 +20,12 @@ Open <http://localhost:8080/auth/token>, paste the token, and you are watching (
 
 For work on the client, run `pnpm dev` next to the server: it serves the client with hot reload and forwards `/api` and `/auth` to `http://localhost:8080` (`SERVER_URL` changes it). Open `/auth/token` on the dev server's port once to sign in.
 
+To skip signing in while developing, start the server with `AUTH_MODE=off` instead of `AUTH_TOKEN`: every browser on this machine is an admin. The server then listens on `127.0.0.1` only and refuses to start with a non-local `BIND_ADDR` or `PUBLIC_ORIGIN`. With `pnpm dev` that is all it takes; when the browser talks to the server directly on :8080, set `PUBLIC_ORIGIN` to match, or the CSRF check turns away changes:
+
+```bash
+AUTH_MODE=off PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist LOG_FORMAT=pretty cargo run --release
+```
+
 In the browser (WebGPU or WebGL 2):
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
@@ -29,7 +35,7 @@ In the browser (WebGPU or WebGL 2):
 
 The admin panel (🛠) has the speed, export, import and "new world", the language model settings, the allowlist and refused sign-ins, and the server's health.
 
-Server settings come from the environment: `AUTH_TOKEN` (16+ characters) or Google and Apple sign-in ([docs/sign-in.md](docs/sign-in.md)), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN` (the address in the browser; sign-in and the CSRF check use it), `STATIC_DIR` (the web build, default `dist`), `DATA_DIR` (default `data`), `INITIAL_SPEED` (0, 1, 2 or 4 for a new world), `LLM_API_KEY` (seeds the model key once) and `LOG_FORMAT=pretty`. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
+Server settings come from the environment: `AUTH_MODE` (`token`, `oidc` or `off`), `AUTH_TOKEN` (16+ characters) or Google and Apple sign-in ([docs/sign-in.md](docs/sign-in.md)), `PORT` or `BIND_ADDR`, `PUBLIC_ORIGIN` (the address in the browser; sign-in and the CSRF check use it), `STATIC_DIR` (the web build, default `dist`), `DATA_DIR` (default `data`), `INITIAL_SPEED` (0, 1, 2 or 4 for a new world), `LLM_API_KEY` (seeds the model key once) and `LOG_FORMAT=pretty`. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
 ## Connecting a language model
 

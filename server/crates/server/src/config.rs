@@ -3,9 +3,13 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-/// How viewers are let in. There is deliberately no mode without sign-in.
+/// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
+/// refuses to start anywhere but on this machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthMode {
+    /// No sign-in: everyone is an admin. For local development only, so it needs
+    /// a loopback bind address and an `http://localhost` (or loopback IP) origin.
+    Off,
     /// One shared secret, for local work and the first deployments. Browsers
     /// post it to `/auth/token` once and get a cookie; everyone is an admin.
     Token(String),
@@ -87,7 +91,7 @@ impl Default for AppleEndpoints {
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// `BIND_ADDR`, default `0.0.0.0:8080` (`PORT` alone also works)
+    /// `BIND_ADDR`, default `0.0.0.0:8080`, or `127.0.0.1:8080` with `AUTH_MODE=off` (`PORT` alone also works)
     pub bind: SocketAddr,
     /// `PUBLIC_ORIGIN`, e.g. `https://world.example.com`; decides cookie flags and the CSRF origin check
     pub public_origin: String,
@@ -95,7 +99,8 @@ pub struct Config {
     pub static_dir: PathBuf,
     /// `DATA_DIR`, where SQLite lives; default `data`
     pub data_dir: PathBuf,
-    /// `AUTH_MODE`: `token` (with `AUTH_TOKEN`) or `oidc` (with `AUTH_PROVIDERS` and the provider secrets)
+    /// `AUTH_MODE`: `token` (with `AUTH_TOKEN`), `oidc` (with `AUTH_PROVIDERS` and the provider secrets)
+    /// or `off` (no sign-in; local development only)
     pub auth: AuthMode,
     /// `ADMIN_EMAILS`, comma-separated: put on the allowlist as admins at every start
     pub admin_emails: Vec<String>,
@@ -121,21 +126,8 @@ impl Config {
         let vars: std::collections::HashMap<String, String> = vars.into_iter().collect();
         let get = |name: &str| vars.get(name).map(|v| v.trim()).filter(|v| !v.is_empty());
 
-        let bind = match (get("BIND_ADDR"), get("PORT")) {
-            (Some(addr), _) => addr.parse().map_err(|e| format!("BIND_ADDR {addr:?}: {e}"))?,
-            (None, Some(port)) => {
-                let port: u16 = port.parse().map_err(|e| format!("PORT {port:?}: {e}"))?;
-                SocketAddr::from(([0, 0, 0, 0], port))
-            }
-            (None, None) => SocketAddr::from(([0, 0, 0, 0], 8080)),
-        };
-
-        let public_origin = get("PUBLIC_ORIGIN").unwrap_or("http://localhost:5173").trim_end_matches('/').to_owned();
-        if !(public_origin.starts_with("https://") || public_origin.starts_with("http://")) {
-            return Err(format!("PUBLIC_ORIGIN must start with https:// or http://, got {public_origin:?}"));
-        }
-
         let auth = match get("AUTH_MODE").unwrap_or("token") {
+            "off" => AuthMode::Off,
             "token" => {
                 let token = get("AUTH_TOKEN").ok_or("AUTH_MODE=token needs AUTH_TOKEN (any long random string)")?;
                 if token.len() < 16 {
@@ -144,8 +136,35 @@ impl Config {
                 AuthMode::Token(token.to_owned())
             }
             "oidc" => AuthMode::Oidc(Box::new(oidc_from(&get)?)),
-            other => return Err(format!("AUTH_MODE must be token or oidc, got {other:?}")),
+            other => return Err(format!("AUTH_MODE must be token, oidc or off, got {other:?}")),
         };
+        let open = auth == AuthMode::Off;
+
+        // Without sign-in, listen on this machine only unless told otherwise (and then refuse anything else).
+        let host = if open { [127, 0, 0, 1] } else { [0, 0, 0, 0] };
+        let bind = match (get("BIND_ADDR"), get("PORT")) {
+            (Some(addr), _) => addr.parse().map_err(|e| format!("BIND_ADDR {addr:?}: {e}"))?,
+            (None, Some(port)) => {
+                let port: u16 = port.parse().map_err(|e| format!("PORT {port:?}: {e}"))?;
+                SocketAddr::from((host, port))
+            }
+            (None, None) => SocketAddr::from((host, 8080)),
+        };
+        if open && !bind.ip().is_loopback() {
+            return Err(format!(
+                "AUTH_MODE=off listens on this machine only; BIND_ADDR {bind} is not a loopback address"
+            ));
+        }
+
+        let public_origin = get("PUBLIC_ORIGIN").unwrap_or("http://localhost:5173").trim_end_matches('/').to_owned();
+        if !(public_origin.starts_with("https://") || public_origin.starts_with("http://")) {
+            return Err(format!("PUBLIC_ORIGIN must start with https:// or http://, got {public_origin:?}"));
+        }
+        if open && !local_origin(&public_origin) {
+            return Err(format!(
+                "AUTH_MODE=off is for local development; PUBLIC_ORIGIN must be http://localhost (or a loopback IP), got {public_origin:?}"
+            ));
+        }
 
         let mut admin_emails = Vec::new();
         for email in get("ADMIN_EMAILS").unwrap_or("").split(',').map(str::trim).filter(|e| !e.is_empty()) {
@@ -194,6 +213,22 @@ pub fn plausible_email(email: &str) -> bool {
     email.len() <= 254
         && !email.chars().any(char::is_whitespace)
         && email.split_once('@').is_some_and(|(user, host)| !user.is_empty() && !host.is_empty() && !host.contains('@'))
+}
+
+/// An `http://` origin on this machine: `localhost`, `127.0.0.1` or `[::1]`, with any port.
+pub fn local_origin(origin: &str) -> bool {
+    let Some(rest) = origin.strip_prefix("http://") else { return false };
+    if rest.contains('/') || rest.contains('@') {
+        return false;
+    }
+    let host = match rest.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((host, port)) if port.is_empty() || port.starts_with(':') => host,
+            _ => return false,
+        },
+        None => rest.split_once(':').map_or(rest, |(host, _)| host),
+    };
+    host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 fn oidc_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<OidcConfig, String> {
@@ -279,7 +314,7 @@ mod tests {
     fn refuses_to_run_open() {
         assert!(Config::from_vars(vars(&[])).is_err());
         assert!(Config::from_vars(vars(&[("AUTH_TOKEN", "short")])).is_err());
-        assert!(Config::from_vars(vars(&[("AUTH_MODE", "off"), ("AUTH_TOKEN", "0123456789abcdef")])).is_err());
+        assert!(Config::from_vars(vars(&[("AUTH_MODE", "nope"), ("AUTH_TOKEN", "0123456789abcdef")])).is_err());
         assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc")])).is_err());
         assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_PROVIDERS", ",")])).is_err());
     }
@@ -323,6 +358,37 @@ mod tests {
         assert!(with("ADMIN_EMAILS", "not-an-email").is_err());
         assert!(with("TRUST_PROXY", "maybe").is_err());
         assert!(!with("TRUST_PROXY", "0").unwrap().trust_proxy);
+    }
+
+    #[test]
+    fn off_stays_on_this_machine() {
+        let off = |extra: &[(&str, &str)]| {
+            let mut pairs = vec![("AUTH_MODE", "off")];
+            pairs.extend_from_slice(extra);
+            Config::from_vars(vars(&pairs))
+        };
+        let config = off(&[]).unwrap();
+        assert_eq!(config.auth, AuthMode::Off);
+        assert_eq!(config.bind, "127.0.0.1:8080".parse().unwrap());
+        assert_eq!(off(&[("PORT", "3000")]).unwrap().bind, "127.0.0.1:3000".parse().unwrap());
+        assert!(off(&[("BIND_ADDR", "[::1]:8080"), ("PUBLIC_ORIGIN", "http://127.0.0.1:8080")]).is_ok());
+
+        assert!(off(&[("BIND_ADDR", "0.0.0.0:8080")]).is_err());
+        assert!(off(&[("PUBLIC_ORIGIN", "https://world.example.com")]).is_err());
+        assert!(off(&[("PUBLIC_ORIGIN", "http://192.168.1.5:5173")]).is_err());
+    }
+
+    #[test]
+    fn local_origins() {
+        assert!(local_origin("http://localhost:5173"));
+        assert!(local_origin("http://LOCALHOST"));
+        assert!(local_origin("http://127.0.0.1:8080"));
+        assert!(local_origin("http://[::1]:8080"));
+        assert!(!local_origin("https://localhost:5173"));
+        assert!(!local_origin("http://localhost.example.com"));
+        assert!(!local_origin("http://localhost@evil.example"));
+        assert!(!local_origin("http://10.0.0.1"));
+        assert!(!local_origin("http://[::1]evil"));
     }
 
     #[test]
