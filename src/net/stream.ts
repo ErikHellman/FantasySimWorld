@@ -24,6 +24,8 @@ export interface StreamHandlers {
 const RELOAD_GUARD = 'fsw.protocolReload';
 /** a tab hidden this long drops its stream and resyncs from a snapshot on return */
 const HIDDEN_CLOSE_MS = 30_000;
+/** a running world that sends no tick for this long has lost us somewhere (a proxy that kept a dead stream open) */
+const SILENT_MS = 10_000;
 
 /** A random id for this tab (kept across reloads of the same tab), so the server knows whose inspector is whose. */
 export function viewerId(): string {
@@ -53,13 +55,24 @@ export class Stream {
   private hiddenTimer = 0;
   /** closed because the tab was hidden; reopen when it is shown */
   private suspended = false;
+  /** the world's speed as last reported; a paused world is silent by design */
+  private speed = 1;
+  private lastTickAt = Date.now();
 
   constructor(private readonly viewer: string, private readonly handlers: StreamHandlers) {
     document.addEventListener('visibilitychange', () => this.onVisibility());
+    window.setInterval(() => {
+      if (!this.source || this.source.readyState !== EventSource.OPEN || this.speed === 0) return;
+      if (Date.now() - this.lastTickAt < SILENT_MS) return;
+      console.warn('The stream has gone quiet; reconnecting');
+      this.lastTick = -1;
+      this.open();
+    }, SILENT_MS / 2);
   }
 
   open(): void {
     this.close();
+    this.lastTickAt = Date.now();
     this.handlers.connection('connecting');
     const source = new EventSource(`/api/stream?viewer=${encodeURIComponent(this.viewer)}`);
     this.source = source;
@@ -76,6 +89,7 @@ export class Stream {
         this.protocolMismatch(hello.protocolVersion);
         return;
       }
+      this.speed = hello.speed;
       try {
         sessionStorage.removeItem(RELOAD_GUARD);
       } catch {
@@ -85,9 +99,12 @@ export class Stream {
     });
     on<Snapshot>('snapshot', (snapshot) => {
       this.lastTick = snapshot.tick;
+      this.lastTickAt = Date.now();
+      this.speed = snapshot.speed;
       this.handlers.snapshot(snapshot);
     });
     on<TickFrame>('tick', (frame) => {
+      this.lastTickAt = Date.now();
       if (this.lastTick >= 0 && frame.t !== this.lastTick + 1) {
         if (frame.t <= this.lastTick) return; // already seen
         // A hole the server did not fill: start over from a snapshot.
@@ -99,7 +116,10 @@ export class Stream {
       this.lastTick = frame.t;
       this.handlers.tick(frame);
     });
-    on<Status>('status', (status) => this.handlers.status(status));
+    on<Status>('status', (status) => {
+      this.speed = status.speed;
+      this.handlers.status(status);
+    });
     on<RosterEntry[]>('roster', (roster) => this.handlers.roster(roster));
     on<CharacterDetail>('detail', (detail) => this.handlers.detail(detail));
     on<BrainLogRecord>('brainlog', (record) => this.handlers.brainlog(record));

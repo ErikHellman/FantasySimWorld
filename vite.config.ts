@@ -9,7 +9,17 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       // The event stream passes through unbuffered; the browser keeps the dev server's origin, so cookies work.
-      '/api': { target: serverTarget },
+      '/api': {
+        target: serverTarget,
+        // When the server dies mid-stream, end the browser's side too, or EventSource never notices and never reconnects.
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => {
+            proxyRes.on('close', () => {
+              if (!res.writableEnded) res.destroy();
+            });
+          });
+        },
+      },
       '/auth': { target: serverTarget },
     },
   },
