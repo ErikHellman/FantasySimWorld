@@ -12,6 +12,12 @@
   - The world is static and built lazily on first use (`fsw_world::init()` forces it); the module-level functions mirror the TypeScript exports (`ground_at`, `places()`, `find_path`, …). A* keeps its scratch buffers per thread.
   - `world_hash()` (FNV-1a over the nav costs' bytes) is in `hello`; `worldHash()` in `src/world/navgrid.ts` computes the same and `navgrid.json` records it.
   - `world.test.ts`'s check that slot animations exist moves to the sim crate, which owns the animation table.
+- **Phase 2 (sim in Rust): done.** `fsw-sim` ports state, create, data, util, describe, commands, events, sim and the twelve systems. The browser exports load, round-trip unchanged and keep running (`tests/save_fixtures.rs`); `sim.test.ts` and `drama.test.ts` are ported (`tests/sim.rs`, `tests/drama.rs`, the 200-day soak `#[ignore]`d plus a 20-day CI variant). Results:
+  - Trace parity: `cargo run --release -p fsw-sim --bin soak -- 10 <seed> --trace` is byte-identical to `bun tools/soak.ts 10 <seed> --trace` for 10 game days on seeds 1, 7 and 1337. Seeds 42 and 99 part ways on day 3 and day 10 by one ulp in a facing (`atan2`: JavaScriptCore calls glibc, the port calls `libm` so every machine agrees), which is the accepted kind of divergence.
+  - Statistical parity: `python3 tools/soak-parity.py 30 10` (10 seeds × 30 days) has every gated statistic within 1% except rare ones (arrivals, deaths −6 to −8%), far inside ±25%.
+  - Characters are reached by id through a `Ctx` that owns `&mut SimState`, so systems read like the TypeScript; ids maps are `IndexMap` with `shift_remove`. One deliberate difference: a character killed earlier in a tick is skipped by the systems still looping over that tick's snapshot (the TypeScript kept running the detached object).
+  - `rel()` creates records inside the sim only; readers outside it use `rel_or_default` and `lethal_unlocked_read`, which never write.
+  - The cast is embedded as `crates/sim/data/cast.json`, written from `src/sim/data/cast.ts` by `bun tools/export-cast.ts`.
 
 ## Context
 
