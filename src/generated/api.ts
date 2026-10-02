@@ -11,6 +11,10 @@ export type Role = "admin" | "viewer";
  */
 export type SignInOptions = { 
 /**
+ * `AUTH_MODE=off`: no sign-in needed (local development)
+ */
+open: boolean, 
+/**
  * `/auth/token` works (`AUTH_MODE=token`)
  */
 token: boolean, 
