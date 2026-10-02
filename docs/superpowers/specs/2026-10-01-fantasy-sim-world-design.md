@@ -17,6 +17,24 @@ Decisions made with the owner:
 
 Stack: TypeScript, Vite, pnpm, three.js r186 (`three/webgpu` `WebGPURenderer`, automatic WebGL 2 fallback), Preact + signals for the HUD, IndexedDB via `idb`, Vitest.
 
+## Since the server migration (October 2026)
+
+The design below was written for a browser-only game. The world now runs on a Rust server, around the clock, and every signed-in person watches the same village from their own camera ([the migration plan](2026-10-02-backend-migration-plan.md) has the full design and what was measured). What still holds, and what changed:
+
+- **The simulation, world and brain are the same design**, ported one to one to Rust: `server/crates/{core,world,sim,brain}` are `src/{core,world,sim,brain}` (20 Hz ticks, systems in the same order, the same RNG, commands at tick boundaries, the same prompts, tools, governor and validation). The TypeScript simulation is kept at the `ts-sim-reference` tag as the reference the port was checked against: identical per-tick traces for ten game days on several seeds, and statistics over 10 seeds × 30 days within a few percent.
+- **The server** (`server/crates/server`) owns the world: a world task runs the sim on its clock and encodes each tick once into a diff frame; a digest task computes the roster, status line and inspector details four times a second (once per watched villager, shared by everyone watching); a brain task asks the model and sends commands back through the world's input queue; a store thread writes SQLite. Speed is global and set by admins (pause, 1×, 2×, 4×); while the model has a backlog the clock holds at 1×.
+- **Persistence** is SQLite (WAL) on the server's volume, replacing IndexedDB: compressed snapshots (every 30 s, after notable events, on shutdown), the chronicle, the command record, the decision log, settings and the model key (never sent to a browser), and the users, sessions and allowlist. A restart resumes from the newest snapshot. Browser exports still import, and the server's exports are the same format. Litestream can stream the database to object storage ([deploy.md](../../deploy.md)).
+- **Access**: Google and Apple sign-in, limited to an allowlist that admins manage, or one shared token for local work ([sign-in.md](../../sign-in.md)).
+- **The browser is a viewer** (`src/net`, `src/render`, `src/ui`, `src/audio`, `src/speech`): it never loads the simulation, the brain or saves (an architecture test enforces this). It keeps `src/world` for terrain, scenery and camera bounds; the server's `hello` carries a hash of the navigation grid so a client with a different layout notices.
+
+### Wire protocol
+
+Every type on the wire is a Rust struct exported to `src/generated/api.ts` (a test fails when the file is out of date).
+
+- `GET /api/stream` (server-sent events, `?viewer=<id>` names the tab): `hello` (boot id, tick, speed, protocol version, world hash, viewer count, role), then either the ticks missed since `Last-Event-ID` (the server keeps the last 100) or a `snapshot` (every entity's static and dynamic fields, roster, chronicle tail, graves, alarm, model status, recent voices), then one `tick` per sim tick: added entities, removed ids, changed dynamic fields only (position in centimetres, facing, animation and its sequence number, HP, visibility, hand items, activity, asleep), and the tick's one-shot events (speech with the full utterance, hits, projectiles, emotes, deaths, chronicle entries). `status` and `roster` follow when they change, `detail` for the villager this tab follows, `brainlog` for admins, and `world_reset` when an admin starts a new world or imports one. Event ids are `<bootId>:<tick>`.
+- REST: `GET /api/me`, `POST /api/watch`, `GET /api/characters/{id}`, `GET /api/chronicle`; for admins `POST /api/admin/speed`, world new, import and export, health, the model settings, test, model list and decision log, and the allowlist and refused sign-ins. Mutating routes take JSON only (part of the CSRF defence).
+- Bandwidth per viewer: 1 to 6 KB/s, most of it while villagers move.
+
 ## Asset facts the design relies on
 
 Source: `/Users/hellman/Documents/The Complete KayKit Collection v7` (CC0). The used subset is processed into `public/assets/` and committed, so a clone runs without the collection.
@@ -108,6 +126,8 @@ Start overlay (also unlocks audio), clock and speed controls, chronicle feed, ro
 - `SpeechBus`: every spoken line passes through it with speaker, text, emotion, `durationMs` and the character's voice profile. Sinks now: bubble and chronicle. A TTS sink (OpenAI-compatible `/audio/speech` or Web Speech, positional) can be added later without touching the sim, because line pacing already takes its duration from the bus.
 
 ### Persistence (`src/persist/`)
+
+*Superseded by SQLite on the server (see "Since the server migration"); kept as the original design.*
 
 - One save document in IndexedDB, written with a single `put`, plus one rotating backup. Settings in a separate store; the API key never leaves the browser and is excluded from exports.
 - `saveVersion` with ordered migration functions; before a first release, an epoch bump discards old saves instead.

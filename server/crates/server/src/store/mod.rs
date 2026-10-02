@@ -265,10 +265,17 @@ fn flush_chronicle(conn: &mut Connection, pending: &mut Vec<(i64, ChronicleEntry
     pending.clear();
 }
 
+/// Folds the WAL into the main file at exit. Litestream keeps a read lock on the
+/// database, so a full checkpoint would only wait out the busy timeout: try it
+/// without waiting, then copy what can be copied and leave the rest to Litestream.
 fn checkpoint(conn: &Connection) {
+    let _ = conn.busy_timeout(Duration::ZERO);
     match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get::<_, i64>(0)) {
         Ok(0) => tracing::info!("checkpointed the WAL"),
-        Ok(_) => tracing::warn!("WAL checkpoint was blocked by a reader"),
+        Ok(_) => match conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| r.get::<_, i64>(0)) {
+            Ok(_) => tracing::info!("checkpointed the WAL as far as a reader (Litestream) allows"),
+            Err(error) => tracing::error!(%error, "WAL checkpoint failed"),
+        },
         Err(error) => tracing::error!(%error, "WAL checkpoint failed"),
     }
     let _ = conn.execute_batch("PRAGMA optimize");

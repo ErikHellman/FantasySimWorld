@@ -1,12 +1,13 @@
-# Fly.io, phase 0: proves the event stream behind Fly's proxy.
+# Fly.io: one machine that runs the shared world around the clock. See docs/deploy.md.
 #   fly launch --no-deploy --copy-config --name <your-app>
+#   fly volumes create data --size 3 --region <region>
 #   fly secrets set AUTH_TOKEN=$(openssl rand -hex 24) PUBLIC_ORIGIN=https://<your-app>.fly.dev
+#   fly storage create          # optional: Litestream backups (sets BUCKET_NAME and the AWS_* secrets)
 #   fly deploy
-#   AUTH_TOKEN=… node tools/sse-probe.mjs https://<your-app>.fly.dev 120
-# Phase 3 adds the /data volume; phase 6 finishes this file.
 app = "fantasy-sim-world"
 primary_region = "arn"
 kill_signal = "SIGTERM"
+# The server's shutdown snapshot and Litestream's last sync fit well inside this.
 kill_timeout = 30
 
 [build]
@@ -14,8 +15,16 @@ dockerfile = "Dockerfile"
 
 [env]
 PORT = "8080"
+DATA_DIR = "/data"
 # Fly's proxy sets Fly-Client-IP; the sign-in rate limit keys on it.
 TRUST_PROXY = "true"
+LOG_FORMAT = "json"
+
+# The SQLite database (world.db, its WAL and backup/latest.db). One volume means one machine.
+[mounts]
+source = "data"
+destination = "/data"
+initial_size = "3gb"
 
 [http_service]
 internal_port = 8080
@@ -25,8 +34,14 @@ auto_stop_machines = "off"
 auto_start_machines = true
 min_machines_running = 1
 
+[http_service.concurrency]
+# Each viewer holds one long-lived stream; count connections, not requests.
+type = "connections"
+soft_limit = 200
+hard_limit = 250
+
 [[http_service.checks]]
-grace_period = "10s"
+grace_period = "20s"
 interval = "15s"
 method = "GET"
 path = "/healthz"
