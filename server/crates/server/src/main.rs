@@ -40,6 +40,14 @@ async fn main() -> ExitCode {
     if matches!(config.auth, AuthMode::Oidc(_)) && config.admin_emails.is_empty() {
         tracing::warn!("AUTH_MODE=oidc without ADMIN_EMAILS: only people already on the allowlist can sign in");
     }
+    if config.llm.enabled {
+        let llm = &config.llm;
+        tracing::info!(base_url = %llm.base_url, model = %llm.model, key = !config.llm_api_key.is_empty(), "language model on");
+    } else {
+        tracing::info!(
+            "language model off (set LLM_BASE_URL and LLM_MODEL to turn it on); villagers follow their routines"
+        );
+    }
 
     let shutdown = CancellationToken::new();
     let (world, world_task) = match world_task::start(store.clone(), config.initial_speed, shutdown.clone()).await {
@@ -51,7 +59,7 @@ async fn main() -> ExitCode {
         }
     };
     let maintenance = store::maintenance::spawn(store.clone(), shutdown.clone());
-    let brain = brain_task::start(world.clone(), store.clone(), config.llm_api_key.clone()).await;
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
     let app = match AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone()) {
         Ok(app) => app,

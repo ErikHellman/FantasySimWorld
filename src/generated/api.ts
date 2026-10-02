@@ -337,7 +337,8 @@ export type ConversationMode = "auto" | "batched" | "turns";
 export type ReasoningMode = "off" | "low" | "default";
 
 /**
- * `GET /api/admin/settings/llm`. The API key is write-only: only whether one is set, and its last characters.
+ * `GET /api/admin/settings/llm`: the model the server was started with, from its `LLM_*` environment
+ * variables. Read-only. The API key itself is never sent: only whether one is set, and its last characters.
  */
 export type LlmSettingsView = { enabled: boolean, baseUrl: string, model: string, apiKeySet: boolean, 
 /**
@@ -345,7 +346,7 @@ export type LlmSettingsView = { enabled: boolean, baseUrl: string, model: string
  */
 apiKeyHint: string | null, concurrency: number, protocol: WireProtocol, conversations: ConversationMode, reasoning: ReasoningMode, temperature: number, maxTokens: number, 
 /**
- * extra request headers, one "Name: value" per line
+ * the names of the extra request headers, one per line (their values stay on the server)
  */
 headers: string, 
 /**
@@ -362,19 +363,9 @@ maxRequestsPerDay: number,
 maxTokensPerDay: number, };
 
 /**
- * `PUT /api/admin/settings/llm`. Leave `apiKey` out to keep the stored key; send "" to clear it.
- */
-export type LlmSettingsUpdate = { enabled: boolean, baseUrl: string, model: string, apiKey?: string, concurrency: number, protocol: WireProtocol, conversations: ConversationMode, reasoning: ReasoningMode, temperature: number, maxTokens: number, headers: string, requestsPerMinute: number, maxRequestsPerDay: number, maxTokensPerDay: number, };
-
-/**
  * `POST /api/admin/llm/test`
  */
 export type LlmTestResult = { ok: boolean, message: string, };
-
-/**
- * `GET /api/admin/llm/models`
- */
-export type ModelList = { models: Array<string>, };
 
 /**
  * `GET /api/admin/allowlist` rows.

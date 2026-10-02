@@ -39,7 +39,7 @@ async fn app_with(name: &str, settings: &[(&str, &str)]) -> (axum::Router, Cance
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
-    let brain = brain_task::start(world.clone(), store.clone(), None).await;
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
     (router(AppState::new(config, world, store, brain, shutdown.clone()).unwrap()), shutdown, data)
 }
 
@@ -325,33 +325,47 @@ async fn a_quick_reconnect_replays_the_missed_ticks() {
 }
 
 #[tokio::test]
-async fn model_settings_keep_the_key_to_themselves() {
-    let (app, _, _data) = app("llm").await;
+async fn the_model_is_off_without_its_environment() {
+    let (app, _, _data) = app("llm-off").await;
     let current = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
     assert!(current.contains(r#""enabled":false"#) && current.contains(r#""apiKeySet":false"#), "{current}");
+    let test = text(app.oneshot(json_request("POST", "/api/admin/llm/test", "")).await.unwrap()).await;
+    assert!(test.contains(r#""ok":false"#) && test.contains("LLM_BASE_URL"), "{test}");
+}
 
-    let update = r#"{"enabled":false,"baseUrl":" http://127.0.0.1:9/v1 ","model":"m","apiKey":"sk-secret-9876",
-        "concurrency":99,"protocol":"json","conversations":"turns","reasoning":"low","temperature":0.5,"maxTokens":10,
-        "headers":"","requestsPerMinute":10,"maxRequestsPerDay":100,"maxTokensPerDay":0}"#;
-    let saved = app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", update)).await.unwrap();
-    assert_eq!(saved.status(), StatusCode::OK);
-    let saved = text(saved).await;
-    assert!(!saved.contains("sk-secret"), "{saved}");
-    assert!(saved.contains(r#""apiKeyHint":"…9876""#), "{saved}");
-    assert!(saved.contains(r#""baseUrl":"http://127.0.0.1:9/v1""#), "{saved}");
-    assert!(saved.contains(r#""concurrency":16"#) && saved.contains(r#""maxTokens":100"#), "{saved}");
+#[tokio::test]
+async fn model_settings_come_from_the_environment_and_cannot_be_changed() {
+    let env = [
+        ("AUTH_TOKEN", TOKEN),
+        ("LLM_BASE_URL", "http://127.0.0.1:9/v1/"),
+        ("LLM_MODEL", "m"),
+        ("LLM_API_KEY", "sk-secret-9876"),
+        ("LLM_CONCURRENCY", "3"),
+        ("LLM_PROTOCOL", "json"),
+        ("LLM_HEADERS", "X-Title: valley\nX-Secret: hush"),
+    ];
+    let (app, _, _data) = app_with("llm", &env).await;
+    let current = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
+    assert!(!current.contains("sk-secret") && !current.contains("hush"), "{current}");
+    assert!(current.contains(r#""headers":"X-Title\nX-Secret""#), "{current}");
+    assert!(current.contains(r#""enabled":true"#) && current.contains(r#""apiKeyHint":"…9876""#), "{current}");
+    assert!(
+        current.contains(r#""baseUrl":"http://127.0.0.1:9/v1""#) && current.contains(r#""model":"m""#),
+        "{current}"
+    );
+    assert!(current.contains(r#""concurrency":3"#) && current.contains(r#""protocol":"json""#), "{current}");
 
-    // Leaving the key out keeps it; an empty one clears it.
-    let keep = update.replace(r#""apiKey":"sk-secret-9876","#, "");
-    let kept = text(app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", &keep)).await.unwrap()).await;
-    assert!(kept.contains(r#""apiKeySet":true"#), "{kept}");
-    let clear = update.replace("sk-secret-9876", "");
-    let cleared =
-        text(app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", &clear)).await.unwrap()).await;
-    assert!(cleared.contains(r#""apiKeySet":false"#), "{cleared}");
+    // No way to change them over HTTP.
+    let put = app.clone().oneshot(json_request("PUT", "/api/admin/settings/llm", r#"{"model":"other"}"#)).await;
+    assert_eq!(put.unwrap().status(), StatusCode::METHOD_NOT_ALLOWED);
+    let models = app.clone().oneshot(authed("/api/admin/llm/models")).await.unwrap();
+    assert_ne!(models.status(), StatusCode::OK);
+    let after = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
+    assert_eq!(after, current);
 
-    let test = text(app.clone().oneshot(json_request("POST", "/api/admin/llm/test", r#"{"model":""}"#)).await.unwrap());
-    assert!(test.await.contains(r#""ok":false"#));
+    // The test asks the configured endpoint, which is not there.
+    let test = text(app.clone().oneshot(json_request("POST", "/api/admin/llm/test", "")).await.unwrap()).await;
+    assert!(test.contains(r#""ok":false"#) && !test.contains("sk-secret"), "{test}");
     let log = app.oneshot(authed("/api/admin/brain-log?limit=5")).await.unwrap();
     assert_eq!(log.status(), StatusCode::OK);
     assert_eq!(text(log).await, "[]");

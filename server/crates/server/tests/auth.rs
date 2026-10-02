@@ -185,7 +185,7 @@ async fn app() -> TestApp {
     store.seed_admins(&config.admin_emails).await.unwrap();
     let shutdown = CancellationToken::new();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
-    let brain = brain_task::start(world.clone(), store.clone(), None).await;
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
     let state = AppState::new(config, world, store.clone(), brain, shutdown).unwrap();
     TestApp { router: router(state), store, fake, apple_key, _data: data }
 }

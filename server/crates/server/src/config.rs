@@ -3,6 +3,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use fsw_brain::settings::{ApiKey, ConversationMode, LlmSettings, ReasoningMode, WireProtocol};
+
 /// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
 /// refuses to start anywhere but on this machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,8 +114,11 @@ pub struct Config {
     /// `INITIAL_SPEED`: 0, 1 (default), 2 or 4. 0 starts paused, which leaves only
     /// keep-alives on the stream (for checking a proxy's idle timeout).
     pub initial_speed: u8,
-    /// `LLM_API_KEY`: stored as the model's API key at boot when none is stored yet
-    pub llm_api_key: Option<String>,
+    /// The language model, from the `LLM_*` variables (see `llm_from`). Off unless
+    /// `LLM_BASE_URL` and `LLM_MODEL` are both set; nothing about it can be changed from a browser.
+    pub llm: LlmSettings,
+    /// `LLM_API_KEY`: the model endpoint's key, if it needs one (masked in `Debug`)
+    pub llm_api_key: ApiKey,
 }
 
 impl Config {
@@ -188,6 +193,8 @@ impl Config {
             },
         };
 
+        let llm = llm_from(&get)?;
+
         Ok(Self {
             bind,
             public_origin,
@@ -198,7 +205,8 @@ impl Config {
             trust_proxy,
             pretty_logs: get("LOG_FORMAT") == Some("pretty"),
             initial_speed,
-            llm_api_key: get("LLM_API_KEY").map(str::to_owned),
+            llm,
+            llm_api_key: ApiKey::new(get("LLM_API_KEY").unwrap_or("")),
         })
     }
 
@@ -266,6 +274,65 @@ fn oidc_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<OidcConfig, S
         return Err("AUTH_PROVIDERS names no provider".into());
     }
     Ok(oidc)
+}
+
+/// The language model's settings. Every value has the same default and range the
+/// admin panel used to offer; anything else stops the server at start.
+fn llm_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<LlmSettings, String> {
+    fn number<'a, T: std::str::FromStr + PartialOrd + std::fmt::Display + Copy>(
+        get: &impl Fn(&str) -> Option<&'a str>,
+        name: &str,
+        default: T,
+        range: std::ops::RangeInclusive<T>,
+    ) -> Result<T, String> {
+        let Some(text) = get(name) else { return Ok(default) };
+        match text.parse::<T>() {
+            Ok(value) if range.contains(&value) => Ok(value),
+            _ => Err(format!("{name} must be a number from {} to {}, got {text:?}", range.start(), range.end())),
+        }
+    }
+    fn choice<'a, T: serde::de::DeserializeOwned + Default>(
+        get: &impl Fn(&str) -> Option<&'a str>,
+        name: &str,
+        names: &str,
+    ) -> Result<T, String> {
+        match get(name) {
+            None => Ok(T::default()),
+            Some(text) => serde_json::from_value(serde_json::Value::String(text.to_ascii_lowercase()))
+                .map_err(|_| format!("{name} must be one of {names}, got {text:?}")),
+        }
+    }
+
+    let defaults = LlmSettings::default();
+    let base_url = get("LLM_BASE_URL").unwrap_or("").trim_end_matches('/').to_owned();
+    let model = get("LLM_MODEL").unwrap_or("").to_owned();
+    match (base_url.is_empty(), model.is_empty()) {
+        (false, true) => return Err("LLM_BASE_URL is set but LLM_MODEL is not; set both or neither".into()),
+        (true, false) => return Err("LLM_MODEL is set but LLM_BASE_URL is not; set both or neither".into()),
+        _ => {}
+    }
+    if !(base_url.is_empty() || base_url.starts_with("https://") || base_url.starts_with("http://")) {
+        return Err(format!("LLM_BASE_URL must start with https:// or http://, got {base_url:?}"));
+    }
+    let protocol: WireProtocol = choice(get, "LLM_PROTOCOL", "auto, tools or json")?;
+    let conversations: ConversationMode = choice(get, "LLM_CONVERSATIONS", "auto, batched or turns")?;
+    let reasoning: ReasoningMode = choice(get, "LLM_REASONING", "off, low or default")?;
+    Ok(LlmSettings {
+        enabled: !base_url.is_empty(),
+        base_url,
+        model,
+        concurrency: number(get, "LLM_CONCURRENCY", defaults.concurrency, 1..=16)?,
+        protocol,
+        conversations,
+        reasoning,
+        temperature: number(get, "LLM_TEMPERATURE", defaults.temperature, 0.0..=2.0)?,
+        max_tokens: number(get, "LLM_MAX_TOKENS", defaults.max_tokens, 100..=4000)?,
+        // Platforms that cannot hold newlines in a value get "\n" written out instead.
+        headers: get("LLM_HEADERS").unwrap_or("").replace("\\n", "\n"),
+        requests_per_minute: number(get, "LLM_REQUESTS_PER_MINUTE", defaults.requests_per_minute, 0..=u32::MAX)?,
+        max_requests_per_day: number(get, "LLM_MAX_REQUESTS_PER_DAY", defaults.max_requests_per_day, 0..=u64::MAX)?,
+        max_tokens_per_day: number(get, "LLM_MAX_TOKENS_PER_DAY", defaults.max_tokens_per_day, 0..=u64::MAX)?,
+    })
 }
 
 #[cfg(test)]
@@ -358,6 +425,69 @@ mod tests {
         assert!(with("ADMIN_EMAILS", "not-an-email").is_err());
         assert!(with("TRUST_PROXY", "maybe").is_err());
         assert!(!with("TRUST_PROXY", "0").unwrap().trust_proxy);
+    }
+
+    #[test]
+    fn the_model_is_off_without_llm_settings() {
+        let config = Config::from_vars(vars(&[("AUTH_TOKEN", "0123456789abcdef")])).unwrap();
+        assert_eq!(config.llm, LlmSettings::default());
+        assert!(!config.llm.enabled);
+        assert!(config.llm_api_key.is_empty());
+    }
+
+    #[test]
+    fn the_model_comes_from_the_environment() {
+        let config = Config::from_vars(vars(&[
+            ("AUTH_TOKEN", "0123456789abcdef"),
+            ("LLM_BASE_URL", " https://api.example.com/v1/ "),
+            ("LLM_MODEL", "villager-1"),
+            ("LLM_API_KEY", "sk-secret-9876"),
+            ("LLM_CONCURRENCY", "4"),
+            ("LLM_REQUESTS_PER_MINUTE", "0"),
+            ("LLM_MAX_REQUESTS_PER_DAY", "20000"),
+            ("LLM_MAX_TOKENS_PER_DAY", "5000000"),
+            ("LLM_PROTOCOL", "JSON"),
+            ("LLM_CONVERSATIONS", "turns"),
+            ("LLM_REASONING", "low"),
+            ("LLM_TEMPERATURE", "0.5"),
+            ("LLM_MAX_TOKENS", "800"),
+            ("LLM_HEADERS", "X-One: 1\\nX-Two: 2"),
+        ]))
+        .unwrap();
+        let llm = &config.llm;
+        assert!(llm.enabled);
+        assert_eq!(llm.base_url, "https://api.example.com/v1");
+        assert_eq!(llm.model, "villager-1");
+        assert_eq!(config.llm_api_key.expose(), "sk-secret-9876");
+        assert_eq!((llm.concurrency, llm.requests_per_minute), (4, 0));
+        assert_eq!((llm.max_requests_per_day, llm.max_tokens_per_day), (20_000, 5_000_000));
+        assert_eq!(llm.protocol, WireProtocol::Json);
+        assert_eq!(llm.conversations, ConversationMode::Turns);
+        assert_eq!(llm.reasoning, ReasoningMode::Low);
+        assert_eq!((llm.temperature, llm.max_tokens), (0.5, 800));
+        assert_eq!(fsw_brain::settings::parse_headers(&llm.headers).len(), 2);
+        assert!(!format!("{config:?}").contains("sk-secret"), "the key stays out of logs");
+    }
+
+    #[test]
+    fn bad_llm_settings_stop_the_server() {
+        let with = |pairs: &[(&str, &str)]| {
+            let mut all = vec![("AUTH_TOKEN", "0123456789abcdef")];
+            all.extend_from_slice(pairs);
+            Config::from_vars(vars(&all))
+        };
+        assert!(with(&[("LLM_MODEL", "m")]).unwrap_err().contains("LLM_BASE_URL"));
+        assert!(with(&[("LLM_BASE_URL", "http://localhost:1234/v1")]).unwrap_err().contains("LLM_MODEL"));
+        assert!(with(&[("LLM_BASE_URL", "localhost:1234"), ("LLM_MODEL", "m")]).is_err());
+        assert!(with(&[("LLM_CONCURRENCY", "0")]).unwrap_err().contains("LLM_CONCURRENCY"));
+        assert!(with(&[("LLM_CONCURRENCY", "17")]).is_err());
+        assert!(with(&[("LLM_TEMPERATURE", "3")]).is_err());
+        assert!(with(&[("LLM_TEMPERATURE", "NaN")]).is_err());
+        assert!(with(&[("LLM_MAX_TOKENS", "10")]).is_err());
+        assert!(with(&[("LLM_REQUESTS_PER_MINUTE", "-1")]).is_err());
+        assert!(with(&[("LLM_PROTOCOL", "xml")]).unwrap_err().contains("LLM_PROTOCOL"));
+        assert!(with(&[("LLM_REASONING", "high")]).is_err());
+        assert!(with(&[("LLM_CONVERSATIONS", "maybe")]).is_err());
     }
 
     #[test]

@@ -35,10 +35,12 @@ Secrets (`fly secrets set NAME=value`):
 | `AUTH_MODE`, `AUTH_PROVIDERS`, `ADMIN_EMAILS` | Google and Apple sign-in and the first admins ([sign-in.md](sign-in.md)) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
 | `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_SERVICES_ID`, `APPLE_PRIVATE_KEY` | Apple sign-in |
-| `LLM_API_KEY` | Optional: the model endpoint's key, stored in the database on the first start that has none (an admin can change it later; it is never sent to a browser) |
+| `LLM_API_KEY`, `LLM_HEADERS` | Optional: the model endpoint's key and any extra request headers. Read at every start and never stored in the database or sent to a browser. |
 | `BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Optional: Litestream backups (set by `fly storage create`) |
 
 Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`), `TRUST_PROXY=true` (take the visitor's address from `Fly-Client-IP` for the sign-in rate limit; only behind a proxy that sets it), `INITIAL_SPEED` (0, 1, 2 or 4: the speed of a brand-new world; afterwards the speed an admin chose is kept), `LOG_FORMAT` (`json`, or `pretty` for people), `RUST_LOG` (`info` by default).
+
+The language model (`LLM_BASE_URL`, `LLM_MODEL` and the tuning variables `LLM_CONCURRENCY`, `LLM_REQUESTS_PER_MINUTE`, `LLM_MAX_REQUESTS_PER_DAY`, `LLM_MAX_TOKENS_PER_DAY`, `LLM_PROTOCOL`, `LLM_CONVERSATIONS`, `LLM_REASONING`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`) is configured only here, either under `[env]` or as secrets. The admin panel can show and test it but not change it. Without `LLM_BASE_URL` and `LLM_MODEL` the model is off. All the variables and their defaults are in the [README](../README.md#connecting-a-language-model). A change takes effect when the machine restarts, which `fly secrets set` does on its own.
 
 Sessions need no secret: a session is 32 random bytes in an HttpOnly cookie, and the database keeps only its SHA-256.
 
@@ -80,7 +82,7 @@ The volume belongs to one machine, so there is exactly one machine: do not scale
 
 ## The language model
 
-It is off on a fresh deployment. An admin turns it on in **🛠 Admin → Language model** (base URL, model, key, then **Test connection**). Running around the clock, a village asks a fast model for about 20,000 decisions a day, so set the daily caps there: requests per day and tokens per day are spread evenly through the day (with half an hour's worth as a burst), so the village does not go quiet in the evening once a cap is near. **Enabled** off is the kill switch: villagers fall back to their routines at once. The decision log (🧠) shows every request.
+It is off until `LLM_BASE_URL` and `LLM_MODEL` are set, for example with `fly secrets set LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=<model> LLM_API_KEY=sk-…`. Then use **🛠 Admin → Language model → Test connection** to check it. Running around the clock, a village asks a fast model for about 20,000 decisions a day, so set the daily caps `LLM_MAX_REQUESTS_PER_DAY` and `LLM_MAX_TOKENS_PER_DAY`. They are spread evenly through the day (with half an hour's worth as a burst), so the village does not go quiet in the evening once a cap is near. The kill switch is `fly secrets unset LLM_BASE_URL LLM_MODEL`: the machine restarts and the villagers follow their routines. The decision log (🧠) shows every request.
 
 To measure a model before letting it run the village:
 

@@ -1,6 +1,6 @@
 import type {
   AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BrainLogRecord, CharacterDetail, ChroniclePage, HealthReport,
-  LlmSettingsUpdate, LlmSettingsView, LlmTestResult, Me, ModelList, NewWorldRequest, SignInOptions, SpeedRequest,
+  LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
   WatchRequest,
 } from '../generated/api';
 
@@ -45,12 +45,8 @@ export const api = {
   admin: {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),
     llmSettings: () => request<LlmSettingsView>('GET', '/api/admin/settings/llm'),
-    saveLlmSettings: (body: LlmSettingsUpdate) => request<LlmSettingsView>('PUT', '/api/admin/settings/llm', body),
-    /** tests the draft when given (the stored key unless the draft has one), else the stored settings */
-    testLlm: (draft?: LlmSettingsUpdate) => request<LlmTestResult>('POST', '/api/admin/llm/test', draft ?? {}),
-    /** the models at `baseUrl` (a draft), or at the saved base URL */
-    models: (baseUrl?: string) =>
-      request<ModelList>('GET', `/api/admin/llm/models${baseUrl ? `?baseUrl=${encodeURIComponent(baseUrl)}` : ''}`),
+    /** asks the model the server was started with for one decision */
+    testLlm: () => request<LlmTestResult>('POST', '/api/admin/llm/test'),
     brainLog: () => request<BrainLogRecord[]>('GET', '/api/admin/brain-log'),
     allowlist: () => request<AllowlistEntry[]>('GET', '/api/admin/allowlist'),
     allow: (body: AllowlistAdd) => request<AllowlistEntry>('POST', '/api/admin/allowlist', body),

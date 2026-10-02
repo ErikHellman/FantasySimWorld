@@ -217,7 +217,7 @@ function StartOverlay() {
         )}
         {!loading && ui.llm.value.state === 'off' && (
           <p class="muted small-text">
-            The villagers are running on their built-in routines{isAdmin() ? '. Connect a language model in Admin to give them minds of their own.' : '.'}
+            The villagers are running on their built-in routines{isAdmin() ? '. Set LLM_BASE_URL and LLM_MODEL on the server to give them minds of their own.' : '.'}
           </p>
         )}
         {!loading && ui.me.value && <p class="muted small-text">Signed in as {ui.me.value.displayName || ui.me.value.email}.</p>}

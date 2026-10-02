@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use super::{Result, StoreError, now_ms};
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, V1)];
+const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2)];
 
 const V1: &str = "
 CREATE TABLE worlds (
@@ -137,6 +137,10 @@ CREATE TABLE auth_attempts (
 CREATE INDEX auth_attempts_by_time ON auth_attempts (at);
 ";
 
+/// The language model moved to the server's environment: forget what the admin panel
+/// saved, so the API key no longer sits in the database (or in its backups).
+const V2: &str = "DELETE FROM settings WHERE key IN ('llm', 'llm.api_key');";
+
 /// Brings the schema up to date. Refuses a database written by a newer server.
 pub fn run(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
@@ -172,6 +176,21 @@ mod tests {
         // auto_vacuum survived table creation
         let mode: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0)).unwrap();
         assert_eq!(mode, 2);
+    }
+
+    #[test]
+    fn forgets_the_model_settings_the_admin_panel_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = super::super::db::open_writer(&dir.path().join("t.db")).unwrap();
+        run(&mut conn).unwrap();
+        for key in ["llm", "llm.api_key", "llm.capabilities"] {
+            conn.execute("INSERT INTO settings (key, value, updated_at) VALUES (?1, '\"x\"', 0)", [key]).unwrap();
+        }
+        conn.execute("DELETE FROM schema_migrations WHERE version = 2", []).unwrap();
+        run(&mut conn).unwrap();
+        let mut keys = conn.prepare("SELECT key FROM settings ORDER BY key").unwrap();
+        let keys: Vec<String> = keys.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(keys, ["llm.capabilities"]);
     }
 
     #[test]
