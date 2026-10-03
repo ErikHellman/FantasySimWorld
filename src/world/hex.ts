@@ -12,6 +12,33 @@ export const HEX_ROW_PITCH = Math.sqrt(3) * HEX_SCALE;
 export const HEX_RADIUS = (2 / Math.sqrt(3)) * HEX_SCALE;
 /** centre to edge midpoint */
 export const HEX_APOTHEM = HEX_SCALE;
+/**
+ * Where a KayKit tile's flat top ends, as a fraction of the way to its edge; a
+ * bevel drops from there to the edge. The renderer stretches each tile by
+ * 1 / TILE_RIM_INSET so neighbouring tops meet with no groove between them.
+ */
+export const TILE_RIM_INSET = 0.95;
+
+const SIN_60 = Math.sqrt(3) / 2;
+
+/**
+ * How far out a point of a tile model (model units, unscaled) lies, measured
+ * in hexagons: 0 at the centre and 1 anywhere on the tile's edge.
+ */
+export function tileEdgeDistance(x: number, z: number): number {
+  return Math.max(Math.abs(x), Math.abs(x / 2 + z * SIN_60), Math.abs(x / 2 - z * SIN_60));
+}
+
+/**
+ * How much to stretch a point of a tile model away from the centre so the flat
+ * top reaches the hex edge. The inside grows by 1 / TILE_RIM_INSET; the
+ * bevelled rim folds onto the edge, where it stands between two tiles and
+ * cannot be seen.
+ */
+export function tileRimStretch(x: number, z: number): number {
+  const edge = tileEdgeDistance(x, z);
+  return edge > 0 ? Math.min(1 / TILE_RIM_INSET, 1 / edge) : 1;
+}
 
 export interface Hex {
   col: number;

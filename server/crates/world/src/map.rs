@@ -12,8 +12,8 @@ use serde::Serialize;
 
 use crate::height::{BRIDGE_HALF_WIDTH, bridge_height, tile_height};
 use crate::hex::{
-    DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_SCALE, HEX_WIDTH, Hex, dir_vector, direction_to, hex_at,
-    hex_center, mask_has, neighbor,
+    DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_SCALE, HEX_WIDTH, Hex, TILE_RIM_INSET, dir_vector,
+    direction_to, hex_at, hex_center, mask_has, neighbor, tile_edge_distance,
 };
 use crate::layout::{HexPath, LAYOUT_ROWS, RIVERS, ROADS};
 use crate::tiles::{TileChoice, coast_tile, crossing_tile, river_tile, road_tile};
@@ -281,6 +281,8 @@ const TILE_ROTATION_STEP: f64 = -std::f64::consts::PI / 3.0;
 /// at -0.1; a beach slopes all the way down to the lake at -0.2.
 const RIVER_WATER_LEVEL: f64 = -0.075;
 const LAKE_WATER_LEVEL: f64 = -0.16;
+/// How close to a tile's edge (1 on the boundary) the drawn height is read, clear of the grid cells on the bevel.
+const DRAWN_SAMPLE_EDGE: f64 = 0.9;
 
 /// The bridge model's deck runs between two opposite hex edges, along direction 1
 /// in the model's own frame (60° from +x), not along z.
@@ -308,6 +310,15 @@ fn tile_surface(cell: &HexCell, x: f64, z: f64) -> Option<f64> {
     // Right on a hex edge the sample can miss the tile; pull it slightly towards the centre.
     tile_height(cell.tile.model, local.x, local.z)
         .or_else(|| tile_height(cell.tile.model, local.x * 0.93, local.z * 0.93))
+}
+
+/// The tile surface as drawn. The client stretches each tile so its flat top reaches the hex edge, so what is drawn
+/// at a point is the model's surface a little closer to the centre. Near the edge the sample is pulled in further
+/// still, because the height grid's cells nearest the edge lie on the bevel.
+fn drawn_surface(cell: &HexCell, x: f64, z: f64) -> Option<f64> {
+    let local = to_local(x - cell.center.x, z - cell.center.z, f64::from(cell.tile.rot) * TILE_ROTATION_STEP);
+    let pull = TILE_RIM_INSET.min(DRAWN_SAMPLE_EDGE / tile_edge_distance(local.x, local.z));
+    tile_height(cell.tile.model, local.x * pull, local.z * pull)
 }
 
 fn bridge_deck(cell: &HexCell, x: f64, z: f64) -> Option<f64> {
@@ -351,7 +362,7 @@ pub fn is_walkable_terrain(x: f64, z: f64) -> bool {
 /// Height of the ground (or bridge deck) in world units; 0 on plain grass. Used only for drawing.
 pub fn ground_height(x: f64, z: f64) -> f64 {
     let Some(cell) = cell_at_point(x, z) else { return 0.0 };
-    let surface = tile_surface(cell, x, z).unwrap_or(0.0);
+    let surface = drawn_surface(cell, x, z).unwrap_or(0.0);
     let deck = bridge_deck(cell, x, z).unwrap_or(f64::NEG_INFINITY);
     surface.max(deck) * HEX_SCALE
 }
@@ -379,5 +390,22 @@ mod tests {
         let corner = cell_at(0, 0).unwrap();
         assert_eq!(ground_at(corner.center.x, corner.center.z), Ground::Blocked);
         assert_eq!(ground_at(-50.0, -50.0), Ground::Void);
+    }
+
+    #[test]
+    fn draws_plain_grass_flat_right_up_to_the_hex_edges() {
+        let grass: Vec<_> = world_map().cells.iter().filter(|cell| cell.tile.model == "hex_grass").collect();
+        assert!(!grass.is_empty());
+        for cell in grass {
+            for dir in 0..DIR_COUNT {
+                let edge = dir_vector(dir);
+                let angle = std::f64::consts::FRAC_PI_3 * (f64::from(dir) + 0.5);
+                // Just inside the edge midpoint and the corner, where the tile's bevel used to dip.
+                let (ex, ez) = (edge.x * HEX_APOTHEM * 0.99, edge.z * HEX_APOTHEM * 0.99);
+                let (cx, cz) = (angle.cos() * HEX_RADIUS * 0.99, angle.sin() * HEX_RADIUS * 0.99);
+                assert_eq!(ground_height(cell.center.x + ex, cell.center.z + ez), 0.0);
+                assert_eq!(ground_height(cell.center.x + cx, cell.center.z + cz), 0.0);
+            }
+        }
     }
 }

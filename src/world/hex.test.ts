@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DIR_COUNT, dirVector, directionTo, hexAt, hexCenter, hexDistance, maskOf, neighbor, rotateMask, HEX_WIDTH } from './hex';
+import {
+  DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, TILE_RIM_INSET, dirVector, directionTo, hexAt, hexCenter, hexDistance, maskOf, neighbor,
+  rotateMask, tileRimStretch, HEX_WIDTH,
+} from './hex';
 import { crossingTile, riverTile, roadTile } from './tiles';
-import { cellAt, groundAt, worldMap } from './map';
+import { cellAt, groundAt, groundHeight, worldMap } from './map';
 
 describe('hex grid', () => {
   it('round-trips centres through hexAt', () => {
@@ -28,6 +31,18 @@ describe('hex grid', () => {
         expect(hexDistance(hex, n)).toBe(1);
       }
     }
+  });
+
+  it('stretches tiles so the flat top reaches the edge and the rim folds onto it', () => {
+    expect(tileRimStretch(0, 0)).toBe(1);
+    expect(tileRimStretch(0.5, 0)).toBeCloseTo(1 / TILE_RIM_INSET);
+    expect(0.95 * tileRimStretch(0.95, 0)).toBeCloseTo(1);
+    expect(tileRimStretch(1, 0.2)).toBeCloseTo(1);
+    // The corner of the flat top lands on the corner of the hex.
+    const corner = { x: TILE_RIM_INSET, z: TILE_RIM_INSET / Math.sqrt(3) };
+    const stretch = tileRimStretch(corner.x, corner.z);
+    expect(corner.x * stretch).toBeCloseTo(1);
+    expect(corner.z * stretch).toBeCloseTo(1 / Math.sqrt(3));
   });
 
   it('rotates edge masks', () => {
@@ -65,5 +80,19 @@ describe('world map', () => {
     expect(groundAt(cellAt(12, 12)!.center.x, cellAt(12, 12)!.center.z)).toBe('water');
     expect(groundAt(cellAt(0, 0)!.center.x, cellAt(0, 0)!.center.z)).toBe('blocked');
     expect(groundAt(-50, -50)).toBe('void');
+  });
+
+  it('draws plain grass flat right up to the hex edges', () => {
+    const grass = worldMap.cells.filter((cell) => cell.tile.model === 'hex_grass');
+    expect(grass.length).toBeGreaterThan(0);
+    for (const cell of grass) {
+      for (let dir = 0; dir < DIR_COUNT; dir++) {
+        const edge = dirVector(dir);
+        const corner = dirVector(dir + 0.5);
+        // Just inside the edge midpoint and the corner, where the tile's bevel used to dip.
+        expect(groundHeight(cell.center.x + edge.x * HEX_APOTHEM * 0.99, cell.center.z + edge.z * HEX_APOTHEM * 0.99)).toBe(0);
+        expect(groundHeight(cell.center.x + corner.x * HEX_RADIUS * 0.99, cell.center.z + corner.z * HEX_RADIUS * 0.99)).toBe(0);
+      }
+    }
   });
 });
