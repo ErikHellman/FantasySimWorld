@@ -11,7 +11,6 @@ use crate::systems::arrivals::arrive;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
 use crate::util::{Ctx, first_name, join_names, living};
 
-pub const TARGET_POPULATION: usize = 12;
 const MAX_WAVE: i64 = 7;
 
 /// Tick at which a given hour of a given day begins.
@@ -153,7 +152,7 @@ pub fn update_director(ctx: &mut Ctx) {
         schedule_next_wave(ctx, dark);
     }
 
-    if ctx.state.order.len() < TARGET_POPULATION
+    if ctx.state.order.len() < ctx.state.director.population_target
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
     {

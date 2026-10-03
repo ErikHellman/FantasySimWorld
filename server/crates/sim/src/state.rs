@@ -64,6 +64,22 @@ pub struct Profile {
     pub bravery: f64,
     /// 0 solitary .. 1 gregarious
     pub sociability: f64,
+    /// 0 lets things go .. 1 goes looking for trouble: quarrels without a grudge, nurses grudges and
+    /// comes to blows sooner. Left out of saves at 0, so the old browser saves round-trip unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spite: f64,
+    /// 0 none .. 1 shameless: flirts freely, charms admirers and enjoys being
+    /// fought over (`systems::charm`). Left out of saves when 0, so saves made
+    /// before it existed load and write back unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allure: f64,
+    /// 0 at ease .. 1 tongue-tied with anyone they do not yet trust (worse with women)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shyness: f64,
+    /// 0 unremarkable .. 1 striking: others warm to them and fall for them faster,
+    /// whatever they do (unlike `allure`, which is flirting on purpose)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub looks: f64,
     pub voice: VoiceProfile,
     /// what this character hides from everyone; only their own prompts see it
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -89,8 +105,6 @@ pub enum Quirk {
     Fighter,
     /// only ever falls for women
     LovesWomen,
-    /// anyone who could fall for them does, and quickly
-    Alluring,
     /// never takes a lover; romance and warmth bewilder them
     Chaste,
     /// dabbles in necromancy by night, and the dead answer
@@ -106,19 +120,19 @@ pub enum Quirk {
 #[serde(rename_all = "camelCase")]
 pub struct QuirkState {
     /// drunk until this tick
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub drunk_until_tick: i64,
     /// the last day a hunt was decided (whether or not it was a hunting day)
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub hunt_rolled_day: i64,
     /// hunting on this day
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub hunt_day: i64,
     /// a night spent over forbidden books: the day it began
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub study_day: i64,
     /// next tick a quirk may act on its own (drunken trouble, the dead answering)
-    #[serde(default, skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_roll_tick: i64,
 }
 
@@ -128,12 +142,16 @@ impl QuirkState {
     }
 }
 
-fn is_zero(value: &i64) -> bool {
+fn is_zero_tick(value: &i64) -> bool {
     *value == 0
 }
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -814,6 +832,20 @@ pub struct Director {
     pub watch_day: i64,
     pub death_ticks: Vec<i64>,
     pub arrivals: i64,
+    /// newcomers arrive while fewer than this many are alive: the founding cast's size
+    #[serde(default = "founding_population", skip_serializing_if = "is_founding_population")]
+    pub population_target: usize,
+}
+
+/// The size of the founding cast before it grew; worlds saved without a target keep it.
+pub const FOUNDING_POPULATION: usize = 12;
+
+fn founding_population() -> usize {
+    FOUNDING_POPULATION
+}
+
+fn is_founding_population(target: &usize) -> bool {
+    *target == FOUNDING_POPULATION
 }
 
 /// Knobs the brain layer may turn (through a command) without breaking determinism.

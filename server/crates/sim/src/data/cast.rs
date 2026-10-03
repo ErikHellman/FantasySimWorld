@@ -8,7 +8,7 @@ use fsw_world::places::ActivityId;
 use serde::Deserialize;
 
 use super::classes::ClassId;
-use crate::state::{Profile, Quirk, present};
+use crate::state::{Profile, Quirk, Relationship, present};
 
 /// A character as authored: who they are, how they look and where they live.
 #[derive(Clone, Debug, Deserialize)]
@@ -35,6 +35,10 @@ pub struct CastEntry {
     #[serde(default)]
     pub hobbies: Option<Vec<ActivityId>>,
     pub profile: Profile,
+    /// For a newcomer: bonds with founders (by cast key) that take hold if both are
+    /// alive when the newcomer arrives, such as kin come looking for each other.
+    #[serde(default)]
+    pub bonds: Vec<SeedBond>,
     /// what the sim makes of them beyond the numbers in the profile
     #[serde(default)]
     pub quirks: Vec<Quirk>,
@@ -52,6 +56,22 @@ pub struct SeedBond {
     pub familiarity: Option<f64>,
     pub kin: Option<bool>,
     pub summary: String,
+}
+
+impl SeedBond {
+    /// Writes the authored feelings over a relationship; unset numbers keep theirs.
+    pub fn apply(&self, r: &mut Relationship) {
+        r.affinity = self.affinity.unwrap_or(r.affinity);
+        r.trust = self.trust.unwrap_or(r.trust);
+        r.attraction = self.attraction.unwrap_or(0.0);
+        r.grievance = self.grievance.unwrap_or(0.0);
+        r.familiarity = self.familiarity.unwrap_or(r.familiarity);
+        r.kin = self.kin.unwrap_or(false);
+        r.summary = self.summary.clone();
+        if r.grievance > 0.0 {
+            r.last_offence_tick = 0;
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -81,4 +101,37 @@ pub fn newcomers() -> &'static [CastEntry] {
 /// The authored entry for a character of this name, founding cast or newcomer.
 pub fn authored(name: &str) -> Option<&'static CastEntry> {
     CAST.cast.iter().chain(CAST.newcomers.iter()).find(|entry| entry.profile.name == name)
+}
+
+/// The authored person with this cast key, founder or newcomer.
+pub fn by_key(key: &str) -> Option<&'static CastEntry> {
+    CAST.cast.iter().chain(&CAST.newcomers).find(|entry| entry.key == key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fsw_world::assets::asset_manifest;
+
+    #[test]
+    fn every_authored_model_is_in_the_asset_manifest() {
+        let manifest = asset_manifest();
+        for entry in cast().iter().chain(newcomers()) {
+            let model = entry.model.as_deref().unwrap_or(entry.class_id.def().model);
+            let character = manifest.characters.get(model).unwrap_or_else(|| panic!("{}: no model {model}", entry.key));
+            assert!(manifest.rigs.contains_key(&character.rig), "{model}: no rig {}", character.rig);
+        }
+    }
+
+    #[test]
+    fn keys_are_unique_and_newcomer_bonds_name_known_people() {
+        let all: Vec<&CastEntry> = cast().iter().chain(newcomers()).collect();
+        for entry in &all {
+            assert_eq!(all.iter().filter(|other| other.key == entry.key).count(), 1, "{}", entry.key);
+            for bond in &entry.bonds {
+                assert!(bond.from == entry.key || bond.to == entry.key, "{}: a bond must involve them", entry.key);
+                assert!(by_key(&bond.from).is_some() && by_key(&bond.to).is_some(), "{}", entry.key);
+            }
+        }
+    }
 }

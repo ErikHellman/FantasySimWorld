@@ -8,7 +8,8 @@ use crate::events::{Emote, SimEvent};
 use crate::state::{
     Character, ChronicleKind, Feeling, Id, MemoryKind, Quirk, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
-use crate::util::{Ctx, can_fall_for, first_name, living_ids, rel, rel_or_default};
+use crate::systems::charm;
+use crate::util::{Ctx, can_fall_for, first_name, living_ids, open_to, rel, rel_or_default};
 
 /// The warmest a bully ever feels about anyone: short of friendship.
 const BULLY_AFFINITY_CAP: f64 = 20.0;
@@ -48,6 +49,16 @@ pub const RUNG_TENSION: f64 = 20.0;
 pub const RUNG_GRUDGE: f64 = 40.0;
 pub const RUNG_FEUD: f64 = 65.0;
 pub const RUNG_BLOOD: f64 = 85.0;
+
+/// The grievance at which this character will come to blows: a feud, or a lesser grudge for the spiteful.
+pub fn brawl_threshold(c: &Character) -> f64 {
+    RUNG_FEUD - 20.0 * c.profile.spite
+}
+
+/// Whether `from` may start a fist fight with `to`. It only reads, so the brain can ask too.
+pub fn brawl_unlocked(from: &Character, to_id: &str) -> bool {
+    rel_or_default(from, to_id).grievance >= brawl_threshold(from)
+}
 
 pub fn rung_of(r: &Relationship) -> Rung {
     if r.grievance >= RUNG_BLOOD {
@@ -102,27 +113,34 @@ fn label_note(label: RelationLabel, name: &str) -> Option<String> {
     })
 }
 
+/// Affinity everyone starts with toward a striking-looking person, before they have said a word.
+pub fn looks_welcome(c: &Character) -> f64 {
+    c.profile.looks * 20.0
+}
+
 /// How quirks bend a change in feeling: nobody warms to a bully, and attraction
-/// only grows where it can.
+/// only grows where it can (never for the chaste, only for women in some).
 fn shaped(ctx: &Ctx, from: &str, to_id: &str, mut delta: RelationDelta) -> RelationDelta {
     let Some(to) = ctx.state.characters.get(to_id) else { return delta };
-    let me = ctx.cr(from);
     if to.has(Quirk::Bully) {
         delta.affinity = if delta.affinity > 0.0 { 0.0 } else { delta.affinity * 1.3 };
     }
-    if delta.attraction > 0.0 {
-        if !can_fall_for(me, to) {
-            delta.attraction = 0.0;
-        } else if to.has(Quirk::Alluring) {
-            delta.attraction *= 2.0;
-        }
+    if delta.attraction > 0.0 && !open_to(ctx.cr(from), to) {
+        delta.attraction = 0.0;
     }
     delta
 }
 
 /// Applies a change to how `from` feels about `to_id` and updates the label.
-pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, delta: RelationDelta) {
+/// Warmth toward a striking-looking person grows faster.
+pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, mut delta: RelationDelta) {
     let tick = ctx.tick();
+    let looks = ctx.state.characters.get(to_id).map_or(0.0, |c| c.profile.looks);
+    if looks > 0.0 {
+        let boost = 1.0 + looks * 0.5;
+        delta.affinity = if delta.affinity > 0.0 { delta.affinity * boost } else { delta.affinity };
+        delta.attraction = if delta.attraction > 0.0 { delta.attraction * boost } else { delta.attraction };
+    }
     let delta = shaped(ctx, from, to_id, delta);
     let bully = ctx.cr(from).has(Quirk::Bully);
     let r = rel(ctx.c(from), to_id);
@@ -228,6 +246,15 @@ pub fn apply_conversation(
             delta.attraction = 2.0;
         }
     }
+    // A charmer rarely falls for anyone herself, but her flirting works on
+    // anyone who does not take it badly, chemistry or none.
+    let (mine, theirs) = (ctx.cr(self_id).profile.allure, ctx.cr(other_id).profile.allure);
+    if mine > 0.0 && delta.attraction > 0.0 {
+        delta.attraction *= 1.0 - mine * 0.75;
+    }
+    if theirs > 0.0 && tone == TalkTone::Romantic && base >= 0.0 && !rel_or_default(ctx.cr(self_id), other_id).kin {
+        delta.attraction += theirs * charm::CHARM;
+    }
     adjust(ctx, self_id, other_id, delta);
     let tick = ctx.tick();
     rel(ctx.c(self_id), other_id).last_talk_tick = tick;
@@ -315,11 +342,13 @@ pub fn daily_relationships(ctx: &mut Ctx) {
         let others: Vec<Id> = ctx.cr(&id).relationships.keys().cloned().collect();
         for other in others {
             let c = ctx.c(&id);
-            let temper = c.profile.temper;
+            let (temper, spite) = (c.profile.temper, c.profile.spite);
             let r = &mut c.relationships[&other];
             if r.grievance > 0.0 {
+                // The spiteful nurse their grudges and let them cool only half as fast.
                 let recent = tick - r.last_offence_tick < TICKS_PER_DAY;
-                r.grievance = (r.grievance - (if recent { 0.5 } else { 1.8 }) * (1.0 - temper * 0.6)).max(0.0);
+                let cooling = (if recent { 0.5 } else { 1.8 }) * (1.0 - temper * 0.6) * (1.0 - spite * 0.5);
+                r.grievance = (r.grievance - cooling).max(0.0);
             }
             if ctx.alive(&other) {
                 relabel(ctx, &id, &other);

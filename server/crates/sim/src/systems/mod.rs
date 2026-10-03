@@ -1,6 +1,7 @@
 //! The twelve systems, run each tick in the order `Sim::step` lists.
 
 pub mod arrivals;
+pub mod charm;
 pub mod combat;
 pub mod conversation;
 pub mod death;

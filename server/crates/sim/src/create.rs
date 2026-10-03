@@ -9,12 +9,13 @@ use crate::data::cast::{authored, cast, seed_bonds};
 use crate::state::{ChronicleEntry, ChronicleKind, Director, Id, SAVE_VERSION, SimState, Tuning};
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::director::tick_at;
-use crate::systems::relationships::label_for;
+use crate::systems::relationships::{label_for, looks_welcome};
 use crate::util::new_relationship;
 
 pub const DEFAULT_SEED: u32 = 1337;
 
 pub fn create_state(seed: u32) -> SimState {
+    let founders = cast();
     let mut state = SimState {
         version: SAVE_VERSION,
         seed,
@@ -39,13 +40,14 @@ pub fn create_state(seed: u32) -> SimState {
             watch_day: 0,
             death_ticks: Vec::new(),
             arrivals: 0,
+            population_target: founders.len(),
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
     };
 
     let mut by_key: HashMap<&str, Id> = HashMap::new();
     let mut cast_ids = Vec::new();
-    for entry in cast() {
+    for entry in founders {
         let home = entry.home_id.clone().unwrap_or_else(|| free_home(&state));
         let c = make_character(&mut state, entry, &home);
         let id = c.id.clone();
@@ -65,6 +67,7 @@ pub fn create_state(seed: u32) -> SimState {
             r.familiarity = range(&mut state.rng, 18.0, 32.0);
             r.affinity = js_round(range(&mut state.rng, 0.0, 14.0));
             r.trust = js_round(range(&mut state.rng, 0.0, 12.0));
+            r.affinity += looks_welcome(&state.characters[b]);
             state.characters[a].relationships.insert(b.clone(), r);
         }
     }
@@ -72,17 +75,7 @@ pub fn create_state(seed: u32) -> SimState {
         let (Some(from), Some(to)) = (by_key.get(bond.from.as_str()), by_key.get(bond.to.as_str())) else {
             panic!("Seed bond refers to unknown cast member {} -> {}", bond.from, bond.to);
         };
-        let r = &mut state.characters[from].relationships[to];
-        r.affinity = bond.affinity.unwrap_or(r.affinity);
-        r.trust = bond.trust.unwrap_or(r.trust);
-        r.attraction = bond.attraction.unwrap_or(0.0);
-        r.grievance = bond.grievance.unwrap_or(0.0);
-        r.familiarity = bond.familiarity.unwrap_or(r.familiarity);
-        r.kin = bond.kin.unwrap_or(false);
-        r.summary = bond.summary.clone();
-        if r.grievance > 0.0 {
-            r.last_offence_tick = 0;
-        }
+        bond.apply(&mut state.characters[from].relationships[to]);
     }
     for a in &cast_ids {
         for r in state.characters[a].relationships.values_mut() {

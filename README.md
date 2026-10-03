@@ -158,7 +158,8 @@ cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock AUTH_TOKEN=dev
 
 Everyone watching shares a chat along the bottom of the screen. It can be expanded, collapsed to one line showing the latest message, or hidden behind a 💬 button that counts what you missed.
 
-- Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody connected at the same time has it (ignoring case). The chosen name is kept in this browser and asked for again after each connect; if someone else has it by then, you keep the made-up one.
+- Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody else in the chat has it (ignoring case). The chosen name is kept in this browser and asked for on each connect; if someone else has it by then, you get a made-up one.
+- The chat says when someone joins and when they leave. A reload, or a tab that was hidden for a while, drops the connection for a moment, so someone only counts as gone after five minutes away; back sooner, and neither is mentioned. Until then their name stays theirs.
 - Signed in with Google or Apple, all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person.
 - The server keeps the last 50 messages, in memory, and sends them to everyone who connects. They survive a new world but not a server restart.
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
@@ -221,6 +222,8 @@ The 3D models are from the [KayKit](https://kaylousberg.com) collection by Kay L
 ```bash
 KAYKIT_DIR="/path/to/The Complete KayKit Collection v7" pnpm assets
 ```
+
+Characters come on two skeletons: most use KayKit's medium rig, and the Greymane brothers use `Barbarian_Large` on the large rig. Each rig gets its own clip file in `public/assets/animations/`. The large rig has no work, rest or ranged clips of its own, so the build copies those over from the medium rig, adjusted to the longer bones (`rigs` in `tools/assets/asset-list.mjs`). The sim times actions by the medium rig's clips, and the client stretches the large rig's one-off clips, such as attacks, to finish at the same moment.
 
 A few props the collection lacks at character scale (a wooden fence, wildflowers, mushrooms, a notice board) are generated with Blender and bundled by the same command:
 

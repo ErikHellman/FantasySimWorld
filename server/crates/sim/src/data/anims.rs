@@ -1,7 +1,7 @@
 //! Abstract animation states the sim puts on characters and monsters. The
 //! renderer maps them to KayKit clips; the sim uses the durations for timing.
 
-use fsw_world::assets::asset_manifest;
+use fsw_world::assets::timing_clips;
 use serde::{Deserialize, Serialize};
 
 pub struct AnimDef {
@@ -118,11 +118,8 @@ impl AnimId {
     /// Seconds one play of the animation takes at its playback speed.
     pub fn seconds(self) -> f64 {
         let def = self.def();
-        let duration = asset_manifest()
-            .animations
-            .clips
-            .get(def.clip)
-            .unwrap_or_else(|| panic!("Clip {} missing from the asset manifest", def.clip));
+        let duration =
+            timing_clips().get(def.clip).unwrap_or_else(|| panic!("Clip {} missing from the asset manifest", def.clip));
         duration / def.speed
     }
 }
@@ -135,6 +132,21 @@ mod tests {
     fn every_clip_is_in_the_manifest() {
         for anim in AnimId::ALL {
             assert!(anim.seconds() >= 0.0, "{}", anim.as_str());
+        }
+    }
+
+    #[test]
+    fn every_rig_carries_the_clips_villagers_play() {
+        use fsw_world::assets::{TIMING_RIG, asset_manifest};
+        for (rig, entry) in &asset_manifest().rigs {
+            for anim in AnimId::ALL {
+                let clip = anim.def().clip;
+                // Only the dead play these, and they are all on the timing rig.
+                if rig != TIMING_RIG && clip.starts_with("Skeletons_") {
+                    continue;
+                }
+                assert!(entry.clips.contains_key(clip), "rig {rig} has no {clip}");
+            }
         }
     }
 

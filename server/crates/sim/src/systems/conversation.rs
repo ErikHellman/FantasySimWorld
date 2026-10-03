@@ -13,6 +13,7 @@ use crate::state::{
     ActPhase, ChronicleKind, Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, Feeling, Id,
     IntentAction, Map, MemoryKind, Quirk, StimulusKind, TalkTone,
 };
+use crate::systems::charm;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{pass_on_rumour, pick_rumour};
 use crate::systems::relationships::{RelationDelta, adjust, apply_conversation, become_lovers};
@@ -291,6 +292,7 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
                 );
                 adjust(ctx, &witness, &a, RelationDelta { affinity: -2.0, ..Default::default() });
             }
+            charm::revel(ctx, &a, &b, false);
         }
         TalkTone::Romantic => {
             let accepted = feel_a.is_good() && feel_b.is_good();
@@ -298,6 +300,7 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
             let ba = rel(ctx.c(&b), &a).clone();
             let mutual = ab.attraction >= 45.0 && ba.attraction >= 45.0;
             let free = ctx.cr(&a).partner_id.is_none() && ctx.cr(&b).partner_id.is_none();
+            let (a_allure, b_allure) = (charm::allure(ctx.state, &a), charm::allure(ctx.state, &b));
             if ctx.cr(&b).has(Quirk::Chaste) {
                 // Courting someone who has sworn off love: no answer, and no understanding either.
                 ctx.emit(SimEvent::Emote { id: b.clone(), emote: Emote::Thinking });
@@ -310,9 +313,26 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
                 become_lovers(ctx, &a, &b);
             } else if accepted {
                 ctx.emit(SimEvent::Emote { id: a.clone(), emote: Emote::Heart });
+                let text = if a_allure > 0.0 || b_allure > 0.0 {
+                    format!("{a_name} was seen flirting with {b_name}.")
+                } else {
+                    format!("{a_name} and {b_name} were seen talking very close together.")
+                };
+                ctx.chronicle(ChronicleKind::Romance, text, both.clone());
+            } else if b_allure >= charm::CHARMER {
+                // A charmer turns nobody away for good: she teases, and he stays hooked.
+                ctx.emit(SimEvent::Emote { id: b.clone(), emote: Emote::Laugh });
                 ctx.chronicle(
                     ChronicleKind::Romance,
-                    format!("{a_name} and {b_name} were seen talking very close together."),
+                    format!("{b_name} teased {a_name} and promised nothing."),
+                    both.clone(),
+                );
+            } else if a_allure >= charm::CHARMER {
+                // Her heart was never in it; only her pride is stung.
+                adjust(ctx, &a, &b, RelationDelta { grievance: 3.0, ..Default::default() });
+                ctx.chronicle(
+                    ChronicleKind::Romance,
+                    format!("{b_name} would not rise to {a_name}'s flirting."),
                     both.clone(),
                 );
             } else {
@@ -356,6 +376,11 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
                     Some(other),
                 );
                 ctx.emit(SimEvent::Emote { id: partner.clone(), emote: Emote::Anger });
+            }
+            charm::stir_jealousy(ctx, &a, &b);
+            if accepted {
+                charm::work_charm(ctx, &a, &b);
+                charm::work_charm(ctx, &b, &a);
             }
         }
         TalkTone::Apology => {

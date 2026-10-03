@@ -12,9 +12,10 @@ use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     Character, Conversation, ConversationLine, Memory, MonsterPhase, Relationship, SimState, TalkTone,
 };
-use fsw_sim::systems::relationships::{RUNG_FEUD, Rung, lethal_unlocked_read, rung_of};
+use fsw_sim::systems::charm;
+use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::{first_name, living, name_of, place_name_at, rel_or_default};
+use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, places};
 
 use crate::llm::types::{ChatMessage, ToolDef};
@@ -72,6 +73,9 @@ How to play:
 - A \"thought\" is one private sentence in the first person.
 - Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.";
 
+/// From here a character's spite shows in the prompts; below it, it only shows in what they do.
+const SPITEFUL: f64 = 0.5;
+
 fn level(value: f64, words: [&'static str; 3]) -> &'static str {
     if value < 0.34 {
         words[0]
@@ -106,6 +110,31 @@ pub fn persona(c: &Character) -> String {
         format!("How you speak: {}", p.speech_style),
         format!("What you want: {}.", p.goals.join("; ")),
     ];
+    if p.spite >= SPITEFUL {
+        lines[2].push_str(" You nurse every grudge and go looking for a fight.");
+    }
+    if p.allure >= 0.34 {
+        let flirt = level(
+            p.allure,
+            [
+                "",
+                "You flirt easily and like to be admired.",
+                "You are a shameless flirt: you use your charm to get your way, partner or no partner, and nothing delights you more than rivals quarrelling over you.",
+            ],
+        );
+        lines.insert(3, flirt.to_owned());
+    }
+    if p.shyness > 0.0 {
+        lines.push(
+            "You are painfully shy, worst of all with women: with people you do not trust yet the words will not come, but you open up to the few you do.".into(),
+        );
+    }
+    if p.looks > 0.0 {
+        lines.push(
+            "You are strikingly good-looking and most people warm to you on sight, though you hardly believe it."
+                .into(),
+        );
+    }
     if !p.secret.is_empty() {
         lines.push(format!("Your secret, which you never admit to anyone: {}", p.secret));
     }
@@ -355,6 +384,32 @@ fn first_names(people: &[&Character]) -> Vec<String> {
     people.iter().map(|o| first_name(o).to_owned()).collect()
 }
 
+/// For a charmer: who wants her, and which of them are at odds over it.
+fn admirers_note(state: &SimState, c: &Character) -> String {
+    if c.profile.allure <= 0.0 {
+        return String::new();
+    }
+    let admirers = charm::admirers(state, &c.id, charm::ADMIRER);
+    if admirers.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = admirers.iter().map(|id| name_of(state, id)).collect();
+    let mut note = format!("Drawn to you: {}.", join_names(&names));
+    let mut rivals = Vec::new();
+    for (i, x) in admirers.iter().enumerate() {
+        for y in &admirers[i + 1..] {
+            let (xc, yc) = (&state.characters[x], &state.characters[y]);
+            if rel_or_default(xc, y).grievance >= RUNG_TENSION || rel_or_default(yc, x).grievance >= RUNG_TENSION {
+                rivals.push(format!("{} and {}", first_name(xc), first_name(yc)));
+            }
+        }
+    }
+    if !rivals.is_empty() {
+        note.push_str(&format!(" At odds over you: {}.", rivals.join("; ")));
+    }
+    note
+}
+
 /// "What do you do next?"
 pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt {
     let time = game_time(state.tick);
@@ -365,8 +420,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prom
     let cue_text = format!("{} {}", events.join(" "), place_name_at(c.pos));
     let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: &cue_text }, 7);
 
-    let feuds: Vec<&Character> =
-        living(state).filter(|o| o.id != c.id && rel_or_default(c, &o.id).grievance >= RUNG_FEUD).collect();
+    let feuds: Vec<&Character> = living(state).filter(|o| o.id != c.id && brawl_unlocked(c, &o.id)).collect();
     let killable = feuds.iter().any(|o| lethal_unlocked_read(state, c, &o.id));
     let mut tools = vec![
         TOOLS.go_to.clone(),
@@ -412,6 +466,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prom
                     )
                 },
             ),
+            section(1, admirers_note(state, c)),
             section(
                 4,
                 if far.is_empty() {
@@ -568,18 +623,26 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt
 
 fn brief(c: &Character) -> String {
     let p = &c.profile;
+    let mut noted = String::new();
+    if p.looks > 0.0 {
+        noted.push_str(" Strikingly good-looking.");
+    }
+    if p.shyness > 0.0 {
+        noted.push_str(" Painfully shy.");
+    }
     let secret = if p.secret.is_empty() {
         String::new()
     } else {
         format!("\nOnly {} knows this, and never admits it: {}", first_name(c), p.secret)
     };
     format!(
-        "{}, {}, {} ({}). {}. Speaks: {}{secret}",
+        "{}, {}, {} ({}). {}.{}{noted} Speaks: {}{secret}",
         p.name,
         p.age,
         p.occupation,
         p.pronouns.as_str(),
         capital(&p.traits.join(", ")),
+        if p.spite >= SPITEFUL { " Holds grudges and picks quarrels." } else { "" },
         p.speech_style
     )
 }
@@ -598,10 +661,46 @@ fn rumour_words(state: &SimState, convo: &Conversation, teller: &str, to_them: b
     format!("{who} {means} to pass on a story about {about}: {} {truth}", rumour.text)
 }
 
+/// Openness at which a shy person talks freely with someone.
+const OPEN: f64 = 0.85;
+
+/// How a shy speaker manages with this listener, for the playwright; `None` unless `me` is shy.
+fn shy_words(me: &Character, other: &Character) -> Option<String> {
+    if me.profile.shyness == 0.0 {
+        return None;
+    }
+    let (mn, on) = (first_name(me), first_name(other));
+    Some(if openness(me, other) >= OPEN {
+        format!("{mn} trusts {on} and can open up with them.")
+    } else {
+        format!("{mn} does not trust {on} enough to talk freely: short answers, lost words, eyes on the ground.")
+    })
+}
+
+/// The same, told to the shy speaker.
+fn shy_words_to_self(me: &Character, other: &Character) -> Option<String> {
+    if me.profile.shyness == 0.0 {
+        return None;
+    }
+    let on = first_name(other);
+    Some(if openness(me, other) >= OPEN {
+        format!("You trust {on}; with them the words come easily.")
+    } else {
+        format!("You do not trust {on} enough yet: the words stick, and you keep it short.")
+    })
+}
+
 fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
+    // The spiteful go looking for a quarrel even with someone who has done them no wrong.
+    let picking_a_quarrel = a.profile.spite >= SPITEFUL && rel_or_default(a, &b.id).grievance < RUNG_GRUDGE;
+    let a_allure = a.profile.allure;
     let (a, b) = (first_name(a), first_name(b));
     match tone {
+        TalkTone::Hostile if picking_a_quarrel => format!("{a} has come looking for a quarrel with {b}."),
         TalkTone::Hostile => format!("{a} has come to confront {b} over a grievance."),
+        TalkTone::Romantic if a_allure >= charm::CHARMER => {
+            format!("{a} is flirting with {b} for the fun of it, promising nothing.")
+        }
         TalkTone::Romantic => format!("{a} is making a romantic approach to {b}."),
         TalkTone::Apology => format!("{a} has come to make amends with {b}."),
         TalkTone::Friendly => format!("{a} has stopped to talk with {b}."),
@@ -634,11 +733,15 @@ pub fn conversation_prompt(
             Some(p) => format!(" Already has a partner ({}).", name_of(state, p)),
             None => String::new(),
         };
-        let mut lines = vec![
-            brief(me),
+        let mut lines = vec![brief(me)];
+        if me.profile.allure >= charm::CHARMER {
+            lines.push("Flirts shamelessly; enjoys being wanted far more than wanting.".to_owned());
+        }
+        lines.extend([
             format!("Right now: {}.", need_words(me)),
             format!("Towards {}: {}.{thinks}{couple}", first_name(other), feeling_words(&r)),
-        ];
+        ]);
+        lines.extend(shy_words(me, other));
         if !memories.is_empty() {
             lines.push(format!("Remembers:\n{}", memory_lines(&memories, time.day)));
         }
@@ -721,9 +824,10 @@ pub fn reply_prompt(
             section(
                 0,
                 format!(
-                    "You are talking with {}. {opener}\n{}",
+                    "You are talking with {}. {opener}\n{}{}",
                     first_name(other),
-                    person_line(state, me, other, false)
+                    person_line(state, me, other, false),
+                    shy_words_to_self(me, other).map_or(String::new(), |words| format!("\n{words}"))
                 ),
             ),
             section(
@@ -888,6 +992,22 @@ mod tests {
     }
 
     #[test]
+    fn a_charmer_is_told_she_flirts_and_who_wants_her() {
+        let state = world();
+        let (mira, aldric) = (&state.characters["c8"], &state.characters["c1"]);
+        let text = prompt_text(&decide_prompt(&state, mira, 4000));
+        assert!(text.contains("You are a shameless flirt"), "{text}");
+        assert!(text.contains("Drawn to you: Theron"), "{text}");
+        let plain = prompt_text(&decide_prompt(&state, aldric, 4000));
+        assert!(!plain.contains("shameless flirt") && !plain.contains("Drawn to you"), "{plain}");
+        assert_eq!(
+            tone_words(TalkTone::Romantic, mira, aldric),
+            "Mira is flirting with Aldric for the fun of it, promising nothing."
+        );
+        assert_eq!(tone_words(TalkTone::Romantic, aldric, mira), "Aldric is making a romantic approach to Mira.");
+    }
+
+    #[test]
     fn every_prompt_builds() {
         let state = world();
         let (a, b) = (&state.characters["c1"], &state.characters["c2"]);
@@ -895,5 +1015,55 @@ mod tests {
         assert_eq!(react_prompt(&state, a).tools.len(), 2);
         assert_eq!(mercy_prompt(&state, a, b).tools[1].name, "finish");
         assert_eq!(reflect_prompt(&state, a, 900).tools[0].name, "reflection");
+    }
+
+    fn who<'a>(state: &'a SimState, name: &str) -> &'a Character {
+        living(state).find(|c| first_name(c) == name).unwrap()
+    }
+
+    fn talk(a: &Character, b: &Character) -> Conversation {
+        use fsw_sim::state::{ConvoAuthor, ConvoPhase, Fallback};
+        Conversation {
+            id: "v0".into(),
+            a: a.id.clone(),
+            b: b.id.clone(),
+            tone: TalkTone::Friendly,
+            phase: ConvoPhase::Hail,
+            lines: Vec::new(),
+            index: 0,
+            line_end_tick: 0,
+            started_tick: 0,
+            await_until_tick: 0,
+            closed: false,
+            author: ConvoAuthor::Local,
+            topic: String::new(),
+            feelings: Default::default(),
+            fallback: Fallback { lines: Vec::new(), topic: String::new(), feelings: Default::default() },
+            rumour: None,
+        }
+    }
+
+    #[test]
+    fn the_shy_and_the_charming_are_told_so_and_nobody_else_is() {
+        let state = world();
+        let (torvald, garrick, brenna) = (who(&state, "Torvald"), who(&state, "Garrick"), who(&state, "Brenna"));
+        let own = persona(torvald);
+        assert!(own.contains("You are painfully shy, worst of all with women"), "{own}");
+        assert!(own.contains("You are strikingly good-looking"));
+        let plain = persona(garrick);
+        assert!(!plain.contains("shy") && !plain.contains("good-looking"));
+
+        // He trusts Garrick, who brought him down from the hills, but not Brenna yet.
+        let with_garrick = prompt_text(&conversation_prompt(&state, &talk(garrick, torvald), garrick, torvald, 1500));
+        assert!(with_garrick.contains("Strikingly good-looking. Painfully shy. Speaks:"), "{with_garrick}");
+        assert!(with_garrick.contains("Torvald trusts Garrick and can open up with them."));
+        let with_brenna = prompt_text(&conversation_prompt(&state, &talk(brenna, torvald), brenna, torvald, 1500));
+        assert!(with_brenna.contains("Torvald does not trust Brenna enough to talk freely"), "{with_brenna}");
+        assert!(!with_brenna.contains("Brenna trusts") && !with_brenna.contains("Brenna does not trust"));
+
+        let reply = prompt_text(&reply_prompt(&state, &talk(brenna, torvald), &[], torvald, brenna, 1500));
+        assert!(reply.contains("You do not trust Brenna enough yet: the words stick"), "{reply}");
+        let reply = prompt_text(&reply_prompt(&state, &talk(torvald, brenna), &[], brenna, torvald, 1500));
+        assert!(!reply.contains("trust Torvald enough"));
     }
 }

@@ -27,7 +27,7 @@ Decisions made with the owner:
 - With a shared token or sign-in off, everyone is the same account, so the key is `Tab(?viewer=)`.
 - A connection with neither can read but not post.
 
-Joins are counted per key. A name is freed when that key's last stream closes, so "taken" means taken by someone connected right now. `Viewer` is fixed when a stream opens, so the current name is kept in the hub, not in `Viewer`.
+Joins are counted per key. When that key's last stream closes the person is away; five minutes later the chat says they left and their name is freed (see "Joins and leaves" below). `Viewer` is fixed when a stream opens, so the current name is kept in the hub, not in `Viewer`.
 
 ## Server (`fsw-server` only; the sim is untouched)
 
@@ -67,6 +67,16 @@ Joins are counted per key. A name is freed when that key's last stream closes, s
   - 429 when renaming too fast
 
 The new wire types are `ChatMessage`, `ChatWelcome`, `ChatYou`, `ChatPost` and `ChatRename`. They only add to the protocol, so `PROTOCOL_VERSION` stays at 1.
+
+## Joins and leaves
+
+Added after the first version:
+
+- The history holds three kinds of line (`ChatMessage.kind`): `say`, `join` and `leave`. A join or leave names the person in `author` and has empty `text`.
+- The stream takes the browser's remembered name as `?name=`, so a newcomer joins under it (or a made-up one if it is invalid or taken). A second stream of someone already here takes that name too if it is free, and tells their other streams with `chat_you`. The client no longer renames itself after `chat_welcome`.
+- Reloads and hidden tabs close and reopen streams, so a person whose last stream closes is only *away*. If they come back within `AWAY` (five minutes) nothing is said and they get their name back; nobody else can take it meanwhile. After that, a sweep (every 15 seconds, and before each join) records that they left.
+- Readers with no key never join the room, so they are never announced.
+- In the panel, joins and leaves are a muted line, do not count as unread, and are skipped by the collapsed preview.
 
 ## Client
 

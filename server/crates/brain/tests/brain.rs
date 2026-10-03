@@ -72,7 +72,7 @@ fn reply(calls: Value) -> Value {
 }
 
 fn harness(responder: Responder, conversations: ConversationMode) -> Harness {
-    let mut state = create_state(21);
+    let mut state = create_state(30);
     // Nobody falls into talk on their own: the tests start the conversations they need, and who
     // happens to be chatting at dawn otherwise depends on the dice.
     for c in state.characters.values_mut() {

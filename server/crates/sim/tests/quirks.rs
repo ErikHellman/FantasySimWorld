@@ -13,7 +13,7 @@ use fsw_sim::systems::combat::{SNEAK_ATTACK_MULTIPLIER, damage_monster, panic_ch
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::quirks::{NAP_HOURS, NAP_NOTE, after_drink, fall_to_necromancy, pass_on_rumour, raise_the_dead};
 use fsw_sim::systems::relationships::{RelationDelta, adjust};
-use fsw_sim::util::{Ctx, can_fall_for, chemistry, first_name, living, rel};
+use fsw_sim::util::{Ctx, can_fall_for, drawn_to, first_name, living, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
 use fsw_world::places::get_place;
 
@@ -274,22 +274,26 @@ fn nobody_warms_to_a_bully_and_the_bully_warms_to_nobody() {
 }
 
 #[test]
-fn ulfa_falls_only_for_women_and_everyone_falls_for_ulfa_quickly() {
+fn ulfa_falls_only_for_women_and_most_people_fall_for_her() {
     let mut w = World::new(13);
     let ulfa = w.admit("ulfa");
     let state = &w.sim.state;
     let u = &state.characters[&ulfa];
-    for c in living(state).filter(|c| c.id != ulfa) {
-        let expected = c.profile.pronouns == Pronouns::SheHer && chemistry(u, c);
+    let mut drawn = 0;
+    let others: Vec<_> = living(state).filter(|c| c.id != ulfa).collect();
+    for c in &others {
+        let expected = c.profile.pronouns == Pronouns::SheHer && drawn_to(u, c);
         assert_eq!(can_fall_for(u, c), expected, "Ulfa and {}", c.profile.name);
-        assert!(can_fall_for(c, u), "{} and Ulfa", c.profile.name);
+        drawn += usize::from(can_fall_for(c, u));
     }
+    assert!(drawn * 4 >= others.len() * 3, "{drawn} of {}", others.len());
     let (kael, aldric) = (w.who("Kael"), w.who("Aldric"));
     w.with(|ctx| {
         adjust(ctx, &kael, &ulfa, RelationDelta { attraction: 4.0, ..Default::default() });
         adjust(ctx, &ulfa, &aldric, RelationDelta { attraction: 10.0, ..Default::default() });
     });
-    assert_eq!(rel(w.sim.state.characters.get_mut(&kael).unwrap(), &ulfa).attraction, 8.0);
+    let kael_for_ulfa = rel(w.sim.state.characters.get_mut(&kael).unwrap(), &ulfa).attraction;
+    assert!(kael_for_ulfa == 0.0 || kael_for_ulfa > 4.0, "{kael_for_ulfa}");
     assert_eq!(rel(w.sim.state.characters.get_mut(&ulfa).unwrap(), &aldric).attraction, 0.0);
 }
 
