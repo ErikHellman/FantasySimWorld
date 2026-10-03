@@ -194,6 +194,13 @@ function LlmSection() {
   );
 }
 
+/** Why a sign-in was refused, by the server's outcome code. */
+const REFUSALS: Record<string, string> = {
+  not_allowlisted: 'not on the list',
+  email_unverified: 'e-mail not verified by the provider',
+  no_email: 'the provider gave no e-mail',
+};
+
 function AccessSection() {
   const [list, setList] = useState<AllowlistEntry[]>([]);
   const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
@@ -248,7 +255,9 @@ function AccessSection() {
           {attempts.map((attempt) => (
             <li key={attempt.id} class="row">
               <strong>{attempt.email || '(no e-mail)'}</strong>
-              <span class="muted">{attempt.provider} · {new Date(attempt.at).toLocaleString()}</span>
+              <span class="muted">
+                {attempt.provider} · {REFUSALS[attempt.outcome] ?? attempt.outcome} · {new Date(attempt.at).toLocaleString()}
+              </span>
               <span class="test-result" />
               {attempt.email && (allowed.has(attempt.email.toLowerCase())
                 ? <span class="badge good">allowed</span>

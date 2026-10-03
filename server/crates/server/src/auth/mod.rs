@@ -1,8 +1,9 @@
 //! Who may watch.
 //!
 //! `AUTH_MODE=token`: one shared secret, everyone is an admin (local work,
-//! first deployment). `AUTH_MODE=oidc`: Google and/or Apple sign-in, limited
-//! to the allowlist, with server-side sessions. `AUTH_MODE=off`: no sign-in,
+//! first deployment). `AUTH_MODE=oidc`: sign-in with Google, Apple, Microsoft,
+//! LinkedIn, GitHub and/or Discord, limited to the allowlist, with server-side
+//! sessions. `AUTH_MODE=off`: no sign-in,
 //! everyone is an admin; the configuration allows it on this machine only. Every `/api` route needs a
 //! viewer ([`middleware::require_viewer`]), `/api/admin` an admin, and every
 //! mutating `/api` request passes the CSRF check.
@@ -17,12 +18,15 @@ use axum::response::{IntoResponse, Response};
 
 use crate::AppState;
 use crate::api::wire::{Me, Role, SignInOptions};
-use crate::config::{AuthMode, Config};
+use crate::config::{AuthMode, Config, ProviderConfig};
 
 pub mod allowlist;
 pub mod apple;
+pub mod discord;
+pub mod discovered;
 pub mod flow;
-pub mod google;
+pub mod github;
+pub mod microsoft;
 pub mod middleware;
 pub mod provider;
 pub mod rate_limit;
@@ -66,11 +70,16 @@ impl Auth {
             .map_err(|e| format!("HTTP client: {e}"))?;
         let mut providers = Vec::new();
         if let AuthMode::Oidc(oidc) = &config.auth {
-            if let Some(google) = &oidc.google {
-                providers.push(Provider::Google(google::Google::new(google.clone())));
-            }
-            if let Some(apple) = &oidc.apple {
-                providers.push(Provider::Apple(apple::Apple::new(apple.clone()).map_err(|e| e.to_string())?));
+            for provider in &oidc.providers {
+                let kind = provider.kind();
+                providers.push(match provider.clone() {
+                    ProviderConfig::Google(c) | ProviderConfig::Microsoft(c) | ProviderConfig::LinkedIn(c) => {
+                        Provider::Oidc(discovered::Discovered::new(kind, c))
+                    }
+                    ProviderConfig::Apple(c) => Provider::Apple(apple::Apple::new(c).map_err(|e| e.to_string())?),
+                    ProviderConfig::GitHub(c) => Provider::GitHub(c),
+                    ProviderConfig::Discord(c) => Provider::Discord(c),
+                });
             }
         }
         Ok(Self { providers, flows: flow::Flows::default(), limiter: rate_limit::RateLimiter::default(), http })
@@ -79,6 +88,11 @@ impl Auth {
     /// An enabled provider.
     pub fn provider(&self, kind: ProviderKind) -> Option<&Provider> {
         self.providers.iter().find(|p| p.kind() == kind)
+    }
+
+    /// The enabled providers, in `AUTH_PROVIDERS` order.
+    pub fn provider_kinds(&self) -> Vec<ProviderKind> {
+        self.providers.iter().map(Provider::kind).collect()
     }
 }
 
@@ -140,11 +154,9 @@ pub fn safe_return(path: Option<&str>) -> &str {
 /// `GET /auth/providers`
 pub async fn providers(State(app): State<Arc<AppState>>) -> Json<SignInOptions> {
     Json(match &app.config.auth {
-        AuthMode::Off => SignInOptions { open: true, token: false, google: false, apple: false },
-        AuthMode::Token(_) => SignInOptions { open: false, token: true, google: false, apple: false },
-        AuthMode::Oidc(oidc) => {
-            SignInOptions { open: false, token: false, google: oidc.google.is_some(), apple: oidc.apple.is_some() }
-        }
+        AuthMode::Off => SignInOptions { open: true, token: false, providers: Vec::new() },
+        AuthMode::Token(_) => SignInOptions { open: false, token: true, providers: Vec::new() },
+        AuthMode::Oidc(_) => SignInOptions { open: false, token: false, providers: app.auth.provider_kinds() },
     })
 }
 

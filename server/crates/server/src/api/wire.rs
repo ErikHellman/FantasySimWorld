@@ -15,7 +15,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -714,10 +714,20 @@ pub struct SignInOptions {
     pub open: bool,
     /// `/auth/token` works (`AUTH_MODE=token`)
     pub token: bool,
-    /// `/auth/google/start` works
-    pub google: bool,
-    /// `/auth/apple/start` works
-    pub apple: bool,
+    /// `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
+    pub providers: Vec<SignInProvider>,
+}
+
+/// A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum SignInProvider {
+    Google,
+    Apple,
+    Microsoft,
+    LinkedIn,
+    GitHub,
+    Discord,
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -827,9 +837,10 @@ pub struct AllowlistAdd {
 pub struct AuthAttempt {
     #[ts(type = "number")]
     pub id: u64,
-    /// "google", "apple"
+    /// a [`SignInProvider`]'s name, such as "google" or "github"
     pub provider: String,
     pub email: String,
+    /// "not_allowlisted", "email_unverified" or "no_email"
     pub outcome: String,
     /// ms since the epoch
     #[ts(type = "number")]
@@ -894,6 +905,7 @@ pub fn typescript() -> String {
         Vec2,
         Role,
         SignInOptions,
+        SignInProvider,
         Hello,
         EntityKind,
         Look,

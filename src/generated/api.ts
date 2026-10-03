@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -19,13 +19,14 @@ open: boolean,
  */
 token: boolean, 
 /**
- * `/auth/google/start` works
+ * `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
  */
-google: boolean, 
+providers: Array<SignInProvider>, };
+
 /**
- * `/auth/apple/start` works
+ * A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
  */
-apple: boolean, };
+export type SignInProvider = "google" | "apple" | "microsoft" | "linkedin" | "github" | "discord";
 
 /**
  * First event on every connection.
@@ -481,9 +482,13 @@ export type AllowlistAdd = { email: string, role: Role, note: string, };
  */
 export type AuthAttempt = { id: number, 
 /**
- * "google", "apple"
+ * a [`SignInProvider`]'s name, such as "google" or "github"
  */
-provider: string, email: string, outcome: string, 
+provider: string, email: string, 
+/**
+ * "not_allowlisted", "email_unverified" or "no_email"
+ */
+outcome: string, 
 /**
  * ms since the epoch
  */

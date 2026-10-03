@@ -78,7 +78,7 @@ async fn api_needs_the_token() {
     assert!(text(response).await.contains(r#""role":"admin""#));
 
     let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"google":false,"apple":false}"#);
+    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"providers":[]}"#);
 
     let response = app.oneshot(authed("/api/nothing-here")).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -135,7 +135,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":1"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":2"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.
@@ -214,7 +214,7 @@ async fn with_sign_in_off_everyone_is_an_admin() {
     assert_eq!(app.clone().oneshot(get("/api/admin/attempts")).await.unwrap().status(), StatusCode::OK);
 
     let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"google":false,"apple":false}"#);
+    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"providers":[]}"#);
     assert_eq!(app.clone().oneshot(get("/auth/token")).await.unwrap().status(), StatusCode::NOT_FOUND);
 
     // The CSRF rule still holds.

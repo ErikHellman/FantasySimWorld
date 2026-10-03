@@ -16,14 +16,14 @@ The server migration is complete. The world, the language-model brain and every 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
-- Sign-in with a shared token, or Google and Apple with an allowlist; local development without sign-in.
+- Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
 - Ambient sound, effects and adaptive music.
 - A container image with Litestream backups and Fly.io settings.
 
 Not yet done or not yet tried:
 
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
-- **Google and Apple sign-in with real accounts**: the flow is tested against a fake OpenID provider only ([docs/sign-in.md](docs/sign-in.md) has the console steps and the check).
+- **Sign-in with real accounts**: every provider is tested against fakes only ([docs/sign-in.md](docs/sign-in.md) links a guide per provider, with the console steps and the check).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
 - **Later**: spoken lines (text to speech; the seam is in place), viewers acting on the world, orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
 
@@ -80,9 +80,10 @@ All settings come from environment variables, read at start:
 
 | Variable | Default | What it is |
 | --- | --- | --- |
-| `AUTH_MODE` | `token` | `token`, `oidc` (Google and Apple, [docs/sign-in.md](docs/sign-in.md)) or `off` (local development only) |
+| `AUTH_MODE` | `token` | `token`, `oidc` (Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts, [docs/sign-in.md](docs/sign-in.md)) or `off` (local development only) |
 | `AUTH_TOKEN` | none | The shared secret for `AUTH_MODE=token`, 16 characters or more |
-| `AUTH_PROVIDERS`, `GOOGLE_*`, `APPLE_*`, `ADMIN_EMAILS` | none | Sign-in with Google and Apple and the first admins ([docs/sign-in.md](docs/sign-in.md)) |
+| `AUTH_PROVIDERS`, `ADMIN_EMAILS` | none | Which sign-in providers are on, and the first admins ([docs/sign-in.md](docs/sign-in.md)) |
+| `GOOGLE_*`, `APPLE_*`, `MICROSOFT_*`, `LINKEDIN_*`, `GITHUB_*`, `DISCORD_*` | none | Each provider's client ID and secret; one guide per provider in [docs/sign-in/](docs/sign-in/) |
 | `PORT` or `BIND_ADDR` | `0.0.0.0:8080` (`127.0.0.1:8080` with `AUTH_MODE=off`) | Where the server listens; `BIND_ADDR` wins when both are set |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | The address in the browser; sign-in redirects and the CSRF check use it |
 | `STATIC_DIR` | `dist` | The web build the server serves |
@@ -163,7 +164,7 @@ Everyone watching shares a chat along the bottom of the screen. It can be expand
 
 - Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody else in the chat has it (ignoring case). The chosen name is kept in this browser and asked for on each connect; if someone else has it by then, you get a made-up one.
 - The chat says when someone joins and when they leave. A reload, or a tab that was hidden for a while, drops the connection for a moment, so someone only counts as gone after five minutes away; back sooner, and neither is mentioned. Until then their name stays theirs.
-- Signed in with Google or Apple, all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person.
+- Signed in with an account (Google, GitHub and the rest), all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person.
 - The server keeps the last 50 messages, in memory, and sends them to everyone who connects. They survive a new world but not a server restart.
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
 - Each person may send about one message a second, in bursts of up to five.

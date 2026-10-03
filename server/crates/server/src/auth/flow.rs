@@ -74,7 +74,7 @@ fn flow_cookie_name(config: &Config) -> &'static str {
 }
 
 fn flow_cookie(config: &Config, value: &str, max_age: u64) -> HeaderValue {
-    // SameSite=None needs Secure; plain-http development falls back to Lax (Google's GET callback still works).
+    // SameSite=None needs Secure; plain-http development falls back to Lax, which every GET callback survives.
     let attributes = if config.secure_cookies() { "Secure; HttpOnly; SameSite=None" } else { "HttpOnly; SameSite=Lax" };
     let value = format!("{}={value}; Path=/auth/; {attributes}; Max-Age={max_age}", flow_cookie_name(config));
     HeaderValue::from_str(&value).expect("flow ids are base64url")
@@ -138,7 +138,7 @@ pub async fn start(
     response
 }
 
-/// What a provider sends back, as query (Google) or form (Apple) fields.
+/// What a provider sends back, as query (everyone but Apple) or form (Apple) fields.
 #[derive(Deserialize)]
 pub struct CallbackParams {
     #[serde(default)]
@@ -152,7 +152,7 @@ pub struct CallbackParams {
     user: Option<String>,
 }
 
-/// `GET /auth/{provider}/callback` (Google)
+/// `GET /auth/{provider}/callback` (everyone but Apple)
 pub async fn callback_get(
     State(app): State<Arc<AppState>>,
     Path(name): Path<String>,
