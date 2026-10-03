@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { assetManifest } from '../generated/assetManifest';
 
@@ -28,6 +29,7 @@ export class Assets {
   static async load(onProgress?: (done: number, total: number) => void): Promise<Assets> {
     const assets = new Assets();
     const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
     const bundleIds = Object.keys(assetManifest.bundles);
     const characterIds = Object.keys(assetManifest.characters);
     const rigIds = Object.keys(assetManifest.rigs);
@@ -73,6 +75,9 @@ export class Assets {
       const map = this.textureLoader.load(BASE + url);
       map.flipY = false;
       map.colorSpace = THREE.SRGBColorSpace;
+      // The textures are palettes of smooth swatches: smaller copies would only blend neighbouring colours together.
+      map.generateMipmaps = false;
+      map.minFilter = THREE.LinearFilter;
       material = new THREE.MeshLambertMaterial({ map });
       material.name = textureId;
       this.materials.set(textureId, material);

@@ -71,7 +71,7 @@ set -a; . ./.env; set +a
 - The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)).
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works.
-- `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
+- `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
 
@@ -240,6 +240,8 @@ The 3D models are from the [KayKit](https://kaylousberg.com) collection by Kay L
 ```bash
 KAYKIT_DIR="/path/to/The Complete KayKit Collection v7" pnpm assets
 ```
+
+The build packs the models with meshopt compression, shrinks the palette textures to 256 pixels a side, and gives every URL in the manifest a hash of its file (`?v=…`), because the server lets browsers keep `/assets` for a year.
 
 Characters come on two skeletons: most use KayKit's medium rig, and the Greymane brothers use `Barbarian_Large` on the large rig. Each rig gets its own clip file in `public/assets/animations/`. The large rig has no work, rest or ranged clips of its own, so the build copies those over from the medium rig, adjusted to the longer bones (`rigs` in `tools/assets/asset-list.mjs`). The sim times actions by the medium rig's clips, and the client stretches the large rig's one-off clips, such as attacks, to finish at the same moment.
 

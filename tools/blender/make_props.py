@@ -82,8 +82,8 @@ def cylinder(radius, depth, location, colour, vertices=8, rotation=(0, 0, 0), to
     return finish(bpy.context.active_object, colour, bevel)
 
 
-def dome(radius, location, colour, squash=0.6, vertices=8):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=vertices, ring_count=4, radius=radius, location=location)
+def dome(radius, location, colour, squash=0.6, vertices=8, rings=4):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=vertices, ring_count=rings, radius=radius, location=location)
     obj = bpy.context.active_object
     obj.scale = (1, 1, squash)
     return finish(obj, colour, 0)
@@ -145,8 +145,9 @@ def flowers(name, petals, count, seed):
         colour = rng.choice(petals)
         for petal in range(5):
             a = petal / 5 * math.tau
-            dome(0.07, (top[0] + math.cos(a) * 0.075, top[1] + math.sin(a) * 0.075, top[2]), colour, squash=0.45, vertices=6)
-        dome(0.055, (top[0], top[1], top[2] + 0.025), "centre", squash=0.7, vertices=6)
+            # There are hundreds of clumps in the valley and each petal is a few pixels: a flat diamond is all it needs.
+            dome(0.07, (top[0] + math.cos(a) * 0.075, top[1] + math.sin(a) * 0.075, top[2]), colour, squash=0.45, vertices=5, rings=2)
+        dome(0.055, (top[0], top[1], top[2] + 0.025), "centre", squash=0.7, vertices=6, rings=3)
         # A leaf or two near the ground.
         for _leaf in range(rng.randint(1, 2)):
             a = rng.uniform(0, math.tau)

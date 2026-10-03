@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import type { QualitySettings } from './quality';
 
 interface Keyframe {
   hour: number;
@@ -23,9 +24,8 @@ const KEYFRAMES: Keyframe[] = [
   { hour: 24, sun: 0x8fa8ff, sunIntensity: 0.55, sky: 0x3d4f94, ground: 0x141a30, ambient: 0.62, background: 0x10162c },
 ];
 
-const SHADOW_RANGE = 70;
-/** Point lights are a fixed pool (changing the number of lights recompiles shaders); they move to the lamps nearest the camera. */
-const LAMP_POOL = 6;
+/** However far out the camera is, shadows are drawn at least this far around its target, in metres. */
+const MIN_SHADOW_RANGE = 30;
 const LAMP_COLOR = 0xffb45e;
 
 export interface Lamp {
@@ -42,20 +42,23 @@ export class Lighting {
   readonly background = new THREE.Color(0x8fcdf0);
   /** 0 in full daylight, 1 at night; used for lamps and windows */
   night = 0;
+  /** Point lights are a fixed pool (changing the number of lights recompiles shaders); they move to the lamps nearest the camera. */
   private readonly lampLights: THREE.PointLight[] = [];
+  private readonly shadowRange: number;
   private lamps: Lamp[] = [];
   private readonly a = new THREE.Color();
   private readonly b = new THREE.Color();
   private readonly offset = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, quality: QualitySettings) {
+    this.shadowRange = quality.shadowRange;
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
     const camera = this.sun.shadow.camera;
-    camera.left = -SHADOW_RANGE;
-    camera.right = SHADOW_RANGE;
-    camera.top = SHADOW_RANGE;
-    camera.bottom = -SHADOW_RANGE;
+    camera.left = -this.shadowRange;
+    camera.right = this.shadowRange;
+    camera.top = this.shadowRange;
+    camera.bottom = -this.shadowRange;
     camera.near = 1;
     camera.far = 400;
     camera.updateProjectionMatrix();
@@ -63,7 +66,7 @@ export class Lighting {
     this.sun.shadow.normalBias = 0.08;
     scene.add(this.sun, this.sun.target, this.hemisphere);
     scene.background = this.background;
-    for (let i = 0; i < LAMP_POOL; i++) {
+    for (let i = 0; i < quality.lamps; i++) {
       const light = new THREE.PointLight(LAMP_COLOR, 0, 26, 1.6);
       this.lampLights.push(light);
       scene.add(light);
@@ -82,7 +85,7 @@ export class Lighting {
     }
     const nearest = [...this.lamps]
       .sort((p, q) => (p.x - focus.x) ** 2 + (p.z - focus.z) ** 2 - ((q.x - focus.x) ** 2 + (q.z - focus.z) ** 2))
-      .slice(0, LAMP_POOL);
+      .slice(0, this.lampLights.length);
     this.lampLights.forEach((light, index) => {
       const lamp = nearest[index];
       if (!lamp) {
@@ -122,7 +125,7 @@ export class Lighting {
     this.offset.set(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), 0.35 * Math.cos(elevation) + 0.2).normalize();
 
     // Snap the shadow box to whole texels so shadows do not shimmer as the camera pans.
-    const range = Math.min(SHADOW_RANGE, Math.max(30, viewDistance * 0.75));
+    const range = Math.min(this.shadowRange, Math.max(MIN_SHADOW_RANGE, viewDistance * 0.75));
     const camera = this.sun.shadow.camera;
     if (camera.right !== range) {
       camera.left = -range;
