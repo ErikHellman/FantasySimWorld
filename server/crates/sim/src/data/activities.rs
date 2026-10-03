@@ -61,7 +61,7 @@ const BASE: ActivityDef = ActivityDef {
 };
 
 /// In the TypeScript object's key order (`ACTIVITY_IDS`).
-pub static ACTIVITIES: [ActivityDef; 19] = [
+pub static ACTIVITIES: [ActivityDef; 20] = [
     ActivityDef {
         id: ActivityId::Eat,
         label: "eat a meal at the tavern",
@@ -254,6 +254,16 @@ pub static ACTIVITIES: [ActivityDef; 19] = [
         anim: AnimId::Walk,
         minutes: [25, 50],
         needs: needs(0.0, 0.0, 0.05),
+        kind: ActivityKind::Leisure,
+        ..BASE
+    },
+    // Not in the TypeScript table: billboards came after the port.
+    ActivityDef {
+        id: ActivityId::ReadBoard,
+        label: "read the billboard",
+        verb: "reading the billboard",
+        anim: AnimId::Idle,
+        minutes: [2, 4],
         kind: ActivityKind::Leisure,
         ..BASE
     },

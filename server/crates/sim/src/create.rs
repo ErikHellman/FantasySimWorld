@@ -43,6 +43,7 @@ pub fn create_state(seed: u32) -> SimState {
             population_target: founders.len(),
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
+        billboards: Default::default(),
     };
 
     let mut by_key: HashMap<&str, Id> = HashMap::new();

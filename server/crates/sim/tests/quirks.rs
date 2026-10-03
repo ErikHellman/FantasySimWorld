@@ -413,6 +413,8 @@ fn the_drunk_gets_drunk_and_starts_fights() {
     });
     let tick = w.sim.state.tick;
     assert!(w.sim.state.characters[&dorn].drunk(tick));
+    // A long bender, so the fight is a matter of when.
+    w.sim.state.characters.get_mut(&dorn).unwrap().quirk_state.drunk_until_tick = tick + TICKS_PER_DAY / 3;
     w.clear_the_streets(&[&dorn, &kael]);
     let spot = get_place("green").door;
     for (id, dx) in [(&dorn, 0.0), (&kael, 1.5)] {
@@ -422,7 +424,7 @@ fn the_drunk_gets_drunk_and_starts_fights() {
         c.asleep = false;
         c.intent = Some(Intent::new(IntentAction::Wait { minutes: 600.0 }, IntentSource::Routine));
     }
-    w.run_until(TICKS_PER_DAY / 8, |w| {
+    w.run_until(TICKS_PER_DAY / 3, |w| {
         w.sim.state.characters[&dorn]
             .intent
             .as_ref()

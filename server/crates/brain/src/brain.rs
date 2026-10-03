@@ -18,9 +18,12 @@ use fsw_sim::Command;
 use fsw_sim::commands::{RelationshipNote, TuningPatch};
 use fsw_sim::events::SimEvent;
 use fsw_sim::state::{
-    ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource, SimState, StimulusKind,
+    BoardReaction, ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource, SimState,
+    StimulusKind,
 };
+use fsw_sim::systems::billboards::{has_read, reading, shown};
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
+use fsw_world::places::{billboards, get_place};
 use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::time::Instant;
@@ -31,8 +34,8 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,
-    reply_prompt,
+    Prompt, billboard_prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt,
+    reflect_prompt, reply_prompt,
 };
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
@@ -53,6 +56,7 @@ pub enum RequestKind {
     Converse,
     Decide,
     PlanDay,
+    Billboard,
     Reflect,
 }
 
@@ -65,6 +69,7 @@ impl RequestKind {
             Self::Converse => "converse",
             Self::Decide => "decide",
             Self::PlanDay => "plan_day",
+            Self::Billboard => "billboard",
             Self::Reflect => "reflect",
         }
     }
@@ -76,6 +81,7 @@ impl RequestKind {
             Self::Reply | Self::Converse => 2,
             Self::Decide => 4,
             Self::PlanDay => 5,
+            Self::Billboard => 6,
             Self::Reflect => 8,
         }
     }
@@ -600,6 +606,7 @@ impl Brain {
                     }
                 }
                 SimEvent::MercyRequest { attacker_id, victim_id } => self.on_mercy(attacker_id, victim_id),
+                SimEvent::BillboardRead { id, board_id } => self.on_billboard(id, board_id),
                 SimEvent::Death { id, monster: false, .. } => {
                     let queue = {
                         let mut s = self.inner.state.lock();
@@ -1114,6 +1121,54 @@ impl Brain {
                 let summary = format!("{}{}", call.name, say.as_ref().map_or(String::new(), |s| format!(": “{s}”")));
                 commands.push(Command::Mercy { attacker_id: apply_attacker.clone(), spare, say });
                 Applied::ok(summary, commands)
+            },
+            None,
+            None,
+        );
+    }
+
+    /// Someone is reading a billboard: ask how they take it. Only when the model has room to spare; the sim
+    /// gives them a stock reaction when no answer comes.
+    fn on_billboard(&self, id: &str, board_id: &str) {
+        let allowed = {
+            let s = self.inner.state.lock();
+            s.queue.is_some() && s.governor.allow(Tier::Idle)
+        };
+        if !allowed || self.backlogged() {
+            return;
+        }
+        let (build_id, apply_id, board) = (id.to_owned(), id.to_owned(), board_id.to_owned());
+        self.request(
+            RequestKind::Billboard,
+            format!("c:{id}:board"),
+            Some(id.to_owned()),
+            Duration::from_secs(10),
+            move |state| {
+                let c = state.characters.get(&build_id)?;
+                let index = reading(c).filter(|&i| billboards()[i].id == board && !has_read(state, c, i))?;
+                let place = get_place(&billboards()[index].place_id).name;
+                let text = shown(state, index).text;
+                built(billboard_prompt(state, c, place, &text), billboards()[index].id.clone())
+            },
+            move |_, response, board_id| {
+                let Some(call) = response.calls.iter().find(|c| c.name == "react_to_billboard") else {
+                    return Applied::fallback("no reaction; the stock one will do");
+                };
+                let Some(reaction) = call.args.get("reaction").and_then(Value::as_str).and_then(BoardReaction::parse)
+                else {
+                    return Applied::fallback("an unknown reaction; the stock one will do");
+                };
+                let say = spoken(call.args.get("say"));
+                let thought = match call.args.get("thought") {
+                    Some(Value::String(thought)) if !thought.trim().is_empty() => Some(thought.clone()),
+                    _ => None,
+                };
+                let summary =
+                    format!("{}{}", reaction.as_str(), say.as_ref().map_or(String::new(), |s| format!(": “{s}”")));
+                Applied::ok(
+                    summary,
+                    vec![Command::BillboardReaction { id: apply_id.clone(), board_id, reaction, say, thought }],
+                )
             },
             None,
             None,

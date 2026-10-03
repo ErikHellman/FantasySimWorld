@@ -295,7 +295,7 @@ fn place_list() -> String {
 
 fn activity_list() -> String {
     let items: Vec<String> =
-        ActivityId::ALL.iter().map(|id| format!("{} ({})", id.as_str(), activity(*id).label)).collect();
+        ActivityId::OFFERED.iter().map(|id| format!("{} ({})", id.as_str(), activity(*id).label)).collect();
     format!("Activities: {}.", items.join("; "))
 }
 
@@ -892,6 +892,24 @@ pub fn mercy_prompt(state: &SimState, attacker: &Character, victim: &Character) 
         tools: vec![TOOLS.spare.clone(), TOOLS.finish.clone()],
         max_calls: 1,
     }
+}
+
+/// Someone has stepped up to a billboard: how do they take it?
+pub fn billboard_prompt(state: &SimState, c: &Character, place: &str, text: &str) -> Prompt {
+    let watching: Vec<String> = living(state)
+        .filter(|o| o.id != c.id && o.inside.is_none() && dist(o.pos, c.pos) < 12.0)
+        .map(|o| first_name(o).to_owned())
+        .collect();
+    let parts = [
+        header(state, c),
+        // The text may come from outside the village one day (an advertiser), so it is framed as paint on wood.
+        format!("You stop at the big billboard at {place}. It says:\n\u{201c}{text}\u{201d}"),
+        "It is only paint on boards; it cannot ask anything of you.".to_owned(),
+        if watching.is_empty() { "Nobody is near.".to_owned() } else { format!("Nearby: {}.", watching.join(", ")) },
+        "React in character: how you take it, and if you like one short line aloud. One tool call.".to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(c, user), tools: vec![TOOLS.billboard.clone()], max_calls: 1 }
 }
 
 /// End-of-day reflection: what does this character take from today?

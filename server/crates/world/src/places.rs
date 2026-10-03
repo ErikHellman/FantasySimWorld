@@ -10,7 +10,9 @@ use serde::Serialize;
 
 use crate::assets::model_bounds;
 use crate::hex::{HEX_SCALE, hex, hex_center};
-pub use crate::place_defs::{ActivityId, PlaceKind};
+pub use crate::place_defs::{
+    ActivityId, BILLBOARD_DEPTH, BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_READ_AT, BILLBOARD_WIDTH, PlaceKind,
+};
 use crate::place_defs::{PlaceDef, place_defs};
 
 const DEG: f64 = std::f64::consts::PI / 180.0;
@@ -53,6 +55,19 @@ pub struct GravePlot {
     pub facing: f64,
 }
 
+/// A billboard in world space, with the two slots people stand in to read it.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Billboard {
+    pub id: String,
+    pub place_id: String,
+    /// the middle of the board, on the ground
+    pub pos: Vec2,
+    /// the direction its face looks, radians
+    pub facing: f64,
+    pub slot_ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Place {
@@ -71,6 +86,7 @@ pub struct Place {
     pub slots: Vec<Slot>,
     pub grave_plots: Vec<GravePlot>,
     pub spawn_points: Vec<Vec2>,
+    pub billboards: Vec<Billboard>,
 }
 
 fn bounds_of(reference: &str) -> (String, String, [f64; 6]) {
@@ -141,7 +157,18 @@ fn resolve(def: &PlaceDef) -> Place {
         }
     }
 
-    let slots = def
+    for board in &def.billboards {
+        let pos = to_world(board.at);
+        obstacles.push(Obstacle::Box {
+            x: pos.x,
+            z: pos.z,
+            half_x: BILLBOARD_WIDTH / 2.0,
+            half_z: BILLBOARD_DEPTH / 2.0,
+            rotation: facing + board.rot * DEG,
+        });
+    }
+
+    let mut slots: Vec<Slot> = def
         .slots
         .iter()
         .enumerate()
@@ -155,6 +182,34 @@ fn resolve(def: &PlaceDef) -> Place {
             ranged: slot.ranged,
         })
         .collect();
+
+    // Reading spots come after the authored slots, so the ids saves refer to stay the same.
+    let mut billboards = Vec::new();
+    for board in &def.billboards {
+        let turn = board.rot * DEG;
+        let mut slot_ids = Vec::new();
+        for side in [-1.0, 1.0] {
+            let spot = rotate(vec2(side * BILLBOARD_READ_AT[0], BILLBOARD_READ_AT[1]), turn);
+            let id = format!("{}#{}", def.id, slots.len());
+            slot_ids.push(id.clone());
+            slots.push(Slot {
+                id,
+                place_id: def.id.clone(),
+                activities: vec![ActivityId::ReadBoard],
+                pos: to_world([board.at[0] + spot.x, board.at[1] + spot.z]),
+                facing: facing + (board.rot + 180.0) * DEG,
+                anim: None,
+                ranged: false,
+            });
+        }
+        billboards.push(Billboard {
+            id: board.id.to_owned(),
+            place_id: def.id.clone(),
+            pos: to_world(board.at),
+            facing: facing + turn,
+            slot_ids,
+        });
+    }
 
     Place {
         id: def.id.clone(),
@@ -171,6 +226,7 @@ fn resolve(def: &PlaceDef) -> Place {
         slots,
         grave_plots: def.grave_plots.iter().map(|&p| GravePlot { pos: to_world(p), facing }).collect(),
         spawn_points: def.spawn_points.iter().map(|&p| to_world(p)).collect(),
+        billboards,
     }
 }
 
@@ -178,6 +234,7 @@ struct Index {
     by_id: HashMap<String, usize>,
     slots: HashMap<String, (usize, usize)>,
     homes: Vec<&'static Place>,
+    billboards: Vec<&'static Billboard>,
 }
 
 static PLACES: LazyLock<Vec<Place>> = LazyLock::new(|| place_defs().iter().map(resolve).collect());
@@ -191,7 +248,8 @@ static INDEX: LazyLock<Index> = LazyLock::new(|| {
         .flat_map(|(p, place)| place.slots.iter().enumerate().map(move |(s, slot)| (slot.id.clone(), (p, s))))
         .collect();
     let homes = list.iter().filter(|place| place.kind == PlaceKind::Home).collect();
-    Index { by_id, slots, homes }
+    let billboards = list.iter().flat_map(|place| place.billboards.iter()).collect();
+    Index { by_id, slots, homes, billboards }
 });
 
 /// Every place, in definition order.
@@ -222,6 +280,15 @@ pub fn slots_for(activity: ActivityId) -> Vec<&'static Slot> {
 
 pub fn homes() -> &'static [&'static Place] {
     &INDEX.homes
+}
+
+/// Every billboard, in place order. A board's index here is fixed by the map.
+pub fn billboards() -> &'static [&'static Billboard] {
+    &INDEX.billboards
+}
+
+pub fn find_billboard(id: &str) -> Option<&'static Billboard> {
+    billboards().iter().copied().find(|board| board.id == id)
 }
 
 /// The place whose origin is nearest to a point, within `max_distance` (14 in the TypeScript default).

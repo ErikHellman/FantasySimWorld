@@ -586,6 +586,9 @@ pub struct Character {
     pub killer: bool,
     pub next_social_tick: i64,
     pub next_perception_tick: i64,
+    /// billboard id -> hash of the text last read there, so nobody reads the same thing twice
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub boards_read: IndexMap<String, u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub quirks: Vec<Quirk>,
     #[serde(default, skip_serializing_if = "QuirkState::is_default")]
@@ -881,6 +884,9 @@ pub struct SimState {
     pub slots: IndexMap<String, Id>,
     pub director: Director,
     pub tuning: Tuning,
+    /// billboard id -> what an admin (or, later, an advertiser) put up; boards not listed show the day's slogan
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub billboards: IndexMap<String, BoardNotice>,
 }
 
 impl SimState {
@@ -889,6 +895,71 @@ impl SimState {
         self.next_id += 1;
         id
     }
+}
+
+/// The flavour of what a billboard says, which colours how people take it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BoardTone {
+    Uplifting,
+    Absurd,
+    Pushy,
+    Ominous,
+    Wholesome,
+}
+
+impl BoardTone {
+    pub const ALL: [BoardTone; 5] = [Self::Uplifting, Self::Absurd, Self::Pushy, Self::Ominous, Self::Wholesome];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Uplifting => "uplifting",
+            Self::Absurd => "absurd",
+            Self::Pushy => "pushy",
+            Self::Ominous => "ominous",
+            Self::Wholesome => "wholesome",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|tone| tone.as_str() == text)
+    }
+}
+
+/// How someone took what a billboard says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BoardReaction {
+    Laugh,
+    Love,
+    Scoff,
+    Annoyed,
+    Uneasy,
+}
+
+impl BoardReaction {
+    pub const ALL: [BoardReaction; 5] = [Self::Laugh, Self::Love, Self::Scoff, Self::Annoyed, Self::Uneasy];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Laugh => "laugh",
+            Self::Love => "love",
+            Self::Scoff => "scoff",
+            Self::Annoyed => "annoyed",
+            Self::Uneasy => "uneasy",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|reaction| reaction.as_str() == text)
+    }
+}
+
+/// Text put up on a billboard from outside the sim.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BoardNotice {
+    pub text: String,
+    pub tone: BoardTone,
 }
 
 /// The browser's export file: `{version, savedAt, state}`.

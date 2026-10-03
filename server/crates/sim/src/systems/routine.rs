@@ -12,6 +12,7 @@ use crate::data::activities::{ActivityKind, activity};
 use crate::state::{
     FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock, PlanSource, Quirk, StimulusKind, TalkTone,
 };
+use crate::systems::billboards::wants_to_read;
 use crate::systems::charm;
 use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
@@ -321,6 +322,11 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         return Some(Intent::new(IntentAction::Nap { minutes }, IntentSource::Routine));
     }
     let def = activity(block.activity);
+    if remaining >= 10.0
+        && let Some(place) = wants_to_read(ctx, id, def.kind == ActivityKind::Leisure)
+    {
+        return Some(act(ActivityId::ReadBoard, None, Some(place)));
+    }
     let minutes = remaining.min(ctx.int_range(def.minutes[0], def.minutes[1]) as f64);
     Some(act(block.activity, Some(minutes), block.place_id))
 }

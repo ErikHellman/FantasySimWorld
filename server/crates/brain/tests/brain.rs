@@ -160,8 +160,10 @@ impl Harness {
         let ended = |events: &[SimEvent]| {
             events.iter().any(|e| matches!(e, SimEvent::ConversationEnded { a: x, b: y, .. } if x == a && y == b))
         };
+        // Only this conversation: the two may have chatted on their own earlier.
+        let start = self.events.len();
         for i in 0..6000 {
-            if ended(&self.events) {
+            if ended(&self.events[start..]) {
                 break;
             }
             self.step(1);
@@ -169,8 +171,8 @@ impl Harness {
                 self.wait().await;
             }
         }
-        assert!(ended(&self.events), "the conversation ended");
-        self.events
+        assert!(ended(&self.events[start..]), "the conversation ended");
+        self.events[start..]
             .iter()
             .filter_map(|e| match e {
                 SimEvent::Speech { speaker_id, to_id: Some(to), text, .. }
@@ -181,6 +183,24 @@ impl Harness {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Steps until none of these people is in, or on the way to, a conversation of the village's own making,
+    /// so a test's own talk is not turned away because the dice already sent them to chat.
+    fn until_free(&mut self, ids: &[&str]) {
+        let busy = |sim: &Sim| {
+            ids.iter().any(|id| {
+                let c = &sim.state.characters[*id];
+                c.convo_id.is_some() || c.intent.as_ref().is_some_and(|i| matches!(i.action, IntentAction::Talk { .. }))
+            })
+        };
+        for _ in 0..4000 {
+            if !busy(&self.link.sim.lock()) {
+                return;
+            }
+            self.step(1);
+        }
+        panic!("{ids:?} never had a free moment");
     }
 
     fn log(&self, name: &str, kind: RequestKind) -> Option<LogRecord> {
@@ -266,18 +286,39 @@ async fn repairs_sloppy_arguments_and_reports_what_it_had_to_drop() {
         ConversationMode::Batched,
     );
     h.settle().await;
-    let dorn = h.who("Dorn");
-    h.stimulate(&dorn, "You feel lonely.");
+    let garrick = h.who("Garrick");
+    // Anyone but Garrick who is free and whose mind has not failed a request already (and so is not waiting
+    // out a retry); Dorn in the TypeScript test.
+    let mut asker = None;
+    for _ in 0..40 {
+        let failed: Vec<String> =
+            h.link.logs.lock().iter().filter(|r| r.status != LogStatus::Ok).map(|r| r.character.clone()).collect();
+        let sim = h.link.sim.lock();
+        asker = living(&sim.state)
+            .find(|c| {
+                c.id != garrick
+                    && c.convo_id.is_none()
+                    && !c.intent.as_ref().is_some_and(|i| matches!(i.action, IntentAction::Talk { .. }))
+                    && !failed.iter().any(|name| name == first_name(c))
+            })
+            .map(|c| (c.id.clone(), first_name(c).to_owned()));
+        drop(sim);
+        if asker.is_some() {
+            break;
+        }
+        h.step(20);
+    }
+    let (id, name) = asker.expect("someone free to ask");
+    h.stimulate(&id, "You feel lonely.");
     h.brain.update(true);
     h.wait().await;
     h.step(1);
-    let garrick = h.who("Garrick");
     let sim = h.link.sim.lock();
-    let intent = sim.state.characters[&dorn].intent.clone().unwrap();
+    let intent = sim.state.characters[&id].intent.clone().unwrap();
     assert!(matches!(&intent.action, IntentAction::Talk { target_id, opener, tone: TalkTone::Friendly }
         if *target_id == garrick && opener == "Fancy a drink?"));
     drop(sim);
-    assert!(h.log("Dorn", RequestKind::Decide).unwrap().summary.contains("unknown place"));
+    assert!(h.log(&name, RequestKind::Decide).unwrap().summary.contains("unknown place"));
 }
 
 #[tokio::test]
@@ -298,6 +339,7 @@ async fn writes_a_whole_conversation_in_one_call_and_applies_the_feelings() {
     );
     h.step(2);
     let (garrick, dorn) = (h.who("Garrick"), h.who("Dorn"));
+    h.until_free(&[&garrick, &dorn]);
     let before = h.link.sim.lock().state.characters[&garrick].relationships[&dorn].affinity;
     h.talk(&garrick, &dorn, "Dorn! A word.", IntentSource::Llm);
     let lines: Vec<String> = h.conversation(&garrick, &dorn).await.into_iter().map(|(_, text)| text).collect();
@@ -428,4 +470,86 @@ async fn a_plan_written_before_a_restart_is_not_asked_for_again() {
     h.wait().await;
     let after = h.transport.bodies().iter().filter(|b| b.to_string().contains("set_plan")).count();
     assert_eq!(after, planned);
+}
+
+impl Harness {
+    /// Sends someone to the green's billboard and steps until they have said something there.
+    async fn read_the_green_board(&mut self, name: &str) -> (String, Vec<String>) {
+        let id = self.who(name);
+        {
+            let mut sim = self.link.sim.lock();
+            let epoch = sim.state.characters[&id].epoch;
+            let read = Intent::new(
+                IntentAction::Activity {
+                    activity: fsw_sim::state::ActivityId::ReadBoard,
+                    place_id: Some("green".into()),
+                    minutes: None,
+                },
+                IntentSource::Llm,
+            );
+            sim.enqueue(Command::SetIntents { id: id.clone(), epoch, intents: vec![read] });
+        }
+        let said = |events: &[SimEvent]| -> Vec<String> {
+            events
+                .iter()
+                .filter_map(|e| match e {
+                    SimEvent::Speech { speaker_id, to_id: None, text, .. } if *speaker_id == id => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        for i in 0..6000 {
+            if !said(&self.events).is_empty() {
+                break;
+            }
+            self.step(1);
+            if i % 10 == 0 {
+                self.wait().await;
+            }
+        }
+        assert!(self.events.iter().any(|e| matches!(e, SimEvent::BillboardRead { id: who, .. } if *who == id)));
+        let lines = said(&self.events);
+        (id, lines)
+    }
+}
+
+#[tokio::test]
+async fn asks_the_model_how_someone_takes_a_billboard() {
+    let mut h = harness(
+        continue_otherwise(|tools, _| {
+            tools.iter().any(|t| t == "react_to_billboard").then(|| {
+                json!([{ "name": "react_to_billboard", "args": { "reaction": "annoyed", "say": "\"Who pays for this rubbish?\"" } }])
+            })
+        }),
+        ConversationMode::Batched,
+    );
+    h.settle().await;
+    let (id, lines) = h.read_the_green_board("Rowan").await;
+    assert_eq!(lines, vec!["Who pays for this rubbish?".to_owned()]);
+    let log = h.log("Rowan", RequestKind::Billboard).expect("a billboard request");
+    assert_eq!(log.status, LogStatus::Ok);
+    let sim = h.link.sim.lock();
+    let green = fsw_sim::systems::billboards::board_index("green_board").unwrap();
+    let slogan = fsw_sim::systems::billboards::shown(&sim.state, green).text;
+    assert!(sim.state.characters[&id].memories.iter().any(|m| m.text.ends_with("It annoyed me.")));
+    drop(sim);
+    let asked = h.transport.bodies().iter().any(|b| b.to_string().contains(&slogan));
+    assert!(asked, "the prompt quotes the slogan");
+}
+
+#[tokio::test]
+async fn a_billboard_reaction_that_makes_no_sense_leaves_the_stock_one() {
+    let mut h = harness(
+        continue_otherwise(|tools, _| {
+            tools
+                .iter()
+                .any(|t| t == "react_to_billboard")
+                .then(|| json!([{ "name": "react_to_billboard", "args": { "reaction": "confused" } }]))
+        }),
+        ConversationMode::Batched,
+    );
+    h.settle().await;
+    let (_, lines) = h.read_the_green_board("Rowan").await;
+    assert_eq!(lines.len(), 1);
+    assert_eq!(h.log("Rowan", RequestKind::Billboard).unwrap().status, LogStatus::Fallback);
 }

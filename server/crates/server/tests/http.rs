@@ -498,3 +498,46 @@ async fn chat_names_are_unique_among_connected_viewers() {
     let reuse = app.clone().oneshot(json_request("POST", "/api/chat/name", &reuse)).await.unwrap();
     assert_eq!(reuse.status(), StatusCode::CONFLICT);
 }
+
+#[tokio::test]
+async fn admins_put_text_on_a_billboard_and_every_viewer_sees_it() {
+    let (app, _, _data) = app("billboards").await;
+    let mut body = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
+    // A tick after the snapshot means the snapshot has arrived whole.
+    let seen = read_events(&mut body, |seen| seen.contains("event: snapshot") && seen.contains("event: tick")).await;
+    // The snapshot carries an `id:` line before its data.
+    let snapshot = seen.split("event: snapshot\n").nth(1).unwrap();
+    let data = snapshot.lines().find_map(|line| line.strip_prefix("data: ")).unwrap();
+    let boards = serde_json::from_str::<serde_json::Value>(data).unwrap()["billboards"].clone();
+    assert_eq!(boards.as_array().unwrap().len(), 5, "{boards}");
+    assert_eq!(boards[1]["id"], "green_board");
+    assert_eq!(boards[1]["place"], "the village green");
+    assert_eq!(boards[1]["custom"], false);
+
+    let post = |body: &str| json_request("POST", "/api/admin/billboards", body);
+    let missing = app.clone().oneshot(post(r#"{"id":"moon_board","text":"Hi"}"#)).await.unwrap();
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    let blank = app.clone().oneshot(post(r#"{"id":"green_board","text":"  \n "}"#)).await.unwrap();
+    assert_eq!(blank.status(), StatusCode::BAD_REQUEST);
+    let long = format!(r#"{{"id":"green_board","text":"{}"}}"#, "a".repeat(91));
+    assert_eq!(app.clone().oneshot(post(&long)).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    let form = Request::post("/api/admin/billboards")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("id=green_board&text=hi"))
+        .unwrap();
+    assert_eq!(app.clone().oneshot(form).await.unwrap().status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    let set = post(r#"{"id":"green_board","text":"Fresh bread at the market!","tone":"pushy"}"#);
+    assert_eq!(app.clone().oneshot(set).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let seen = read_events(&mut body, |seen| seen.contains(r#""type":"billboard""#)).await;
+    assert!(
+        seen.contains(r#"{"type":"billboard","billboard":{"id":"green_board","place":"the village green","text":"Fresh bread at the market!","tone":"pushy","custom":true}}"#),
+        "{seen}"
+    );
+
+    let back = post(r#"{"id":"green_board"}"#);
+    assert_eq!(app.clone().oneshot(back).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let seen = read_events(&mut body, |seen| seen.contains(r#""custom":false"#)).await;
+    assert!(seen.contains(r#""id":"green_board""#), "{seen}");
+}

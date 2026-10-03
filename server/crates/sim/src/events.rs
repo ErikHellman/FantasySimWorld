@@ -31,21 +31,80 @@ pub enum Projectile {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum SimEvent {
-    Speech { speaker_id: Id, to_id: Option<Id>, text: String, duration_ticks: i64, loud: bool },
-    Emote { id: Id, emote: Emote },
-    Attack { attacker_id: Id, target_id: Id, ranged: Option<Projectile>, from: Vec2, to: Vec2 },
-    Hit { attacker_id: Id, target_id: Id, damage: f64, pos: Vec2, fatal: bool },
-    Death { id: Id, name: String, pos: Vec2, monster: bool },
-    MonsterSpawn { id: Id, pos: Vec2 },
-    Chronicle { entry: ChronicleEntry },
-    Arrival { id: Id },
-    NewDay { day: i64 },
-    ConversationStarted { convo_id: Id, a: Id, b: Id, tone: TalkTone },
-    ConversationWaiting { convo_id: Id },
-    ConversationEnded { convo_id: Id, a: Id, b: Id, feelings: Map<Feeling> },
-    MercyRequest { attacker_id: Id, victim_id: Id },
-    Woke { id: Id },
-    SavePoint { reason: String },
+    Speech {
+        speaker_id: Id,
+        to_id: Option<Id>,
+        text: String,
+        duration_ticks: i64,
+        loud: bool,
+    },
+    Emote {
+        id: Id,
+        emote: Emote,
+    },
+    Attack {
+        attacker_id: Id,
+        target_id: Id,
+        ranged: Option<Projectile>,
+        from: Vec2,
+        to: Vec2,
+    },
+    Hit {
+        attacker_id: Id,
+        target_id: Id,
+        damage: f64,
+        pos: Vec2,
+        fatal: bool,
+    },
+    Death {
+        id: Id,
+        name: String,
+        pos: Vec2,
+        monster: bool,
+    },
+    MonsterSpawn {
+        id: Id,
+        pos: Vec2,
+    },
+    Chronicle {
+        entry: ChronicleEntry,
+    },
+    Arrival {
+        id: Id,
+    },
+    NewDay {
+        day: i64,
+    },
+    ConversationStarted {
+        convo_id: Id,
+        a: Id,
+        b: Id,
+        tone: TalkTone,
+    },
+    ConversationWaiting {
+        convo_id: Id,
+    },
+    ConversationEnded {
+        convo_id: Id,
+        a: Id,
+        b: Id,
+        feelings: Map<Feeling>,
+    },
+    MercyRequest {
+        attacker_id: Id,
+        victim_id: Id,
+    },
+    Woke {
+        id: Id,
+    },
+    SavePoint {
+        reason: String,
+    },
+    /// Someone has stepped up to a billboard and started reading it.
+    BillboardRead {
+        id: Id,
+        board_id: String,
+    },
 }
 
 impl SimEvent {
@@ -67,6 +126,7 @@ impl SimEvent {
             Self::MercyRequest { .. } => "mercy_request",
             Self::Woke { .. } => "woke",
             Self::SavePoint { .. } => "save_point",
+            Self::BillboardRead { .. } => "billboard_read",
         }
     }
 }

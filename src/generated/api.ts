@@ -166,7 +166,11 @@ graves: Array<Grave>, alarm: boolean, llm: LlmStatus,
 /**
  * recent spoken lines, newest first
  */
-voices: Array<Utterance>, };
+voices: Array<Utterance>, 
+/**
+ * what every billboard shows, in map order
+ */
+billboards: Array<Billboard>, };
 
 export type WorldReset = { 
 /**
@@ -198,13 +202,37 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival";
 
 export type ChronicleEntry = { tick: number, kind: ChronicleKind, text: string, ids: Array<string>, };
 
 export type Grave = { plot: number, characterId: string, name: string, day: number, cause: string, };
+
+export type BillboardTone = "uplifting" | "absurd" | "pushy" | "ominous" | "wholesome";
+
+/**
+ * What a billboard shows. Where it stands comes from the client's own copy of the map (`src/world`).
+ */
+export type Billboard = { id: string, 
+/**
+ * the name of the place it stands in
+ */
+place: string, text: string, tone: BillboardTone, 
+/**
+ * put up by an admin rather than the day's slogan
+ */
+custom: boolean, };
+
+/**
+ * `POST /api/admin/billboards`: puts text up on a billboard, or with no text gives it back to the daily slogans.
+ */
+export type BillboardRequest = { id: string, text: string | null, 
+/**
+ * defaults to `absurd`
+ */
+tone: BillboardTone | null, };
 
 export type LlmState = "off" | "ready" | "busy" | "error";
 
@@ -275,7 +303,7 @@ export type CharacterDetail = { id: string, name: string, pronouns: string, age:
  */
 memories: Array<Memory>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 

@@ -4,7 +4,7 @@ use fsw_core::math2d::{dist, facing_to};
 use fsw_core::time::{GAME_MINUTES_PER_TICK, TICKS_PER_GAME_MINUTE, minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
 use fsw_world::navgrid::nearest_walkable;
-use fsw_world::places::{ActivityId, Slot, find_place, get_place, get_slot, slots_for};
+use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get_slot, slots_for};
 
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
@@ -14,6 +14,7 @@ use crate::state::{
     Act, ActPhase, Character, ChronicleKind, Intent, IntentAction, IntentSource, ItemId, MemoryKind, MonsterPhase,
     Quirk, StimulusKind, TalkTone,
 };
+use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
 use crate::systems::movement::{advance, route_to, step_toward};
@@ -117,6 +118,10 @@ fn pick_slot(ctx: &Ctx, c: &Character, activity_id: ActivityId, place_id: Option
         if let Some(holder) = ctx.state.slots.get(&slot.id)
             && holder != &c.id
         {
+            continue;
+        }
+        // A billboard is read where it stands; another board is another errand.
+        if activity_id == ActivityId::ReadBoard && place_id.is_some_and(|p| slot.place_id != p) {
             continue;
         }
         let mut score = dist(c.pos, slot.pos);
@@ -280,6 +285,17 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
         set_anim(c, anim, true);
+        if activity_id == ActivityId::ReadBoard {
+            // With a model about, give it time to say how this person takes the board; the stock reaction
+            // comes at the end either way if it does not answer.
+            let wait = ctx.state.tuning.script_wait_ticks.min(600);
+            let c = ctx.c(id);
+            c.act.until_tick = c.act.until_tick.max(tick + wait);
+            if let Some(index) = reading(ctx.cr(id)) {
+                ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Thinking });
+                ctx.emit(SimEvent::BillboardRead { id: id.into(), board_id: billboards()[index].id.clone() });
+            }
+        }
         return;
     }
 
@@ -317,6 +333,22 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             ctx.stimulate(id, StimulusKind::Woke, "You have just woken up.", 0, None);
             ctx.emit(SimEvent::Woke { id: id.into() });
             finish(ctx, id, "You slept and feel rested.");
+        }
+        ActivityId::ReadBoard => {
+            let reader = ctx.cr(id);
+            match reading(reader) {
+                Some(index) if !has_read(ctx.state, reader, index) => {
+                    let reaction = template_reaction(&reader.profile, shown(ctx.state, index).tone);
+                    let ticks = react(ctx, id, index, reaction, None, None);
+                    // Stay a moment for the line before moving on.
+                    ctx.c(id).act.until_tick = tick + ticks.min(160);
+                }
+                Some(index) => {
+                    let place = get_place(&billboards()[index].place_id).name;
+                    finish(ctx, id, format!("You read the billboard at {place}."));
+                }
+                None => finish(ctx, id, "You read the billboard."),
+            }
         }
         ActivityId::Shop => {
             let item = if c.inventory.food < 2 { ItemId::Food } else { ItemId::Gift };

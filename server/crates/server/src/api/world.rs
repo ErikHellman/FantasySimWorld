@@ -1,6 +1,6 @@
 //! The world's REST surface: which character a tab watches, the inspector, the
-//! chronicle's history, and the admin controls (speed, new world, import,
-//! export, health).
+//! chronicle's history, and the admin controls (speed, billboards, new world,
+//! import, export, health).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,15 +11,22 @@ use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use fsw_core::jsmath::utf16_len;
 use fsw_core::time::game_time;
-use fsw_sim::create_state;
-use fsw_sim::state::{SAVE_VERSION, SaveFile};
+use fsw_sim::state::{BoardNotice, SAVE_VERSION, SaveFile};
+use fsw_sim::systems::billboards::{TEXT_CAP, clean_text};
+use fsw_sim::{Command, create_state};
+use fsw_world::places::find_billboard;
 use tokio::sync::oneshot;
 
 use crate::AppState;
-use crate::api::wire::{CharacterDetail, ChroniclePage, HealthReport, NewWorldRequest, SpeedRequest, WatchRequest};
+use crate::api::wire::{
+    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, NewWorldRequest, SpeedRequest,
+    WatchRequest,
+};
 use crate::api::{ApiFailure, error};
 use crate::digest::detail_of;
+use crate::encode::sim_tone;
 use crate::store::{SnapshotReason, now_ms};
 use crate::world_task::{Outgoing, SPEEDS, Watch, WorldInput};
 
@@ -75,6 +82,31 @@ pub async fn speed(State(app): State<Arc<AppState>>, Json(body): Json<SpeedReque
         return error(StatusCode::BAD_REQUEST, "speed must be 0, 1, 2 or 4");
     }
     match app.world.inputs.send(WorldInput::Speed(body.speed)).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
+    }
+}
+
+/// `POST /api/admin/billboards {id, text?, tone?}`: puts text up on a billboard, or without text gives it
+/// back to the daily slogans. It reaches the sim as a command, like everything else from outside.
+pub async fn billboard(State(app): State<Arc<AppState>>, Json(body): Json<BillboardRequest>) -> Response {
+    if find_billboard(&body.id).is_none() {
+        return error(StatusCode::NOT_FOUND, "no such billboard");
+    }
+    let notice = match body.text {
+        None => None,
+        Some(text) => {
+            let Some(text) = clean_text(&text) else {
+                return error(StatusCode::BAD_REQUEST, "the text is empty or has characters a board cannot show");
+            };
+            if utf16_len(&text) > TEXT_CAP {
+                return error(StatusCode::BAD_REQUEST, &format!("a billboard holds at most {TEXT_CAP} characters"));
+            }
+            Some(BoardNotice { text, tone: sim_tone(body.tone.unwrap_or(BillboardTone::Absurd)) })
+        }
+    };
+    let command = Command::SetBillboard { board_id: body.id, notice };
+    match app.world.inputs.send(WorldInput::Command { command, source: "admin" }).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
     }

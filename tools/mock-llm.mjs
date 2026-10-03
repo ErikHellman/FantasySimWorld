@@ -67,6 +67,11 @@ function respond(body) {
   }
   if (names.includes('fight')) return [Math.random() < 0.8 ? { name: 'fight', args: { say: 'Hold the line!', thought: 'If I run, who stands?' } } : { name: 'flee', args: { say: 'Too many! Fall back!' } }];
   if (names.includes('spare')) return [{ name: 'spare', args: { say: 'Get up. And never cross me again.', thought: 'I am no murderer.' } }];
+  if (names.includes('react_to_billboard')) return [{ name: 'react_to_billboard', args: pick([
+    { reaction: 'laugh', say: 'Ha! Someone has a sense of humour.' },
+    { reaction: 'scoff', say: 'Who pays for these things?' },
+    { reaction: 'love', say: 'Well, that is rather nice.', thought: 'I will hold on to that one.' },
+  ]) }];
   if (names.includes('reflection')) return [{ name: 'reflection', args: { summary: 'I am holding together, though the nights wear on me. I have more friends here than I thought.', insights: ['I should say what I feel before it is too late.'], relationships: [] } }];
   if (names.includes('go_to') || names.includes('do_activity')) return decide(names, user);
   return [{ name: names[0] ?? 'continue', args: {} }];

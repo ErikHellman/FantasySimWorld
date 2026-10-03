@@ -3,15 +3,17 @@
 
 use fsw_core::jsmath::utf16_truncate;
 use fsw_core::time::game_time;
-use fsw_world::places::find_place;
+use fsw_world::places::{find_billboard, find_place};
 
 use crate::commands::Command;
 use crate::create::refresh_authored;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
-    ActivityId, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource, SimState,
+    ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
+    SimState,
 };
+use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
@@ -205,6 +207,36 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             if let Some(ticks) = tuning.mercy_wait_ticks {
                 t.mercy_wait_ticks = ticks;
             }
+        }
+        Command::SetBillboard { board_id, notice } => {
+            if find_billboard(&board_id).is_none() {
+                return;
+            }
+            let notice = notice.and_then(|notice| {
+                let text = clean_text(&notice.text)?;
+                Some(BoardNotice { text: utf16_truncate(&text, TEXT_CAP).to_owned(), tone: notice.tone })
+            });
+            match notice {
+                Some(notice) => {
+                    ctx.state.billboards.insert(board_id, notice);
+                }
+                None => {
+                    ctx.state.billboards.shift_remove(&board_id);
+                }
+            }
+        }
+        Command::BillboardReaction { id, board_id, reaction, say, thought } => {
+            let Some(c) = ctx.state.characters.get(&id) else { return };
+            let Some(index) = reading(c) else { return };
+            if board_index(&board_id) != Some(index) || has_read(ctx.state, c, index) {
+                return;
+            }
+            let say = say.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 160).to_owned());
+            let thought = thought.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 240).to_owned());
+            let ticks = react(ctx, &id, index, reaction, say, thought);
+            let tick = ctx.tick();
+            let c = ctx.c(&id);
+            c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));
         }
     }
 }
