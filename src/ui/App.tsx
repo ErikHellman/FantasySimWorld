@@ -208,7 +208,7 @@ function StartOverlay() {
           old graveyard do not stay buried. You are only here to watch.
         </p>
         <p class="muted">
-          Drag to pan, scroll to zoom, right-drag or Q / E to turn. Click a villager to follow them and read their mind.
+          Drag to pan, scroll to zoom, right-drag or Q / E to turn, Shift + scroll or R / F to tilt. Click a villager to follow them and read their mind.
         </p>
         {loading ? (
           <div class="loading">{loading}</div>

@@ -4,14 +4,19 @@ import { worldMap } from '../world/map';
 
 const MIN_DISTANCE = 14;
 const MAX_DISTANCE = 190;
-const MIN_PITCH = THREE.MathUtils.degToRad(35);
-const MAX_PITCH = THREE.MathUtils.degToRad(82);
+// Pitch is the camera's angle above the horizon. The low cap keeps it above the ground; the high cap stops just
+// short of straight down, where lookAt with a +Y up vector has no defined yaw and the view would flip.
+const MIN_PITCH = THREE.MathUtils.degToRad(15);
+const MAX_PITCH = THREE.MathUtils.degToRad(89.5);
 const KEY_PAN_SPEED = 1.1; // fraction of the camera distance per second
 const KEY_ROTATE_SPEED = 1.6;
+const KEY_TILT_SPEED = 0.9; // radians per second
+const WHEEL_TILT_SPEED = 0.0013; // radians per wheel delta unit, about 9° per mouse-wheel notch
 
 /**
  * Top-down camera: drag to pan, wheel to zoom, right-drag or Q/E to rotate,
- * WASD / arrows to pan. Optionally follows a moving point.
+ * Shift/Alt + wheel, right-drag up and down or R/F to tilt, WASD / arrows to pan.
+ * Optionally follows a moving point.
  */
 export class CameraRig {
   readonly camera = new THREE.PerspectiveCamera(32, 1, 1, 900);
@@ -94,7 +99,7 @@ export class CameraRig {
       }
     } else {
       this.goalYaw -= dx * 0.006;
-      this.goalPitch = clamp(this.goalPitch + dy * 0.004, MIN_PITCH, MAX_PITCH);
+      this.tilt(dy * 0.004);
     }
     drag.x = event.clientX;
     drag.y = event.clientY;
@@ -108,6 +113,12 @@ export class CameraRig {
 
   private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();
+    if (event.shiftKey || event.altKey) {
+      // macOS browsers turn Shift + wheel into horizontal scrolling, so the delta may arrive on x instead of y.
+      const delta = event.deltaY || event.deltaX;
+      this.tilt(-clamp(delta, -120, 120) * WHEEL_TILT_SPEED);
+      return;
+    }
     const factor = Math.exp(clamp(event.deltaY, -120, 120) * 0.0016);
     this.goalDistance = clamp(this.goalDistance * factor, MIN_DISTANCE, MAX_DISTANCE);
   };
@@ -131,6 +142,8 @@ export class CameraRig {
     }
     const turn = (this.keys.has('KeyE') ? 1 : 0) - (this.keys.has('KeyQ') ? 1 : 0);
     if (turn) this.goalYaw += turn * KEY_ROTATE_SPEED * dt;
+    const raise = (this.keys.has('KeyR') ? 1 : 0) - (this.keys.has('KeyF') ? 1 : 0);
+    if (raise) this.tilt(raise * KEY_TILT_SPEED * dt);
 
     const followed = this.follow?.();
     if (this.follow && !followed) this.follow = null;
@@ -145,6 +158,11 @@ export class CameraRig {
     this.yaw += (this.goalYaw - this.yaw) * k;
     this.pitch += (this.goalPitch - this.pitch) * k;
     this.place();
+  }
+
+  /** Tilts towards looking straight down (positive) or towards the horizon (negative), within the caps. */
+  private tilt(delta: number): void {
+    this.goalPitch = clamp(this.goalPitch + delta, MIN_PITCH, MAX_PITCH);
   }
 
   private place(): void {
