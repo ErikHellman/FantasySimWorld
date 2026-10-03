@@ -355,11 +355,41 @@ pub fn their(c: &Character) -> &'static str {
     }
 }
 
+/// Percent of pairs with chemistry.
+const CHEMISTRY: u32 = 38;
+
+/// 0..99, fixed for a pair whichever way round it is asked.
+fn pair_roll(a: &Character, b: &Character) -> u32 {
+    let key = if a.id < b.id { format!("{}|{}", a.id, b.id) } else { format!("{}|{}", b.id, a.id) };
+    rng::hash_string(&key) % 100
+}
+
 /// Whether two people could fall for each other at all: a fixed property of
 /// the pair, so romance grows between some and never between others.
 pub fn chemistry(a: &Character, b: &Character) -> bool {
-    let key = if a.id < b.id { format!("{}|{}", a.id, b.id) } else { format!("{}|{}", b.id, a.id) };
-    rng::hash_string(&key) % 100 < 38
+    pair_roll(a, b) < CHEMISTRY
+}
+
+/// Whether `me` could fall for `other`: the pair's chemistry, or simply that
+/// `other` is charming enough to turn most heads.
+pub fn drawn_to(me: &Character, other: &Character) -> bool {
+    pair_roll(me, other) < CHEMISTRY.max((other.profile.charm * 100.0) as u32)
+}
+
+/// Trust at which a shy character talks as freely as anyone.
+const TRUSTED: f64 = 40.0;
+
+/// How freely `me` can talk to `other`, 0..1. It is 1 unless `me` is shy; then
+/// it is lowest with women they do not trust yet and rises as trust grows.
+pub fn openness(me: &Character, other: &Character) -> f64 {
+    let shyness = me.profile.shyness;
+    if shyness == 0.0 {
+        return 1.0;
+    }
+    let trust = me.relationships.get(&other.id).map_or(0.0, |r| r.trust);
+    let wary = 1.0 - clamp(trust / TRUSTED, 0.0, 1.0);
+    let towards = if other.profile.pronouns == Pronouns::SheHer { 1.0 } else { 0.6 };
+    1.0 - shyness * wary * towards
 }
 
 pub fn hp_fraction(c: &Character, max_hp: f64) -> f64 {

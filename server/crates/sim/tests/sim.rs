@@ -24,7 +24,8 @@ fn round_trip(state: &SimState) -> SimState {
 #[test]
 fn starts_with_the_authored_cast_all_housed() {
     let state = create_state(1);
-    assert_eq!(state.order.len(), 12);
+    assert_eq!(state.order.len(), 13);
+    assert_eq!(state.director.population_target, 13);
     for c in living(&state) {
         assert!(c.home_id.starts_with("home_"));
         assert!(is_walkable(c.pos.x, c.pos.z), "{}", c.profile.name);
@@ -81,7 +82,7 @@ fn has_people_talking_sleeping_and_fighting_off_the_dead() {
 
 fn long_run(days: i64) {
     let mut sim = Sim::new(create_state(11));
-    let mut lowest = 12;
+    let mut lowest = 13;
     let mut longest_memory = 0;
     for i in 0..TICKS_PER_DAY * days {
         sim.step();

@@ -14,7 +14,7 @@ use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::relationships::{RUNG_FEUD, RUNG_GRUDGE, lethal_unlocked};
-use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel};
+use crate::util::{Ctx, first_name, is_approachable, living, living_ids, openness, rel};
 
 const SOCIAL_RADIUS: f64 = 15.0;
 
@@ -94,12 +94,21 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     let weights: Vec<f64> = candidates
         .iter()
         .map(|o| {
+            let open = openness(ctx.cr(id), ctx.cr(o));
             let r = rel(ctx.c(id), o);
-            1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance / 12.0
+            (1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance / 12.0) * open
         })
         .collect();
     let index = rng::weighted_pick_index(&mut ctx.state.rng, &weights, |w| *w)?;
     let other = candidates[index].clone();
+    // The shy often think better of it at the last moment, unless it is someone they trust.
+    if ctx.cr(id).profile.shyness > 0.0 {
+        let open = openness(ctx.cr(id), ctx.cr(&other));
+        if !ctx.chance(open) {
+            ctx.c(id).next_social_tick = tick + minutes_to_ticks(40.0);
+            return None;
+        }
+    }
 
     let c = ctx.c(id);
     let partner = c.partner_id.clone();

@@ -5,7 +5,8 @@
 // - Environment models are merged into one GLB per bundle (one named node per model).
 // - Textures are stripped from every model and written once to public/assets/textures;
 //   each material keeps the texture id in extras.tex so the runtime can share materials.
-// - Animation files lose their mannequin meshes and are merged onto a single skeleton.
+// - Animation files lose their mannequin meshes and are merged onto one skeleton per rig;
+//   a rig missing clips borrows them from another, retargeted by bone name.
 // - src/generated/assetManifest.ts lists everything, with bounds and clip durations.
 // - server/data/*.json carries the same manifest and the tile heights for the Rust server.
 
@@ -16,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, getBounds, mergeDocuments, prune, resample, unpartition } from '@gltf-transform/functions';
-import { animations, bundles, characters, extraTextures } from './asset-list.mjs';
+import { bundles, characters, extraTextures, rigs } from './asset-list.mjs';
 import { writeServerData } from './server-data.mjs';
 
 const ROOT = process.env.KAYKIT_DIR ?? path.join(os.homedir(), 'Documents/The Complete KayKit Collection v7');
@@ -215,7 +216,8 @@ async function buildCharacter(character) {
   await doc.transform(prune({ keepLeaves: true, keepAttributes: true }), unpartition());
   const url = `assets/characters/${character.id}.glb`;
   await io.write(path.join(REPO, 'public', url), doc);
-  return { url, texture, height: round(max[1], 2) };
+  const scale = character.scale ?? 1;
+  return { url, texture, height: round(max[1] * scale, 2), rig: character.rig ?? 'medium', scale };
 }
 
 function stripMeshes(doc) {
@@ -234,20 +236,86 @@ function clipDuration(animation) {
   return round(duration, 3);
 }
 
-async function buildAnimations() {
+function quatMultiply(a, b) {
+  return [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+  ];
+}
+
+function quatInverse(q) {
+  return [-q[0], -q[1], -q[2], q[3]];
+}
+
+function nodesByName(doc) {
+  return new Map(doc.getRoot().listNodes().map((n) => [n.getName(), n]));
+}
+
+/**
+ * Copies `names` from a built rig onto this rig's skeleton. Each bone keeps its
+ * own rest pose and length: a rotation key becomes rest(target) * rest(source)^-1
+ * * key, translation keys are dropped except the hips, which are scaled by the
+ * ratio of hip heights (or, for `seated` clips, so they stay at the same height
+ * in the world once drawn at `drawnAt`), and scale keys are dropped.
+ */
+function borrowClips(out, source, names, { seated, drawnAt = 1 }) {
+  const buffer = out.getRoot().listBuffers()[0] ?? out.createBuffer();
+  const targetNodes = nodesByName(out);
+  const sourceHips = source.nodes.get('hips').getTranslation()[1];
+  const hipScale = targetNodes.get('hips').getTranslation()[1] / sourceHips;
+  const accessor = (type, array) => out.createAccessor().setType(type).setArray(array).setBuffer(buffer);
+  for (const animation of source.doc.getRoot().listAnimations()) {
+    if (!names.includes(animation.getName())) continue;
+    const copy = out.createAnimation(animation.getName());
+    const hipFactor = seated?.test(animation.getName()) ? 1 / drawnAt : hipScale;
+    for (const channel of animation.listChannels()) {
+      const bone = channel.getTargetNode()?.getName();
+      const target = targetNodes.get(bone);
+      const pathName = channel.getTargetPath();
+      if (!target) throw new Error(`No ${bone} bone to borrow ${animation.getName()} onto`);
+      if (pathName === 'scale' || (pathName === 'translation' && bone !== 'hips')) continue;
+      const sampler = channel.getSampler();
+      const values = sampler.getOutput().getArray();
+      const output = new Float32Array(values.length);
+      if (pathName === 'rotation') {
+        const fix = quatMultiply(target.getRotation(), quatInverse(source.nodes.get(bone).getRotation()));
+        for (let i = 0; i < values.length; i += 4) {
+          output.set(quatMultiply(fix, [values[i], values[i + 1], values[i + 2], values[i + 3]]), i);
+        }
+      } else {
+        for (let i = 0; i < values.length; i++) output[i] = values[i] * hipFactor;
+      }
+      const copied = out
+        .createAnimationSampler()
+        .setInterpolation(sampler.getInterpolation())
+        .setInput(accessor('SCALAR', Float32Array.from(sampler.getInput().getArray())))
+        .setOutput(accessor(sampler.getOutput().getType(), output));
+      copy.addSampler(copied).addChannel(
+        out.createAnimationChannel().setTargetNode(target).setTargetPath(pathName).setSampler(copied),
+      );
+    }
+  }
+}
+
+/** Builds one rig's clip file; `built` holds the rigs already built, for borrowing. */
+async function buildRig(rig, built) {
   let out = null;
   let baseNodes = null;
   const clips = {};
 
-  for (const { file, clips: wanted } of animations.files) {
+  for (const { file, clips: wanted } of rig.files) {
     const doc = await io.read(path.join(ROOT, file));
     doc.setLogger?.(quiet);
     stripMeshes(doc);
+    const rename = new Map(wanted.map((clip) => (Array.isArray(clip) ? clip : [clip, clip])));
     const found = new Set();
     for (const animation of doc.getRoot().listAnimations()) {
-      const name = animation.getName();
-      if (wanted.includes(name)) {
-        found.add(name);
+      const name = rename.get(animation.getName());
+      if (name) {
+        found.add(animation.getName());
+        animation.setName(name);
         clips[name] = clipDuration(animation);
       } else {
         for (const channel of animation.listChannels()) channel.dispose();
@@ -255,11 +323,11 @@ async function buildAnimations() {
         animation.dispose();
       }
     }
-    for (const name of wanted) if (!found.has(name)) throw new Error(`Clip ${name} not found in ${file}`);
+    for (const name of rename.keys()) if (!found.has(name)) throw new Error(`Clip ${name} not found in ${file}`);
 
     if (!out) {
       out = doc;
-      baseNodes = new Map(doc.getRoot().listNodes().map((n) => [n.getName(), n]));
+      baseNodes = nodesByName(doc);
       continue;
     }
     mergeDocuments(out, doc);
@@ -278,10 +346,18 @@ async function buildAnimations() {
     for (const scene of extraScenes) scene.dispose();
   }
 
+  if (rig.borrow) {
+    const source = built.get(rig.borrow.from);
+    if (!source) throw new Error(`Rig ${rig.id} borrows from ${rig.borrow.from}, which is not built yet`);
+    const names = Object.keys(source.entry.clips).filter((name) => !(name in clips) && !rig.borrow.exclude?.test(name));
+    borrowClips(out, source, names, rig.borrow);
+    for (const name of names) clips[name] = source.entry.clips[name];
+  }
+
   await out.transform(resample(), prune({ keepLeaves: true, keepAttributes: true }), dedup(), unpartition());
-  const url = 'assets/animations/rig-medium.glb';
+  const url = `assets/animations/rig-${rig.id}.glb`;
   await io.write(path.join(REPO, 'public', url), out);
-  return { url, clips };
+  return { doc: out, nodes: nodesByName(out), entry: { url, clips } };
 }
 
 function fileSize(rel) {
@@ -294,7 +370,7 @@ async function main() {
     fs.mkdirSync(path.join(OUT, dir), { recursive: true });
   }
 
-  const manifest = { textures: {}, bundles: {}, characters: {}, animations: null };
+  const manifest = { textures: {}, bundles: {}, characters: {}, rigs: {} };
   let total = 0;
 
   for (const bundle of bundles) {
@@ -304,15 +380,25 @@ async function main() {
     console.log(`bundle ${bundle.id}: ${Object.keys(manifest.bundles[bundle.id].models).length} models, ${(size / 1024).toFixed(0)} KB`);
   }
   for (const character of characters) {
+    const rig = rigs.find((r) => r.id === (character.rig ?? 'medium'));
+    if (!rig) throw new Error(`${character.id}: no rig ${character.rig}`);
+    if (rig.borrow?.drawnAt && rig.borrow.drawnAt !== (character.scale ?? 1)) {
+      throw new Error(`${character.id} is drawn at ${character.scale ?? 1}, but rig ${rig.id} seats it for ${rig.borrow.drawnAt}`);
+    }
     manifest.characters[character.id] = await buildCharacter(character);
     total += fileSize(manifest.characters[character.id].url);
   }
   console.log(`characters: ${characters.length}`);
 
-  manifest.animations = await buildAnimations();
-  const animSize = fileSize(manifest.animations.url);
-  total += animSize;
-  console.log(`animations: ${Object.keys(manifest.animations.clips).length} clips, ${(animSize / 1024).toFixed(0)} KB`);
+  const built = new Map();
+  for (const rig of rigs) {
+    const result = await buildRig(rig, built);
+    built.set(rig.id, result);
+    manifest.rigs[rig.id] = result.entry;
+    const size = fileSize(result.entry.url);
+    total += size;
+    console.log(`rig ${rig.id}: ${Object.keys(result.entry.clips).length} clips, ${(size / 1024).toFixed(0)} KB`);
+  }
 
   for (const extra of extraTextures) textures.set(extra.id, fs.readFileSync(path.join(ROOT, extra.file)));
   for (const [id, bytes] of [...textures].sort(([a], [b]) => a.localeCompare(b))) {

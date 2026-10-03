@@ -1,13 +1,15 @@
 //! The Rust prompts against the TypeScript brain's, word for word, for a fixed
 //! world (`tests/fixtures/prompts.json`, written by `bun tools/make-prompt-fixture.ts`
-//! at the `ts-sim-reference` tag).
+//! at the `ts-sim-reference` tag). The world is built from the cast as it was
+//! then, without the founders added since.
 
 use fsw_brain::prompts::{
     Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,
     reply_prompt,
 };
+use fsw_sim::data::cast::{CastEntry, SeedBond, cast, seed_bonds};
 use fsw_sim::state::{Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, SimState, TalkTone};
-use fsw_sim::{Sim, create_state};
+use fsw_sim::{Sim, create_state_with};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -24,6 +26,16 @@ struct Case {
 struct Fixture {
     seed: u32,
     cases: Vec<Case>,
+}
+
+/// Founders added after the TypeScript reference was frozen.
+const ADDED_SINCE_REFERENCE: &[&str] = &["torvald"];
+
+fn reference_cast() -> (Vec<CastEntry>, Vec<SeedBond>) {
+    let added = |key: &str| ADDED_SINCE_REFERENCE.contains(&key);
+    let founders = cast().iter().filter(|entry| !added(&entry.key)).cloned().collect();
+    let bonds = seed_bonds().iter().filter(|bond| !added(&bond.from) && !added(&bond.to)).cloned().collect();
+    (founders, bonds)
 }
 
 fn convo(state: &SimState, a: &str, b: &str) -> Conversation {
@@ -70,7 +82,8 @@ fn build(state: &SimState, case: &Case) -> Prompt {
 fn prompts_match_the_typescript_brain_word_for_word() {
     let path = format!("{}/tests/fixtures/prompts.json", env!("CARGO_MANIFEST_DIR"));
     let fixture: Fixture = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    let mut sim = Sim::new(create_state(fixture.seed));
+    let (founders, bonds) = reference_cast();
+    let mut sim = Sim::new(create_state_with(fixture.seed, &founders, &bonds));
     let mut wrong = Vec::new();
     for case in &fixture.cases {
         while sim.state.tick < case.tick {
