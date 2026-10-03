@@ -66,6 +66,8 @@ set -a; . ./.env; set +a
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
+- On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
+- On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).

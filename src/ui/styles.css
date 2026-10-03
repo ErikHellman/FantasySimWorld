@@ -433,3 +433,161 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
   .chat-notice { grid-column: 1 / -1; }
   .emoji-grid { right: 0; grid-template-columns: repeat(8, 30px); }
 }
+
+/* Phone layout. layout.ts puts `mobile` on <html> for phone-sized screens: the world fills the screen, a tab bar
+   along the bottom (or down the right edge, lying on its side) opens one pane at a time over it, and windows fill
+   the screen. Tablets and opened foldables keep the desktop layout above. */
+html.mobile {
+  --tabbar-h: calc(58px + env(safe-area-inset-bottom));
+  --edge-top: max(8px, env(safe-area-inset-top));
+  overscroll-behavior: none;
+}
+
+/* Double-tap zoom would swallow quick taps on the tabs and lists. */
+.mobile #ui { touch-action: manipulation; }
+
+.mobile .topbar { top: var(--edge-top); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); gap: 6px; flex-wrap: nowrap; }
+.mobile .clock { padding: 4px 12px; }
+.mobile .clock-time { font-size: 16px; }
+.mobile .notice, .mobile .alarm { top: calc(var(--edge-top) + 44px); max-width: calc(100% - 24px); }
+
+.tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--tabbar-h);
+  display: flex;
+  gap: 2px;
+  padding: 4px max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
+  background: var(--panel);
+  border-top: 1px solid var(--panel-border);
+  backdrop-filter: blur(6px);
+}
+
+.tab {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  padding: 2px;
+}
+
+.tab-icon { font-size: 20px; line-height: 1; }
+.tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--muted); }
+/* Touch screens keep :hover after a tap, which would make a closed tab look open. */
+.tabbar .tab:hover:not(:disabled) { background: none; }
+.tabbar .tab.on { background: rgba(242, 193, 78, 0.18); color: var(--text); }
+.tab.on .tab-label { color: var(--accent); }
+.tab .chat-unread { position: absolute; top: 2px; left: calc(50% + 6px); }
+
+.sheet {
+  position: absolute;
+  left: max(6px, env(safe-area-inset-left));
+  right: max(6px, env(safe-area-inset-right));
+  bottom: calc(var(--tabbar-h) + 6px);
+  max-height: calc(62% - var(--tabbar-h));
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px 8px 12px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Panes that have a fixed place on the desktop fill the sheet instead. */
+.mobile .sheet > .panel {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+/* The chat and a villager's page keep one height, so the sheet does not jump as messages and tabs change. */
+.mobile .sheet-chat, .mobile .sheet-character { height: calc(62% - var(--tabbar-h)); }
+.mobile .sheet .chat-history { flex: 1; min-height: 0; max-height: none; }
+.mobile .sheet .chat-head { cursor: default; }
+.mobile .sheet .close { font-size: 24px; padding: 4px 12px; }
+.sheet-loading { margin: 8px 0; }
+
+.mobile .roster-row { padding: 8px 6px; }
+.mobile .roster-name { font-size: 14px; }
+.mobile .chron { padding: 5px 0; font-size: 13px; }
+.mobile .feed-tabs button, .mobile .tabs button { min-height: 34px; }
+
+.menu-sheet { overflow-y: auto; }
+.menu-sheet h2 { margin: 0; }
+.menu-sheet > p { margin: 2px 0 10px; }
+.menu-sheet .pills { margin: 0 0 10px; justify-content: flex-start; }
+.menu-sheet .speeds { display: inline-flex; margin-bottom: 10px; }
+.menu-sheet .speeds button { min-height: 38px; min-width: 48px; }
+.menu-list { display: grid; gap: 6px; }
+.menu-list button { padding: 11px 14px; text-align: left; font-size: 15px; font-weight: 700; }
+
+.follow-chip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + 10px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.follow-chip button { min-height: 40px; border: 0; background: none; }
+.follow-open { padding: 6px 4px 6px 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.follow-open strong { color: var(--accent); }
+.follow-stop { padding: 6px 14px 6px 10px; color: var(--muted); }
+
+/* Windows take the whole screen, clear of the notch and the home bar. */
+.mobile .modal { padding: 0; place-items: stretch; }
+.mobile .dialog {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.mobile .dialog .close { top: calc(8px + env(safe-area-inset-top)); font-size: 24px; }
+
+/* Speech bubbles and names take less of a small screen. */
+.mobile .tag-name { font-size: 10px; }
+.mobile .tag-bubble { max-width: 170px; padding: 4px 8px; font-size: 11.5px; }
+
+@media (orientation: landscape) {
+  html.mobile { --rail-w: calc(64px + env(safe-area-inset-right)); }
+  .mobile .tabbar {
+    left: auto;
+    top: 0;
+    width: var(--rail-w);
+    height: auto;
+    flex-direction: column;
+    padding: max(4px, env(safe-area-inset-top)) env(safe-area-inset-right) max(4px, env(safe-area-inset-bottom)) 4px;
+    border-top: 0;
+    border-left: 1px solid var(--panel-border);
+  }
+  .mobile .topbar { right: calc(var(--rail-w) + 8px); }
+  .mobile .sheet { left: auto; top: 6px; right: calc(var(--rail-w) + 6px); bottom: 6px; width: min(380px, 55%); height: auto; max-height: none; }
+  .mobile .follow-chip { left: calc(50% - var(--rail-w) / 2); bottom: max(10px, env(safe-area-inset-bottom)); }
+}

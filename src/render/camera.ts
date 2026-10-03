@@ -1,7 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { clamp } from '../core/math2d';
 import { worldMap } from '../world/map';
+import { twoFinger, type Finger, type FingerPair } from './gestures';
 
+const FOV = 32; // vertical, in degrees
 const MIN_DISTANCE = 14;
 const MAX_DISTANCE = 190;
 // Pitch is the camera's angle above the horizon. The low cap keeps it above the ground; the high cap stops just
@@ -12,14 +14,16 @@ const KEY_PAN_SPEED = 1.1; // fraction of the camera distance per second
 const KEY_ROTATE_SPEED = 1.6;
 const KEY_TILT_SPEED = 0.9; // radians per second
 const WHEEL_TILT_SPEED = 0.0013; // radians per wheel delta unit, about 9° per mouse-wheel notch
+const DRAG_TILT_SPEED = 0.004; // radians per pixel, for right-drag and two-finger drags alike
 
 /**
  * Top-down camera: drag to pan, wheel to zoom, right-drag or Q/E to rotate,
  * Shift/Alt + wheel, right-drag up and down or R/F to tilt, WASD / arrows to pan.
+ * On a touch screen: one finger pans, two fingers pinch to zoom, twist to rotate and drag up and down to tilt.
  * Optionally follows a moving point.
  */
 export class CameraRig {
-  readonly camera = new THREE.PerspectiveCamera(32, 1, 1, 900);
+  readonly camera = new THREE.PerspectiveCamera(FOV, 1, 1, 900);
   readonly target = new THREE.Vector3();
   distance = 70;
   yaw = 0;
@@ -30,10 +34,19 @@ export class CameraRig {
   private goalYaw = 0;
   private goalPitch = this.pitch;
   private readonly keys = new Set<string>();
-  private drag: { button: number; x: number; y: number; moved: number } | null = null;
+  /** where each finger or mouse button that is down was last seen */
+  private readonly pointers = new Map<number, Finger>();
+  /** the press in progress; `multi` once a second finger joined it, which rules it out as a click */
+  private drag: { button: number; moved: number; multi: boolean } | null = null;
+  /** the first two fingers as the camera last read them; null until a second finger is down */
+  private pair: FingerPair | null = null;
   private follow: (() => { x: number; z: number } | null) | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private size = { width: 1, height: 1 };
+  /** pixels the HUD covers along the right and bottom edges, eased towards `goalInset` */
+  private inset = { right: 0, bottom: 0 };
+  private goalInset = { right: 0, bottom: 0 };
   /** called when the user clicks without dragging */
   onClick: ((event: PointerEvent) => void) | null = null;
 
@@ -65,7 +78,29 @@ export class CameraRig {
   }
 
   resize(width: number, height: number): void {
-    this.camera.aspect = width / height;
+    this.size = { width, height };
+    this.project();
+  }
+
+  /**
+   * Tells the camera how much of the canvas the HUD covers along its right and bottom edges, as a phone's open pane
+   * does. The view then centres on the part still showing, at the same scale, so a followed villager stays in sight.
+   */
+  setInset(right: number, bottom: number): void {
+    this.goalInset = { right, bottom };
+  }
+
+  /** Renders the canvas as the top-left part of a larger frame whose centre is the middle of the uncovered area. */
+  private project(): void {
+    const { width, height } = this.size;
+    const { right, bottom } = this.inset;
+    const fullWidth = width + right;
+    const fullHeight = height + bottom;
+    this.camera.aspect = fullWidth / fullHeight;
+    // A wider field over the taller frame keeps the canvas' own pixels at the scale they have with nothing covered.
+    this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * (fullHeight / height)));
+    if (right > 0 || bottom > 0) this.camera.setViewOffset(fullWidth, fullHeight, right, bottom, width, height);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
   }
 
@@ -78,18 +113,26 @@ export class CameraRig {
 
   private readonly onPointerDown = (event: PointerEvent): void => {
     this.element.setPointerCapture(event.pointerId);
-    this.drag = { button: event.button, x: event.clientX, y: event.clientY, moved: 0 };
+    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.pointers.size === 1) this.drag = { button: event.button, moved: 0, multi: false };
+    else if (this.drag) this.drag.multi = true;
+    this.pair = null;
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
     const drag = this.drag;
-    if (!drag) return;
-    const dx = event.clientX - drag.x;
-    const dy = event.clientY - drag.y;
+    const last = this.pointers.get(event.pointerId);
+    if (!drag || !last) return;
+    const next = { x: event.clientX, y: event.clientY };
+    const dx = next.x - last.x;
+    const dy = next.y - last.y;
     drag.moved += Math.abs(dx) + Math.abs(dy);
+    this.pointers.set(event.pointerId, next);
+    // Fingers report one at a time, so two-finger gestures are read once per frame in update(), when both have moved.
+    if (this.pointers.size > 1) return;
     if (drag.button === 0 && !event.shiftKey) {
-      const before = this.groundPoint(drag.x, drag.y);
-      const after = this.groundPoint(event.clientX, event.clientY);
+      const before = this.groundPoint(last.x, last.y);
+      const after = this.groundPoint(next.x, next.y);
       if (before && after) {
         this.goalTarget.x += before.x - after.x;
         this.goalTarget.z += before.z - after.z;
@@ -99,16 +142,18 @@ export class CameraRig {
       }
     } else {
       this.goalYaw -= dx * 0.006;
-      this.tilt(dy * 0.004);
+      this.tilt(dy * DRAG_TILT_SPEED);
     }
-    drag.x = event.clientX;
-    drag.y = event.clientY;
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
+    if (!this.pointers.delete(event.pointerId)) return;
+    this.pair = null;
+    // A finger left on the screen after a pinch carries on panning from where it is now, with no jump.
+    if (this.pointers.size > 0) return;
     const drag = this.drag;
     this.drag = null;
-    if (drag && drag.button === 0 && drag.moved < 5) this.onClick?.(event);
+    if (drag && drag.button === 0 && !drag.multi && drag.moved < 5) this.onClick?.(event);
   };
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -144,6 +189,7 @@ export class CameraRig {
     if (turn) this.goalYaw += turn * KEY_ROTATE_SPEED * dt;
     const raise = (this.keys.has('KeyR') ? 1 : 0) - (this.keys.has('KeyF') ? 1 : 0);
     if (raise) this.tilt(raise * KEY_TILT_SPEED * dt);
+    this.readFingers();
 
     const followed = this.follow?.();
     if (this.follow && !followed) this.follow = null;
@@ -153,11 +199,30 @@ export class CameraRig {
     this.goalTarget.z = clamp(this.goalTarget.z, worldMap.minZ, worldMap.maxZ);
 
     const k = 1 - Math.exp(-dt * 10);
+    if (this.inset.right !== this.goalInset.right || this.inset.bottom !== this.goalInset.bottom) {
+      const ease = (from: number, to: number): number => (Math.abs(to - from) < 0.5 ? to : from + (to - from) * k);
+      this.inset = { right: ease(this.inset.right, this.goalInset.right), bottom: ease(this.inset.bottom, this.goalInset.bottom) };
+      this.project();
+    }
     this.target.lerp(this.goalTarget, k);
     this.distance += (this.goalDistance - this.distance) * k;
     this.yaw += (this.goalYaw - this.yaw) * k;
     this.pitch += (this.goalPitch - this.pitch) * k;
     this.place();
+  }
+
+  /** Pinch zooms, twist turns and two fingers dragged up or down tilt; none of them stops following. */
+  private readFingers(): void {
+    if (this.pointers.size < 2) return;
+    const [a, b] = this.pointers.values();
+    const now: FingerPair = [a!, b!];
+    if (this.pair) {
+      const move = twoFinger(this.pair, now);
+      this.goalDistance = clamp(this.goalDistance / move.scale, MIN_DISTANCE, MAX_DISTANCE);
+      this.goalYaw += move.twist;
+      this.tilt(move.lift * DRAG_TILT_SPEED);
+    }
+    this.pair = now;
   }
 
   /** Tilts towards looking straight down (positive) or towards the horizon (negative), within the caps. */

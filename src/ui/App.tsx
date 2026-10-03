@@ -1,35 +1,17 @@
-import { useEffect, useState } from 'preact/hooks';
-import { formatClock, gameTime } from '../core/time';
-import { api } from '../net/api';
+import { useEffect } from 'preact/hooks';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
+import { isTouchScreen } from './layout';
+import { MobileHud } from './Mobile';
+import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
-import { actions, isAdmin, ui } from './store';
-
-const SPEEDS = [
-  { value: 0, label: '❚❚', title: 'Pause (space)' },
-  { value: 1, label: '1×', title: 'Normal speed (1)' },
-  { value: 2, label: '2×', title: 'Double speed (2)' },
-  { value: 4, label: '4×', title: 'Four times speed (3)' },
-];
-
-// \uFE0F asks for the colour emoji form; without it some of these fall back to plain text glyphs.
-const KIND_ICON: Record<string, string> = {
-  world: '☀\uFE0F', social: '💬', romance: '❤\uFE0F', conflict: '⚡', combat: '⚔\uFE0F', death: '🪦', arrival: '🚶',
-};
-
-const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔\uFE0F', sleep: '💤', talk: '💬', hurt: '🩹' };
-
-const togglePanel = (panel: typeof ui.panel.value): void => {
-  ui.panel.value = ui.panel.value === panel ? 'none' : panel;
-};
+import { actions, closeSheet, isAdmin, togglePanel, ui } from './store';
 
 function TopBar() {
   const clock = ui.clock.value;
-  const llm = ui.llm.value;
   const admin = isAdmin();
   const connection = ui.connection.value;
   return (
@@ -41,13 +23,7 @@ function TopBar() {
         <span class="clock-part">{clock.part}</span>
       </div>
       {admin ? (
-        <div class="speeds" role="group" aria-label="Simulation speed">
-          {SPEEDS.map((speed) => (
-            <button class={ui.speed.value === speed.value ? 'on' : ''} title={speed.title} onClick={() => actions.setSpeed(speed.value)}>
-              {speed.label}
-            </button>
-          ))}
-        </div>
+        <Speeds />
       ) : (
         ui.speed.value !== 1 && <div class="pill" title="The world's speed, set by an admin">{ui.speed.value === 0 ? '❚❚ paused' : `${ui.speed.value}×`}</div>
       )}
@@ -61,14 +37,7 @@ function TopBar() {
             🪦 {ui.graves.value.length}
           </button>
         )}
-        <button
-          class={`pill llm ${llm.state}`}
-          title={llm.message || (admin ? 'Language model status. Click for the decision log.' : 'Language model status')}
-          disabled={!admin}
-          onClick={() => togglePanel('brain')}
-        >
-          🧠 {llm.state === 'off' ? 'local minds' : llm.state === 'error' ? 'LLM error' : llm.inFlight + llm.queued > 0 ? `thinking ${llm.inFlight}+${llm.queued}` : 'LLM ready'}
-        </button>
+        <LlmPill />
         {admin && (
           <button class="pill" title="Run the world: model, access, saves" onClick={() => togglePanel('admin')}>
             🛠 Admin
@@ -82,104 +51,6 @@ function TopBar() {
         </button>
       </div>
     </header>
-  );
-}
-
-function Roster() {
-  const selected = ui.selectedId.value;
-  return (
-    <aside class="panel roster">
-      <h2>Villagers</h2>
-      <ul>
-        {ui.roster.value.map((entry) => (
-          <li>
-            <button class={`roster-row ${selected === entry.id ? 'on' : ''}`} onClick={() => actions.select(selected === entry.id ? null : entry.id)}>
-              <span class="roster-name">
-                {entry.name.split(' ')[0]} {entry.partner && <span class="love">♥</span>} <span class="mood">{MOOD_ICON[entry.mood]}</span>
-              </span>
-              <span class="roster-status">{entry.status}</span>
-              <span class="hpbar"><span style={{ width: `${Math.round(Math.max(0, entry.hp) * 100)}%` }} class={entry.hp < 0.4 ? 'low' : ''} /></span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </aside>
-  );
-}
-
-function Voices() {
-  return (
-    <ol>
-      {ui.voices.value.length === 0 && <li class="muted chron">Nobody has spoken yet.</li>}
-      {ui.voices.value.map((line) => {
-        const time = gameTime(line.tick);
-        return (
-          <li class="chron voice" key={line.id}>
-            <span class="chron-time">{formatClock(time.minuteOfDay)}</span>
-            <span class="chron-icon">{line.loud ? '📣' : '💬'}</span>
-            <span class="chron-text">
-              <button class="link" onClick={() => actions.select(line.speakerId)}>{line.speaker}</button>
-              {line.to && <span class="muted"> to {line.to}</span>}: {line.text}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-const PAGE = 40;
-
-function Chronicle() {
-  const [tab, setTab] = useState<'chronicle' | 'voices'>('chronicle');
-  const [shown, setShown] = useState(PAGE);
-  const [busy, setBusy] = useState(false);
-  const all = ui.chronicle.value;
-  const entries = all.slice(-shown).reverse();
-  const earlier = async (): Promise<void> => {
-    if (all.length < shown + PAGE && ui.chronicleMore.value) {
-      setBusy(true);
-      try {
-        const page = await api.chronicle(all[0]?.tick ?? Number.MAX_SAFE_INTEGER, PAGE * 2);
-        ui.chronicle.value = [...page.entries, ...ui.chronicle.value];
-        ui.chronicleMore.value = page.more;
-      } catch (error) {
-        ui.notice.value = `Could not load earlier entries: ${String(error)}`;
-      } finally {
-        setBusy(false);
-      }
-    }
-    setShown(shown + PAGE);
-  };
-  return (
-    <aside class="panel chronicle">
-      <nav class="feed-tabs">
-        <button class={tab === 'chronicle' ? 'on' : ''} onClick={() => setTab('chronicle')}>Chronicle</button>
-        <button class={tab === 'voices' ? 'on' : ''} onClick={() => setTab('voices')}>Voices</button>
-      </nav>
-      {tab === 'voices' ? <Voices /> : (
-      <ol>
-        {entries.map((entry) => {
-          const time = gameTime(entry.tick);
-          const id = entry.ids[0];
-          return (
-            <li class={`chron ${entry.kind}`} key={`${entry.tick}:${entry.text}`}>
-              <span class="chron-time">D{time.day} {formatClock(time.minuteOfDay)}</span>
-              <span class="chron-icon">{KIND_ICON[entry.kind]}</span>
-              {id ? (
-                <button class="chron-text" onClick={() => actions.select(id)}>{entry.text}</button>
-              ) : (
-                <span class="chron-text">{entry.text}</span>
-              )}
-            </li>
-          );
-        })}
-        {(all.length > shown || ui.chronicleMore.value) && (
-          <li class="chron"><button class="link muted" disabled={busy} onClick={() => void earlier()}>{busy ? 'Loading…' : 'Earlier…'}</button></li>
-        )}
-      </ol>
-      )}
-    </aside>
   );
 }
 
@@ -212,10 +83,17 @@ function StartOverlay() {
           A small village in a valley. Its people work, eat, gossip, fall out and fall in love, and at night the dead in the
           old graveyard do not stay buried. You are only here to watch.
         </p>
-        <p class="muted">
-          Drag to pan, scroll to zoom, right-drag or Q / E to turn, Shift + scroll or R / F to tilt. Click a villager to follow them and read their mind.
-          Once inside, ❓ Help (or the ? key) lists every control.
-        </p>
+        {isTouchScreen() ? (
+          <p class="muted">
+            Drag with one finger to look around, pinch to zoom, twist two fingers to turn and drag two fingers up or down to tilt.
+            Tap a villager to follow them. Once inside, ❓ Help under ☰ lists every control.
+          </p>
+        ) : (
+          <p class="muted">
+            Drag to pan, scroll to zoom, right-drag or Q / E to turn, Shift + scroll or R / F to tilt. Click a villager to follow them and read their mind.
+            Once inside, ❓ Help (or the ? key) lists every control.
+          </p>
+        )}
         {loading ? (
           <div class="loading">{loading}</div>
         ) : (
@@ -247,6 +125,7 @@ export function App() {
       else if ((event.key === '?' || event.code === 'KeyH') && ui.started.value && !event.ctrlKey && !event.metaKey && !event.altKey) togglePanel('help');
       else if (event.code === 'Escape') {
         if (ui.panel.value !== 'none') ui.panel.value = 'none';
+        else if (ui.sheet.value !== 'none') closeSheet();
         else actions.select(null);
       }
     };
@@ -257,11 +136,17 @@ export function App() {
   if (!ui.started.value) return <StartOverlay />;
   return (
     <>
-      <TopBar />
-      <Roster />
-      <Chronicle />
-      <Inspector />
-      <ChatPanel />
+      {ui.mobile.value ? (
+        <MobileHud />
+      ) : (
+        <>
+          <TopBar />
+          <Roster />
+          <Chronicle />
+          <Inspector />
+          <ChatPanel />
+        </>
+      )}
       {ui.panel.value === 'settings' && <SettingsPanel />}
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
