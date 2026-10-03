@@ -36,6 +36,12 @@ const CHAT_KEPT = 50;
 export type ChatView = 'expanded' | 'collapsed' | 'hidden';
 const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
 
+/** The pane open on a phone, where only one shows at a time; the desktop layout ignores it. */
+export type Sheet = 'none' | 'villagers' | 'feed' | 'chat' | 'character' | 'menu';
+
+/** A window over the whole HUD: settings, help and the like. */
+export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help';
+
 /** What this browser remembers about the chat. */
 export interface ChatSettings {
   view: ChatView;
@@ -64,7 +70,7 @@ export const ui = {
   /** older chronicle entries exist on the server */
   chronicleMore: signal(true),
   graves: signal<Grave[]>([]),
-  panel: signal<'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help'>('none'),
+  panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
   brainLog: signal<BrainLogRecord[]>([]),
@@ -81,8 +87,13 @@ export const ui = {
   /** the longest message the server accepts, in UTF-16 code units */
   chatMax: signal(500),
   chatView: signal<ChatView>('collapsed'),
-  /** messages that arrived while the chat was not expanded */
+  /** messages that arrived while the chat was not open */
   chatUnread: signal(0),
+  /** the screen is phone-sized and gets the phone layout (see layout.ts) */
+  mobile: signal(false),
+  sheet: signal<Sheet>('none'),
+  /** pixels the phone's tab bar or open pane covers along the right and bottom edges; the camera centres on the rest */
+  covered: signal({ right: 0, bottom: 0 }),
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
@@ -167,7 +178,27 @@ export function addChat(message: ChatMessage): void {
   if (last && last.id >= message.id) return; // already in the welcome's history
   ui.chat.value = [...ui.chat.value, message].slice(-CHAT_KEPT);
   // Comings and goings are there to read, not to call anyone back to the chat.
-  if (message.kind === 'say' && ui.chatView.value !== 'expanded') ui.chatUnread.value++;
+  if (message.kind === 'say' && !chatIsOpen()) ui.chatUnread.value++;
+}
+
+/** Whether the chat's history is on screen: the chat sheet on a phone, the expanded strip on a wider screen. */
+const chatIsOpen = (): boolean => (ui.mobile.value ? ui.sheet.value === 'chat' : ui.chatView.value === 'expanded');
+
+/** Opens a window, or closes it if it is already open; on a phone it takes the place of the open sheet. */
+export function togglePanel(panel: Panel): void {
+  ui.panel.value = ui.panel.value === panel ? 'none' : panel;
+  if (ui.panel.value !== 'none') ui.sheet.value = 'none';
+}
+
+/** Opens a phone pane, or closes it if it is already open; any other pane or window closes. */
+export function toggleSheet(sheet: Sheet): void {
+  ui.sheet.value = ui.sheet.value === sheet ? 'none' : sheet;
+  ui.panel.value = 'none';
+  if (ui.sheet.value === 'chat') ui.chatUnread.value = 0;
+}
+
+export function closeSheet(): void {
+  ui.sheet.value = 'none';
 }
 
 export function setChatView(view: ChatView): void {

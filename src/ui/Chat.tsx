@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ChatMessage } from '../generated/api';
 import { HttpError } from '../net/api';
 import { parseChat, plainText, type ChatNode } from './chatMarkdown';
-import { actions, setChatView, ui } from './store';
+import { actions, closeSheet, setChatView, ui } from './store';
 
 // ️ asks for the colour emoji form; without it some of these fall back to plain text glyphs.
 const EMOJI = [
@@ -150,7 +150,8 @@ function Composer() {
       void send();
     } else if (event.key === 'Escape') {
       input.current?.blur();
-      setChatView('collapsed');
+      if (ui.mobile.value) closeSheet();
+      else setChatView('collapsed');
     }
   };
 
@@ -201,9 +202,12 @@ function Composer() {
   );
 }
 
-/** The viewers' chat: a strip along the bottom of the screen that can be expanded, collapsed or hidden. */
-export function ChatPanel() {
-  const view = ui.chatView.value;
+/**
+ * The viewers' chat: a strip along the bottom of the screen that can be expanded, collapsed or hidden. As a phone's
+ * `sheet` it is always open, and opening or closing it is the tab bar's business.
+ */
+export function ChatPanel({ sheet = false }: { sheet?: boolean }) {
+  const view = sheet ? 'expanded' : ui.chatView.value;
   const messages = ui.chat.value;
   const unread = ui.chatUnread.value;
   const panel = useRef<HTMLElement>(null);
@@ -212,7 +216,8 @@ export function ChatPanel() {
   useLayoutEffect(() => {
     const root = document.documentElement;
     const element = panel.current;
-    if (!element) {
+    // A phone's sheet does not share the screen with the other panes, so they have nothing to make room for.
+    if (!element || sheet) {
       root.style.setProperty('--chat-h', '0px');
       return;
     }
@@ -224,7 +229,7 @@ export function ChatPanel() {
       observer.disconnect();
       root.style.setProperty('--chat-h', '0px');
     };
-  }, [view]);
+  }, [view, sheet]);
 
   if (view === 'hidden') {
     return (
@@ -238,7 +243,7 @@ export function ChatPanel() {
   const expanded = view === 'expanded';
   return (
     <section class={`panel chat ${view}`} ref={panel} aria-label="Chat">
-      <header class="chat-head" onClick={() => setChatView(expanded ? 'collapsed' : 'expanded')}>
+      <header class="chat-head" onClick={() => !sheet && setChatView(expanded ? 'collapsed' : 'expanded')}>
         <h2>Chat</h2>
         {!expanded && (
           <span class="chat-preview">
@@ -246,12 +251,16 @@ export function ChatPanel() {
           </span>
         )}
         {expanded && ui.chatName.value && <span class="chat-preview muted">You are {ui.chatName.value}</span>}
-        {unread > 0 && <span class="chat-unread">{unread}</span>}
-        <button
-          class="chat-toggle" title={expanded ? 'Collapse the chat' : 'Expand the chat'}
-          onClick={(event) => { event.stopPropagation(); setChatView(expanded ? 'collapsed' : 'expanded'); }}
-        >{expanded ? '▾' : '▴'}</button>
-        <button class="chat-toggle" title="Hide the chat" onClick={(event) => { event.stopPropagation(); setChatView('hidden'); }}>✕</button>
+        {!sheet && (
+          <>
+            {unread > 0 && <span class="chat-unread">{unread}</span>}
+            <button
+              class="chat-toggle" title={expanded ? 'Collapse the chat' : 'Expand the chat'}
+              onClick={(event) => { event.stopPropagation(); setChatView(expanded ? 'collapsed' : 'expanded'); }}
+            >{expanded ? '▾' : '▴'}</button>
+            <button class="chat-toggle" title="Hide the chat" onClick={(event) => { event.stopPropagation(); setChatView('hidden'); }}>✕</button>
+          </>
+        )}
       </header>
       {expanded && (
         <>
