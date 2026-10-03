@@ -16,8 +16,10 @@ use crate::systems::combat::{Assailant, damage_character};
 use crate::systems::movement::{advance, face, route_to};
 use crate::util::{Ctx, living, monster_ids, set_anim};
 
-const MAX_MONSTERS: usize = 9;
-const SUMMON_SECONDS: f64 = 26.0;
+/// The most of the dead abroad at once, the dying included.
+pub const MAX_MONSTERS: usize = 14;
+const SUMMON_SECONDS: f64 = 20.0;
+const SUMMONED_PER_CAST: usize = 2;
 const ROAM_TARGETS: [&str; 7] = ["green", "tavern", "market", "watchtower", "smithy", "graveyard", "graveyard"];
 
 pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -> Id {
@@ -170,11 +172,20 @@ pub fn update_monsters(ctx: &mut Ctx) {
         {
             let (pos, facing) = (monster.pos, monster.facing);
             ctx.m(&id).next_summon_tick = tick + seconds_to_ticks(SUMMON_SECONDS);
-            let x = pos.x + ctx.range(-3.0, 3.0);
-            let z = pos.z + ctx.range(-3.0, 3.0);
-            if let Some(spot) = nearest_walkable(vec2(x, z), 4) {
+            let mut summoned = false;
+            for _ in 0..SUMMONED_PER_CAST {
+                if ctx.state.monsters.len() >= MAX_MONSTERS {
+                    break;
+                }
+                let x = pos.x + ctx.range(-3.0, 3.0);
+                let z = pos.z + ctx.range(-3.0, 3.0);
+                if let Some(spot) = nearest_walkable(vec2(x, z), 4) {
+                    spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
+                    summoned = true;
+                }
+            }
+            if summoned {
                 set_anim(ctx.m(&id), AnimId::MagicSummon, true);
-                spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
                 continue;
             }
         }

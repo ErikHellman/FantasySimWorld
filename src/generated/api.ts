@@ -290,23 +290,29 @@ at: number, character: string, kind: RequestKind, status: LogStatus, latencyMs: 
 commands: Array<string>, };
 
 /**
- * One message in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
+ * What a line in the chat is.
+ */
+export type ChatKind = "say" | "join" | "leave";
+
+/**
+ * One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
  */
 export type ChatMessage = { 
 /**
- * rises by one per message since the server started
+ * rises by one per line since the server started
  */
 id: number, 
 /**
  * ms since the epoch
  */
-at: number, 
+at: number, kind: ChatKind, 
 /**
- * the author's name when they sent it
+ * the author's name when they sent it; for a join or a leave, who came or went
  */
 author: string, 
 /**
- * markdown, already tidied and filtered by the server; render it as text, never as HTML
+ * markdown, already tidied and filtered by the server; render it as text, never as HTML.
+ * Empty for a join or a leave.
  */
 text: string, };
 

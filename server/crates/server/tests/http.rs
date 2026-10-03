@@ -394,24 +394,50 @@ async fn chat_messages_reach_every_viewer_and_later_ones_get_the_history() {
     let seen_b = read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
     assert!(seen_a.starts_with("event: hello\n"), "{seen_a}");
     let welcome = last_event(&seen_a, "chat_welcome");
-    assert_eq!(welcome["history"], serde_json::json!([]));
     assert_eq!(welcome["maxLength"], 500);
     let name_a = welcome["you"].as_str().unwrap().to_owned();
     let name_b = last_event(&seen_b, "chat_welcome")["you"].as_str().unwrap().to_owned();
     assert_ne!(name_a, name_b, "everyone connected gets their own name");
+    let history = &welcome["history"];
+    assert_eq!(history.as_array().unwrap().len(), 1, "{history}");
+    assert_eq!(history[0]["kind"], "join");
+    assert_eq!(history[0]["author"], name_a.as_str());
 
     let post = json_request("POST", "/api/chat", r#"{"viewer":"tabA","text":"**hello** valley"}"#);
     assert_eq!(app.clone().oneshot(post).await.unwrap().status(), StatusCode::NO_CONTENT);
     let seen = read_events(&mut b, |seen| seen.contains("event: chat\n")).await;
     let message = last_event(&seen, "chat");
+    assert_eq!(message["kind"], "say");
     assert_eq!(message["author"], name_a.as_str());
     assert_eq!(message["text"], "**hello** valley");
 
     let mut c = app.clone().oneshot(authed("/api/stream?viewer=tabC")).await.unwrap().into_body();
     let seen = read_events(&mut c, |seen| seen.contains("event: chat_welcome")).await;
-    let history = &last_event(&seen, "chat_welcome")["history"];
-    assert_eq!(history.as_array().unwrap().len(), 1);
-    assert_eq!(history[0]["text"], "**hello** valley");
+    let history = last_event(&seen, "chat_welcome")["history"].clone();
+    let lines: Vec<_> = history.as_array().unwrap().iter().map(|m| m["kind"].as_str().unwrap()).collect();
+    assert_eq!(lines, ["join", "join", "say", "join"]);
+    assert_eq!(history[2]["text"], "**hello** valley");
+}
+
+#[tokio::test]
+async fn a_new_viewer_joins_under_the_name_their_browser_asks_for() {
+    let (app, _, _data) = app("chat-join").await;
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
+    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+
+    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB&name=Old%20Tom")).await.unwrap().into_body();
+    let seen_b = read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
+    assert_eq!(last_event(&seen_b, "chat_welcome")["you"], "Old Tom");
+    let seen_a = read_events(&mut a, |seen| seen.contains("event: chat\n")).await;
+    let joined = last_event(&seen_a, "chat");
+    assert_eq!(joined["kind"], "join");
+    assert_eq!(joined["author"], "Old Tom");
+    assert_eq!(joined["text"], "");
+
+    // A second tab asking for a name someone else has gets a fresh one.
+    let mut c = app.clone().oneshot(authed("/api/stream?viewer=tabC&name=old%20tom")).await.unwrap().into_body();
+    let seen_c = read_events(&mut c, |seen| seen.contains("event: chat_welcome")).await;
+    assert_ne!(last_event(&seen_c, "chat_welcome")["you"].as_str().unwrap().to_lowercase(), "old tom");
 }
 
 #[tokio::test]
@@ -463,16 +489,12 @@ async fn chat_names_are_unique_among_connected_viewers() {
     let seen = read_events(&mut a, |seen| seen.contains("event: chat_you")).await;
     assert_eq!(last_event(&seen, "chat_you")["name"], "Old Tom");
 
-    // Once tab B closes, its name is free for anyone.
+    // Tab B reloads: its name is kept for it (it is not said to have left for a few minutes).
     drop(b);
+    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB")).await.unwrap().into_body();
+    let seen_b = read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
+    assert_eq!(last_event(&seen_b, "chat_welcome")["you"], name_b.as_str());
     let reuse = format!(r#"{{"viewer":"tabA","name":"{name_b}"}}"#);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let reuse = app.clone().oneshot(json_request("POST", "/api/chat/name", &reuse)).await.unwrap();
-        if reuse.status() == StatusCode::OK {
-            break;
-        }
-        assert!(tokio::time::Instant::now() < deadline, "the name was never freed");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    let reuse = app.clone().oneshot(json_request("POST", "/api/chat/name", &reuse)).await.unwrap();
+    assert_eq!(reuse.status(), StatusCode::CONFLICT);
 }

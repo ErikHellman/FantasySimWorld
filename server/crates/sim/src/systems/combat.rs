@@ -24,6 +24,14 @@ use crate::util::{
 const BRAWL_YIELD: f64 = 0.3;
 const LETHAL_YIELD: f64 = 0.25;
 const POTION_HEAL: f64 = 55.0;
+/// The most anyone panics when the dead land a blow; the timid come close to it, the fearless hardly ever.
+pub const PANIC_MAX: f64 = 0.15;
+const PANIC_LINES: [&str; 4] = [
+    "I can't, I can't do this!",
+    "Gods help me, I'm getting out of here!",
+    "Run! Everyone run!",
+    "No, no, no! I'm going home!",
+];
 
 pub fn max_hp(c: &crate::state::Character) -> f64 {
     c.class_id.def().max_hp
@@ -124,6 +132,29 @@ fn reflex_defend(ctx: &mut Ctx, victim: &str, attacker_id: &str, mode: FightMode
     } else {
         start_flee(ctx, victim, IntentSource::Reflex);
     }
+}
+
+/// How likely each blow from the dead is to break this villager's nerve: mostly a matter of bravery, and a hot
+/// temper steadies a little. Never more than `PANIC_MAX`.
+pub fn panic_chance(c: &crate::state::Character) -> f64 {
+    PANIC_MAX * clamp(1.0 - c.profile.bravery * 0.85 - c.profile.temper * 0.15, 0.0, 1.0)
+}
+
+/// Someone fighting the dead loses their nerve and runs for home.
+fn panic(ctx: &mut Ctx, id: &str) {
+    let pos = ctx.cr(id).pos;
+    let where_ = place_name_at(pos);
+    start_flee(ctx, id, IntentSource::Reflex);
+    let line = ctx.pick(&PANIC_LINES);
+    ctx.say(id, line, None, true);
+    ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Alert });
+    ctx.remember(id, format!("I panicked and ran from the dead at {where_}."), 6.0, MemoryKind::Event, Vec::new());
+    let name = ctx.cr(id).profile.name.clone();
+    ctx.chronicle(
+        ChronicleKind::Combat,
+        format!("{name} panicked and fled home from the fight at {where_}."),
+        vec![id.into()],
+    );
 }
 
 pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &str) {
@@ -231,6 +262,19 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
                 format!("A {} is attacking you!", by.label)
             };
             ctx.stimulate(victim, StimulusKind::Attacked, text, 3, Some(&by.id));
+        }
+    }
+    if mode == FightMode::Monster {
+        let v = ctx.cr(victim);
+        let fighting_the_dead = !v.combat.yielded
+            && matches!(
+                v.intent.as_ref().map(|i| &i.action),
+                Some(IntentAction::Fight { mode: FightMode::Monster, .. })
+            );
+        let chance = panic_chance(v);
+        if fighting_the_dead && ctx.chance(chance) {
+            panic(ctx, victim);
+            return;
         }
     }
     reflex_defend(ctx, victim, &by.id, mode);

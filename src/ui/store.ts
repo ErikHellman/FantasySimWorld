@@ -166,7 +166,8 @@ export function addChat(message: ChatMessage): void {
   const last = ui.chat.value.at(-1);
   if (last && last.id >= message.id) return; // already in the welcome's history
   ui.chat.value = [...ui.chat.value, message].slice(-CHAT_KEPT);
-  if (ui.chatView.value !== 'expanded') ui.chatUnread.value++;
+  // Comings and goings are there to read, not to call anyone back to the chat.
+  if (message.kind === 'say' && ui.chatView.value !== 'expanded') ui.chatUnread.value++;
 }
 
 export function setChatView(view: ChatView): void {

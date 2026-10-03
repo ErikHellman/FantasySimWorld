@@ -64,7 +64,12 @@ export class Stream {
   private speed = 1;
   private lastTickAt = Date.now();
 
-  constructor(private readonly viewer: string, private readonly handlers: StreamHandlers) {
+  /** `chatName` is the chat name this browser would like, asked for on each connect. */
+  constructor(
+    private readonly viewer: string,
+    private readonly handlers: StreamHandlers,
+    private readonly chatName: () => string | undefined = () => undefined,
+  ) {
     document.addEventListener('visibilitychange', () => this.onVisibility());
     window.setInterval(() => {
       if (!this.source || this.source.readyState !== EventSource.OPEN || this.speed === 0) return;
@@ -79,7 +84,9 @@ export class Stream {
     this.close();
     this.lastTickAt = Date.now();
     this.handlers.connection('connecting');
-    const source = new EventSource(`/api/stream?viewer=${encodeURIComponent(this.viewer)}`);
+    const name = this.chatName();
+    const asking = name ? `&name=${encodeURIComponent(name)}` : '';
+    const source = new EventSource(`/api/stream?viewer=${encodeURIComponent(this.viewer)}${asking}`);
     this.source = source;
     const on = <T>(name: string, handle: (data: T) => void): void => {
       source.addEventListener(name, (event) => {
