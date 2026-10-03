@@ -5,6 +5,7 @@ const HEX = 'KayKit Medieval Hexagon Pack 1.0.1/Assets/gltf';
 const ADV = 'KayKit Adventurers 2.0';
 const SKEL = 'KayKit Skeletons 1.1';
 const ANIM = 'KayKit Character Animations 1.1/Animations/gltf/Rig_Medium';
+const ANIM_LARGE = 'KayKit Character Animations 1.1/Animations/gltf/Rig_Large';
 const S4 = 'KayKit Mystery Monthly Series 4 (1.1)';
 const S5 = 'KayKit Mystery Monthly Series 5 (1.1)';
 const S6 = 'KayKit Mystery Monthly Series 6 (1.1)';
@@ -135,7 +136,11 @@ export const bundles = [
 // Props made for this project with Blender (tools/blender/make_props.py); `local` paths are relative to the repo.
 bundles.push({ id: 'custom', sources: [{ dir: 'tools/blender/out', local: true }] });
 
-/** Rigged characters, one GLB each (mesh + skeleton, no clips). */
+/**
+ * Rigged characters, one GLB each (mesh + skeleton, no clips). `rig` names the
+ * clip set they play (see `rigs` below; medium unless given). `scale` shrinks a
+ * model that would otherwise tower over doors and chairs.
+ */
 export const characters = [
   ...['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue', 'Rogue_Hooded', 'Druid', 'Engineer'].map((name) => ({
     id: name,
@@ -152,6 +157,7 @@ export const characters = [
   { id: 'Lorekeeper', file: `${S6}/1 - July 2025 - Lorekeeper/characters/Lorekeeper.glb` },
   { id: 'Farmer_A', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_A.glb` },
   { id: 'Farmer_B', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_B.glb` },
+  { id: 'Barbarian_Large', file: `${ADV}/Characters/gltf/Barbarian_Large.glb`, rig: 'large', scale: 0.7 },
 ];
 
 /** Extra textures that are not referenced by any model (recolours). */
@@ -165,9 +171,15 @@ export const extraTextures = [
   { id: 'skeleton_texture_B', file: `${SKEL}/textures/skeleton_texture_B.png` },
 ];
 
-/** Animation source files and the clips taken from each. */
-export const animations = {
-  rig: 'Rig_Medium',
+/**
+ * Animation rigs: for each, the source files and the clips taken from each. A
+ * clip is a name, or `[source name, name in the game]` where KayKit named the
+ * same move differently on another rig. Every rig must end up with the clips the
+ * game plays (src/render/anims.ts); `borrow` fills the gaps by retargeting
+ * another rig's clips onto this skeleton (the bone names are the same).
+ */
+const medium = {
+  id: 'medium',
   files: [
     {
       file: `${ANIM}/Rig_Medium_General.glb`,
@@ -220,3 +232,31 @@ export const animations = {
     },
   ],
 };
+
+const large = {
+  id: 'large',
+  files: [
+    { file: `${ANIM_LARGE}/Rig_Large_General.glb`, clips: ['Idle_A', 'Idle_B', 'Death_A', 'Death_A_Pose', 'Hit_A'] },
+    { file: `${ANIM_LARGE}/Rig_Large_MovementBasic.glb`, clips: ['Walking_A', 'Running_A'] },
+    {
+      file: `${ANIM_LARGE}/Rig_Large_CombatMelee.glb`,
+      clips: [
+        'Melee_2H_Idle', 'Melee_Block', 'Melee_Blocking', 'Melee_Block_Hit', 'Melee_Unarmed_Idle',
+        ['Melee_2H_Attack', 'Melee_2H_Attack_Chop'],
+        ['Melee_2H_Slam', 'Melee_2H_Attack_Slice'],
+        ['Melee_1H_Slash', 'Melee_1H_Attack_Slice_Diagonal'],
+        ['Melee_1H_Stab', 'Melee_1H_Attack_Stab'],
+        ['Melee_Dualwield_Slash', 'Melee_Dualwield_Attack_Slice'],
+        ['Melee_Unarmed_Punch', 'Melee_Unarmed_Attack_Punch_A'],
+        ['Melee_Unarmed_Kick', 'Melee_Unarmed_Attack_Kick'],
+      ],
+    },
+  ],
+  // Only the dead play the Skeletons_ clips, and none of them is Large.
+  // Borrowed hips move as far as the longer legs need, except on a chair: there
+  // they keep the medium rig's height in the world, so the seat is where the
+  // chair is when the model is drawn at `drawnAt` (its `scale` above).
+  borrow: { from: 'medium', exclude: /^Skeletons_/, seated: /^Sit_Chair_/, drawnAt: 0.7 },
+};
+
+export const rigs = [medium, large];

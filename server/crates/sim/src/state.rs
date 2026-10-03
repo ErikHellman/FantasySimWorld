@@ -73,6 +73,13 @@ pub struct Profile {
     /// before it existed load and write back unchanged.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub allure: f64,
+    /// 0 at ease .. 1 tongue-tied with anyone they do not yet trust (worse with women)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shyness: f64,
+    /// 0 unremarkable .. 1 striking: others warm to them and fall for them faster,
+    /// whatever they do (unlike `allure`, which is flirting on purpose)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub looks: f64,
     pub voice: VoiceProfile,
 }
 
@@ -705,6 +712,20 @@ pub struct Director {
     pub watch_day: i64,
     pub death_ticks: Vec<i64>,
     pub arrivals: i64,
+    /// newcomers arrive while fewer than this many are alive: the founding cast's size
+    #[serde(default = "founding_population", skip_serializing_if = "is_founding_population")]
+    pub population_target: usize,
+}
+
+/// The size of the founding cast before it grew; worlds saved without a target keep it.
+pub const FOUNDING_POPULATION: usize = 12;
+
+fn founding_population() -> usize {
+    FOUNDING_POPULATION
+}
+
+fn is_founding_population(target: &usize) -> bool {
+    *target == FOUNDING_POPULATION
 }
 
 /// Knobs the brain layer may turn (through a command) without breaking determinism.

@@ -1,3 +1,4 @@
+import { TIMING_RIG } from '../core/assetTypes';
 import { assetManifest } from '../generated/assetManifest';
 
 /**
@@ -74,10 +75,15 @@ export const ANIMS = {
 
 export type AnimId = keyof typeof ANIMS;
 
-/** Seconds one play of the animation takes at its playback speed. */
+/** Seconds a clip lasts on a rig, before any playback speed. */
+export function clipSeconds(rig: string, clip: string): number {
+  const duration = assetManifest.rigs[rig]?.clips[clip];
+  if (duration === undefined) throw new Error(`Clip ${clip} missing from rig ${rig} in the asset manifest`);
+  return duration;
+}
+
+/** Seconds one play of the animation takes at its playback speed (the sim's timing). */
 export function animSeconds(id: AnimId): number {
   const anim: AnimDef = ANIMS[id];
-  const duration = assetManifest.animations.clips[anim.clip];
-  if (duration === undefined) throw new Error(`Clip ${anim.clip} missing from the asset manifest`);
-  return duration / (anim.speed ?? 1);
+  return clipSeconds(TIMING_RIG, anim.clip) / (anim.speed ?? 1);
 }

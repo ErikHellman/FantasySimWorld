@@ -6,7 +6,7 @@ use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
-use crate::data::cast::{CastEntry, newcomers};
+use crate::data::cast::{CastEntry, by_key, newcomers};
 use crate::data::classes::ClassId;
 use crate::events::SimEvent;
 use crate::state::{
@@ -14,8 +14,8 @@ use crate::state::{
     MemoryKind, Needs, PlanSource, Profile, Pronouns, SimState, StimulusKind, VoiceProfile,
 };
 use crate::systems::intents::fresh_act;
-use crate::systems::relationships::label_for;
-use crate::util::{Ctx, first_name, living, living_ids, new_relationship};
+use crate::systems::relationships::{label_for, looks_welcome};
+use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
 
 const FIRST_NAMES: [&str; 15] = [
     "Edda", "Bram", "Wren", "Osric", "Tamsin", "Hale", "Ysolt", "Garnet", "Perrin", "Linnea", "Cade", "Marta", "Jory",
@@ -219,9 +219,22 @@ fn wanderer(ctx: &mut Ctx) -> CastEntry {
             sociability,
             spite: 0.0,
             allure: 0.0,
+            shyness: 0.0,
+            looks: 0.0,
             voice: VoiceProfile { pitch, rate, timbre: "plain".into() },
         },
+        bonds: Vec::new(),
     }
+}
+
+/// The living character an authored bond means by `key`: the newcomer itself, or
+/// whoever was made from that cast entry.
+fn bonded(ctx: &Ctx, entry: &CastEntry, newcomer: &str, key: &str) -> Option<Id> {
+    if key == entry.key {
+        return Some(newcomer.to_owned());
+    }
+    let name = &by_key(key)?.profile.name;
+    living(ctx.state).find(|c| &c.profile.name == name).map(|c| c.id.clone())
 }
 
 /// A new face walks in by the west road.
@@ -250,6 +263,7 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
     let id = c.id.clone();
     let (name, occupation, home_name) =
         (c.profile.name.clone(), c.profile.occupation.clone(), get_place(&c.home_id).name);
+    let welcome = looks_welcome(&c);
     ctx.state.characters.insert(id.clone(), c);
     ctx.state.order.push(id.clone());
 
@@ -267,6 +281,7 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
             continue;
         }
         let mut r = new_relationship();
+        r.affinity = welcome;
         r.label = label_for(&r, false);
         ctx.c(&other).relationships.insert(id.clone(), r);
         ctx.c(&id).relationships.insert(other.clone(), new_relationship());
@@ -285,6 +300,16 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
                 MemoryKind::Event,
                 vec![id.clone()],
             );
+        }
+    }
+    // Kin and old friends who are still alive know the newcomer at once.
+    for bond in &entry.bonds {
+        let from = bonded(ctx, &entry, &id, &bond.from);
+        let to = bonded(ctx, &entry, &id, &bond.to);
+        if let (Some(from), Some(to)) = (from, to) {
+            let r = rel(ctx.c(&from), &to);
+            bond.apply(r);
+            r.label = label_for(r, false);
         }
     }
     ctx.chronicle(ChronicleKind::Arrival, format!("{name}, {occupation}, arrived by the west road."), vec![id.clone()]);
