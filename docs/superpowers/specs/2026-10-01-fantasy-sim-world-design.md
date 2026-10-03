@@ -206,6 +206,14 @@ What was built follows the design above, with these differences:
 - **Ground heights are sampled by the asset build** (`src/generated/tileHeights.ts`), so the world layer itself knows where water, sand, roads and the bridge deck are; the plan had this as a render-only concern.
 - **Rivers and lake edges are not shaded specially**; the KayKit water tiles and a sea plane are used as they are.
 - **Romance has a fixed "chemistry" per pair**, so attraction can grow between some pairs and never between others.
+- **Some characters flirt for sport** (2026-10-03). A profile's `allure` (0 to 1; only Mira has any) drives `server/crates/sim/src/systems/charm.rs`:
+  - a charmer flirts on her own with anyone already a little drawn to her, whoever has a partner;
+  - her flirting raises attraction without chemistry, while her own grows slowly;
+  - admirers who watch her flirt resent the man she flirts with, up to just below a blood feud;
+  - after a welcome flirt she turns the admirer against her enemy and takes his gift;
+  - she enjoys it when admirers quarrel or brawl, and the prompts tell her who wants her.
+
+  Rivals usually come to blows within two or three weeks. Profiles without the field load as 0.
 - **A killer is not exiled**; the village's hostility towards them is the consequence.
 - **No automated browser test** was added; rendering was checked by hand on both backends.
 - **Audio ships with the game** (2026-10-02) instead of being supplied by the owner: CC0, public domain and CC BY sounds, cut and levelled by `tools/audio/build-audio.ts`. **Background music** was added as well, with a mood that follows what the viewer watches (`src/audio/mood.ts`, `music.ts`). Ambience, effects and music each have an on/off switch and a volume, kept in the browser.

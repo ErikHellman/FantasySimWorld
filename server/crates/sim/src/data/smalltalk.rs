@@ -6,6 +6,8 @@ use fsw_core::rng::{chance, next_float, pick_index};
 use fsw_core::time::{TICKS_PER_DAY, part_of_day};
 
 use crate::state::{Character, ConversationLine, Feeling, Relationship, SimState, TalkTone};
+use crate::systems::charm::CHARMER;
+use crate::systems::relationships::RUNG_GRUDGE;
 use crate::util::{first_name, living, rel_or_default};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -200,6 +202,52 @@ const ROMANTIC_NO: &[Exchange] = &[ex(
     &["Oh. {a}, I... I am fond of you. But not like that.", "I see. Forget I spoke.", "I am sorry."],
 )];
 
+/// A charmer flirting for sport: flattery, favours and dares, nothing promised.
+const FLIRT: &[Exchange] = &[
+    ex(
+        "a little flattery",
+        "Why, {b}, you look fit to turn every head in the valley today.",
+        &[
+            "Do I? I had not noticed anyone turning.",
+            "I noticed. I always notice.",
+            "Then I shall wear this more often.",
+        ],
+    ),
+    ex(
+        "a small favour",
+        "{b}, you would not leave me to carry all this on my own, would you?",
+        &["I suppose I could lend a hand.", "I knew you were the gallant sort.", "Just this once."],
+    ),
+    ex(
+        "a dare",
+        "I wager you would not dare buy me a drink tonight, {b}.",
+        &["You would lose that wager.", "We shall see. I do love to be surprised."],
+    ),
+    ex(
+        "other admirers",
+        "Someone else offered to walk me home last night, {b}. I said I would think about it.",
+        &["Who? Who was it?", "Oh, does it matter? I am talking to you now, am I not?", "...I suppose you are."],
+    ),
+];
+
+/// A charmer's flirting meets someone who sees straight through her.
+const FLIRT_COLD: &[Exchange] = &[ex(
+    "a cold shoulder",
+    "{b}, you look lonely. Shall I keep you company?",
+    &["Save it, {a}. I know what you are.", "Suit yourself. Your loss."],
+)];
+
+/// Someone opens their heart to a charmer who does not return the feeling, and she keeps him dangling.
+const TEASE: &[Exchange] = &[ex(
+    "feelings, teased",
+    "{b}, there is something I have wanted to tell you for a long time.",
+    &[
+        "Oh, I know. Half the village has wanted to tell me something.",
+        "And?",
+        "And you will have to work harder than that, {a}.",
+    ],
+)];
+
 const APOLOGY_YES: &[Exchange] = &[ex(
     "making amends",
     "{b}, I was wrong, and I am sorry for it.",
@@ -255,10 +303,17 @@ fn warmth(c: &Character, r: &Relationship) -> f64 {
 /// TypeScript sim's `rel()` creates a default record here; the two always know
 /// each other by the time they talk, so nothing changes).
 pub fn local_script(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone) -> LocalScript {
-    let (ab, ba, b_temper, b_partner) = {
+    let (ab, ba, b_temper, b_partner, a_allure, b_allure) = {
         let a = &state.characters[a_id];
         let b = &state.characters[b_id];
-        (rel_or_default(a, b_id), rel_or_default(b, a_id), b.profile.temper, b.partner_id.is_some())
+        (
+            rel_or_default(a, b_id),
+            rel_or_default(b, a_id),
+            b.profile.temper,
+            b.partner_id.is_some(),
+            a.profile.allure,
+            b.profile.allure,
+        )
     };
     let rng = &mut state.rng;
     let pool: &[Exchange];
@@ -278,9 +333,19 @@ pub fn local_script(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone
         }
         TalkTone::Romantic => {
             let returned = ba.attraction >= 42.0 && ba.affinity >= 25.0 && !b_partner && !ba.kin;
-            pool = if returned { ROMANTIC_YES } else { ROMANTIC_NO };
-            feelings =
-                if returned { [Feeling::MuchBetter, Feeling::MuchBetter] } else { [Feeling::Worse, Feeling::Same] };
+            if a_allure >= CHARMER && ab.attraction < 45.0 {
+                // Flirting for sport: most enjoy the attention, those who dislike her do not.
+                let cold = ba.grievance >= RUNG_GRUDGE || ba.affinity <= -20.0;
+                pool = if cold { FLIRT_COLD } else { FLIRT };
+                feelings = if cold { [Feeling::Same, Feeling::Worse] } else { [Feeling::Better, Feeling::Better] };
+            } else if b_allure >= CHARMER && !returned {
+                pool = TEASE;
+                feelings = [Feeling::Same, Feeling::Better];
+            } else {
+                pool = if returned { ROMANTIC_YES } else { ROMANTIC_NO };
+                feelings =
+                    if returned { [Feeling::MuchBetter, Feeling::MuchBetter] } else { [Feeling::Worse, Feeling::Same] };
+            }
         }
         TalkTone::Apology => {
             let forgiven = chance(rng, 0.7 - b_temper * 0.35);

@@ -11,6 +11,7 @@ use crate::state::{
     Act, ActPhase, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind,
     MonsterPhase, StimulusKind,
 };
+use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, kill_character};
 use crate::systems::movement::{advance, face, route_to};
@@ -318,6 +319,7 @@ fn end_brawl(ctx: &mut Ctx, winner: &str, loser: &str) {
             Some(starter),
         );
     }
+    charm::revel(ctx, winner, loser, true);
 }
 
 /// The attacker's answer once a beaten opponent has yielded.

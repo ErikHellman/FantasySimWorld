@@ -315,22 +315,26 @@
     "pronouns": "she/her",
     "age": 26,
     "occupation": "market trader",
-    "backstory": "Runs the best stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them.",
+    "backstory": "Runs the busiest stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them. She learned long ago that a smile opens more purses than quick fingers, and nothing amuses her more than two men glaring at each other over her, a scene she is not above arranging.",
     "traits": [
+     "flirtatious",
+     "seductive",
      "witty",
-     "charming",
-     "opportunistic",
-     "a gossip"
+     "scheming",
+     "loves a drama",
+     "without scruples"
     ],
     "goals": [
-     "keep her past buried",
-     "turn a profit",
-     "know every secret in the village"
+     "have every man in the village a little in love with her",
+     "set her admirers against each other and enjoy the show",
+     "get what she wants with a smile rather than honest work",
+     "keep her past buried"
     ],
-    "speechStyle": "Fast, teasing, full of gossip and bargains.",
+    "speechStyle": "Low, teasing and full of double meanings; flatters shamelessly, pouts when refused, and drops a rival's name just to watch a man bristle.",
     "temper": 0.45,
     "bravery": 0.5,
     "sociability": 0.9,
+    "allure": 0.9,
     "voice": {
      "pitch": 1.2,
      "rate": 1.2,
@@ -653,7 +657,7 @@
    "trust": 15,
    "attraction": 38,
    "familiarity": 45,
-   "summary": "The sharpest tongue at the market. I cannot tell if she likes me or my coin."
+   "summary": "She smiles at me one day and at Kael the next, and it is driving me mad."
   },
   {
    "from": "mira",
@@ -662,7 +666,59 @@
    "trust": 10,
    "attraction": 28,
    "familiarity": 45,
-   "summary": "Charming, useless, and oddly sweet."
+   "summary": "Sweet, silly Theron. He would fetch me the moon if I pouted prettily enough."
+  },
+  {
+   "from": "kael",
+   "to": "mira",
+   "affinity": 28,
+   "trust": 10,
+   "attraction": 36,
+   "familiarity": 40,
+   "summary": "She has a smile that could sink a fishing boat. Trouble, and I like trouble."
+  },
+  {
+   "from": "mira",
+   "to": "kael",
+   "affinity": 26,
+   "trust": 5,
+   "attraction": 10,
+   "familiarity": 40,
+   "summary": "Kael thinks he is the charmer of this village. Let him keep thinking it."
+  },
+  {
+   "from": "dorn",
+   "to": "mira",
+   "affinity": 30,
+   "trust": 15,
+   "attraction": 35,
+   "familiarity": 45,
+   "summary": "She talks me down to half my price and I thank her for it."
+  },
+  {
+   "from": "mira",
+   "to": "dorn",
+   "affinity": 22,
+   "trust": 10,
+   "familiarity": 45,
+   "summary": "Dorn goes as red as his forge whenever I smile. A useful man to have about."
+  },
+  {
+   "from": "garrick",
+   "to": "mira",
+   "affinity": 25,
+   "trust": 10,
+   "attraction": 30,
+   "familiarity": 40,
+   "summary": "Loud laugh, quick tongue. I like a woman who answers back."
+  },
+  {
+   "from": "mira",
+   "to": "garrick",
+   "affinity": 20,
+   "trust": 5,
+   "familiarity": 40,
+   "summary": "All muscle and temper. Point him the right way and stand back."
   },
   {
    "from": "aldric",
