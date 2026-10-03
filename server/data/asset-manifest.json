@@ -5634,6 +5634,16 @@
   "custom": {
    "url": "assets/bundles/custom.glb",
    "models": {
+    "banner_board": {
+     "bounds": [
+      -0.976,
+      0,
+      -0.04,
+      0.976,
+      4.15,
+      0.36
+     ]
+    },
     "fence_wood": {
      "bounds": [
       -2.173,

@@ -565,6 +565,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
             door: Some([0.0, 2.8]),
             clear: Some(8.0),
             props: vec![
+                prop("custom/banner_board", -4.4, 1.0).block(0.9),
                 prop("dungeon/banner_shield_blue", -4.4, 1.0).y(0.0).block(0.0),
                 prop("dungeon/torch_lit", 2.4, 2.2).y(1.6).block(0.0),
                 prop("dungeon/crates_stacked", 4.6, 0.6).rot(20.0),
