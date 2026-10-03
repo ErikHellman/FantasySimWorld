@@ -15,7 +15,7 @@ fly secrets set AUTH_TOKEN=$(openssl rand -hex 24) PUBLIC_ORIGIN=https://<your-a
 fly deploy
 ```
 
-Open `https://<your-app>.fly.dev/auth/token`, paste the token, and you are an admin of a brand-new world (paused worlds and speeds are set in **🛠 Admin**). Everyone who has the token is an admin; for real accounts switch to Google and Apple ([sign-in.md](sign-in.md)).
+Open `https://<your-app>.fly.dev/auth/token`, paste the token, and you are an admin of a brand-new world (paused worlds and speeds are set in **🛠 Admin**). Everyone who has the token is an admin; for real accounts switch to sign-in with Google, Apple, Microsoft, LinkedIn, GitHub or Discord ([sign-in.md](sign-in.md)).
 
 To check that the event stream reaches browsers unbuffered through Fly's proxy (headers flushed at once, keep-alives through idle periods, reconnection across a deploy):
 
@@ -32,9 +32,13 @@ Secrets (`fly secrets set NAME=value`):
 | --- | --- |
 | `AUTH_TOKEN` | The shared token for `AUTH_MODE=token` (16+ characters) |
 | `PUBLIC_ORIGIN` | The address people use, e.g. `https://village.example.com`; sign-in redirects and the CSRF check use it |
-| `AUTH_MODE`, `AUTH_PROVIDERS`, `ADMIN_EMAILS` | Google and Apple sign-in and the first admins ([sign-in.md](sign-in.md)) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_SERVICES_ID`, `APPLE_PRIVATE_KEY` | Apple sign-in |
+| `AUTH_MODE`, `AUTH_PROVIDERS`, `ADMIN_EMAILS` | Sign-in with real accounts and the first admins ([sign-in.md](sign-in.md)) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in ([guide](sign-in/google.md)) |
+| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_SERVICES_ID`, `APPLE_PRIVATE_KEY` | Apple sign-in ([guide](sign-in/apple.md)) |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT` | Microsoft sign-in ([guide](sign-in/microsoft.md)); the tenant is a plain setting and may go under `[env]` |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn sign-in ([guide](sign-in/linkedin.md)) |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in ([guide](sign-in/github.md)) |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord sign-in ([guide](sign-in/discord.md)) |
 | `LLM_API_KEY`, `LLM_HEADERS` | Optional: the model endpoint's key and any extra request headers. Read at every start and never stored in the database or sent to a browser. |
 | `BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Optional: Litestream backups (set by `fly storage create`) |
 

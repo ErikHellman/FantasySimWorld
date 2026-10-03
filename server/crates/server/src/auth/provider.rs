@@ -1,10 +1,14 @@
 //! Sign-in providers and the identity they vouch for.
 //!
-//! Both providers run the authorization-code flow with PKCE, `state` and a
-//! `nonce` (the `oauth2` crate builds the URLs and exchanges the code), then
-//! the id_token is checked here with `jsonwebtoken`: signature by the JWKS key
-//! named in `kid` (fetched again when the kid is unknown), `iss`, `aud`, `exp`
-//! and `nonce`. `email_verified` may be a boolean or, from Apple, a string.
+//! Every provider runs the authorization-code flow with `state` and, where the
+//! provider takes it (all but LinkedIn), PKCE; the `oauth2` crate builds the
+//! URLs and exchanges the code. The OpenID Connect providers (Google, Apple,
+//! Microsoft, LinkedIn) also get a `nonce`, and their id_token is checked here
+//! with `jsonwebtoken`: signature by the JWKS key named in `kid` (fetched again
+//! when the kid is unknown), `iss`, `aud`, `exp` and `nonce`. `email_verified`
+//! may be a boolean or, from Apple, a string. GitHub and Discord have no
+//! id_token: their profile API, called with the access token, says who signed
+//! in and whether the e-mail is verified.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -17,33 +21,47 @@ use oauth2::basic::{
 use oauth2::{
     AuthType, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointNotSet, EndpointSet,
     ExtraTokenFields, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, StandardRevocableToken,
-    StandardTokenResponse, TokenUrl,
+    StandardTokenResponse, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::apple::Apple;
-use super::google::Google;
+use super::discovered::Discovered;
+use super::{discord, github, microsoft};
+use crate::config::ApiConfig;
 
-/// The providers this server knows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ProviderKind {
-    Google,
-    Apple,
-}
+/// The providers this server knows; the wire type, so the login page uses the same names.
+pub use crate::api::wire::SignInProvider as ProviderKind;
 
 impl ProviderKind {
-    pub const ALL: [ProviderKind; 2] = [ProviderKind::Google, ProviderKind::Apple];
+    pub const ALL: [ProviderKind; 6] = [
+        ProviderKind::Google,
+        ProviderKind::Apple,
+        ProviderKind::Microsoft,
+        ProviderKind::LinkedIn,
+        ProviderKind::GitHub,
+        ProviderKind::Discord,
+    ];
 
     /// The name in URLs, `AUTH_PROVIDERS` and the database.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Google => "google",
             Self::Apple => "apple",
+            Self::Microsoft => "microsoft",
+            Self::LinkedIn => "linkedin",
+            Self::GitHub => "github",
+            Self::Discord => "discord",
         }
     }
 
     pub fn parse(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|p| p.as_str() == name)
+    }
+
+    /// LinkedIn takes PKCE from native apps only and may refuse it from a web app.
+    fn pkce(self) -> bool {
+        self != Self::LinkedIn
     }
 }
 
@@ -103,15 +121,20 @@ pub struct Callback<'a> {
 
 /// An enabled provider.
 pub enum Provider {
-    Google(Google),
+    /// Google, Microsoft or LinkedIn
+    Oidc(Discovered),
     Apple(Apple),
+    GitHub(ApiConfig),
+    Discord(ApiConfig),
 }
 
 impl Provider {
     pub fn kind(&self) -> ProviderKind {
         match self {
-            Self::Google(_) => ProviderKind::Google,
+            Self::Oidc(oidc) => oidc.kind,
             Self::Apple(_) => ProviderKind::Apple,
+            Self::GitHub(_) => ProviderKind::GitHub,
+            Self::Discord(_) => ProviderKind::Discord,
         }
     }
 
@@ -121,58 +144,124 @@ impl Provider {
         http: &reqwest::Client,
         request: AuthorizeRequest<'_>,
     ) -> Result<String, AuthError> {
+        let pkce = self.kind().pkce();
         match self {
-            Self::Google(google) => {
-                let endpoints = google.endpoints(http).await?;
-                let client = client(&google.config.client_id, None, endpoints, request.redirect_uri)?;
-                Ok(authorize(&client, &request, &["openid", "email", "profile"], &[]))
+            Self::Oidc(oidc) => {
+                let endpoints = oidc.endpoints(http).await?;
+                let client = client(&oidc.config.client_id, None, endpoints.urls(), request.redirect_uri)?;
+                Ok(authorize(&client, &request, &["openid", "email", "profile"], pkce, true, &[]))
             }
             Self::Apple(apple) => {
-                let client = client(&apple.config.services_id, None, &apple.endpoints, request.redirect_uri)?;
+                let client = client(&apple.config.services_id, None, apple.endpoints.urls(), request.redirect_uri)?;
                 // Apple posts the result back when name or email is asked for.
-                Ok(authorize(&client, &request, &["name", "email"], &[("response_mode", "form_post")]))
+                Ok(authorize(&client, &request, &["name", "email"], pkce, true, &[("response_mode", "form_post")]))
+            }
+            Self::GitHub(api) | Self::Discord(api) => {
+                let client = client(&api.client_id, None, api_urls(api), request.redirect_uri)?;
+                let scopes: &[&str] =
+                    if let Self::GitHub(_) = self { &["read:user", "user:email"] } else { &["identify", "email"] };
+                Ok(authorize(&client, &request, scopes, pkce, false, &[]))
             }
         }
     }
 
-    /// Trades the code for an id_token and checks it.
+    /// Trades the code for tokens and finds out who signed in.
     pub async fn exchange(&self, http: &reqwest::Client, callback: Callback<'_>) -> Result<Identity, AuthError> {
-        let (client_id, secret, endpoints) = match self {
-            Self::Google(google) => {
-                (&google.config.client_id, google.config.client_secret.clone(), google.endpoints(http).await?)
+        let kind = self.kind();
+        let verifier = kind.pkce().then_some(callback.pkce_verifier);
+        match self {
+            Self::Oidc(oidc) => {
+                let endpoints = oidc.endpoints(http).await?;
+                let secret = Some(oidc.config.client_secret.clone());
+                let client = client(&oidc.config.client_id, secret, endpoints.urls(), callback.redirect_uri)?;
+                let tokens = exchange_code(http, &client, callback.code, verifier).await?;
+                // LinkedIn does not promise to send the nonce back; the code itself came over TLS
+                // with our secret, and `state` already tied it to this browser.
+                let nonce = match kind {
+                    ProviderKind::LinkedIn => Nonce::IfPresent(callback.nonce),
+                    _ => Nonce::Required(callback.nonce),
+                };
+                let claims =
+                    verify_id_token(http, endpoints, &oidc.config.client_id, id_token(&tokens)?, nonce).await?;
+                let email_verified = match kind {
+                    ProviderKind::Microsoft => microsoft::email_verified(&claims),
+                    _ => claims.email_verified,
+                };
+                Ok(Identity {
+                    provider: kind,
+                    subject: claims.sub,
+                    email: claims.email,
+                    email_verified,
+                    name: claims.name,
+                })
             }
-            Self::Apple(apple) => (&apple.config.services_id, apple.client_secret()?, &apple.endpoints),
-        };
-        let client = client(client_id, Some(secret), endpoints, callback.redirect_uri)?;
-        let id_token = exchange_code(http, &client, callback.code, callback.pkce_verifier).await?;
-        let claims = verify_id_token(http, endpoints, client_id, &id_token, callback.nonce).await?;
-        let name = match self {
-            Self::Google(_) => claims.name,
-            Self::Apple(_) => callback.apple_user.and_then(super::apple::name_from_user_field).or(claims.name),
-        };
-        Ok(Identity {
-            provider: self.kind(),
-            subject: claims.sub,
-            email: claims.email,
-            email_verified: claims.email_verified,
-            name,
-        })
+            Self::Apple(apple) => {
+                let services_id = &apple.config.services_id;
+                let client =
+                    client(services_id, Some(apple.client_secret()?), apple.endpoints.urls(), callback.redirect_uri)?;
+                let tokens = exchange_code(http, &client, callback.code, verifier).await?;
+                let nonce = Nonce::Required(callback.nonce);
+                let claims = verify_id_token(http, &apple.endpoints, services_id, id_token(&tokens)?, nonce).await?;
+                let name = callback.apple_user.and_then(super::apple::name_from_user_field).or(claims.name);
+                Ok(Identity {
+                    provider: kind,
+                    subject: claims.sub,
+                    email: claims.email,
+                    email_verified: claims.email_verified,
+                    name,
+                })
+            }
+            Self::GitHub(api) | Self::Discord(api) => {
+                let secret = Some(api.client_secret.clone());
+                let client = client(&api.client_id, secret, api_urls(api), callback.redirect_uri)?;
+                let tokens = exchange_code(http, &client, callback.code, verifier).await?;
+                let access_token = tokens.access_token().secret();
+                match self {
+                    Self::GitHub(_) => github::identity(http, &api.endpoints.api_url, access_token).await,
+                    _ => discord::identity(http, &api.endpoints.api_url, access_token).await,
+                }
+            }
+        }
     }
 }
 
-/// A provider's URLs and keys.
+fn api_urls(api: &ApiConfig) -> (&str, &str) {
+    (&api.endpoints.authorize_url, &api.endpoints.token_url)
+}
+
+fn id_token(tokens: &OidcTokenResponse) -> Result<&str, AuthError> {
+    tokens.extra_fields().id_token.as_deref().ok_or_else(|| AuthError::Token("no id_token in the answer".into()))
+}
+
+/// An OpenID Connect provider's URLs and keys.
 pub struct OidcEndpoints {
-    /// accepted `iss` values
+    /// accepted `iss` values; `{tenantid}` stands for the token's `tid` (Microsoft)
     pub issuers: Vec<String>,
     pub authorize_url: String,
     pub token_url: String,
     pub jwks: Jwks,
 }
 
-/// The token endpoint's answer: the standard fields plus `id_token`.
+impl OidcEndpoints {
+    fn urls(&self) -> (&str, &str) {
+        (&self.authorize_url, &self.token_url)
+    }
+
+    /// Whether `iss` is one of ours, with a `{tenantid}` template filled in from `tid`.
+    pub fn accepts_issuer(&self, iss: &str, tid: Option<&str>) -> bool {
+        self.issuers.iter().any(|issuer| match (issuer.contains("{tenantid}"), tid) {
+            (false, _) => issuer == iss,
+            (true, Some(tid)) => issuer.replace("{tenantid}", tid) == iss,
+            (true, None) => false,
+        })
+    }
+}
+
+/// The token endpoint's answer: the standard fields plus `id_token` (absent from GitHub and Discord).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IdTokenField {
-    pub id_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
 }
 
 impl ExtraTokenFields for IdTokenField {}
@@ -195,15 +284,15 @@ type OidcClient = oauth2::Client<
 fn client(
     client_id: &str,
     secret: Option<String>,
-    endpoints: &OidcEndpoints,
+    (authorize_url, token_url): (&str, &str),
     redirect_uri: &str,
 ) -> Result<OidcClient, AuthError> {
     let bad = |what: &str, e: oauth2::url::ParseError| AuthError::Config(format!("{what}: {e}"));
     let mut client = oauth2::Client::new(ClientId::new(client_id.to_owned()))
-        .set_auth_uri(AuthUrl::new(endpoints.authorize_url.clone()).map_err(|e| bad("authorize url", e))?)
-        .set_token_uri(TokenUrl::new(endpoints.token_url.clone()).map_err(|e| bad("token url", e))?)
+        .set_auth_uri(AuthUrl::new(authorize_url.to_owned()).map_err(|e| bad("authorize url", e))?)
+        .set_token_uri(TokenUrl::new(token_url.to_owned()).map_err(|e| bad("token url", e))?)
         .set_redirect_uri(RedirectUrl::new(redirect_uri.to_owned()).map_err(|e| bad("redirect url", e))?)
-        // client_secret_post: both providers take it, and Apple's secret is a long JWT.
+        // client_secret_post: every provider here takes it, and Apple's secret is a long JWT.
         .set_auth_type(AuthType::RequestBody);
     if let Some(secret) = secret {
         client = client.set_client_secret(ClientSecret::new(secret));
@@ -211,13 +300,24 @@ fn client(
     Ok(client)
 }
 
-fn authorize(client: &OidcClient, request: &AuthorizeRequest<'_>, scopes: &[&str], extra: &[(&str, &str)]) -> String {
+fn authorize(
+    client: &OidcClient,
+    request: &AuthorizeRequest<'_>,
+    scopes: &[&str],
+    pkce: bool,
+    nonce: bool,
+    extra: &[(&str, &str)],
+) -> String {
     let state = request.state.to_owned();
     let mut builder = client
         .authorize_url(move || CsrfToken::new(state))
-        .add_scopes(scopes.iter().map(|s| Scope::new((*s).to_owned())))
-        .set_pkce_challenge(request.pkce.clone())
-        .add_extra_param("nonce", request.nonce);
+        .add_scopes(scopes.iter().map(|s| Scope::new((*s).to_owned())));
+    if pkce {
+        builder = builder.set_pkce_challenge(request.pkce.clone());
+    }
+    if nonce {
+        builder = builder.add_extra_param("nonce", request.nonce);
+    }
     for (name, value) in extra {
         builder = builder.add_extra_param(*name, *value);
     }
@@ -240,19 +340,17 @@ async fn exchange_code(
     http: &reqwest::Client,
     client: &OidcClient,
     code: &str,
-    verifier: &str,
-) -> Result<String, AuthError> {
+    verifier: Option<&str>,
+) -> Result<OidcTokenResponse, AuthError> {
     let call = |request| send(http.clone(), request);
-    let token = client
-        .exchange_code(AuthorizationCode::new(code.to_owned()))
-        .set_pkce_verifier(PkceCodeVerifier::new(verifier.to_owned()))
-        .request_async(&call)
-        .await
-        .map_err(|e| match e {
-            oauth2::RequestTokenError::ServerResponse(r) => AuthError::Exchange(r.to_string()),
-            other => AuthError::Upstream(other.to_string()),
-        })?;
-    Ok(token.extra_fields().id_token.clone())
+    let mut request = client.exchange_code(AuthorizationCode::new(code.to_owned()));
+    if let Some(verifier) = verifier {
+        request = request.set_pkce_verifier(PkceCodeVerifier::new(verifier.to_owned()));
+    }
+    request.request_async(&call).await.map_err(|e| match e {
+        oauth2::RequestTokenError::ServerResponse(r) => AuthError::Exchange(r.to_string()),
+        other => AuthError::Upstream(other.to_string()),
+    })
 }
 
 /// A JWKS endpoint with its keys cached until an unknown `kid` shows up.
@@ -288,21 +386,39 @@ pub(crate) async fn fetch_json<T: serde::de::DeserializeOwned>(
     http: &reqwest::Client,
     url: &str,
 ) -> Result<T, AuthError> {
+    get_json(http.get(url), url).await
+}
+
+/// A GET with the provider's access token, for the profile APIs.
+pub(crate) async fn fetch_api<T: serde::de::DeserializeOwned>(
+    http: &reqwest::Client,
+    url: &str,
+    access_token: &str,
+    headers: &[(&str, &str)],
+) -> Result<T, AuthError> {
+    let mut request = http.get(url).bearer_auth(access_token);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    get_json(request, url).await
+}
+
+async fn get_json<T: serde::de::DeserializeOwned>(request: reqwest::RequestBuilder, url: &str) -> Result<T, AuthError> {
     let upstream = |e: reqwest::Error| AuthError::Upstream(format!("{url}: {e}"));
-    http.get(url)
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(upstream)?
-        .json()
-        .await
-        .map_err(upstream)
+    request.send().await.and_then(reqwest::Response::error_for_status).map_err(upstream)?.json().await.map_err(upstream)
 }
 
 /// The id_token claims we use.
 #[derive(Debug, Deserialize)]
 pub struct IdClaims {
     pub sub: String,
+    pub iss: String,
+    /// Microsoft: the tenant the account lives in
+    #[serde(default)]
+    pub tid: Option<String>,
+    /// Microsoft: the tenant has verified that it owns the e-mail's domain (an optional claim)
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub xms_edov: bool,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default, deserialize_with = "lenient_bool")]
@@ -322,12 +438,20 @@ fn lenient_bool<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::E
     })
 }
 
+/// Whether the id_token must carry the nonce we sent.
+#[derive(Clone, Copy, Debug)]
+pub enum Nonce<'a> {
+    Required(&'a str),
+    /// checked when it is there (LinkedIn)
+    IfPresent(&'a str),
+}
+
 pub async fn verify_id_token(
     http: &reqwest::Client,
     endpoints: &OidcEndpoints,
     client_id: &str,
     id_token: &str,
-    nonce: &str,
+    nonce: Nonce<'_>,
 ) -> Result<IdClaims, AuthError> {
     let bad = |e: jsonwebtoken::errors::Error| AuthError::Token(e.to_string());
     let header = jsonwebtoken::decode_header(id_token).map_err(bad)?;
@@ -348,11 +472,18 @@ pub async fn verify_id_token(
     let key = DecodingKey::from_jwk(&jwk).map_err(bad)?;
     let mut validation = Validation::new(header.alg);
     validation.set_audience(&[client_id]);
-    validation.set_issuer(&endpoints.issuers);
+    // `iss` must be there; which values count is checked below, because Microsoft's depends on `tid`.
     validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
     let claims = jsonwebtoken::decode::<IdClaims>(id_token, &key, &validation).map_err(bad)?.claims;
-    match &claims.nonce {
-        Some(got) if super::same(got.as_bytes(), nonce.as_bytes()) => Ok(claims),
+    if !endpoints.accepts_issuer(&claims.iss, claims.tid.as_deref()) {
+        return Err(AuthError::Token(format!("issuer {:?} not accepted", claims.iss)));
+    }
+    let matches =
+        |expected: &str| claims.nonce.as_deref().is_some_and(|got| super::same(got.as_bytes(), expected.as_bytes()));
+    match nonce {
+        Nonce::Required(expected) if matches(expected) => Ok(claims),
+        Nonce::IfPresent(_) if claims.nonce.is_none() => Ok(claims),
+        Nonce::IfPresent(expected) if matches(expected) => Ok(claims),
         _ => Err(AuthError::Token("nonce does not match".into())),
     }
 }
@@ -364,16 +495,36 @@ mod tests {
     #[test]
     fn email_verified_is_lenient() {
         let parse = |json: &str| serde_json::from_str::<IdClaims>(json).unwrap().email_verified;
-        assert!(parse(r#"{"sub":"1","email_verified":true}"#));
-        assert!(parse(r#"{"sub":"1","email_verified":"true"}"#));
-        assert!(!parse(r#"{"sub":"1","email_verified":"false"}"#));
-        assert!(!parse(r#"{"sub":"1","email_verified":1}"#));
-        assert!(!parse(r#"{"sub":"1"}"#));
+        assert!(parse(r#"{"sub":"1","iss":"i","email_verified":true}"#));
+        assert!(parse(r#"{"sub":"1","iss":"i","email_verified":"true"}"#));
+        assert!(!parse(r#"{"sub":"1","iss":"i","email_verified":"false"}"#));
+        assert!(!parse(r#"{"sub":"1","iss":"i","email_verified":1}"#));
+        assert!(!parse(r#"{"sub":"1","iss":"i"}"#));
     }
 
     #[test]
     fn provider_names() {
         assert_eq!(ProviderKind::parse("apple"), Some(ProviderKind::Apple));
         assert_eq!(ProviderKind::parse("Google"), None);
+        for kind in ProviderKind::ALL {
+            assert_eq!(ProviderKind::parse(kind.as_str()), Some(kind));
+            // The wire name is the same as the one in URLs and the database.
+            assert_eq!(serde_json::to_value(kind).unwrap(), kind.as_str());
+        }
+    }
+
+    #[test]
+    fn issuer_templates_take_the_tenant() {
+        let endpoints = OidcEndpoints {
+            issuers: vec!["https://accounts.google.com".into(), "https://login.example/{tenantid}/v2.0".into()],
+            authorize_url: String::new(),
+            token_url: String::new(),
+            jwks: Jwks::new(String::new()),
+        };
+        assert!(endpoints.accepts_issuer("https://accounts.google.com", None));
+        assert!(endpoints.accepts_issuer("https://login.example/t1/v2.0", Some("t1")));
+        assert!(!endpoints.accepts_issuer("https://login.example/t2/v2.0", Some("t1")));
+        assert!(!endpoints.accepts_issuer("https://login.example/{tenantid}/v2.0", None));
+        assert!(!endpoints.accepts_issuer("https://evil.example", Some("t1")));
     }
 }

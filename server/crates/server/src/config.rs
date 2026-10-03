@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use fsw_brain::settings::{ApiKey, ConversationMode, LlmSettings, ReasoningMode, WireProtocol};
 
+use crate::api::wire::SignInProvider;
+
 /// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
 /// refuses to start anywhere but on this machine.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,35 +17,119 @@ pub enum AuthMode {
     /// One shared secret, for local work and the first deployments. Browsers
     /// post it to `/auth/token` once and get a cookie; everyone is an admin.
     Token(String),
-    /// Google and/or Apple sign-in, limited to the allowlist.
+    /// Sign-in with Google, Apple, Microsoft, LinkedIn, GitHub and/or Discord, limited to the allowlist.
     Oidc(Box<OidcConfig>),
 }
 
 /// The providers `AUTH_PROVIDERS` turned on.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct OidcConfig {
-    pub google: Option<GoogleConfig>,
-    pub apple: Option<AppleConfig>,
+    /// in `AUTH_PROVIDERS` order, which is also the order of the buttons on the login page
+    pub providers: Vec<ProviderConfig>,
+}
+
+impl OidcConfig {
+    /// The settings of one provider, if it is on.
+    pub fn get_mut(&mut self, kind: SignInProvider) -> Option<&mut ProviderConfig> {
+        self.providers.iter_mut().find(|p| p.kind() == kind)
+    }
+}
+
+/// One provider's settings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProviderConfig {
+    Google(DiscoveryConfig),
+    Apple(AppleConfig),
+    Microsoft(DiscoveryConfig),
+    LinkedIn(DiscoveryConfig),
+    GitHub(ApiConfig),
+    Discord(ApiConfig),
+}
+
+impl ProviderConfig {
+    pub fn kind(&self) -> SignInProvider {
+        match self {
+            Self::Google(_) => SignInProvider::Google,
+            Self::Apple(_) => SignInProvider::Apple,
+            Self::Microsoft(_) => SignInProvider::Microsoft,
+            Self::LinkedIn(_) => SignInProvider::LinkedIn,
+            Self::GitHub(_) => SignInProvider::GitHub,
+            Self::Discord(_) => SignInProvider::Discord,
+        }
+    }
 }
 
 pub const GOOGLE_DISCOVERY_URL: &str = "https://accounts.google.com/.well-known/openid-configuration";
+pub const LINKEDIN_DISCOVERY_URL: &str = "https://www.linkedin.com/oauth/.well-known/openid-configuration";
 
+/// Microsoft's discovery document for a tenant: `common`, `consumers`, `organizations`, a tenant id or a domain.
+pub fn microsoft_discovery_url(tenant: &str) -> String {
+    format!("https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration")
+}
+
+/// An OpenID Connect provider found through its discovery document (Google, Microsoft, LinkedIn).
 #[derive(Clone, PartialEq, Eq)]
-pub struct GoogleConfig {
-    /// `GOOGLE_CLIENT_ID`
+pub struct DiscoveryConfig {
+    /// `<PROVIDER>_CLIENT_ID`
     pub client_id: String,
-    /// `GOOGLE_CLIENT_SECRET`
+    /// `<PROVIDER>_CLIENT_SECRET`
     pub client_secret: String,
-    /// Google's discovery document; only tests change it
+    /// the provider's discovery document; only tests (and `MICROSOFT_TENANT`) change it
     pub discovery_url: String,
 }
 
-impl std::fmt::Debug for GoogleConfig {
+impl std::fmt::Debug for DiscoveryConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("GoogleConfig")
+        f.debug_struct("DiscoveryConfig")
             .field("client_id", &self.client_id)
             .field("discovery_url", &self.discovery_url)
             .finish_non_exhaustive()
+    }
+}
+
+/// A plain OAuth2 provider whose profile API says who signed in (GitHub, Discord).
+#[derive(Clone, PartialEq, Eq)]
+pub struct ApiConfig {
+    /// `<PROVIDER>_CLIENT_ID`
+    pub client_id: String,
+    /// `<PROVIDER>_CLIENT_SECRET`
+    pub client_secret: String,
+    /// the provider's URLs; only tests change them
+    pub endpoints: ApiEndpoints,
+}
+
+impl std::fmt::Debug for ApiConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiConfig")
+            .field("client_id", &self.client_id)
+            .field("endpoints", &self.endpoints)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiEndpoints {
+    pub authorize_url: String,
+    pub token_url: String,
+    /// the profile API, without a trailing slash
+    pub api_url: String,
+}
+
+impl ApiEndpoints {
+    pub fn github() -> Self {
+        Self {
+            authorize_url: "https://github.com/login/oauth/authorize".into(),
+            token_url: "https://github.com/login/oauth/access_token".into(),
+            api_url: "https://api.github.com".into(),
+        }
+    }
+
+    pub fn discord() -> Self {
+        Self {
+            authorize_url: "https://discord.com/oauth2/authorize".into(),
+            token_url: "https://discord.com/api/oauth2/token".into(),
+            api_url: "https://discord.com/api".into(),
+        }
     }
 }
 
@@ -239,27 +325,39 @@ pub fn local_origin(origin: &str) -> bool {
     host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
+/// The names `AUTH_PROVIDERS` accepts, for error messages.
+const PROVIDER_NAMES: &str = "google, apple, microsoft, linkedin, github, discord";
+
 fn oidc_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<OidcConfig, String> {
     let need = |name: &str, provider: &str| {
         get(name).map(str::to_owned).ok_or_else(|| format!("AUTH_PROVIDERS includes {provider}, which needs {name}"))
     };
-    let names = get("AUTH_PROVIDERS").ok_or("AUTH_MODE=oidc needs AUTH_PROVIDERS (google, apple or google,apple)")?;
+    let discovery = |prefix: &str, provider: &str, discovery_url: String| -> Result<DiscoveryConfig, String> {
+        Ok(DiscoveryConfig {
+            client_id: need(&format!("{prefix}_CLIENT_ID"), provider)?,
+            client_secret: need(&format!("{prefix}_CLIENT_SECRET"), provider)?,
+            discovery_url,
+        })
+    };
+    let api = |prefix: &str, provider: &str, endpoints: ApiEndpoints| -> Result<ApiConfig, String> {
+        Ok(ApiConfig {
+            client_id: need(&format!("{prefix}_CLIENT_ID"), provider)?,
+            client_secret: need(&format!("{prefix}_CLIENT_SECRET"), provider)?,
+            endpoints,
+        })
+    };
+    let names = get("AUTH_PROVIDERS")
+        .ok_or_else(|| format!("AUTH_MODE=oidc needs AUTH_PROVIDERS, a comma-separated list of {PROVIDER_NAMES}"))?;
     let mut oidc = OidcConfig::default();
     for name in names.split(',').map(str::trim).filter(|n| !n.is_empty()) {
-        match name {
-            "google" => {
-                oidc.google = Some(GoogleConfig {
-                    client_id: need("GOOGLE_CLIENT_ID", name)?,
-                    client_secret: need("GOOGLE_CLIENT_SECRET", name)?,
-                    discovery_url: GOOGLE_DISCOVERY_URL.into(),
-                })
-            }
+        let provider = match name {
+            "google" => ProviderConfig::Google(discovery("GOOGLE", name, GOOGLE_DISCOVERY_URL.into())?),
             "apple" => {
                 // Platforms that cannot hold newlines in a secret get "\n" written out instead.
                 let pem = need("APPLE_PRIVATE_KEY", name)?.replace("\\n", "\n");
                 jsonwebtoken::EncodingKey::from_ec_pem(pem.as_bytes())
                     .map_err(|e| format!("APPLE_PRIVATE_KEY is not the PEM of a .p8 key: {e}"))?;
-                oidc.apple = Some(AppleConfig {
+                ProviderConfig::Apple(AppleConfig {
                     team_id: need("APPLE_TEAM_ID", name)?,
                     key_id: need("APPLE_KEY_ID", name)?,
                     services_id: need("APPLE_SERVICES_ID", name)?,
@@ -267,10 +365,25 @@ fn oidc_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<OidcConfig, S
                     endpoints: AppleEndpoints::default(),
                 })
             }
-            other => return Err(format!("AUTH_PROVIDERS: unknown provider {other:?} (google, apple)")),
+            "microsoft" => {
+                let tenant = get("MICROSOFT_TENANT").unwrap_or("common");
+                // It goes into a URL path, so only what tenant ids and domains are made of.
+                if !tenant.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+                    return Err(format!("MICROSOFT_TENANT {tenant:?} is not a tenant id, domain or common"));
+                }
+                ProviderConfig::Microsoft(discovery("MICROSOFT", name, microsoft_discovery_url(tenant))?)
+            }
+            "linkedin" => ProviderConfig::LinkedIn(discovery("LINKEDIN", name, LINKEDIN_DISCOVERY_URL.into())?),
+            "github" => ProviderConfig::GitHub(api("GITHUB", name, ApiEndpoints::github())?),
+            "discord" => ProviderConfig::Discord(api("DISCORD", name, ApiEndpoints::discord())?),
+            other => return Err(format!("AUTH_PROVIDERS: unknown provider {other:?} ({PROVIDER_NAMES})")),
+        };
+        if oidc.providers.iter().any(|p| p.kind() == provider.kind()) {
+            return Err(format!("AUTH_PROVIDERS names {name} twice"));
         }
+        oidc.providers.push(provider);
     }
-    if oidc.google.is_none() && oidc.apple.is_none() {
+    if oidc.providers.is_empty() {
         return Err("AUTH_PROVIDERS names no provider".into());
     }
     Ok(oidc)
@@ -398,8 +511,8 @@ mod tests {
         ];
         let config = Config::from_vars(vars(&google)).unwrap();
         let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
-        assert_eq!(oidc.google.as_ref().unwrap().discovery_url, GOOGLE_DISCOVERY_URL);
-        assert!(oidc.apple.is_none());
+        let [ProviderConfig::Google(only)] = oidc.providers.as_slice() else { panic!("only Google") };
+        assert_eq!(only.discovery_url, GOOGLE_DISCOVERY_URL);
         assert!(!format!("{config:?}").contains("shh"), "secrets stay out of logs");
         assert_eq!(config.admin_emails, ["boss@example.com", "second@example.com"]);
         assert!(config.trust_proxy);
@@ -415,7 +528,53 @@ mod tests {
             ("APPLE_PRIVATE_KEY", "not a key"),
         ]);
         assert!(Config::from_vars(vars(&apple)).unwrap_err().contains("APPLE_PRIVATE_KEY"));
-        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_PROVIDERS", "github")])).is_err());
+        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_PROVIDERS", "facebook")])).is_err());
+    }
+
+    #[test]
+    fn every_provider_reads_its_own_variables_in_order() {
+        let all = [
+            ("AUTH_MODE", "oidc"),
+            ("AUTH_PROVIDERS", "github, microsoft,linkedin,discord"),
+            ("GITHUB_CLIENT_ID", "gh-id"),
+            ("GITHUB_CLIENT_SECRET", "shh-gh"),
+            ("MICROSOFT_CLIENT_ID", "ms-id"),
+            ("MICROSOFT_CLIENT_SECRET", "shh-ms"),
+            ("LINKEDIN_CLIENT_ID", "li-id"),
+            ("LINKEDIN_CLIENT_SECRET", "shh-li"),
+            ("DISCORD_CLIENT_ID", "dc-id"),
+            ("DISCORD_CLIENT_SECRET", "shh-dc"),
+        ];
+        let config = Config::from_vars(vars(&all)).unwrap();
+        let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
+        let kinds: Vec<_> = oidc.providers.iter().map(ProviderConfig::kind).collect();
+        use SignInProvider::*;
+        assert_eq!(kinds, [GitHub, Microsoft, LinkedIn, Discord]);
+        let ProviderConfig::Microsoft(microsoft) = &oidc.providers[1] else { panic!("Microsoft") };
+        assert_eq!(microsoft.discovery_url, microsoft_discovery_url("common"));
+        let ProviderConfig::GitHub(github) = &oidc.providers[0] else { panic!("GitHub") };
+        assert_eq!((github.client_id.as_str(), github.endpoints.clone()), ("gh-id", ApiEndpoints::github()));
+        let logged = format!("{config:?}");
+        assert!(!logged.contains("shh"), "secrets stay out of logs: {logged}");
+
+        for (i, (name, _)) in all.iter().enumerate().skip(2) {
+            let without: Vec<_> = all.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, v)| *v).collect();
+            let error = Config::from_vars(vars(&without)).unwrap_err();
+            assert!(error.contains(name), "{error}");
+        }
+
+        let mut tenant = all.to_vec();
+        tenant.push(("MICROSOFT_TENANT", "contoso.onmicrosoft.com"));
+        let config = Config::from_vars(vars(&tenant)).unwrap();
+        let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
+        let ProviderConfig::Microsoft(microsoft) = &oidc.providers[1] else { panic!("Microsoft") };
+        assert!(microsoft.discovery_url.contains("/contoso.onmicrosoft.com/v2.0/"));
+        *tenant.last_mut().unwrap() = ("MICROSOFT_TENANT", "evil.example/x?");
+        assert!(Config::from_vars(vars(&tenant)).unwrap_err().contains("MICROSOFT_TENANT"));
+
+        let mut twice = all.to_vec();
+        twice[1] = ("AUTH_PROVIDERS", "github,discord,github");
+        assert!(Config::from_vars(vars(&twice)).unwrap_err().contains("twice"));
     }
 
     #[test]

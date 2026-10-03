@@ -60,5 +60,5 @@ The tests that hold this in place: `crates/sim/tests/sim.rs` (determinism throug
 ## Sign-in and HTTP
 
 - Routes are in `crates/server/src/api/router.rs`: `/auth/*` (sign-in, rate-limited), `/api/*` (CSRF check, then the session), `/api/admin/*` (admins only), `/healthz`, and the web build as static files.
-- Tests: `crates/server/tests/http.rs` for the routes and `auth.rs` for Google and Apple sign-in against a fake OpenID provider. Add a test there for a new route or a change to who may call one.
+- Tests: `crates/server/tests/http.rs` for the routes and `auth.rs` for sign-in with every provider against fake ones (discovery, keys, tokens and the GitHub and Discord profile APIs). Add a test there for a new route or a change to who may call one.
 - Run the server for a manual check with a scratch `DATA_DIR` so the developer's `data/world.db` stays untouched.
