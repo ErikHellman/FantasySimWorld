@@ -126,6 +126,11 @@ impl<'a> Ctx<'a> {
     pub fn say(&mut self, speaker: &str, text: impl Into<String>, to: Option<&str>, loud: bool) -> i64 {
         let text = text.into();
         let duration_ticks = speech_ticks(&text);
+        if self.state.characters.contains_key(speaker) {
+            for power in self.state.powers.keys().filter(|name| mentions(&text, name)) {
+                self.events.push(SimEvent::Prayer { power: power.clone(), character_id: speaker.to_owned() });
+            }
+        }
         self.events.push(SimEvent::Speech {
             speaker_id: speaker.to_owned(),
             to_id: to.map(str::to_owned),
@@ -135,6 +140,19 @@ impl<'a> Ctx<'a> {
         });
         duration_ticks
     }
+}
+
+/// Whether `text` holds `name` as whole words, whatever the case.
+pub fn mentions(text: &str, name: &str) -> bool {
+    let (text, name) = (text.to_lowercase(), name.to_lowercase());
+    if name.is_empty() {
+        return false;
+    }
+    text.match_indices(&name).any(|(start, found)| {
+        let before = text[..start].chars().next_back();
+        let after = text[start + found.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
 }
 
 /// Ids of the living characters, in their stable order. Systems iterate a

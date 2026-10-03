@@ -20,6 +20,7 @@ use crate::systems::conversation::start_conversation;
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
+use crate::systems::viewer_events::pray;
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
@@ -285,6 +286,9 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
         set_anim(c, anim, true);
+        if activity_id == ActivityId::Pray {
+            pray(ctx, id);
+        }
         if activity_id == ActivityId::ReadBoard {
             // With a model about, give it time to say how this person takes the board; the stock reaction
             // comes at the end either way if it does not answer.

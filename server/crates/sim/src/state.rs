@@ -483,6 +483,10 @@ pub enum StimulusKind {
     Victory,
     Hostility,
     Romance,
+    /// one of the powers that watch the valley did the village a kindness
+    Favour,
+    /// one of the powers that watch the valley sent harm
+    Wrath,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -657,6 +661,9 @@ pub struct Monster {
     /// the villager this monster once was
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub was_id: Option<Id>,
+    /// raised by a viewer: daylight does not touch it, and it crumbles at this tick whatever the hour
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until_tick: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -887,6 +894,35 @@ pub struct SimState {
     /// billboard id -> what an admin (or, later, an advertiser) put up; boards not listed show the day's slogan
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub billboards: IndexMap<String, BoardNotice>,
+    /// name -> what the village has had from that viewer; see [`Power`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub powers: IndexMap<String, Power>,
+}
+
+/// A viewer as the villagers know them: an unseen power that watches the valley and now and
+/// then sends a gift, a blessing or the dead. Villagers thank, plead with and pray to them by name.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Power {
+    /// gifts and blessings sent
+    pub favours: i64,
+    /// monsters and raids sent
+    pub wraths: i64,
+    /// tick of the last thing they did
+    pub last_tick: i64,
+}
+
+impl Power {
+    /// One word for how the village sees them.
+    pub fn repute(&self) -> &'static str {
+        if self.favours > self.wraths * 2 {
+            "generous"
+        } else if self.wraths > self.favours * 2 {
+            "cruel"
+        } else {
+            "fickle"
+        }
+    }
 }
 
 impl SimState {
