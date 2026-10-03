@@ -26,6 +26,7 @@ The design below was written for a browser-only game. The world now runs on a Ru
 - **Persistence** is SQLite (WAL) on the server's volume, replacing IndexedDB: compressed snapshots (every 30 s, after notable events, on shutdown), the chronicle, the command record, the decision log, settings and the model key (never sent to a browser), and the users, sessions and allowlist. A restart resumes from the newest snapshot. Browser exports still import, and the server's exports are the same format. Litestream can stream the database to object storage ([deploy.md](../../deploy.md)).
 - **Access**: Google and Apple sign-in, limited to an allowlist that admins manage, or one shared token for local work ([sign-in.md](../../sign-in.md)).
 - **Billboards** (October 2026) stand in five places and show a slogan a day, or text an admin put up; villagers read them and react. See [the billboards design](2026-10-03-billboards-design.md).
+- **House fires** (October 2026): when nobody is awake the dead set a home on fire; the whole village carries water, and a house that is lost is rebuilt while its people sleep rough. See [the house fire design](2026-10-03-house-fire-design.md).
 - **The browser is a viewer** (`src/net`, `src/render`, `src/ui`, `src/audio`, `src/speech`): it never loads the simulation, the brain or saves (an architecture test enforces this). It keeps `src/world` for terrain, scenery and camera bounds; the server's `hello` carries a hash of the navigation grid so a client with a different layout notices.
 
 ### Wire protocol
@@ -112,7 +113,7 @@ Source: `/Users/hellman/Documents/The Complete KayKit Collection v7` (CC0). The 
 ### Rendering (`src/render/`)
 
 - `WebGPURenderer` with `?renderer=webgl|webgpu` override and the active backend shown in a debug HUD. All three.js imports stay in `render/`.
-- Scenery instanced per model in spatial chunks, one canonical material per pack. Buildings as individual meshes.
+- Scenery instanced per model in spatial chunks, one canonical material per pack. Buildings are merged with the rest of the scenery, except the homes, which stay one object each because a home can burn down.
 - Characters via `SkeletonUtils.clone`, one `AnimationMixer` each, clips merged by name at runtime, weapons on hand-slot bones, `frustumCulled = false`. The sim emits abstract animation states; the renderer maps them to clips.
 - One shadowed directional sun plus hemisphere light on a day/night cycle; a fixed pool of point lights for lanterns and fires (intensity changes, never count changes).
 - DOM overlay with own world-to-screen projection for speech bubbles, name tags and health bars. Model text is always rendered as text.

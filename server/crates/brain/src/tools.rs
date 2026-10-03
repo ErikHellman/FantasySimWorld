@@ -29,6 +29,14 @@ fn activity_ids() -> Vec<&'static str> {
     ActivityId::OFFERED.iter().map(|id| id.as_str()).collect()
 }
 
+/// What `do_activity` accepts: the usual activities, and rebuilding, which the message only lists (and the
+/// answer is only accepted) while a house lies in ruins.
+fn doable_ids() -> Vec<&'static str> {
+    let mut ids = activity_ids();
+    ids.push(ActivityId::Rebuild.as_str());
+    ids
+}
+
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> ToolDef {
     ToolDef::new(
         name,
@@ -67,7 +75,7 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
         "do_activity",
         "Go and do one of the listed activities for a while.",
         json!({
-            "activity": { "type": "string", "enum": activity_ids(), "description": "The activity id." },
+            "activity": { "type": "string", "enum": doable_ids(), "description": "The activity id." },
             "say": say(),
             "thought": thought(),
         }),

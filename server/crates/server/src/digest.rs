@@ -9,6 +9,7 @@ use fsw_sim::state::{
     ActPhase, Character, IntentAction, MemoryKind as SimMemoryKind, MonsterPhase, PlanSource,
     RelationLabel as SimLabel, SimState,
 };
+use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::util::living;
@@ -185,6 +186,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
             gift: c.inventory.gift.max(0) as u32,
         },
         home: find_place(&c.home_id).map_or(c.home_id.clone(), |place| place.name.into()),
+        homeless: is_homeless(state, c),
         kills: c.kills.max(0) as u32,
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),

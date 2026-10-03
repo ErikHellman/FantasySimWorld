@@ -11,7 +11,7 @@ const entity = (id: string, x: number): Entity => ({
 });
 
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
-  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [],
+  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [],
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -47,6 +47,20 @@ describe('view world', () => {
     expect(world.billboards.get('green_board')).toMatchObject({ text: 'Fresh bread!', custom: true });
     expect(world.billboards.size).toBe(1);
     expect(world.billboardsVersion).toBe(version + 1);
+  });
+
+  it('keeps the homes that are burning or in ruins, and forgets one that stands whole again', () => {
+    const world = new ViewWorld();
+    const house = { id: 'home_1', name: 'the red cottage', phase: 'burning' as const, fire: 20, built: 0 };
+    world.reset({ ...snapshot(1, []), houses: [house] });
+    const version = world.housesVersion;
+    expect(world.houses.get('home_1')?.fire).toBe(20);
+    world.apply({ t: 2, ev: [{ type: 'house', house: { ...house, fire: 45 } }] });
+    world.apply({ t: 3, ev: [{ type: 'house', house: { ...house, phase: 'ruin', fire: 0 } }] });
+    expect(world.houses.get('home_1')).toMatchObject({ phase: 'ruin', fire: 0 });
+    world.apply({ t: 4, ev: [{ type: 'house', house: { ...house, phase: 'intact', fire: 0, built: 100 } }] });
+    expect(world.houses.size).toBe(0);
+    expect(world.housesVersion).toBe(version + 3);
   });
 
   it('follows the server frame for frame', () => {

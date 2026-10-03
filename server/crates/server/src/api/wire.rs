@@ -15,7 +15,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -218,6 +218,8 @@ pub struct Snapshot {
     pub voices: Vec<Utterance>,
     /// what every billboard shows, in map order
     pub billboards: Vec<Billboard>,
+    /// the homes that are burning or in ruins; every other home stands whole
+    pub houses: Vec<House>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -317,6 +319,33 @@ pub enum WireEvent {
     Billboard {
         billboard: Billboard,
     },
+    /// a home caught fire, the fire grew or shrank, the home burned down, was worked on, or stands whole again
+    House {
+        house: House,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HousePhase {
+    Intact,
+    Burning,
+    Ruin,
+}
+
+/// The condition of a home. Where it stands comes from the client's own copy of the map (`src/world`).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct House {
+    /// the place id of the home
+    pub id: Id,
+    /// its name, for the banner
+    pub name: String,
+    pub phase: HousePhase,
+    /// how far the fire has taken hold, 0..100 in steps of 5
+    pub fire: u8,
+    /// how far a ruin has been rebuilt, in percent
+    pub built: u8,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -364,6 +393,7 @@ pub enum ChronicleKind {
     Combat,
     Death,
     Arrival,
+    Fire,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -562,6 +592,8 @@ pub struct CharacterDetail {
     pub needs: Needs,
     pub inventory: Inventory,
     pub home: String,
+    /// that home has burned down and is not yet rebuilt
+    pub homeless: bool,
     pub kills: u32,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
@@ -927,6 +959,8 @@ pub fn typescript() -> String {
         BillboardTone,
         Billboard,
         BillboardRequest,
+        HousePhase,
+        House,
         LlmState,
         LlmStatus,
         AmbientCounts,

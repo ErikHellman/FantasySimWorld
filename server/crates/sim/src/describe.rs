@@ -5,6 +5,7 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState};
+use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
 use crate::util::name_of;
 
@@ -31,16 +32,29 @@ fn doing(state: &SimState, c: &Character) -> String {
         IntentAction::GoTo { place_id } => {
             format!("walking to {}", find_place(place_id).map_or("somewhere", |place| place.name))
         }
-        IntentAction::Activity { activity: id, .. } => {
+        IntentAction::Activity { activity: id, place_id, .. } => {
             let def = activity(*id);
             if *id == ActivityId::Sleep {
                 if reading_late(state, c) {
                     return "up late at home, reading by candlelight".into();
                 }
+                if !home_usable(state, c) && c.inside.is_none() {
+                    let rough =
+                        if c.asleep { "sleeping rough by the campfire" } else { "looking for a place to sleep" };
+                    return rough.into();
+                }
                 return if c.asleep { "asleep at home".into() } else { "heading home to sleep".into() };
             }
             if *id == ActivityId::Stroll {
                 return "strolling around the village".into();
+            }
+            if *id == ActivityId::Rebuild {
+                let name = place_id.as_deref().and_then(find_place).map_or("the ruin", |place| place.name);
+                return if c.act.phase == ActPhase::Perform {
+                    format!("rebuilding {name}")
+                } else {
+                    format!("on the way to rebuild {name}")
+                };
             }
             let place = c.slot_id.as_deref().and_then(|slot| find_place(&get_slot(slot).place_id));
             if c.act.phase != ActPhase::Perform {
@@ -71,6 +85,14 @@ fn doing(state: &SimState, c: &Character) -> String {
         IntentAction::Nap { .. } => if c.asleep { "napping on the grass" } else { "looking for a spot to nap" }.into(),
         // A stalker looks like anyone else taking the air.
         IntentAction::Stalk { .. } => "strolling around the village".into(),
+        IntentAction::FightFire { place_id } => {
+            let name = find_place(place_id).map_or("the house", |place| place.name);
+            if c.tool.is_some() {
+                format!("carrying water to the fire at {name}")
+            } else {
+                format!("fetching water for the fire at {name}")
+            }
+        }
     }
 }
 

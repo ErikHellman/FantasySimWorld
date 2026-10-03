@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry,
+  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, House, LlmStatus, Me, RosterEntry,
   Snapshot, Status, Utterance,
 } from '../generated/api';
 import type { ConnectionState } from '../net/stream';
@@ -74,6 +74,8 @@ export const ui = {
   graves: signal<Grave[]>([]),
   /** what each billboard shows, in map order (the admin panel edits them) */
   billboards: signal<Billboard[]>([]),
+  /** the homes that are burning or in ruins */
+  houses: signal<House[]>([]),
   panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -137,6 +139,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.chronicleMore.value = true;
   ui.graves.value = snapshot.graves;
   ui.billboards.value = snapshot.billboards;
+  ui.houses.value = snapshot.houses;
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -160,6 +163,12 @@ export function addChronicle(entry: ChronicleEntry): void {
 /** A new grave takes its plot from whoever lay there before (a full graveyard reuses its oldest plot). */
 export function addGrave(grave: Grave): void {
   ui.graves.value = [...ui.graves.value.filter((existing) => existing.plot !== grave.plot), grave];
+}
+
+/** A house caught fire, burned on, fell in ruins, was worked on or stands whole again. */
+export function setHouse(house: House): void {
+  const others = ui.houses.value.filter((entry) => entry.id !== house.id);
+  ui.houses.value = house.phase === 'intact' ? others : [...others, house];
 }
 
 export function setBillboard(board: Billboard): void {

@@ -58,11 +58,15 @@ const WANDERER_CLASSES: [ClassId; 8] = [
     ClassId::Farmer,
 ];
 
-/// A home with a free bed (the emptiest one, so newcomers spread out).
+/// A home with a free bed (the emptiest one, so newcomers spread out). Nobody is given a house that is
+/// burning or in ruins while another stands.
 pub fn free_home(state: &SimState) -> String {
     let mut best = homes()[0].id.clone();
     let mut best_free = f64::NEG_INFINITY;
     for home in homes() {
+        if state.houses.contains_key(&home.id) {
+            continue;
+        }
         let residents = living(state).filter(|c| c.home_id == home.id).count();
         let free = home.beds as f64 - residents as f64;
         if free > best_free {

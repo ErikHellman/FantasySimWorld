@@ -14,6 +14,7 @@ The move of the simulation, the language model and all state to a Rust server wi
 The server migration is complete. The world, the language-model brain and every piece of state live in the Rust server (`server/`); the browser is a viewer that draws the server's event stream (`src/`). What works today:
 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
+- House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.

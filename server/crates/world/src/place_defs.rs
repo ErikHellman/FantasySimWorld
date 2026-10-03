@@ -30,15 +30,17 @@ pub enum ActivityId {
     Mourn,
     Stroll,
     ReadBoard,
+    Rebuild,
 }
 
 impl ActivityId {
-    pub const ALL: [ActivityId; 20] = [
+    pub const ALL: [ActivityId; 21] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
-        Brew, Mourn, Stroll, ReadBoard,
+        Brew, Mourn, Stroll, ReadBoard, Rebuild,
     ];
 
-    /// What a mind may choose: everything but reading a billboard, which only the routine sends people to.
+    /// What a mind may always choose: everything but reading a billboard, which only the routine sends people
+    /// to, and rebuilding, which is only there to choose while a house lies in ruins.
     pub const OFFERED: [ActivityId; 19] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
         Brew, Mourn, Stroll,
@@ -66,6 +68,7 @@ impl ActivityId {
             Mourn => "mourn",
             Stroll => "stroll",
             ReadBoard => "read_board",
+            Rebuild => "rebuild",
         }
     }
 

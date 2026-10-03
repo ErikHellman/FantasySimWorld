@@ -10,13 +10,14 @@ use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Character, Conversation, ConversationLine, Memory, MonsterPhase, Relationship, SimState, TalkTone,
+    Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Relationship, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
+use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
-use fsw_world::places::{ActivityId, PlaceKind, places};
+use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
 
 use crate::llm::types::{ChatMessage, ToolDef};
 use crate::retrieval::{Cue, retrieve, since};
@@ -293,10 +294,56 @@ fn place_list() -> String {
     format!("Places: {}, home.", names.join(", "))
 }
 
+/// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
+/// over to it while a house lies in ruins.
 fn activity_list() -> String {
-    let items: Vec<String> =
-        ActivityId::OFFERED.iter().map(|id| format!("{} ({})", id.as_str(), activity(*id).label)).collect();
+    activities(&ActivityId::OFFERED)
+}
+
+/// What can be done right now: the usual activities, and rebuilding while a house lies in ruins.
+fn doable_list(state: &SimState) -> String {
+    let mut offered = ActivityId::OFFERED.to_vec();
+    if fire::ruin(state).is_some() {
+        offered.push(ActivityId::Rebuild);
+    }
+    activities(&offered)
+}
+
+fn activities(offered: &[ActivityId]) -> String {
+    let items: Vec<String> = offered.iter().map(|id| format!("{} ({})", id.as_str(), activity(*id).label)).collect();
     format!("Activities: {}.", items.join("; "))
+}
+
+/// The houses that are burning or in ruins, and whether one of them is this character's own. Empty when
+/// every house stands.
+fn fire_lines(state: &SimState, c: &Character) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (place_id, house) in &state.houses {
+        let Some(place) = find_place(place_id) else { continue };
+        let name = capitalise(place.name);
+        let mine = c.home_id == *place_id;
+        lines.push(match house.phase {
+            HousePhase::Burning if mine => {
+                format!("Your home, {}, is on fire! Everyone is carrying water to put it out.", place.name)
+            }
+            HousePhase::Burning => format!("{name} is on fire! Everyone is carrying water to put it out."),
+            HousePhase::Ruined => {
+                let percent = js_round(fire::built_fraction(house) * 100.0);
+                let whose = if mine {
+                    format!("Your home, {}, burned to the ground: you sleep rough by the campfire", place.name)
+                } else {
+                    format!("{name} burned to the ground")
+                };
+                format!("{whose}. The village is rebuilding it ({percent}% done).")
+            }
+        });
+    }
+    lines
+}
+
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
 }
 
 fn header(state: &SimState, c: &Character) -> String {
@@ -317,7 +364,7 @@ fn header(state: &SimState, c: &Character) -> String {
         let nearest = monsters.iter().map(|m| dist(m.pos, c.pos)).fold(f64::INFINITY, f64::min);
         format!("The dead are abroad: {} of them, the nearest {} paces from you.", monsters.len(), js_round(nearest))
     };
-    [
+    let mut lines = vec![
         format!(
             "It is day {}, {} ({}). You are at {}, {}.",
             time.day,
@@ -332,8 +379,9 @@ fn header(state: &SimState, c: &Character) -> String {
             if c.drunk(state.tick) { ", and drunk" } else { "" }
         ),
         danger,
-    ]
-    .join("\n")
+    ];
+    lines.extend(fire_lines(state, c));
+    lines.join("\n")
 }
 
 /// Everyone else: those within sight, and those elsewhere who matter most first.
@@ -495,7 +543,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prom
                     String::new()
                 },
             ),
-            section(0, format!("{}\n{}", place_list(), activity_list())),
+            section(0, format!("{}\n{}", place_list(), doable_list(state))),
             section(
                 0,
                 format!(
@@ -979,6 +1027,33 @@ mod tests {
             sim.step();
         }
         sim.state
+    }
+
+    #[test]
+    fn prompts_tell_of_a_burning_house_and_of_a_ruin_to_rebuild() {
+        use fsw_sim::state::House;
+        let mut state = world();
+        let home = state.characters["c3"].home_id.clone();
+        let other = state.characters.values().find(|c| c.home_id != home).unwrap().id.clone();
+        assert!(!prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500)).contains("rebuild"));
+
+        let house = |phase, built| House { phase, fire: 40.0, built, since_tick: 0, helpers: Vec::new() };
+        state.houses.insert(home.clone(), house(HousePhase::Burning, 0.0));
+        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500));
+        assert!(text.contains("is on fire! Everyone is carrying water to put it out."), "{text}");
+        assert!(text.contains("Your home, "));
+        assert!(!text.contains("rebuild ("));
+
+        state.houses.insert(home.clone(), house(HousePhase::Ruined, fire::REBUILD_WORK * 0.35));
+        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500));
+        assert!(text.contains("burned to the ground: you sleep rough by the campfire"), "{text}");
+        assert!(text.contains("The village is rebuilding it (35% done)."), "{text}");
+        assert!(text.contains("; rebuild (help rebuild the house that burned down)."), "{text}");
+        let text = prompt_text(&decide_prompt(&state, &state.characters[&other], 1500));
+        assert!(text.contains(" burned to the ground. The village is rebuilding it (35% done)."), "{text}");
+        assert!(!text.contains("Your home, "));
+        // A plan for the day is made of the usual activities; the routine sees to the rebuilding.
+        assert!(!prompt_text(&plan_prompt(&state, &state.characters["c3"], 900)).contains("rebuild ("));
     }
 
     #[test]

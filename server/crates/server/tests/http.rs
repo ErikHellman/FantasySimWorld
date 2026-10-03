@@ -135,7 +135,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":2"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":3"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.

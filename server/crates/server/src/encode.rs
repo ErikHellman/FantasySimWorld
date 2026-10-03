@@ -18,16 +18,18 @@ use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, Character, ChronicleEntry as SimChronicleEntry, ChronicleKind as SimChronicleKind, Corpse,
-    Grave as SimGrave, IntentAction, Look as SimLook, Monster, SimState, VoiceProfile as SimVoice,
+    Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, Look as SimLook, Monster, SimState,
+    VoiceProfile as SimVoice,
 };
 use fsw_sim::systems::billboards::shown;
+use fsw_sim::systems::fire::built_fraction;
 use fsw_sim::util::first_name;
-use fsw_world::places::{billboards, get_place};
+use fsw_world::places::{billboards, find_place, get_place};
 use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, ChronicleEntry, ChronicleKind, Dyn, DynDelta, Emote, Entity, EntityKind, EntityStatic,
-    Grave, Look, Ranged, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
+    Grave, House, HousePhase, Look, Ranged, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -226,6 +228,7 @@ pub fn chronicle_kind(kind: SimChronicleKind) -> ChronicleKind {
         SimChronicleKind::Combat => ChronicleKind::Combat,
         SimChronicleKind::Death => ChronicleKind::Death,
         SimChronicleKind::Arrival => ChronicleKind::Arrival,
+        SimChronicleKind::Fire => ChronicleKind::Fire,
     }
 }
 
@@ -246,6 +249,25 @@ pub fn grave_of(grave: &SimGrave) -> Grave {
         day: grave.day as u32,
         cause: grave.cause.clone(),
     }
+}
+
+/// The homes that are burning or in ruins, as viewers are told of them.
+pub fn houses_of(state: &SimState) -> Vec<House> {
+    state
+        .houses
+        .iter()
+        .map(|(id, house)| House {
+            id: id.clone(),
+            name: find_place(id).map_or(id.clone(), |place| place.name.into()),
+            phase: match house.phase {
+                SimHousePhase::Burning => HousePhase::Burning,
+                SimHousePhase::Ruined => HousePhase::Ruin,
+            },
+            // Coarse steps, so a fire is a handful of events rather than one a second.
+            fire: (js_round(house.fire.clamp(0.0, 100.0) / 5.0) * 5.0) as u8,
+            built: (built_fraction(house) * 100.0).floor() as u8,
+        })
+        .collect()
 }
 
 pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
@@ -379,6 +401,7 @@ pub struct Tracker {
     known: IndexMap<String, Entity>,
     graves: Vec<String>,
     billboards: Vec<Billboard>,
+    houses: Vec<House>,
 }
 
 impl Tracker {
@@ -392,6 +415,7 @@ impl Tracker {
         self.known = entities_of(state).into_iter().map(|e| (e.fixed.id.clone(), e)).collect();
         self.graves = state.graves.iter().map(grave_key).collect();
         self.billboards = billboards_of(state);
+        self.houses = houses_of(state);
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -402,6 +426,11 @@ impl Tracker {
     /// What viewers have been told every billboard shows (for a snapshot).
     pub fn billboards(&self) -> Vec<Billboard> {
         self.billboards.clone()
+    }
+
+    /// What viewers have been told of the homes that do not stand whole (for a snapshot).
+    pub fn houses(&self) -> Vec<House> {
+        self.houses.clone()
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -443,6 +472,22 @@ impl Tracker {
                 *before = now.clone();
                 frame.ev.push(WireEvent::Billboard { billboard: now });
             }
+        }
+        // Nor is a house catching fire, burning on, falling in ruins or being rebuilt.
+        if !(state.houses.is_empty() && self.houses.is_empty()) {
+            let now = houses_of(state);
+            for house in &now {
+                if !self.houses.contains(house) {
+                    frame.ev.push(WireEvent::House { house: house.clone() });
+                }
+            }
+            for before in &self.houses {
+                if !now.iter().any(|house| house.id == before.id) {
+                    let whole = House { phase: HousePhase::Intact, fire: 0, built: 100, ..before.clone() };
+                    frame.ev.push(WireEvent::House { house: whole });
+                }
+            }
+            self.houses = now;
         }
         frame
     }
@@ -546,6 +591,47 @@ mod tests {
             |e| matches!(e, WireEvent::Billboard { billboard } if billboard.text == "Cheese!" && billboard.custom)
         ));
         assert_eq!(tracker.billboards(), billboards_of(&sim.state));
+    }
+
+    #[test]
+    fn houses_are_announced_as_they_burn_fall_and_rise_again() {
+        use fsw_sim::state::{House as SimHouse, HousePhase as SimPhase};
+        let mut sim = Sim::new(create_state(3));
+        let mut tracker = Tracker::new(&sim.state);
+        let houses = |frame: &TickFrame| -> Vec<House> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::House { house } = e { Some(house.clone()) } else { None })
+                .collect()
+        };
+        assert!(houses(&tracker.frame(&sim.state, &[])).is_empty());
+
+        let burning = SimHouse { phase: SimPhase::Burning, fire: 21.0, built: 0.0, since_tick: 0, helpers: Vec::new() };
+        sim.state.houses.insert("home_1".into(), burning);
+        let told = houses(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told.len(), 1);
+        assert_eq!((told[0].id.as_str(), told[0].phase, told[0].fire), ("home_1", HousePhase::Burning, 20));
+        assert_eq!(told[0].name, "the red cottage");
+        // A little more fire is not news; a step of five is.
+        sim.state.houses["home_1"].fire = 22.0;
+        assert!(houses(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.houses["home_1"].fire = 23.0;
+        assert_eq!(houses(&tracker.frame(&sim.state, &[]))[0].fire, 25);
+
+        let house = &mut sim.state.houses["home_1"];
+        house.phase = SimPhase::Ruined;
+        house.fire = 0.0;
+        house.built = fsw_sim::systems::fire::REBUILD_WORK / 2.0;
+        let told = houses(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].phase, told[0].built), (HousePhase::Ruin, 50));
+        assert_eq!(tracker.houses(), houses_of(&sim.state));
+
+        sim.state.houses.clear();
+        let told = houses(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].id.as_str(), told[0].phase), ("home_1", HousePhase::Intact));
+        assert!(tracker.houses().is_empty());
+        assert!(houses(&tracker.frame(&sim.state, &[])).is_empty());
     }
 
     #[test]

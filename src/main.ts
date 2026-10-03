@@ -22,7 +22,7 @@ import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setClock, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setClock, setHouse, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -135,6 +135,7 @@ async function start(): Promise<void> {
       if (event.type === 'chronicle') addChronicle(event.entry);
       else if (event.type === 'grave') addGrave(event.grave);
       else if (event.type === 'billboard') setBillboard(event.billboard);
+      else if (event.type === 'house') setHouse(event.house);
     }
     speech.handle(events);
     if (!fast) {
@@ -223,6 +224,7 @@ async function start(): Promise<void> {
     return you.name;
   };
 
+  const burning = (): boolean => ui.houses.value.some((house) => house.phase === 'burning');
   const updateMusic = (hour: number): void => {
     const spot = listener();
     let monstersNear = 0;
@@ -231,7 +233,7 @@ async function start(): Promise<void> {
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
-    audio.music.setMood(mood.update({ hour, alarm: ui.alarm.value, monstersNear, selectedMood }, seconds()));
+    audio.music.setMood(mood.update({ hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood }, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);
     audio.music.update();
@@ -253,7 +255,7 @@ async function start(): Promise<void> {
     audioTimer += dt;
     if (audioTimer >= 0.5) {
       audioTimer = 0;
-      audio.mix(ambientLevels(ambient, hour, listener()));
+      audio.mix(ambientLevels(ambient, hour, listener(), [...world.houses.values()]));
       updateMusic(hour);
     }
     uiTimer += dt;

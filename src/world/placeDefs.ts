@@ -6,7 +6,7 @@
  */
 export type ActivityId =
   | 'eat' | 'drink' | 'sleep' | 'rest' | 'smith' | 'farm' | 'chop_wood' | 'fish' | 'mine'
-  | 'trade' | 'shop' | 'pray' | 'train' | 'forage' | 'watch' | 'relax' | 'brew' | 'mourn' | 'stroll' | 'read_board';
+  | 'trade' | 'shop' | 'pray' | 'train' | 'forage' | 'watch' | 'relax' | 'brew' | 'mourn' | 'stroll' | 'read_board' | 'rebuild';
 
 export type PlaceKind =
   | 'home' | 'tavern' | 'green' | 'market' | 'smithy' | 'chapel' | 'training' | 'farm' | 'lumber'

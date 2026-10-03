@@ -1,4 +1,4 @@
-import type { Billboard, Dyn, DynDelta, Entity, EntityKind, Grave, Look, Snapshot, TickFrame } from '../generated/api';
+import type { Billboard, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, TickFrame } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -55,7 +55,7 @@ function fromEntity(entity: Entity): ViewEntity {
 }
 
 /**
- * The world as this viewer has been told it: entities, graves and billboards, kept up to
+ * The world as this viewer has been told it: entities, graves, billboards and houses, kept up to
  * date by applying each tick frame in order. Everything else (roster, chronicle,
  * voices) goes to the HUD store.
  */
@@ -71,6 +71,10 @@ export class ViewWorld {
   readonly billboards = new Map<string, Billboard>();
   /** bumped when a billboard changes */
   billboardsVersion = 0;
+  /** the homes that are burning or in ruins, by place id; a home not here stands whole */
+  readonly houses = new Map<string, House>();
+  /** bumped when a house changes */
+  housesVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -82,9 +86,12 @@ export class ViewWorld {
     this.billboards.clear();
     for (const board of snapshot.billboards) this.billboards.set(board.id, board);
     this.billboardsVersion++;
+    this.houses.clear();
+    for (const house of snapshot.houses) this.houses.set(house.id, house);
+    this.housesVersion++;
   }
 
-  /** Applies one tick: additions, removals, changed fields, new graves and billboards. */
+  /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
   apply(frame: TickFrame): void {
     this.tick = frame.t;
     for (const entity of frame.add ?? []) this.entities.set(entity.static.id, fromEntity(entity));
@@ -95,6 +102,10 @@ export class ViewWorld {
       else if (event.type === 'billboard') {
         this.billboards.set(event.billboard.id, event.billboard);
         this.billboardsVersion++;
+      } else if (event.type === 'house') {
+        if (event.house.phase === 'intact') this.houses.delete(event.house.id);
+        else this.houses.set(event.house.id, event.house);
+        this.housesVersion++;
       }
     }
   }
