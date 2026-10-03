@@ -83,6 +83,7 @@ Source: `/Users/hellman/Documents/The Complete KayKit Collection v7` (CC0). The 
 | Blood feud | `attack` (lethal), only with a recent trigger, a temper roll, a global cooldown and a population floor |
 
 - At the yield moment the LLM chooses `spare` or `finish`; spare is the default on timeout. Witnesses lose affinity for an aggressor; apology, gifts and time de-escalate.
+- A profile's `spite` (0 to 1, 0 for nearly everyone; Garrick has 1) bends the ladder for that one villager. The spiteful pick quarrels with anyone who is not a real friend, grudge or no grudge, never apologise, let grudges cool half as fast, and may brawl from a grudge of 45 instead of a feud. The lethal rung is unchanged.
 
 ### Brain (`src/brain/`)
 

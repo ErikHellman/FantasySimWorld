@@ -46,6 +46,16 @@ pub const RUNG_GRUDGE: f64 = 40.0;
 pub const RUNG_FEUD: f64 = 65.0;
 pub const RUNG_BLOOD: f64 = 85.0;
 
+/// The grievance at which this character will come to blows: a feud, or a lesser grudge for the spiteful.
+pub fn brawl_threshold(c: &Character) -> f64 {
+    RUNG_FEUD - 20.0 * c.profile.spite
+}
+
+/// Whether `from` may start a fist fight with `to`. It only reads, so the brain can ask too.
+pub fn brawl_unlocked(from: &Character, to_id: &str) -> bool {
+    rel_or_default(from, to_id).grievance >= brawl_threshold(from)
+}
+
 pub fn rung_of(r: &Relationship) -> Rung {
     if r.grievance >= RUNG_BLOOD {
         Rung::BloodFeud
@@ -289,11 +299,13 @@ pub fn daily_relationships(ctx: &mut Ctx) {
         let others: Vec<Id> = ctx.cr(&id).relationships.keys().cloned().collect();
         for other in others {
             let c = ctx.c(&id);
-            let temper = c.profile.temper;
+            let (temper, spite) = (c.profile.temper, c.profile.spite);
             let r = &mut c.relationships[&other];
             if r.grievance > 0.0 {
+                // The spiteful nurse their grudges and let them cool only half as fast.
                 let recent = tick - r.last_offence_tick < TICKS_PER_DAY;
-                r.grievance = (r.grievance - (if recent { 0.5 } else { 1.8 }) * (1.0 - temper * 0.6)).max(0.0);
+                let cooling = (if recent { 0.5 } else { 1.8 }) * (1.0 - temper * 0.6) * (1.0 - spite * 0.5);
+                r.grievance = (r.grievance - cooling).max(0.0);
             }
             if ctx.alive(&other) {
                 relabel(ctx, &id, &other);

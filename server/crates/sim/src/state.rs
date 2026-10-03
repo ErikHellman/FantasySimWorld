@@ -64,7 +64,15 @@ pub struct Profile {
     pub bravery: f64,
     /// 0 solitary .. 1 gregarious
     pub sociability: f64,
+    /// 0 lets things go .. 1 goes looking for trouble: quarrels without a grudge, nurses grudges and
+    /// comes to blows sooner. Left out of saves at 0, so the old browser saves round-trip unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spite: f64,
     pub voice: VoiceProfile,
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

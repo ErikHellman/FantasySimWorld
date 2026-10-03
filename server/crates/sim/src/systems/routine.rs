@@ -13,7 +13,7 @@ use crate::state::{FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock,
 use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
-use crate::systems::relationships::{RUNG_FEUD, RUNG_GRUDGE, lethal_unlocked};
+use crate::systems::relationships::{RUNG_GRUDGE, brawl_unlocked, lethal_unlocked};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel};
 
 const SOCIAL_RADIUS: f64 = 15.0;
@@ -94,8 +94,11 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     let weights: Vec<f64> = candidates
         .iter()
         .map(|o| {
-            let r = rel(ctx.c(id), o);
-            1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance / 12.0
+            let c = ctx.c(id);
+            // The spiteful are drawn twice as hard to the people they resent.
+            let spite = c.profile.spite;
+            let r = rel(c, o);
+            1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance * (1.0 + spite) / 12.0
         })
         .collect();
     let index = rng::weighted_pick_index(&mut ctx.state.rng, &weights, |w| *w)?;
@@ -103,12 +106,20 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
 
     let c = ctx.c(id);
     let partner = c.partner_id.clone();
-    let temper = c.profile.temper;
+    let (temper, spite) = (c.profile.temper, c.profile.spite);
     let r = rel(c, &other).clone();
     let mut tone = TalkTone::Friendly;
     if r.grievance >= RUNG_GRUDGE && ctx.chance(0.35 + temper * 0.5) {
         tone = TalkTone::Hostile;
-    } else if r.grievance >= 22.0 && r.affinity > -30.0 && ctx.chance(0.12 + (1.0 - temper) * 0.25) {
+    } else if spite > 0.0 && !r.kin && r.affinity < 40.0 && ctx.chance(0.5 * spite) {
+        // Picking a quarrel with anyone who is not a real friend, grudge or no grudge. Only rolled
+        // for the spiteful, so everyone else draws from the RNG exactly as before.
+        tone = TalkTone::Hostile;
+    } else if r.grievance >= 22.0
+        && r.affinity > -30.0
+        && spite < 1.0
+        && ctx.chance((0.12 + (1.0 - temper) * 0.25) * (1.0 - spite))
+    {
         tone = TalkTone::Apology;
     } else if !r.kin
         && r.attraction >= 50.0
@@ -136,8 +147,10 @@ fn hostile_intent(ctx: &mut Ctx, id: &str) -> bool {
             continue;
         }
         let name = first_name(o).to_owned();
-        let r = rel(ctx.c(id), &other).clone();
-        if r.grievance < RUNG_FEUD {
+        let c = ctx.c(id);
+        let spite = c.profile.spite;
+        let r = rel(c, &other).clone();
+        if !brawl_unlocked(c, &other) {
             continue;
         }
         if lethal_unlocked(ctx, id, &other) && ctx.chance(0.04 * temper) {
@@ -151,7 +164,7 @@ fn hostile_intent(ctx: &mut Ctx, id: &str) -> bool {
             );
             return true;
         }
-        if tick - r.last_offence_tick < TICKS_PER_DAY * 2 && ctx.chance(0.07 * temper) {
+        if tick - r.last_offence_tick < TICKS_PER_DAY * 2 && ctx.chance(0.07 * temper + 0.06 * spite) {
             let line = format!("I have had enough of you, {name}!");
             start_fight(ctx, id, &other, FightMode::Brawl, IntentSource::Routine, Some(line));
             return true;
@@ -169,8 +182,9 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     let has_watch_tonight = tick < c.watch_until_tick;
     let on_watch = has_watch_tonight && !(5.2..20.5).contains(&hour);
 
-    // Starving comes before anything, even duty.
-    if c.needs.hunger < 12.0 || (c.needs.hunger < 24.0 && !on_watch) {
+    // Starving comes before anything, even duty. A guard with food in the pack eats before the next
+    // stretch of watch rather than after: one stretch can burn more than the last 12 points of hunger.
+    if c.needs.hunger < 12.0 || (c.needs.hunger < 24.0 && (!on_watch || c.inventory.food > 0)) {
         let hunger = c.needs.hunger;
         if c.inventory.food > 0 && (on_watch || hunger < 10.0 || ctx.chance(0.4)) {
             let c = ctx.c(id);
