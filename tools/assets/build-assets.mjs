@@ -5,18 +5,25 @@
 // - Environment models are merged into one GLB per bundle (one named node per model).
 // - Textures are stripped from every model and written once to public/assets/textures;
 //   each material keeps the texture id in extras.tex so the runtime can share materials.
+// - Geometry is welded, reordered and quantised, and every GLB is packed with meshopt compression
+//   (the page decodes it with three's MeshoptDecoder).
+// - The palette textures are shrunk: they are smooth swatches, so a quarter of the size shows the same colours.
+// - Every URL in the manifest carries a hash of its file (?v=…), since the server lets browsers keep /assets for a year.
 // - Animation files lose their mannequin meshes and are merged onto one skeleton per rig;
 //   a rig missing clips borrows them from another, retargeted by bone name.
 // - src/generated/assetManifest.ts lists everything, with bounds and clip durations.
 // - server/data/*.json carries the same manifest and the tile heights for the Rust server.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Document, NodeIO } from '@gltf-transform/core';
-import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { dedup, getBounds, mergeDocuments, prune, resample, unpartition } from '@gltf-transform/functions';
+import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
+import { dedup, getBounds, mergeDocuments, prune, quantize, reorder, resample, unpartition, weld } from '@gltf-transform/functions';
+import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
+import sharp from 'sharp';
 import { bundles, characters, extraTextures, rigs } from './asset-list.mjs';
 import { writeServerData } from './server-data.mjs';
 
@@ -34,13 +41,18 @@ const NO_GROUND = -128;
 const tileHeights = {};
 let bridgeHeights = '';
 const MODEL_PREFIX = 'M__';
+/** Palette textures are written no larger than this, in pixels along a side. */
+const TEXTURE_SIZE = 256;
 
 if (!fs.existsSync(ROOT)) {
   console.error(`KayKit collection not found at ${ROOT}. Set KAYKIT_DIR.`);
   process.exit(1);
 }
 
-const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+await Promise.all([MeshoptEncoder.ready, MeshoptDecoder.ready]);
+const io = new NodeIO()
+  .registerExtensions(ALL_EXTENSIONS)
+  .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 const quiet = { debug() {}, info() {}, warn() {}, error: console.error };
 io.setLogger?.(quiet);
 
@@ -150,6 +162,23 @@ function sampleHeights(root, grid) {
   return Buffer.from(data.buffer).toString('base64');
 }
 
+/**
+ * Makes a finished document small: shared vertices are welded, geometry is put
+ * in a cache-friendly order and stored as short integers, and the file is
+ * packed with meshopt. `volume` is 'scene' for skinned models, whose parts
+ * share one skeleton and so must share one quantisation grid.
+ */
+async function compress(doc, volume = 'mesh') {
+  await doc.transform(weld(), reorder({ encoder: MeshoptEncoder }), quantize({ quantizationVolume: volume }));
+  doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+}
+
+/** Writes a file under public/ and returns its URL with a hash of the content, so a rebuilt file is fetched afresh. */
+function versioned(rel, bytes) {
+  fs.writeFileSync(path.join(REPO, 'public', rel), bytes);
+  return `${rel}?v=${crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 10)}`;
+}
+
 function boundsOf(node) {
   const { min, max } = getBounds(node);
   return [...min, ...max].map((n) => round(n));
@@ -199,9 +228,9 @@ async function buildBundle(bundle) {
     scene.dispose();
   }
   await out.transform(dedup(), prune({ keepLeaves: true, keepAttributes: true }), unpartition());
+  await compress(out);
 
-  const url = `assets/bundles/${bundle.id}.glb`;
-  await io.write(path.join(REPO, 'public', url), out);
+  const url = versioned(`assets/bundles/${bundle.id}.glb`, await io.writeBinary(out));
   return { url, models };
 }
 
@@ -214,8 +243,8 @@ async function buildCharacter(character) {
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
   const { max } = getBounds(scene);
   await doc.transform(prune({ keepLeaves: true, keepAttributes: true }), unpartition());
-  const url = `assets/characters/${character.id}.glb`;
-  await io.write(path.join(REPO, 'public', url), doc);
+  await compress(doc, 'scene');
+  const url = versioned(`assets/characters/${character.id}.glb`, await io.writeBinary(doc));
   const scale = character.scale ?? 1;
   return { url, texture, height: round(max[1] * scale, 2), rig: character.rig ?? 'medium', scale };
 }
@@ -355,13 +384,13 @@ async function buildRig(rig, built) {
   }
 
   await out.transform(resample(), prune({ keepLeaves: true, keepAttributes: true }), dedup(), unpartition());
-  const url = `assets/animations/rig-${rig.id}.glb`;
-  await io.write(path.join(REPO, 'public', url), out);
+  out.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+  const url = versioned(`assets/animations/rig-${rig.id}.glb`, await io.writeBinary(out));
   return { doc: out, nodes: nodesByName(out), entry: { url, clips } };
 }
 
 function fileSize(rel) {
-  return fs.statSync(path.join(REPO, 'public', rel)).size;
+  return fs.statSync(path.join(REPO, 'public', rel.replace(/\?.*$/, ''))).size;
 }
 
 async function main() {
@@ -402,10 +431,13 @@ async function main() {
 
   for (const extra of extraTextures) textures.set(extra.id, fs.readFileSync(path.join(ROOT, extra.file)));
   for (const [id, bytes] of [...textures].sort(([a], [b]) => a.localeCompare(b))) {
-    const url = `assets/textures/${id}.png`;
-    fs.writeFileSync(path.join(REPO, 'public', url), bytes);
-    manifest.textures[id] = url;
-    total += bytes.length;
+    // Nearest-neighbour keeps each swatch's edge sharp; a smoothing filter would smear neighbouring colours into it.
+    const small = await sharp(bytes)
+      .resize(TEXTURE_SIZE, TEXTURE_SIZE, { kernel: 'nearest', withoutEnlargement: true })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    manifest.textures[id] = versioned(`assets/textures/${id}.png`, small);
+    total += small.length;
   }
   console.log(`textures: ${textures.size}`);
 

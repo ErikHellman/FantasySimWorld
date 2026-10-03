@@ -50,7 +50,7 @@ export class ActorView {
   private held: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };
   private heldId: { r: string | null; l: string | null } = { r: null, l: null };
   private readonly model: THREE.Object3D;
-  private skeleton: THREE.Skeleton | null = null;
+  private readonly skeletons = new Map<THREE.Matrix4[], THREE.Skeleton>();
   private readonly bounds = new THREE.Sphere();
   /** animation time that passed while out of view, owed to the mixer */
   private unplayed = 0;
@@ -75,10 +75,12 @@ export class ActorView {
         if (look.hide.includes(mesh.name)) mesh.visible = false;
       }
       // Cloning gives every part of the body its own skeleton over the same bones; one is enough to update and upload.
+      // (A clone keeps its template's list of inverses, which tells parts of one skin from parts of another.)
       const skinned = object as THREE.SkinnedMesh;
       if (skinned.isSkinnedMesh) {
-        if (!this.skeleton) this.skeleton = skinned.skeleton;
-        else skinned.bind(this.skeleton, skinned.bindMatrix);
+        const shared = this.skeletons.get(skinned.skeleton.boneInverses);
+        if (shared) skinned.bind(shared, skinned.bindMatrix);
+        else this.skeletons.set(skinned.skeleton.boneInverses, skinned.skeleton);
       }
     });
     this.model = model;
@@ -183,7 +185,7 @@ export class ActorView {
   dispose(): void {
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.model);
-    this.skeleton?.dispose();
+    for (const skeleton of this.skeletons.values()) skeleton.dispose();
     this.root.removeFromParent();
   }
 }
