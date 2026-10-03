@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
-import { actions, ui, type CharacterDetail, type RelationRow } from './store';
+import { actions, closeSheet, ui, type CharacterDetail, type RelationRow } from './store';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -109,7 +109,8 @@ export function Inspector() {
   if (!d) return null;
   return (
     <aside class="panel inspector">
-      <button class="close" title="Close (Esc)" onClick={() => actions.select(null)}>×</button>
+      {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
+      <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
       <h2>{d.name}</h2>
       <p class="subtitle">{d.occupation} · {d.age} · {d.pronouns}</p>
       <p class="status">{d.status}</p>

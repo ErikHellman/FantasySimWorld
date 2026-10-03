@@ -1,4 +1,5 @@
 import { Fragment, type ComponentChildren } from 'preact';
+import { isTouchScreen } from './layout';
 import { isAdmin, ui } from './store';
 
 /** One control: the keys or mouse movement on the left, what it does on the right. */
@@ -21,6 +22,7 @@ function Control({ keys, children }: { keys: readonly string[]; children: Compon
 /** How to watch the village and what the things on screen mean. Opened from the top bar or with the ? key. */
 export function HelpPanel() {
   const admin = isAdmin();
+  const phone = ui.mobile.value;
   const close = (): void => {
     ui.panel.value = 'none';
   };
@@ -34,30 +36,63 @@ export function HelpPanel() {
           what happens; you can only look around, follow the villagers and talk with the other people watching.
         </p>
 
-        <h3>Moving the camera</h3>
-        <dl class="controls">
-          <Control keys={['Drag', 'W A S D', 'Arrow keys']}>Move around the valley</Control>
-          <Control keys={['Scroll']}>Zoom in and out</Control>
-          <Control keys={['Right-drag', 'Q / E']}>Turn the view</Control>
-          <Control keys={['Shift + scroll', 'R / F']}>Tilt, from low over the ground to straight down (right-drag up and down does it too)</Control>
-        </dl>
+        {isTouchScreen() && (
+          <>
+            <h3>With your fingers</h3>
+            <dl class="controls">
+              <Control keys={['One-finger drag']}>Move around the valley</Control>
+              <Control keys={['Pinch']}>Zoom in and out</Control>
+              <Control keys={['Two-finger twist']}>Turn the view</Control>
+              <Control keys={['Two fingers up or down']}>Tilt, from low over the ground to straight down</Control>
+              <Control keys={['Tap']}>
+                {phone
+                  ? 'Tap a villager, a name in the villager list or a line in the chronicle to follow them; tap the “Following” chip for their page'
+                  : 'Tap a villager, a name in the villager list or a line in the chronicle to follow them and open their page'}
+              </Control>
+            </dl>
+          </>
+        )}
 
-        <h3>Following someone</h3>
-        <dl class="controls">
-          <Control keys={['Click']}>Click a villager, a name in the villager list or a line in the chronicle to follow them and open their page</Control>
-          <Control keys={['Esc']}>Stop following and close their page (or close an open window)</Control>
-        </dl>
+        {!phone && (
+          <>
+            <h3>Moving the camera</h3>
+            <dl class="controls">
+              <Control keys={['Drag', 'W A S D', 'Arrow keys']}>Move around the valley</Control>
+              <Control keys={['Scroll']}>Zoom in and out</Control>
+              <Control keys={['Right-drag', 'Q / E']}>Turn the view</Control>
+              <Control keys={['Shift + scroll', 'R / F']}>Tilt, from low over the ground to straight down (right-drag up and down does it too)</Control>
+            </dl>
+
+            <h3>Following someone</h3>
+            <dl class="controls">
+              <Control keys={['Click']}>Click a villager, a name in the villager list or a line in the chronicle to follow them and open their page</Control>
+              <Control keys={['Esc']}>Stop following and close their page (or close an open window)</Control>
+            </dl>
+          </>
+        )}
         <p class="muted">The camera keeps following until you move it yourself.</p>
 
-        <h3>Other keys</h3>
-        <dl class="controls">
-          <Control keys={['?', 'H']}>Open or close this help</Control>
-          <Control keys={['Enter']}>Send a chat message (Shift + Enter for a new line)</Control>
-          {admin && <Control keys={['Space']}>Pause or resume the world, for everyone</Control>}
-          {admin && <Control keys={['1', '2', '3']}>Run the world at 1×, 2× or 4×, for everyone</Control>}
-        </dl>
+        {!phone && (
+          <>
+            <h3>Other keys</h3>
+            <dl class="controls">
+              <Control keys={['?', 'H']}>Open or close this help</Control>
+              <Control keys={['Enter']}>Send a chat message (Shift + Enter for a new line)</Control>
+              {admin && <Control keys={['Space']}>Pause or resume the world, for everyone</Control>}
+              {admin && <Control keys={['1', '2', '3']}>Run the world at 1×, 2× or 4×, for everyone</Control>}
+            </dl>
+          </>
+        )}
 
         <h3>On the screen</h3>
+        {phone ? (
+          <ul class="help-list">
+            <li><strong>Top</strong>: the day and time, and 💀 when monsters are abroad.</li>
+            <li><strong>Tabs</strong> along the bottom (down the side when the phone lies on its side): 👥 the villagers, 📜 the chronicle and what they have said, 💬 the chat, 👤 the villager you follow, and ☰ for how many are watching, the language model, the graveyard, settings and this help. One pane opens at a time; tap its tab again or tap the world to put it away.</li>
+            <li><strong>Following</strong>: the chip above the tabs names the villager the camera follows. Tap it for their page, ✕ to let them go.</li>
+            <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs and what they carry; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
+          </ul>
+        ) : (
         <ul class="help-list">
           <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, monsters abroad 💀 and the graveyard 🪦 (click it to read the names). 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹.</li>
@@ -65,6 +100,7 @@ export function HelpPanel() {
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs and what they carry; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
         </ul>
+        )}
 
         <h3>How the village works</h3>
         <ul class="help-list">

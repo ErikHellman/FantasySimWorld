@@ -15,10 +15,11 @@ import { backendFromUrl, createRenderer, fitRenderer } from './render/renderer';
 import { WorldView } from './render/scene';
 import { SpeechBus } from './speech/speechBus';
 import { App } from './ui/App';
+import { watchLayout } from './ui/layout';
 import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
-  actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
+  actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
   loadChatSettings, saveAudioSettings, saveChatSettings, setClock, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
@@ -34,6 +35,7 @@ const toLogin = (): void => location.replace(`/login?return_to=${encodeURICompon
 /** The world is drawn from the server's stream: this page only renders, plays sound and shows the HUD. */
 async function start(): Promise<void> {
   const root = document.getElementById('ui') as HTMLElement;
+  watchLayout();
   const params = new URLSearchParams(location.search);
   if (location.pathname === '/login') {
     render(h(Login, { returnTo: params.get('return_to') ?? '/', error: params.get('error') }), root);
@@ -182,7 +184,12 @@ async function start(): Promise<void> {
     // Each connection asks for the name this browser chose, so the chat says it joined under that name.
   }, () => loadChatSettings().name);
 
-  view.rig.onClick = (event) => select(view.pick(event.clientX, event.clientY));
+  view.rig.onClick = (event) => {
+    // On a phone, a tap on the world first puts away the open pane, so the view is back without changing who is followed.
+    if (ui.mobile.value && ui.sheet.value !== 'none') return closeSheet();
+    // A fingertip covers more of the screen than a mouse pointer, so a tap reaches a little further.
+    select(view.pick(event.clientX, event.clientY, event.pointerType === 'touch' ? 64 : 46));
+  };
   actions.select = select;
   actions.start = () => {
     ui.started.value = true;
@@ -240,6 +247,7 @@ async function start(): Promise<void> {
       uiTimer = 0;
       setClock(world.tick);
     }
+    view.rig.setInset(ui.covered.value.right, ui.covered.value.bottom);
     if (!handle) {
       view.rig.resize(canvas.clientWidth || 1, canvas.clientHeight || 1);
       view.frame(dt, simDt, alpha, hour);

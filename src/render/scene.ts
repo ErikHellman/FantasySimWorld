@@ -155,11 +155,11 @@ export class WorldView {
     this.overlay.update(labels, this.rig.camera, this.rig.distance, this.canvas.clientWidth, this.canvas.clientHeight);
   }
 
-  /** The character nearest to a screen point, if any is close enough to count as clicked. */
-  pick(clientX: number, clientY: number): string | null {
+  /** The character nearest to a screen point, if any is within `radius` pixels of it and so counts as clicked. */
+  pick(clientX: number, clientY: number, radius = 46): string | null {
     const rect = this.canvas.getBoundingClientRect();
     let best: string | null = null;
-    let bestDistance = 46;
+    let bestDistance = radius;
     for (const [id, actor] of this.actors) {
       if (actor.entity.kind !== 'villager' || !actor.entity.visible) continue;
       const position = actor.view.root.position;
