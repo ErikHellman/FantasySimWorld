@@ -53,6 +53,8 @@ export const ui = {
   loading: signal<string | null>('Loading the valley…'),
   started: signal(false),
   backend: signal(''),
+  /** the picture's quality tier, `high` or `low` */
+  quality: signal(''),
   /** who is watching; null until /api/me answers */
   me: signal<Me | null>(null),
   connection: signal<ConnectionState>('connecting'),

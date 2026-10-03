@@ -591,3 +591,9 @@ html.mobile {
   .mobile .sheet { left: auto; top: 6px; right: calc(var(--rail-w) + 6px); bottom: 6px; width: min(380px, 55%); height: auto; max-height: none; }
   .mobile .follow-chip { left: calc(50% - var(--rail-w) / 2); bottom: max(10px, env(safe-area-inset-bottom)); }
 }
+
+/* A blur behind a panel has to be redone on every frame of the moving 3D picture, which a phone's GPU feels; a denser panel reads as well. */
+@media (pointer: coarse) {
+  :root { --panel: rgba(22, 26, 38, 0.94); }
+  .panel, .tabbar { backdrop-filter: none; }
+}

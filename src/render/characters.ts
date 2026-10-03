@@ -7,6 +7,11 @@ import { ANIMS, type AnimDef, type AnimId, clipSeconds } from './anims';
 import type { Assets } from './assets';
 
 const FADE_SECONDS = 0.18;
+/**
+ * How far outside the view a character is still drawn, in metres: enough for
+ * a swung weapon and for the shadow it throws into the picture at a low sun.
+ */
+const CULL_MARGIN = 6;
 
 export type ActorLook = Look;
 
@@ -44,6 +49,11 @@ export class ActorView {
   private readonly hands: { r: THREE.Object3D | null; l: THREE.Object3D | null };
   private held: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };
   private heldId: { r: string | null; l: string | null } = { r: null, l: null };
+  private readonly model: THREE.Object3D;
+  private skeleton: THREE.Skeleton | null = null;
+  private readonly bounds = new THREE.Sphere();
+  /** animation time that passed while out of view, owed to the mixer */
+  private unplayed = 0;
 
   constructor(private readonly assets: Assets, look: ActorLook) {
     const template = assets.character(look.model);
@@ -61,10 +71,17 @@ export class ActorView {
       if (mesh.isMesh) {
         mesh.castShadow = true;
         mesh.receiveShadow = false;
-        mesh.frustumCulled = false; // skinned bounds are the bind pose; the root is culled instead
+        mesh.frustumCulled = false; // skinned bounds are the bind pose; update() culls the whole model instead
         if (look.hide.includes(mesh.name)) mesh.visible = false;
       }
+      // Cloning gives every part of the body its own skeleton over the same bones; one is enough to update and upload.
+      const skinned = object as THREE.SkinnedMesh;
+      if (skinned.isSkinnedMesh) {
+        if (!this.skeleton) this.skeleton = skinned.skeleton;
+        else skinned.bind(this.skeleton, skinned.bindMatrix);
+      }
     });
+    this.model = model;
     this.root.add(model);
     this.mixer = new THREE.AnimationMixer(model);
     this.hands = { r: model.getObjectByName('handslotr') ?? null, l: model.getObjectByName('handslotl') ?? null };
@@ -136,6 +153,7 @@ export class ActorView {
     this.hold('l', snapshot.offHand);
     if (snapshot.anim !== this.anim || snapshot.animSeq !== this.animSeq) {
       this.play(snapshot.anim, this.fresh);
+      this.unplayed = 0;
       this.anim = snapshot.anim;
       this.animSeq = snapshot.animSeq;
     }
@@ -143,17 +161,29 @@ export class ActorView {
   }
 
   /** Called every frame; alpha is how far we are between the last two ticks. */
-  update(dt: number, alpha: number, heightAt: (x: number, z: number) => number): void {
+  update(dt: number, alpha: number, heightAt: (x: number, z: number) => number, frustum: THREE.Frustum): void {
     if (!this.root.visible) return;
     const x = lerp(this.prev.x, this.next.x, alpha);
     const z = lerp(this.prev.z, this.next.z, alpha);
-    this.root.position.set(x, heightAt(x, z), z);
+    const y = heightAt(x, z);
+    this.root.position.set(x, y, z);
     this.root.rotation.y = lerpAngle(this.prev.facing, this.next.facing, alpha);
-    this.mixer.update(dt);
+    // Out of view, neither the body nor its animation is worth the work; the clip catches up when it comes back.
+    this.bounds.center.set(x, y + this.height / 2, z);
+    this.bounds.radius = this.height + CULL_MARGIN;
+    this.model.visible = frustum.intersectsSphere(this.bounds);
+    if (!this.model.visible) {
+      this.unplayed += dt;
+      return;
+    }
+    this.mixer.update(dt + this.unplayed);
+    this.unplayed = 0;
   }
 
   dispose(): void {
     this.mixer.stopAllAction();
+    this.mixer.uncacheRoot(this.model);
+    this.skeleton?.dispose();
     this.root.removeFromParent();
   }
 }

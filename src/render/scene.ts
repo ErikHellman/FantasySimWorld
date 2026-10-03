@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import type { WireEvent } from '../generated/api';
 import type { ViewEntity, ViewWorld } from '../net/viewWorld';
-import { billboards, getPlace, places } from '../world/places';
-import { scatter } from '../world/scatter';
+import { billboards, getPlace, places, type PlacedModel } from '../world/places';
+import { GROUND_COVER, scatter } from '../world/scatter';
 import type { Assets } from './assets';
 import { Billboards } from './billboards';
 import { CameraRig } from './camera';
@@ -11,6 +11,7 @@ import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
 import { Lighting } from './lighting';
 import { Overlay, type LabelState } from './overlay';
+import type { QualitySettings } from './quality';
 import { SceneryBuilder } from './scenery';
 import { Terrain } from './terrain';
 
@@ -41,22 +42,32 @@ export class WorldView {
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
+  private readonly frustum = new THREE.Frustum();
+  private readonly viewProjection = new THREE.Matrix4();
   selectedId: string | null = null;
 
-  constructor(private readonly assets: Assets, private readonly canvas: HTMLCanvasElement, overlayElement: HTMLElement) {
+  constructor(private readonly assets: Assets, private readonly canvas: HTMLCanvasElement, overlayElement: HTMLElement, quality: QualitySettings) {
     this.rig = new CameraRig(canvas);
-    this.lighting = new Lighting(this.scene);
+    this.lighting = new Lighting(this.scene, quality);
     this.overlay = new Overlay(overlayElement);
     this.effects = new Effects(assets);
 
     const builder = new SceneryBuilder();
     this.terrain = new Terrain(assets, builder);
-    for (const model of [...places.flatMap((place) => place.models), ...scatter.models]) {
+    const place = (model: PlacedModel, castShadow: boolean): void => {
       builder.add(assets.model(model.bundle, model.model), {
-        x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale,
+        x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale, castShadow,
       });
+    };
+    for (const model of places.flatMap((entry) => entry.models)) place(model, true);
+    // Grass, flowers and the like are most of the valley's triangles; their shadows are specks nobody would miss.
+    // A small machine draws only some of them, the same ones every time.
+    let cover = 0;
+    for (const model of scatter.models) {
+      if (!GROUND_COVER.has(model.model)) place(model, true);
+      else if (cover++ % quality.groundCoverStep === 0) place(model, false);
     }
-    this.billboards = new Billboards(billboards, this.heightAt);
+    this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.scene.add(builder.build(), this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
@@ -140,9 +151,13 @@ export class WorldView {
     this.lighting.update(hour, this.rig.target, this.rig.distance);
     this.effects.update(simDt);
 
+    const camera = this.rig.camera;
+    this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.viewProjection, camera.coordinateSystem, camera.reversedDepth);
+
     const labels: LabelState[] = [];
     for (const [id, actor] of this.actors) {
-      actor.view.update(simDt, alpha, this.heightAt);
+      actor.view.update(simDt, alpha, this.heightAt, this.frustum);
       const entity = actor.entity;
       if (!entity.name) continue; // corpses have no label
       const position = actor.view.root.position;

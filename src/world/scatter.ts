@@ -23,6 +23,9 @@ const FLOWERS = ['flowers_red', 'flowers_yellow', 'flowers_violet', 'flowers_mix
 const MUSHROOMS = ['mushrooms_red', 'mushrooms_brown'];
 const WATER_PLANTS = ['waterlily_A', 'waterlily_B', 'waterplant_A', 'waterplant_B', 'waterplant_C'];
 
+/** Scatter that lies too low to throw a shadow worth drawing; the renderer leaves it out of the shadow pass. */
+export const GROUND_COVER: ReadonlySet<string> = new Set([...GRASS, ...FLOWERS, ...MUSHROOMS, ...WATER_PLANTS]);
+
 function sizeOf(bundle: string, model: string): { width: number; height: number } {
   const bounds = assetManifest.bundles[bundle]?.models[model]?.bounds;
   if (!bounds) throw new Error(`Scatter refers to unknown model ${bundle}/${model}`);

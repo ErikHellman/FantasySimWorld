@@ -14,6 +14,12 @@ interface Label {
   emote: HTMLDivElement;
   bubbleUntil: number;
   emoteUntil: number;
+  /** the bubble's size and the height of what sits below it, as last measured */
+  bubbleWidth: number;
+  bubbleHeight: number;
+  below: number;
+  /** which parts were showing at that measurement; a change means measuring again */
+  measured: string;
 }
 
 export interface LabelState {
@@ -64,7 +70,7 @@ export class Overlay {
       bar.append(fill);
       root.append(bubble, emote, name, bar);
       this.container.append(root);
-      label = { root, name, bar, fill, bubble, emote, bubbleUntil: 0, emoteUntil: 0 };
+      label = { root, name, bar, fill, bubble, emote, bubbleUntil: 0, emoteUntil: 0, bubbleWidth: 0, bubbleHeight: 0, below: 0, measured: '' };
       this.labels.set(id, label);
     }
     return label;
@@ -74,6 +80,7 @@ export class Overlay {
     const label = this.label(id);
     label.bubble.textContent = text;
     label.bubble.classList.toggle('loud', loud);
+    label.measured = '';
     label.bubbleUntil = performance.now() + seconds * 1000;
   }
 
@@ -87,15 +94,23 @@ export class Overlay {
   }
 
   /** Lifts speech bubbles that would cover one another, so a busy tavern stays readable. */
-  private spreadBubbles(bubbles: Array<{ label: Label; x: number; y: number }>): void {
+  private spreadBubbles(bubbles: Array<{ label: Label; x: number; y: number; parts: string }>): void {
     if (bubbles.length === 0) return;
+    // Reading a size makes the browser lay the page out, so sizes are read only when a label's content changed.
+    for (const { label, parts } of bubbles) {
+      if (label.measured === parts) continue;
+      label.measured = parts;
+      label.bubbleWidth = label.bubble.offsetWidth;
+      label.bubbleHeight = label.bubble.offsetHeight;
+      label.below = label.root.offsetHeight - label.bubbleHeight;
+    }
     // Lowest on screen first: those keep their place, and the ones behind are raised above them.
     bubbles.sort((a, b) => b.y - a.y);
     const placed: Array<{ left: number; right: number; top: number; bottom: number }> = [];
     for (const { label, x, y } of bubbles) {
-      const width = label.bubble.offsetWidth;
-      const height = label.bubble.offsetHeight;
-      const below = label.root.offsetHeight - height;
+      const width = label.bubbleWidth;
+      const height = label.bubbleHeight;
+      const below = label.below;
       const left = x - width / 2;
       const right = x + width / 2;
       let bottom = y - below;
@@ -113,7 +128,7 @@ export class Overlay {
   update(states: LabelState[], camera: THREE.Camera, cameraDistance: number, width: number, height: number): void {
     const now = performance.now();
     const seen = new Set<string>();
-    const bubbles: Array<{ label: Label; x: number; y: number }> = [];
+    const bubbles: Array<{ label: Label; x: number; y: number; parts: string }> = [];
     for (const state of states) {
       seen.add(state.id);
       const label = this.label(state.id);
@@ -142,8 +157,9 @@ export class Overlay {
         label.emote.textContent = EMOTE_GLYPH.sleep;
         label.emote.classList.remove('pop');
       }
-      label.emote.style.display = emoting || state.asleep ? '' : 'none';
-      if (speaking) bubbles.push({ label, x: sx, y: sy });
+      const showEmote = emoting || state.asleep;
+      label.emote.style.display = showEmote ? '' : 'none';
+      if (speaking) bubbles.push({ label, x: sx, y: sy, parts: `${showName ? 'n' : ''}${state.hurt ? 'h' : ''}${showEmote ? 'e' : ''}${width}` });
     }
     this.spreadBubbles(bubbles);
     for (const [id, label] of this.labels) {
