@@ -2,10 +2,12 @@
 
 use std::collections::HashMap;
 
-use fsw_core::time::TICKS_PER_DAY;
+use fsw_core::time::{TICKS_PER_DAY, game_time};
+use fsw_sim::state::{ActPhase, Character};
 use fsw_sim::util::living;
 use fsw_sim::{Sim, SimEvent, SimState, create_state};
 use fsw_world::navgrid::{is_walkable, nearest_walkable};
+use fsw_world::places::ActivityId;
 
 fn run(state: SimState, ticks: i64, mut on_event: impl FnMut(&SimEvent)) -> Sim {
     let mut sim = Sim::new(state);
@@ -49,23 +51,65 @@ fn gives_different_worlds_for_different_seeds() {
 
 #[test]
 fn keeps_everyone_fed_rested_and_on_walkable_ground_for_three_days() {
-    let mut sim = Sim::new(create_state(5));
-    let mut lowest_hunger: f64 = 100.0;
-    for i in 0..TICKS_PER_DAY * 3 {
-        sim.step();
-        if i % 200 != 0 {
-            continue;
+    // With thirteen founders, seed 5 once had a guard starve on a night watch.
+    for seed in [2, 5] {
+        let mut sim = Sim::new(create_state(seed));
+        let mut lowest_hunger: f64 = 100.0;
+        for i in 0..TICKS_PER_DAY * 3 {
+            sim.step();
+            if i % 200 != 0 {
+                continue;
+            }
+            for c in living(&sim.state) {
+                lowest_hunger = lowest_hunger.min(c.needs.hunger);
+                assert!(c.needs.energy >= 0.0);
+                assert!(c.pos.x.is_finite() && c.pos.z.is_finite());
+                // Seats and work spots sit just off the nav grid, so "near walkable ground" is the invariant.
+                assert!(nearest_walkable(c.pos, 3).is_some(), "{} at {},{}", c.profile.name, c.pos.x, c.pos.z);
+            }
         }
-        for c in living(&sim.state) {
-            lowest_hunger = lowest_hunger.min(c.needs.hunger);
-            assert!(c.needs.energy >= 0.0);
-            assert!(c.pos.x.is_finite() && c.pos.z.is_finite());
-            // Seats and work spots sit just off the nav grid, so "near walkable ground" is the invariant.
-            assert!(nearest_walkable(c.pos, 3).is_some(), "{} at {},{}", c.profile.name, c.pos.x, c.pos.z);
-        }
+        assert!(lowest_hunger > 2.0, "seed {seed}: lowest hunger {lowest_hunger}");
+        assert!(living(&sim.state).all(|c| c.memories.len() <= 140));
     }
-    assert!(lowest_hunger > 2.0);
-    assert!(living(&sim.state).all(|c| c.memories.len() <= 140));
+}
+
+#[test]
+fn a_guard_with_an_empty_pack_breaks_off_watch_to_eat_and_goes_back() {
+    // On night duty and at the post, not a daytime watch from the plan or still walking to the tower.
+    fn at_the_post(sim: &Sim, c: &Character) -> bool {
+        sim.state.tick < c.watch_until_tick
+            && !(5.2..20.5).contains(&game_time(sim.state.tick).hour)
+            && c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Watch))
+            && c.act.phase == ActPhase::Perform
+    }
+    let mut sim = Sim::new(create_state(5));
+    let mut guard = None;
+    for _ in 0..TICKS_PER_DAY * 2 {
+        guard = living(&sim.state).find(|c| at_the_post(&sim, c)).map(|c| c.id.clone());
+        if guard.is_some() {
+            break;
+        }
+        sim.step();
+    }
+    let guard = guard.expect("nobody stood watch");
+    // Too hungry to last a whole stretch, but not hungry enough to leave the post before it.
+    let c = sim.state.characters.get_mut(&guard).unwrap();
+    c.needs.hunger = 20.0;
+    c.inventory.food = 0;
+    let until = c.watch_until_tick;
+
+    let mut lowest_hunger: f64 = 100.0;
+    let mut ate = false;
+    let mut back_on_watch = false;
+    while sim.state.tick < until {
+        sim.step();
+        let c = &sim.state.characters[&guard];
+        lowest_hunger = lowest_hunger.min(c.needs.hunger);
+        ate |= c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Eat));
+        back_on_watch |= ate && at_the_post(&sim, c);
+    }
+    assert!(lowest_hunger > 2.0, "the guard went down to hunger {lowest_hunger}");
+    assert!(back_on_watch, "the guard ate ({ate}) but never went back on watch");
 }
 
 #[test]
