@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use fsw_server::config::{AuthMode, Config};
 use fsw_server::store::{self, Store};
-use fsw_server::{AppState, brain_task, digest, router, world_task};
+use fsw_server::{AppState, brain_task, chat, digest, router, world_task};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -81,6 +81,7 @@ async fn main() -> ExitCode {
     let boot = app.world.core.read().boot_id.clone();
     tracing::info!(bind = %config.bind, origin = %config.public_origin, static_dir = %config.static_dir.display(), db = %store.path().display(), boot, "listening");
     let digest = digest::task::spawn(app.clone(), shutdown.clone());
+    let chat_sweeper = chat::spawn_sweeper(app.chat.clone(), shutdown.clone());
 
     tokio::spawn(stop_on_signal(shutdown.clone()));
     // The peer address feeds the sign-in rate limit (unless TRUST_PROXY takes it from headers).
@@ -89,6 +90,7 @@ async fn main() -> ExitCode {
     shutdown.cancel();
     let _ = world_task.await;
     let _ = digest.await;
+    let _ = chat_sweeper.await;
     let _ = thinking.await;
     let _ = maintenance.await;
     // Last: flush the chronicle, checkpoint the WAL, stop the store thread.

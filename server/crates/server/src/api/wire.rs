@@ -581,18 +581,32 @@ pub struct BrainLogRecord {
 // Chat
 // ---------------------------------------------------------------------------
 
-/// One message in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
+/// What a line in the chat is.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatKind {
+    /// something someone said
+    Say,
+    /// someone came to watch (and had not been here in the last few minutes)
+    Join,
+    /// someone has been gone for a few minutes
+    Leave,
+}
+
+/// One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct ChatMessage {
-    /// rises by one per message since the server started
+    /// rises by one per line since the server started
     #[ts(type = "number")]
     pub id: u64,
     /// ms since the epoch
     #[ts(type = "number")]
     pub at: u64,
-    /// the author's name when they sent it
+    pub kind: ChatKind,
+    /// the author's name when they sent it; for a join or a leave, who came or went
     pub author: String,
-    /// markdown, already tidied and filtered by the server; render it as text, never as HTML
+    /// markdown, already tidied and filtered by the server; render it as text, never as HTML.
+    /// Empty for a join or a leave.
     pub text: String,
 }
 
@@ -873,6 +887,7 @@ pub fn typescript() -> String {
         RequestKind,
         LogStatus,
         BrainLogRecord,
+        ChatKind,
         ChatMessage,
         ChatWelcome,
         ChatYou,

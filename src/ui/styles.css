@@ -413,6 +413,7 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 .chat-who { font-weight: 800; white-space: nowrap; }
 .chat-line.mine .chat-who { color: var(--accent); }
 .chat-text { min-width: 0; overflow-wrap: anywhere; }
+.chat-notice { grid-column: 2 / -1; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
 .chat-text code { background: rgba(0, 0, 0, 0.35); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .chat-text pre { margin: 4px 0; padding: 6px 8px; background: rgba(0, 0, 0, 0.35); border-radius: 6px; white-space: pre-wrap; font-size: 12px; }
 .chat-text pre code { background: none; padding: 0; }
@@ -428,5 +429,6 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 @media (max-width: 760px) {
   .chat-time { display: none; }
   .chat-line { grid-template-columns: auto 1fr; }
+  .chat-notice { grid-column: 1 / -1; }
   .emoji-grid { right: 0; grid-template-columns: repeat(8, 30px); }
 }
