@@ -4,6 +4,7 @@ import { api } from '../net/api';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
+import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
 import { SettingsPanel } from './Settings';
 import { actions, isAdmin, ui } from './store';
@@ -75,6 +76,9 @@ function TopBar() {
         )}
         <button class="pill" title="Settings" onClick={() => togglePanel('settings')}>
           ⚙ Settings
+        </button>
+        <button class="pill" title="Controls and how the village works (?)" onClick={() => togglePanel('help')}>
+          ❓ Help
         </button>
       </div>
     </header>
@@ -210,6 +214,7 @@ function StartOverlay() {
         </p>
         <p class="muted">
           Drag to pan, scroll to zoom, right-drag or Q / E to turn, Shift + scroll or R / F to tilt. Click a villager to follow them and read their mind.
+          Once inside, ❓ Help (or the ? key) lists every control.
         </p>
         {loading ? (
           <div class="loading">{loading}</div>
@@ -239,6 +244,7 @@ export function App() {
       } else if (event.code === 'Digit1' && admin) actions.setSpeed(1);
       else if (event.code === 'Digit2' && admin) actions.setSpeed(2);
       else if (event.code === 'Digit3' && admin) actions.setSpeed(4);
+      else if ((event.key === '?' || event.code === 'KeyH') && ui.started.value && !event.ctrlKey && !event.metaKey && !event.altKey) togglePanel('help');
       else if (event.code === 'Escape') {
         if (ui.panel.value !== 'none') ui.panel.value = 'none';
         else actions.select(null);
@@ -260,6 +266,7 @@ export function App() {
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
       {ui.panel.value === 'graves' && <Graves />}
+      {ui.panel.value === 'help' && <HelpPanel />}
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
       )}

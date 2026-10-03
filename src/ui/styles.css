@@ -355,6 +355,14 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 .slots li.ok { color: var(--good); }
 code { background: rgba(0, 0, 0, 0.3); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .graves li { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.dialog.help { width: min(640px, 100%); line-height: 1.45; }
+.dialog.help > p { margin: 6px 0 8px; }
+.controls { display: grid; grid-template-columns: 200px 1fr; gap: 6px 14px; margin: 0; align-items: baseline; }
+.controls dt { white-space: nowrap; }
+.controls dd { margin: 0; }
+kbd { display: inline-block; padding: 0 6px; border: 1px solid var(--panel-border); border-bottom-width: 2px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); font-family: inherit; font-size: 11.5px; font-weight: 700; line-height: 1.6; white-space: nowrap; }
+.help-list { margin: 0; padding-left: 18px; }
+.help-list li { margin: 4px 0; }
 
 .brain { border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .brain-head { display: flex; gap: 8px; align-items: center; width: 100%; border: 0; background: none; text-align: left; padding: 5px 2px; font-size: 12px; }
@@ -381,6 +389,9 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
   .roster { width: 170px; }
   .inspector { top: auto; bottom: calc(10px + var(--chat-h, 0px)); max-height: calc(55% - var(--chat-h, 0px) / 2); }
   .chronicle { display: none; }
+  .controls { grid-template-columns: 1fr; gap: 2px; }
+  .controls dd { margin-bottom: 6px; }
+  .controls dt { white-space: normal; }
 }
 
 .feed-tabs { display: flex; gap: 4px; margin: 0 6px 6px 0; }

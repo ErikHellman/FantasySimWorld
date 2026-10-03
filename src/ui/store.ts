@@ -64,7 +64,7 @@ export const ui = {
   /** older chronicle entries exist on the server */
   chronicleMore: signal(true),
   graves: signal<Grave[]>([]),
-  panel: signal<'none' | 'settings' | 'admin' | 'brain' | 'graves'>('none'),
+  panel: signal<'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help'>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
   brainLog: signal<BrainLogRecord[]>([]),
