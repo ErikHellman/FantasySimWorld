@@ -16,6 +16,16 @@ pub const HEX_ROW_PITCH: f64 = SQRT_3 * HEX_SCALE;
 pub const HEX_RADIUS: f64 = (2.0 / SQRT_3) * HEX_SCALE;
 /// centre to edge midpoint
 pub const HEX_APOTHEM: f64 = HEX_SCALE;
+/// Where a KayKit tile's flat top ends, as a fraction of the way to its edge; a bevel drops from there to the edge.
+/// The client stretches each tile by `1 / TILE_RIM_INSET` so neighbouring tops meet with no groove between them.
+pub const TILE_RIM_INSET: f64 = 0.95;
+
+/// How far out a point of a tile model (model units, unscaled) lies, measured in hexagons: 0 at the centre and 1
+/// anywhere on the tile's edge.
+pub fn tile_edge_distance(x: f64, z: f64) -> f64 {
+    let sin_60 = SQRT_3 / 2.0;
+    x.abs().max((x / 2.0 + z * sin_60).abs()).max((x / 2.0 - z * sin_60).abs())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct Hex {

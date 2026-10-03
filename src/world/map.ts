@@ -2,8 +2,8 @@ import { distToSegment, type Vec2 } from '../core/math2d';
 import { hashString } from '../core/rng';
 import { BRIDGE_HALF_WIDTH, bridgeHeight, tileHeight } from './height';
 import {
-  DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_SCALE, HEX_WIDTH,
-  dirVector, directionTo, hexAt, hexCenter, hexKey, maskHas, neighbor, type Hex,
+  DIR_COUNT, HEX_APOTHEM, HEX_RADIUS, HEX_ROW_PITCH, HEX_SCALE, HEX_WIDTH, TILE_RIM_INSET,
+  dirVector, directionTo, hexAt, hexCenter, hexKey, maskHas, neighbor, tileEdgeDistance, type Hex,
 } from './hex';
 import { LAYOUT_ROWS, RIVERS, ROADS } from './layout';
 import { coastTile, crossingTile, riverTile, roadTile, type TileChoice } from './tiles';
@@ -190,6 +190,8 @@ const TILE_ROTATION_STEP = -Math.PI / 3;
  */
 const RIVER_WATER_LEVEL = -0.075;
 const LAKE_WATER_LEVEL = -0.16;
+/** How close to a tile's edge (1 on the boundary) the drawn height is read, clear of the grid cells on the bevel. */
+const DRAWN_SAMPLE_EDGE = 0.9;
 
 /**
  * The bridge model's deck runs between two opposite hex edges, along direction 1
@@ -223,6 +225,18 @@ function tileSurface(cell: HexCell, x: number, z: number): number | null {
   return tileHeight(cell.tile.model, local.x, local.z) ?? tileHeight(cell.tile.model, local.x * 0.93, local.z * 0.93);
 }
 
+/**
+ * The tile surface as drawn. The renderer stretches each tile so its flat top
+ * reaches the hex edge, so what is drawn at a point is the model's surface a
+ * little closer to the centre. Near the edge the sample is pulled in further
+ * still, because the height grid's cells nearest the edge lie on the bevel.
+ */
+function drawnSurface(cell: HexCell, x: number, z: number): number | null {
+  const local = toLocal(x - cell.center.x, z - cell.center.z, cell.tile.rot * TILE_ROTATION_STEP);
+  const pull = Math.min(TILE_RIM_INSET, DRAWN_SAMPLE_EDGE / tileEdgeDistance(local.x, local.z));
+  return tileHeight(cell.tile.model, local.x * pull, local.z * pull);
+}
+
 function bridgeDeck(cell: HexCell, x: number, z: number): number | null {
   if (!cell.bridge) return null;
   const dx = x - cell.center.x;
@@ -253,7 +267,7 @@ export function isWalkableTerrain(x: number, z: number): boolean {
 export function groundHeight(x: number, z: number): number {
   const cell = cellAtPoint(x, z);
   if (!cell) return 0;
-  const surface = tileSurface(cell, x, z) ?? 0;
+  const surface = drawnSurface(cell, x, z) ?? 0;
   const deck = bridgeDeck(cell, x, z);
   return Math.max(surface, deck ?? -Infinity) * HEX_SCALE;
 }
