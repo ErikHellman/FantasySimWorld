@@ -2,7 +2,8 @@ import * as THREE from 'three/webgpu';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { lerp, lerpAngle } from '../core/math2d';
 import type { Look } from '../generated/api';
-import { ANIMS, type AnimDef, type AnimId } from './anims';
+import { TIMING_RIG } from '../core/assetTypes';
+import { ANIMS, type AnimDef, type AnimId, clipSeconds } from './anims';
 import type { Assets } from './assets';
 
 const FADE_SECONDS = 0.18;
@@ -30,6 +31,8 @@ export interface ActorSnapshot {
 export class ActorView {
   readonly root = new THREE.Group();
   readonly height: number;
+  /** which clip set this skeleton plays */
+  private readonly rig: string;
   private readonly mixer: THREE.AnimationMixer;
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
@@ -45,7 +48,9 @@ export class ActorView {
   constructor(private readonly assets: Assets, look: ActorLook) {
     const template = assets.character(look.model);
     this.height = template.height;
+    this.rig = template.rig;
     const model = cloneSkinned(template.scene);
+    model.scale.setScalar(template.scale);
     if (look.texture && template.texture) {
       const from = template.texture;
       const to = look.texture;
@@ -87,10 +92,20 @@ export class ActorView {
   private action(def: AnimDef): THREE.AnimationAction {
     let action = this.actions.get(def.clip);
     if (!action) {
-      action = this.mixer.clipAction(this.assets.clip(def.clip));
+      action = this.mixer.clipAction(this.assets.clip(this.rig, def.clip));
       this.actions.set(def.clip, action);
     }
     return action;
+  }
+
+  /**
+   * Playback speed. The sim times one-shot animations (attacks, hits) by the
+   * timing rig's clips, so another rig's version is stretched to end on time.
+   */
+  private timeScale(def: AnimDef): number {
+    const speed = def.speed ?? 1;
+    if (def.loop || this.rig === TIMING_RIG) return speed;
+    return speed * (clipSeconds(this.rig, def.clip) / clipSeconds(TIMING_RIG, def.clip));
   }
 
   private play(anim: string, immediate: boolean): void {
@@ -99,7 +114,7 @@ export class ActorView {
     action.reset();
     action.setLoop(def.loop ? THREE.LoopRepeat : THREE.LoopOnce, def.loop ? Infinity : 1);
     action.clampWhenFinished = !def.loop;
-    action.timeScale = def.speed ?? 1;
+    action.timeScale = this.timeScale(def);
     action.enabled = true;
     action.setEffectiveWeight(1);
     if (def.loop) action.time = Math.random() * action.getClip().duration; // desynchronise crowds

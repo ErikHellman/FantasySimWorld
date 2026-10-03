@@ -223,6 +223,8 @@ The 3D models are from the [KayKit](https://kaylousberg.com) collection by Kay L
 KAYKIT_DIR="/path/to/The Complete KayKit Collection v7" pnpm assets
 ```
 
+Characters come on two skeletons: most use KayKit's medium rig, and the Greymane brothers use `Barbarian_Large` on the large rig. Each rig gets its own clip file in `public/assets/animations/`. The large rig has no work, rest or ranged clips of its own, so the build copies those over from the medium rig, adjusted to the longer bones (`rigs` in `tools/assets/asset-list.mjs`). The sim times actions by the medium rig's clips, and the client stretches the large rig's one-off clips, such as attacks, to finish at the same moment.
+
 A few props the collection lacks at character scale (a wooden fence, wildflowers, mushrooms, a notice board) are generated with Blender and bundled by the same command:
 
 ```bash

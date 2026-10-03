@@ -15,7 +15,7 @@ use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::relationships::{RUNG_GRUDGE, brawl_unlocked, lethal_unlocked};
-use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, rel_or_default};
+use crate::util::{Ctx, first_name, is_approachable, living, living_ids, openness, rel, rel_or_default};
 
 const SOCIAL_RADIUS: f64 = 15.0;
 
@@ -96,17 +96,29 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     let weights: Vec<f64> = candidates
         .iter()
         .map(|o| {
+            let open = openness(ctx.cr(id), ctx.cr(o));
             let c = ctx.c(id);
             let spite = c.profile.spite;
             let r = rel(c, o);
             // The spiteful are drawn twice as hard to the people they resent.
             let weight = 1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance * (1.0 + spite) / 12.0;
             // A charmer seeks out whoever wants her. Added only for one, so nobody else's weights change.
-            if allure > 0.0 { weight + allure * rel_or_default(ctx.cr(o), id).attraction / 20.0 } else { weight }
+            let weight =
+                if allure > 0.0 { weight + allure * rel_or_default(ctx.cr(o), id).attraction / 20.0 } else { weight };
+            // The shy keep to the people they trust (1 for everyone else).
+            weight * open
         })
         .collect();
     let index = rng::weighted_pick_index(&mut ctx.state.rng, &weights, |w| *w)?;
     let other = candidates[index].clone();
+    // The shy often think better of it at the last moment, unless it is someone they trust.
+    if ctx.cr(id).profile.shyness > 0.0 {
+        let open = openness(ctx.cr(id), ctx.cr(&other));
+        if !ctx.chance(open) {
+            ctx.c(id).next_social_tick = tick + minutes_to_ticks(40.0);
+            return None;
+        }
+    }
 
     let c = ctx.c(id);
     let partner = c.partner_id.clone();

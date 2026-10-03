@@ -238,7 +238,7 @@ mod tests {
             sim.step();
         }
         let roster = roster_of(&sim.state);
-        assert_eq!(roster.len(), 12);
+        assert_eq!(roster.len(), 13);
         assert!(roster.iter().all(|row| !row.status.is_empty()));
         let id = sim.state.order[0].clone();
         let detail = detail_of(&sim.state, &id).unwrap();

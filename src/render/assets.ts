@@ -9,6 +9,8 @@ export interface CharacterTemplate {
   scene: THREE.Object3D;
   texture: string | null;
   height: number;
+  rig: string;
+  scale: number;
 }
 
 /**
@@ -20,14 +22,16 @@ export class Assets {
   private readonly characters = new Map<string, CharacterTemplate>();
   private readonly materials = new Map<string, THREE.Material>();
   private readonly textureLoader = new THREE.TextureLoader();
-  readonly clips = new Map<string, THREE.AnimationClip>();
+  /** rig id -> clip name -> clip */
+  readonly clips = new Map<string, Map<string, THREE.AnimationClip>>();
 
   static async load(onProgress?: (done: number, total: number) => void): Promise<Assets> {
     const assets = new Assets();
     const loader = new GLTFLoader();
     const bundleIds = Object.keys(assetManifest.bundles);
     const characterIds = Object.keys(assetManifest.characters);
-    const total = bundleIds.length + characterIds.length + 1;
+    const rigIds = Object.keys(assetManifest.rigs);
+    const total = bundleIds.length + characterIds.length + rigIds.length;
     let done = 0;
     const tick = () => onProgress?.(++done, total);
 
@@ -47,14 +51,15 @@ export class Assets {
         const entry = assetManifest.characters[id]!;
         const gltf = await loader.loadAsync(BASE + entry.url);
         assets.applyMaterials(gltf.scene);
-        assets.characters.set(id, { scene: gltf.scene, texture: entry.texture, height: entry.height });
+        const { texture, height, rig, scale } = entry;
+        assets.characters.set(id, { scene: gltf.scene, texture, height, rig, scale });
         tick();
       }),
-      (async () => {
-        const gltf = await loader.loadAsync(BASE + assetManifest.animations.url);
-        for (const clip of gltf.animations) assets.clips.set(clip.name, clip);
+      ...rigIds.map(async (rig) => {
+        const gltf = await loader.loadAsync(BASE + assetManifest.rigs[rig]!.url);
+        assets.clips.set(rig, new Map(gltf.animations.map((clip) => [clip.name, clip])));
         tick();
-      })(),
+      }),
     ]);
     return assets;
   }
@@ -122,9 +127,9 @@ export class Assets {
     return template;
   }
 
-  clip(name: string): THREE.AnimationClip {
-    const clip = this.clips.get(name);
-    if (!clip) throw new Error(`Unknown animation clip ${name}`);
+  clip(rig: string, name: string): THREE.AnimationClip {
+    const clip = this.clips.get(rig)?.get(name);
+    if (!clip) throw new Error(`Unknown animation clip ${name} on rig ${rig}`);
     return clip;
   }
 }

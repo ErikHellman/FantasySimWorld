@@ -11,8 +11,13 @@ use serde::Deserialize;
 pub struct AssetManifest {
     pub bundles: HashMap<String, BundleEntry>,
     pub characters: HashMap<String, CharacterAssetEntry>,
-    pub animations: Animations,
+    /// rig id -> its clip file; every rig carries the same clip names
+    pub rigs: HashMap<String, Rig>,
 }
+
+/// The rig whose clip lengths the sim times actions by; other rigs are
+/// stretched to match when they are drawn.
+pub const TIMING_RIG: &str = "medium";
 
 #[derive(Deserialize, Debug)]
 pub struct BundleEntry {
@@ -30,11 +35,16 @@ pub struct ModelEntry {
 pub struct CharacterAssetEntry {
     pub url: String,
     pub texture: Option<String>,
+    /// standing height in world units, after `scale`
     pub height: f64,
+    /// which entry of `rigs` this skeleton plays
+    pub rig: String,
+    /// uniform scale the model is drawn at
+    pub scale: f64,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Animations {
+pub struct Rig {
     pub url: String,
     /// clip name -> duration in seconds
     pub clips: HashMap<String, f64>,
@@ -46,6 +56,11 @@ static MANIFEST: LazyLock<AssetManifest> = LazyLock::new(|| {
 
 pub fn asset_manifest() -> &'static AssetManifest {
     &MANIFEST
+}
+
+/// Clip lengths of the timing rig.
+pub fn timing_clips() -> &'static HashMap<String, f64> {
+    &MANIFEST.rigs.get(TIMING_RIG).expect("the timing rig is in the asset manifest").clips
 }
 
 /// Bounds of `model` in `bundle`, if the manifest has it.

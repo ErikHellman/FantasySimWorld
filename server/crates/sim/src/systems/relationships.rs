@@ -9,7 +9,7 @@ use crate::state::{
     Character, ChronicleKind, Feeling, Id, MemoryKind, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
 use crate::systems::charm;
-use crate::util::{Ctx, chemistry, first_name, living_ids, rel, rel_or_default};
+use crate::util::{Ctx, drawn_to, first_name, living_ids, rel, rel_or_default};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RelationDelta {
@@ -110,9 +110,21 @@ fn label_note(label: RelationLabel, name: &str) -> Option<String> {
     })
 }
 
+/// Affinity everyone starts with toward a striking-looking person, before they have said a word.
+pub fn looks_welcome(c: &Character) -> f64 {
+    c.profile.looks * 20.0
+}
+
 /// Applies a change to how `from` feels about `to_id` and updates the label.
-pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, delta: RelationDelta) {
+/// Warmth toward a striking-looking person grows faster.
+pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, mut delta: RelationDelta) {
     let tick = ctx.tick();
+    let looks = ctx.state.characters.get(to_id).map_or(0.0, |c| c.profile.looks);
+    if looks > 0.0 {
+        let boost = 1.0 + looks * 0.5;
+        delta.affinity = if delta.affinity > 0.0 { delta.affinity * boost } else { delta.affinity };
+        delta.attraction = if delta.attraction > 0.0 { delta.attraction * boost } else { delta.attraction };
+    }
     let r = rel(ctx.c(from), to_id);
     if delta.affinity != 0.0 {
         r.affinity = clamp(r.affinity + delta.affinity, -100.0, 100.0);
@@ -209,7 +221,7 @@ pub fn apply_conversation(
     } else if base >= 3.0 {
         let me = ctx.cr(self_id);
         let r = rel_or_default(me, other_id);
-        if r.affinity >= 30.0 && me.partner_id.is_none() && !r.kin && chemistry(me, ctx.cr(other_id)) {
+        if r.affinity >= 30.0 && me.partner_id.is_none() && !r.kin && drawn_to(me, ctx.cr(other_id)) {
             delta.attraction = 2.0;
         }
     }

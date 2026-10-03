@@ -15,7 +15,7 @@ use fsw_sim::state::{
 use fsw_sim::systems::charm;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at, rel_or_default};
+use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, places};
 
 use crate::llm::types::{ChatMessage, ToolDef};
@@ -123,6 +123,17 @@ pub fn persona(c: &Character) -> String {
             ],
         );
         lines.insert(3, flirt.to_owned());
+    }
+    if p.shyness > 0.0 {
+        lines.push(
+            "You are painfully shy, worst of all with women: with people you do not trust yet the words will not come, but you open up to the few you do.".into(),
+        );
+    }
+    if p.looks > 0.0 {
+        lines.push(
+            "You are strikingly good-looking and most people warm to you on sight, though you hardly believe it."
+                .into(),
+        );
     }
     if !c.summary.is_empty() {
         lines.push(format!("How you see yourself lately: {}", c.summary));
@@ -605,8 +616,15 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt
 
 fn brief(c: &Character) -> String {
     let p = &c.profile;
+    let mut noted = String::new();
+    if p.looks > 0.0 {
+        noted.push_str(" Strikingly good-looking.");
+    }
+    if p.shyness > 0.0 {
+        noted.push_str(" Painfully shy.");
+    }
     format!(
-        "{}, {}, {} ({}). {}.{} Speaks: {}",
+        "{}, {}, {} ({}). {}.{}{noted} Speaks: {}",
         p.name,
         p.age,
         p.occupation,
@@ -615,6 +633,35 @@ fn brief(c: &Character) -> String {
         if p.spite >= SPITEFUL { " Holds grudges and picks quarrels." } else { "" },
         p.speech_style
     )
+}
+
+/// Openness at which a shy person talks freely with someone.
+const OPEN: f64 = 0.85;
+
+/// How a shy speaker manages with this listener, for the playwright; `None` unless `me` is shy.
+fn shy_words(me: &Character, other: &Character) -> Option<String> {
+    if me.profile.shyness == 0.0 {
+        return None;
+    }
+    let (mn, on) = (first_name(me), first_name(other));
+    Some(if openness(me, other) >= OPEN {
+        format!("{mn} trusts {on} and can open up with them.")
+    } else {
+        format!("{mn} does not trust {on} enough to talk freely: short answers, lost words, eyes on the ground.")
+    })
+}
+
+/// The same, told to the shy speaker.
+fn shy_words_to_self(me: &Character, other: &Character) -> Option<String> {
+    if me.profile.shyness == 0.0 {
+        return None;
+    }
+    let on = first_name(other);
+    Some(if openness(me, other) >= OPEN {
+        format!("You trust {on}; with them the words come easily.")
+    } else {
+        format!("You do not trust {on} enough yet: the words stick, and you keep it short.")
+    })
 }
 
 fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
@@ -668,6 +715,7 @@ pub fn conversation_prompt(
             format!("Right now: {}.", need_words(me)),
             format!("Towards {}: {}.{thinks}{couple}", first_name(other), feeling_words(&r)),
         ]);
+        lines.extend(shy_words(me, other));
         if !memories.is_empty() {
             lines.push(format!("Remembers:\n{}", memory_lines(&memories, time.day)));
         }
@@ -749,9 +797,10 @@ pub fn reply_prompt(
             section(
                 0,
                 format!(
-                    "You are talking with {}. {opener}\n{}",
+                    "You are talking with {}. {opener}\n{}{}",
                     first_name(other),
-                    person_line(state, me, other, false)
+                    person_line(state, me, other, false),
+                    shy_words_to_self(me, other).map_or(String::new(), |words| format!("\n{words}"))
                 ),
             ),
             section(
@@ -938,5 +987,54 @@ mod tests {
         assert_eq!(react_prompt(&state, a).tools.len(), 2);
         assert_eq!(mercy_prompt(&state, a, b).tools[1].name, "finish");
         assert_eq!(reflect_prompt(&state, a, 900).tools[0].name, "reflection");
+    }
+
+    fn who<'a>(state: &'a SimState, name: &str) -> &'a Character {
+        living(state).find(|c| first_name(c) == name).unwrap()
+    }
+
+    fn talk(a: &Character, b: &Character) -> Conversation {
+        use fsw_sim::state::{ConvoAuthor, ConvoPhase, Fallback};
+        Conversation {
+            id: "v0".into(),
+            a: a.id.clone(),
+            b: b.id.clone(),
+            tone: TalkTone::Friendly,
+            phase: ConvoPhase::Hail,
+            lines: Vec::new(),
+            index: 0,
+            line_end_tick: 0,
+            started_tick: 0,
+            await_until_tick: 0,
+            closed: false,
+            author: ConvoAuthor::Local,
+            topic: String::new(),
+            feelings: Default::default(),
+            fallback: Fallback { lines: Vec::new(), topic: String::new(), feelings: Default::default() },
+        }
+    }
+
+    #[test]
+    fn the_shy_and_the_charming_are_told_so_and_nobody_else_is() {
+        let state = world();
+        let (torvald, garrick, brenna) = (who(&state, "Torvald"), who(&state, "Garrick"), who(&state, "Brenna"));
+        let own = persona(torvald);
+        assert!(own.contains("You are painfully shy, worst of all with women"), "{own}");
+        assert!(own.contains("You are strikingly good-looking"));
+        let plain = persona(garrick);
+        assert!(!plain.contains("shy") && !plain.contains("good-looking"));
+
+        // He trusts Garrick, who brought him down from the hills, but not Brenna yet.
+        let with_garrick = prompt_text(&conversation_prompt(&state, &talk(garrick, torvald), garrick, torvald, 1500));
+        assert!(with_garrick.contains("Strikingly good-looking. Painfully shy. Speaks:"), "{with_garrick}");
+        assert!(with_garrick.contains("Torvald trusts Garrick and can open up with them."));
+        let with_brenna = prompt_text(&conversation_prompt(&state, &talk(brenna, torvald), brenna, torvald, 1500));
+        assert!(with_brenna.contains("Torvald does not trust Brenna enough to talk freely"), "{with_brenna}");
+        assert!(!with_brenna.contains("Brenna trusts") && !with_brenna.contains("Brenna does not trust"));
+
+        let reply = prompt_text(&reply_prompt(&state, &talk(brenna, torvald), &[], torvald, brenna, 1500));
+        assert!(reply.contains("You do not trust Brenna enough yet: the words stick"), "{reply}");
+        let reply = prompt_text(&reply_prompt(&state, &talk(torvald, brenna), &[], brenna, torvald, 1500));
+        assert!(!reply.contains("trust Torvald enough"));
     }
 }
