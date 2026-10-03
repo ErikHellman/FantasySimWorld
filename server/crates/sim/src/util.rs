@@ -11,7 +11,7 @@ use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
     Character, ChronicleEntry, ChronicleKind, Id, IntentAction, Memory, MemoryKind, Monster, MonsterPhase, Pronouns,
-    RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
+    Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
 };
 
 pub const MEMORY_CAP: usize = 140;
@@ -360,6 +360,18 @@ pub fn their(c: &Character) -> &'static str {
 pub fn chemistry(a: &Character, b: &Character) -> bool {
     let key = if a.id < b.id { format!("{}|{}", a.id, b.id) } else { format!("{}|{}", b.id, a.id) };
     rng::hash_string(&key) % 100 < 38
+}
+
+/// Whether `from` could ever fall for `to`. Unlike `chemistry` it runs one way:
+/// some will never fall for anyone, some only for women, and some are hard not to fall for.
+pub fn can_fall_for(from: &Character, to: &Character) -> bool {
+    if from.has(Quirk::Chaste) {
+        return false;
+    }
+    if from.has(Quirk::LovesWomen) && to.profile.pronouns != Pronouns::SheHer {
+        return false;
+    }
+    to.has(Quirk::Alluring) || chemistry(from, to)
 }
 
 pub fn hp_fraction(c: &Character, max_hp: f64) -> f64 {

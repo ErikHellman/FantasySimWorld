@@ -65,6 +65,75 @@ pub struct Profile {
     /// 0 solitary .. 1 gregarious
     pub sociability: f64,
     pub voice: VoiceProfile,
+    /// what this character hides from everyone; only their own prompts see it
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret: String,
+}
+
+/// A fixed leaning the sim itself acts on, not just words in a prompt. Authored
+/// characters carry them; wanderers have none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Quirk {
+    /// now and then stalks someone who is alone and strikes from behind
+    Murderous,
+    /// breaks and runs at the first blow
+    Coward,
+    /// shirks work for naps and idling
+    Lazy,
+    /// picks on the timid; nobody warms to them
+    Bully,
+    /// works through the hours others spend at leisure
+    Diligent,
+    /// hits harder and holds on longer than their class would
+    Fighter,
+    /// only ever falls for women
+    LovesWomen,
+    /// anyone who could fall for them does, and quickly
+    Alluring,
+    /// never takes a lover; romance and warmth bewilder them
+    Chaste,
+    /// dabbles in necromancy by night, and the dead answer
+    Occultist,
+    /// tells stories about the neighbours, most of them made up
+    Rumourmonger,
+    /// drinks too much, and gets into fights when drunk
+    Drunkard,
+}
+
+/// Bookkeeping for quirks, kept with the character so it survives a save.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuirkState {
+    /// drunk until this tick
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub drunk_until_tick: i64,
+    /// the last day a hunt was decided (whether or not it was a hunting day)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub hunt_rolled_day: i64,
+    /// hunting on this day
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub hunt_day: i64,
+    /// a night spent over forbidden books: the day it began
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub study_day: i64,
+    /// next tick a quirk may act on its own (drunken trouble, the dead answering)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_roll_tick: i64,
+}
+
+impl QuirkState {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+fn is_zero(value: &i64) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -277,6 +346,14 @@ pub enum IntentAction {
     Wait {
         minutes: f64,
     },
+    /// lies down on the grass for a nap, out in the open
+    Nap {
+        minutes: f64,
+    },
+    /// shadows someone, waiting for them to be alone, then strikes from behind
+    Stalk {
+        target_id: Id,
+    },
 }
 
 impl IntentAction {
@@ -289,14 +366,17 @@ impl IntentAction {
             Self::Fight { .. } => "fight",
             Self::Flee => "flee",
             Self::Wait { .. } => "wait",
+            Self::Nap { .. } => "nap",
+            Self::Stalk { .. } => "stalk",
         }
     }
 
     pub fn target_id(&self) -> Option<&Id> {
         match self {
-            Self::Talk { target_id, .. } | Self::Give { target_id, .. } | Self::Fight { target_id, .. } => {
-                Some(target_id)
-            }
+            Self::Talk { target_id, .. }
+            | Self::Give { target_id, .. }
+            | Self::Fight { target_id, .. }
+            | Self::Stalk { target_id } => Some(target_id),
             _ => None,
         }
     }
@@ -488,6 +568,21 @@ pub struct Character {
     pub killer: bool,
     pub next_social_tick: i64,
     pub next_perception_tick: i64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quirks: Vec<Quirk>,
+    #[serde(default, skip_serializing_if = "QuirkState::is_default")]
+    pub quirk_state: QuirkState,
+}
+
+impl Character {
+    pub fn has(&self, quirk: Quirk) -> bool {
+        self.quirks.contains(&quirk)
+    }
+
+    /// Drunk at this tick.
+    pub fn drunk(&self, tick: i64) -> bool {
+        tick < self.quirk_state.drunk_until_tick
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -532,6 +627,15 @@ pub struct Monster {
     pub anim: AnimId,
     pub anim_seq: i64,
     pub stuck: i64,
+    /// a villager who became one of the dead keeps their name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// does not crumble at dawn; lies low by day instead
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub lasting: bool,
+    /// the villager this monster once was
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub was_id: Option<Id>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -613,6 +717,21 @@ pub struct Conversation {
     pub topic: String,
     pub feelings: Map<Feeling>,
     pub fallback: Fallback,
+    /// a story the initiator means to pass on
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rumour: Option<Rumour>,
+}
+
+/// A story about someone who is not there, told by a gossip; true or not.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rumour {
+    /// who the story is about
+    pub about: Id,
+    /// the story as it is told
+    pub text: String,
+    /// whether it actually happened
+    pub truthful: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -644,6 +763,9 @@ pub struct DeadRecord {
     pub day: i64,
     pub cause: String,
     pub killer_id: Option<Id>,
+    /// who really did it, when nobody saw
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_killer_id: Option<Id>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

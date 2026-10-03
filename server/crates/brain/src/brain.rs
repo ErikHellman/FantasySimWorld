@@ -243,6 +243,8 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         },
         IntentAction::Flee => "flee".into(),
         IntentAction::Wait { .. } => "wait".into(),
+        IntentAction::Nap { .. } => "nap".into(),
+        IntentAction::Stalk { target_id } => format!("stalk {}", name_of(state, target_id)),
     }
 }
 

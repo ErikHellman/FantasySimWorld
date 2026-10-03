@@ -11,9 +11,10 @@ use crate::data::smalltalk::{generic_continuation, local_script};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActPhase, ChronicleKind, Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, Feeling, Id,
-    IntentAction, Map, MemoryKind, StimulusKind, TalkTone,
+    IntentAction, Map, MemoryKind, Quirk, StimulusKind, TalkTone,
 };
 use crate::systems::movement::{advance, face, route_to};
+use crate::systems::quirks::{pass_on_rumour, pick_rumour};
 use crate::systems::relationships::{RelationDelta, adjust, apply_conversation, become_lovers};
 use crate::util::{Ctx, bump_epoch, first_name, is_fighting, nearby_characters, place_name_at, rel, set_anim, their};
 
@@ -27,10 +28,11 @@ fn hail_timeout() -> i64 {
 
 /// Starts a conversation: `a` has reached `b` and hails them.
 pub fn start_conversation(ctx: &mut Ctx, a: &str, b: &str, tone: TalkTone, opener: &str) -> Id {
+    let rumour = if tone == TalkTone::Friendly { pick_rumour(ctx, a, b) } else { None };
     let script = if opener.is_empty() {
-        local_script(ctx.state, a, b, tone)
+        local_script(ctx.state, a, b, tone, rumour.as_ref())
     } else {
-        generic_continuation(ctx.state, a, b, tone)
+        generic_continuation(ctx.state, a, b, tone, rumour.as_ref())
     };
     // With no opening line given and a model to wait for, the whole conversation is left for it to
     // write; the locally written one (opener included) is kept as the fallback.
@@ -63,6 +65,7 @@ pub fn start_conversation(ctx: &mut Ctx, a: &str, b: &str, tone: TalkTone, opene
             topic: script.topic,
             feelings,
         },
+        rumour,
     };
     ctx.state.conversations.insert(id.clone(), convo);
     for c in [a, b] {
@@ -295,7 +298,15 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
             let ba = rel(ctx.c(&b), &a).clone();
             let mutual = ab.attraction >= 45.0 && ba.attraction >= 45.0;
             let free = ctx.cr(&a).partner_id.is_none() && ctx.cr(&b).partner_id.is_none();
-            if accepted && mutual && free && !ab.kin {
+            if ctx.cr(&b).has(Quirk::Chaste) {
+                // Courting someone who has sworn off love: no answer, and no understanding either.
+                ctx.emit(SimEvent::Emote { id: b.clone(), emote: Emote::Thinking });
+                ctx.chronicle(
+                    ChronicleKind::Romance,
+                    format!("{a_name} tried to court {b_name}, who did not seem to understand a word of it."),
+                    both.clone(),
+                );
+            } else if accepted && mutual && free && !ab.kin {
                 become_lovers(ctx, &a, &b);
             } else if accepted {
                 ctx.emit(SimEvent::Emote { id: a.clone(), emote: Emote::Heart });
@@ -359,6 +370,9 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
             if feel_a == Feeling::MuchBetter && feel_b == Feeling::MuchBetter {
                 ctx.emit(SimEvent::Emote { id: a.clone(), emote: Emote::Laugh });
                 ctx.emit(SimEvent::Emote { id: b.clone(), emote: Emote::Laugh });
+            }
+            if let Some(rumour) = &convo.rumour {
+                pass_on_rumour(ctx, &a, &b, rumour);
             }
         }
     }

@@ -8,7 +8,7 @@ use fsw_world::places::ActivityId;
 use serde::Deserialize;
 
 use super::classes::ClassId;
-use crate::state::{Profile, present};
+use crate::state::{Profile, Quirk, present};
 
 /// A character as authored: who they are, how they look and where they live.
 #[derive(Clone, Debug, Deserialize)]
@@ -35,6 +35,9 @@ pub struct CastEntry {
     #[serde(default)]
     pub hobbies: Option<Vec<ActivityId>>,
     pub profile: Profile,
+    /// what the sim makes of them beyond the numbers in the profile
+    #[serde(default)]
+    pub quirks: Vec<Quirk>,
 }
 
 /// A relationship that exists before the simulation starts. Applied one way.
@@ -73,4 +76,9 @@ pub fn seed_bonds() -> &'static [SeedBond] {
 
 pub fn newcomers() -> &'static [CastEntry] {
     &CAST.newcomers
+}
+
+/// The authored entry for a character of this name, founding cast or newcomer.
+pub fn authored(name: &str) -> Option<&'static CastEntry> {
+    CAST.cast.iter().chain(CAST.newcomers.iter()).find(|entry| entry.profile.name == name)
 }

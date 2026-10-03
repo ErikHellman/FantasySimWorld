@@ -53,7 +53,9 @@ fn spawn_wave(ctx: &mut Ctx) {
     let from_ruins = night > 2 && ctx.chance(0.25);
     let place = get_place(if from_ruins { "ruins" } else { "graveyard" });
     let mut points = place.spawn_points.clone();
-    let with_necromancer = first_of_night && night >= 4 && night % 4 == 0 && alive >= 9;
+    // One necromancer abroad at a time: a fallen villager who walks with the dead counts.
+    let necromancer_abroad = ctx.state.monsters.values().any(|m| m.lasting);
+    let with_necromancer = first_of_night && night >= 4 && night % 4 == 0 && alive >= 9 && !necromancer_abroad;
 
     for i in 0..size {
         let point = if points.is_empty() {

@@ -149,6 +149,7 @@ export class WorldView {
         hurt: entity.hp < entity.maxHp * 0.97,
         hostile: entity.hostile,
         selected: id === this.selectedId,
+        asleep: entity.asleep,
       });
     }
     this.overlay.update(labels, this.rig.camera, this.rig.distance, this.canvas.clientWidth, this.canvas.clientHeight);

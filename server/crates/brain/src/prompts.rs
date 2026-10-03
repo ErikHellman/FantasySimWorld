@@ -106,6 +106,9 @@ pub fn persona(c: &Character) -> String {
         format!("How you speak: {}", p.speech_style),
         format!("What you want: {}.", p.goals.join("; ")),
     ];
+    if !p.secret.is_empty() {
+        lines.push(format!("Your secret, which you never admit to anyone: {}", p.secret));
+    }
     if !c.summary.is_empty() {
         lines.push(format!("How you see yourself lately: {}", c.summary));
     }
@@ -294,7 +297,11 @@ fn header(state: &SimState, c: &Character) -> String {
             place_name_at(c.pos),
             describe_activity(state, c)
         ),
-        format!("You are {}. You carry {inventory}.", need_words(c)),
+        format!(
+            "You are {}{}. You carry {inventory}.",
+            need_words(c),
+            if c.drunk(state.tick) { ", and drunk" } else { "" }
+        ),
         danger,
     ]
     .join("\n")
@@ -561,8 +568,13 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt
 
 fn brief(c: &Character) -> String {
     let p = &c.profile;
+    let secret = if p.secret.is_empty() {
+        String::new()
+    } else {
+        format!("\nOnly {} knows this, and never admits it: {}", first_name(c), p.secret)
+    };
     format!(
-        "{}, {}, {} ({}). {}. Speaks: {}",
+        "{}, {}, {} ({}). {}. Speaks: {}{secret}",
         p.name,
         p.age,
         p.occupation,
@@ -570,6 +582,20 @@ fn brief(c: &Character) -> String {
         capital(&p.traits.join(", ")),
         p.speech_style
     )
+}
+
+/// The story a gossip means to pass on in this conversation, if any, told of
+/// them by name or, in their own prompt, as "you".
+fn rumour_words(state: &SimState, convo: &Conversation, teller: &str, to_them: bool) -> String {
+    let Some(rumour) = convo.rumour.as_ref().filter(|_| convo.a == teller) else { return String::new() };
+    let about = name_of(state, &rumour.about);
+    let (who, means, truth) = match (to_them, rumour.truthful) {
+        (true, true) => ("You".to_owned(), "mean", "It is true."),
+        (true, false) => ("You".to_owned(), "mean", "You made it up."),
+        (false, true) => (name_of(state, teller), "means", "It is true."),
+        (false, false) => (name_of(state, teller), "means", "It is made up."),
+    };
+    format!("{who} {means} to pass on a story about {about}: {} {truth}", rumour.text)
 }
 
 fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
@@ -640,6 +666,7 @@ pub fn conversation_prompt(
             section(0, format!("THE ONE WHO STARTED IT\n{}", side(a, b))),
             section(0, format!("THE OTHER\n{}", side(b, a))),
             section(2, format!("Others in the village, whom they may mention: {}.", others.join(", "))),
+            section(0, rumour_words(state, convo, &a.id, false)),
             section(0, if opening.is_empty() { String::new() } else { format!("{an} opens with: {opening}") }),
             section(
                 0,
@@ -707,6 +734,7 @@ pub fn reply_prompt(
                     format!("Things you remember:\n{}", memory_lines(&memories, time.day))
                 },
             ),
+            section(0, rumour_words(state, convo, &me.id, true)),
             section(0, format!("The conversation so far:\n{transcript}")),
             section(
                 0,

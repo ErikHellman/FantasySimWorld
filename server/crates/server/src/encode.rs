@@ -97,7 +97,8 @@ pub fn monster_static(m: &Monster) -> EntityStatic {
     EntityStatic {
         id: m.id.clone(),
         kind: EntityKind::Monster,
-        name: def.label.into(),
+        // A villager who turned keeps their name.
+        name: m.name.clone().unwrap_or_else(|| def.label.into()),
         look: look(&m.look),
         max_hp: def.max_hp,
         hostile: true,

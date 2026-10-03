@@ -1,6 +1,10 @@
 //! The Rust prompts against the TypeScript brain's, word for word, for a fixed
 //! world (`tests/fixtures/prompts.json`, written by `bun tools/make-prompt-fixture.ts`
 //! at the `ts-sim-reference` tag).
+//!
+//! After a deliberate change to a prompt or to the cast, run this test with
+//! `UPDATE_PROMPT_FIXTURE=1` to write the prompts as they are now into the
+//! fixture, then read the diff before committing it.
 
 use fsw_brain::prompts::{
     Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,
@@ -8,9 +12,9 @@ use fsw_brain::prompts::{
 };
 use fsw_sim::state::{Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, SimState, TalkTone};
 use fsw_sim::{Sim, create_state};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Case {
     tick: i64,
     kind: String,
@@ -20,7 +24,7 @@ struct Case {
     tools: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Fixture {
     seed: u32,
     cases: Vec<Case>,
@@ -44,6 +48,7 @@ fn convo(state: &SimState, a: &str, b: &str) -> Conversation {
         topic: String::new(),
         feelings: Default::default(),
         fallback: Fallback { lines: Vec::new(), topic: String::new(), feelings: Default::default() },
+        rumour: None,
     }
 }
 
@@ -69,8 +74,25 @@ fn build(state: &SimState, case: &Case) -> Prompt {
 #[test]
 fn prompts_match_the_typescript_brain_word_for_word() {
     let path = format!("{}/tests/fixtures/prompts.json", env!("CARGO_MANIFEST_DIR"));
-    let fixture: Fixture = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut fixture: Fixture = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let mut sim = Sim::new(create_state(fixture.seed));
+    if std::env::var_os("UPDATE_PROMPT_FIXTURE").is_some() {
+        for case in &mut fixture.cases {
+            while sim.state.tick < case.tick {
+                sim.step();
+            }
+            let prompt = build(&sim.state, case);
+            case.tools = prompt.tools.iter().map(|t| t.name.clone()).collect();
+            case.text = prompt_text(&prompt);
+        }
+        let mut out = Vec::new();
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
+        let mut serializer = serde_json::Serializer::with_formatter(&mut out, formatter);
+        fixture.serialize(&mut serializer).unwrap();
+        out.push(b'\n');
+        std::fs::write(&path, out).unwrap();
+        return;
+    }
     let mut wrong = Vec::new();
     for case in &fixture.cases {
         while sim.state.tick < case.tick {

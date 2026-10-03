@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use fsw_core::jsmath::js_round;
 use fsw_core::rng::range;
 
-use crate::data::cast::{cast, seed_bonds};
+use crate::data::cast::{authored, cast, seed_bonds};
 use crate::state::{ChronicleEntry, ChronicleKind, Director, Id, SAVE_VERSION, SimState, Tuning};
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::director::tick_at;
@@ -96,4 +96,20 @@ pub fn create_state(seed: u32) -> SimState {
         ids: Vec::new(),
     });
     state
+}
+
+/// Brings the authored characters of a saved world up to date with the cast as
+/// it is written now: their quirks, their secret and the words that describe
+/// them. Their numbers, history and relationships are left as they are.
+pub fn refresh_authored(state: &mut SimState) {
+    for c in state.characters.values_mut() {
+        let Some(entry) = authored(&c.profile.name) else { continue };
+        let written = &entry.profile;
+        c.quirks = entry.quirks.clone();
+        c.profile.secret = written.secret.clone();
+        c.profile.backstory = written.backstory.clone();
+        c.profile.traits = written.traits.clone();
+        c.profile.goals = written.goals.clone();
+        c.profile.speech_style = written.speech_style.clone();
+    }
 }

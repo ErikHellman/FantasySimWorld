@@ -1,6 +1,7 @@
 //! Fights: with the dead, brawls, and the rare duel to the death.
 
 use fsw_core::Vec2;
+use fsw_core::jsmath::js_round;
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::time::seconds_to_ticks;
 
@@ -9,11 +10,12 @@ use crate::data::classes::{FISTS, RUN_SPEED, Weapon, WeaponStyle};
 use crate::events::{Emote, Projectile, SimEvent};
 use crate::state::{
     Act, ActPhase, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind,
-    MonsterPhase, StimulusKind,
+    MonsterPhase, Quirk, StimulusKind,
 };
 use crate::systems::conversation::abort_conversation;
-use crate::systems::death::{detach, kill_character};
+use crate::systems::death::{detach, free_grave_plot, kill_character};
 use crate::systems::movement::{advance, face, route_to};
+use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
     Ctx, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting, nearby_characters, place_name_at,
@@ -23,6 +25,12 @@ use crate::util::{
 const BRAWL_YIELD: f64 = 0.3;
 const LETHAL_YIELD: f64 = 0.25;
 const POTION_HEAL: f64 = 55.0;
+/// A blow from behind, on someone who never saw it coming.
+pub const SNEAK_ATTACK_MULTIPLIER: i64 = 5;
+/// How much harder a born fighter hits than their class would.
+const FIGHTER_DAMAGE: f64 = 1.6;
+/// The share of blows from the dead that break a coward's nerve.
+const COWARD_PANIC: f64 = 0.5;
 /// The most anyone panics when the dead land a blow; the timid come close to it, the fearless hardly ever.
 pub const PANIC_MAX: f64 = 0.15;
 const PANIC_LINES: [&str; 4] = [
@@ -79,8 +87,8 @@ pub fn start_fight(
     let c = ctx.c(id);
     if c.inside.is_some() {
         c.inside = None;
-        c.asleep = false;
     }
+    c.asleep = false;
     c.tool = None;
     c.queue.clear();
     c.intent = Some(Intent {
@@ -100,6 +108,10 @@ pub fn start_flee(ctx: &mut Ctx, id: &str, source: IntentSource) {
     detach(ctx, id);
     let tick = ctx.tick();
     let c = ctx.c(id);
+    // Someone dozing in the open wakes with a start.
+    if c.inside.is_none() {
+        c.asleep = false;
+    }
     c.tool = None;
     c.queue.clear();
     c.intent = Some(Intent::new(IntentAction::Flee, source));
@@ -126,6 +138,7 @@ fn reflex_defend(ctx: &mut Ctx, victim: &str, attacker_id: &str, mode: FightMode
     }
     let hp_left = v.hp / max_hp(v);
     let stands = v.profile.bravery * 0.75 + hp_left * 0.35 + if mode == FightMode::Brawl { 0.2 } else { 0.0 } > 0.62;
+    let stands = !v.has(Quirk::Coward) && (stands || v.has(Quirk::Fighter));
     if stands {
         start_fight(ctx, victim, attacker_id, mode, IntentSource::Reflex, None);
     } else {
@@ -136,6 +149,12 @@ fn reflex_defend(ctx: &mut Ctx, victim: &str, attacker_id: &str, mode: FightMode
 /// How likely each blow from the dead is to break this villager's nerve: mostly a matter of bravery, and a hot
 /// temper steadies a little. Never more than `PANIC_MAX`.
 pub fn panic_chance(c: &crate::state::Character) -> f64 {
+    if c.has(Quirk::Coward) {
+        return COWARD_PANIC;
+    }
+    if c.has(Quirk::Fighter) {
+        return 0.0;
+    }
     PANIC_MAX * clamp(1.0 - c.profile.bravery * 0.85 - c.profile.temper * 0.15, 0.0, 1.0)
 }
 
@@ -204,7 +223,21 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
         MemoryKind::Event,
         Vec::new(),
     );
-    if necromancer {
+    let (fallen_name, was_id) = {
+        let m = &ctx.state.monsters[monster_id];
+        (m.name.clone(), m.was_id.clone())
+    };
+    if let Some(was_id) = was_id {
+        // One of their own, lost to the dark, laid to rest at last.
+        let name = ctx.cr(attacker).profile.name.clone();
+        let fallen = fallen_name.unwrap_or_else(|| "the necromancer".into());
+        ctx.chronicle(
+            ChronicleKind::Combat,
+            format!("{name} destroyed {fallen} at {where_}. The dark has let go of the valley, for now."),
+            vec![attacker.into(), was_id.clone()],
+        );
+        bury_the_fallen(ctx, &was_id);
+    } else if necromancer {
         let name = ctx.cr(attacker).profile.name.clone();
         ctx.chronicle(
             ChronicleKind::Combat,
@@ -213,6 +246,20 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
         );
     }
     ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
+}
+
+/// A grave, at last, for a villager who became one of the dead.
+fn bury_the_fallen(ctx: &mut Ctx, was_id: &str) {
+    let Some(record) = ctx.state.dead.get(was_id).cloned() else { return };
+    let plot = free_grave_plot(ctx);
+    let day = ctx.time.day;
+    ctx.state.graves.push(crate::state::Grave {
+        plot,
+        character_id: was_id.to_owned(),
+        name: record.name,
+        day,
+        cause: record.cause,
+    });
 }
 
 /// Who struck the blow.
@@ -279,10 +326,12 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     reflex_defend(ctx, victim, &by.id, mode);
 
     let Some(attacker) = by.character else { return };
+    // A murderer does not stop to hear anyone beg.
+    let merciless = ctx.cr(&attacker).has(Quirk::Murderous);
     let v = ctx.cr(victim);
     if mode == FightMode::Brawl && v.hp <= cap * BRAWL_YIELD {
         end_brawl(ctx, &attacker, victim);
-    } else if mode == FightMode::Lethal && v.hp <= cap * LETHAL_YIELD && !v.combat.yielded {
+    } else if mode == FightMode::Lethal && v.hp <= cap * LETHAL_YIELD && !v.combat.yielded && !merciless {
         // Beaten: the victim yields and the attacker must choose.
         let v = ctx.c(victim);
         v.combat.yielded = true;
@@ -304,7 +353,8 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     }
 }
 
-fn witnesses(ctx: &Ctx, pos: Vec2, exclude: &[&str]) -> Vec<Id> {
+/// Those awake out of doors near enough to see what happens at `pos`.
+pub fn witnesses(ctx: &Ctx, pos: Vec2, exclude: &[&str]) -> Vec<Id> {
     nearby_characters(ctx.state, pos, 22.0, None)
         .into_iter()
         .filter(|id| !exclude.contains(&id.as_str()) && !ctx.cr(id).asleep)
@@ -451,7 +501,9 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
     let target = c.combat.hit_target_id.take();
     let pos = c.pos;
     let reach = weapon.range * if weapon.style == WeaponStyle::Melee { 1.45 } else { 1.5 };
+    let fighter = c.has(Quirk::Fighter);
     let damage = ctx.int_range(weapon.damage[0], weapon.damage[1]);
+    let damage = if fighter { js_round(damage as f64 * FIGHTER_DAMAGE) as i64 } else { damage };
     if mode == FightMode::Monster {
         if let Some(m) = get_monster(ctx.state, target.as_deref())
             && dist(pos, m.pos) <= reach
@@ -496,6 +548,9 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         && (f.inside.is_some() || f.combat.yielded)
     {
         let name = first_name(f).to_owned();
+        if mode == FightMode::Lethal && c.has(Quirk::Murderous) && f.inside.is_some() {
+            escaped(ctx, target_id, id);
+        }
         end_fight(ctx, id, format!("{name} got away from you."));
         return;
     }
@@ -544,8 +599,9 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         c.combat.next_attack_tick = c.combat.next_attack_tick.max(tick + seconds_to_ticks(1.3));
         return;
     }
-    // Those fighting on instinct know when they are beaten.
-    if mode == FightMode::Monster && source != IntentSource::Llm && c.hp < cap * (0.34 - c.profile.bravery * 0.22) {
+    // Those fighting on instinct know when they are beaten; born fighters hang on longer.
+    let give_up = if c.has(Quirk::Fighter) { 0.1 } else { 0.34 - c.profile.bravery * 0.22 };
+    if mode == FightMode::Monster && source != IntentSource::Llm && c.hp < cap * give_up {
         start_flee(ctx, id, IntentSource::Reflex);
         return;
     }
@@ -592,5 +648,44 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         });
     } else if !is_one_shot_playing(c.anim, c.combat.next_attack_tick - seconds_to_ticks(weapon.interval), tick) {
         set_anim(c, weapon.stance, false);
+    }
+}
+
+/// A murderer's blow from behind: several times what the weapon would do, and
+/// then a fight to the finish. The opening is not announced; whether anyone
+/// learns who did it depends on who was there to see.
+pub fn sneak_attack(ctx: &mut Ctx, id: &str, target_id: &str) {
+    let tick = ctx.tick();
+    end_hunt(ctx, id);
+    let target_pos = ctx.cr(target_id).pos;
+    start_fight(ctx, id, target_id, FightMode::Lethal, IntentSource::Routine, None);
+    let c = ctx.c(id);
+    // Already under way: the usual "drew a weapon" report would give the game away.
+    c.act.phase = ActPhase::Perform;
+    c.act.since_tick = tick;
+    face(c, target_pos);
+    set_anim(c, AnimId::Attack1hStab, true);
+    let weapon = weapon_of(c, FightMode::Lethal);
+    c.combat.next_attack_tick = tick + seconds_to_ticks(weapon.interval);
+    let from = c.pos;
+    ctx.state.director.last_lethal_tick = tick;
+    let damage = ctx.int_range(weapon.damage[0], weapon.damage[1]) * SNEAK_ATTACK_MULTIPLIER;
+    ctx.emit(SimEvent::Attack {
+        attacker_id: id.into(),
+        target_id: target_id.into(),
+        ranged: None,
+        from,
+        to: target_pos,
+    });
+    let label = first_name(ctx.cr(id)).to_owned();
+    damage_character(
+        ctx,
+        target_id,
+        damage,
+        Assailant { id: id.into(), label, character: Some(id.into()) },
+        FightMode::Lethal,
+    );
+    if ctx.alive(target_id) {
+        ambushed(ctx, target_id, id);
     }
 }

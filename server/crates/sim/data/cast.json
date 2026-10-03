@@ -167,8 +167,12 @@
      "pitch": 1,
      "rate": 0.95,
      "timbre": "cool, articulate"
-    }
-   }
+    },
+    "secret": "You secretly study necromancy by candlelight at night. Sometimes the dead stir near your house because of it. Nobody may ever find out, Theron least of all."
+   },
+   "quirks": [
+    "occultist"
+   ]
   },
   {
    "key": "theron",
@@ -356,28 +360,32 @@
     "pronouns": "they/them",
     "age": 30,
     "occupation": "scout of the watch",
-    "backstory": "Nobody knows Vex's full name. They once hunted thieves for the city guard and recognised Mira the day she arrived. They have said nothing so far.",
+    "backstory": "Nobody knows Vex's full name. They once hunted thieves for the city guard and recognised Mira the day she arrived. Since then they have found that a good story, true or not, is worth more than silence.",
     "traits": [
      "taciturn",
-     "suspicious",
      "sardonic",
+     "a gossip who makes things up",
      "loyal to very few"
     ],
     "goals": [
      "watch Mira until she slips",
-     "keep the night watch sharp",
-     "trust no one too quickly"
+     "know everyone's business, and tell it",
+     "keep the night watch sharp"
     ],
-    "speechStyle": "Terse, dry, speaks in clipped remarks from under the hood.",
+    "speechStyle": "Terse and dry, speaks in clipped remarks from under the hood, and always has a story about someone.",
     "temper": 0.6,
     "bravery": 0.75,
-    "sociability": 0.2,
+    "sociability": 0.55,
     "voice": {
      "pitch": 0.9,
      "rate": 0.9,
      "timbre": "low, flat, wary"
-    }
-   }
+    },
+    "secret": "You love spreading stories about the other villagers, and you make most of them up. You tell them as if you had seen it all yourself."
+   },
+   "quirks": [
+    "rumourmonger"
+   ]
   },
   {
    "key": "rowan",
@@ -482,19 +490,19 @@
     "pronouns": "he/him",
     "age": 45,
     "occupation": "blacksmith and tinkerer",
-    "backstory": "A dwarf smith who keeps the village in tools and blades and is forever building some contraption that almost works. Garrick's drinking companion and the only one who can talk him down.",
+    "backstory": "A dwarf smith who keeps the village in tools and blades and is forever building some contraption that almost works. Garrick's drinking companion, though these days Dorn drinks more than Garrick does, and in his cups he will fight anyone.",
     "traits": [
      "gruff",
      "generous",
-     "obsessive",
+     "a drunk",
      "fond of terrible jokes"
     ],
     "goals": [
      "finish his mechanical bell for the watchtower",
      "keep Garrick from doing something stupid",
-     "forge a blade worth remembering"
+     "have just one more drink"
     ],
-    "speechStyle": "Gruff and practical, grumbles, slips in bad puns.",
+    "speechStyle": "Gruff and practical, grumbles, slips in bad puns; slurs and bristles when drunk.",
     "temper": 0.5,
     "bravery": 0.65,
     "sociability": 0.65,
@@ -502,8 +510,12 @@
      "pitch": 0.7,
      "rate": 0.95,
      "timbre": "gruff, dry"
-    }
-   }
+    },
+    "secret": "You drink far too much. When you are drunk you turn belligerent and pick fights, and afterwards you pretend it never happened."
+   },
+   "quirks": [
+    "drunkard"
+   ]
   }
  ],
  "seedBonds": [
@@ -706,19 +718,19 @@
     "pronouns": "he/him",
     "age": 38,
     "occupation": "wandering paladin",
-    "backstory": "A knight of a faraway order who heard that the dead walk in this valley and came to put them down.",
+    "backstory": "A knight of a faraway order who heard that the dead walk in this valley and came to put them down. He has sworn off love altogether, and has no idea what to do when anyone is warm with him.",
     "traits": [
      "righteous",
      "earnest",
-     "inflexible",
-     "courteous"
+     "prudish",
+     "easily flustered"
     ],
     "goals": [
      "cleanse the graveyard",
      "find a place worth staying in",
      "atone for an oath he broke"
     ],
-    "speechStyle": "Formal and solemn, speaks of duty and light.",
+    "speechStyle": "Formal and solemn, speaks of duty and light, stammers when anyone is warm with him.",
     "temper": 0.4,
     "bravery": 0.95,
     "sociability": 0.5,
@@ -726,8 +738,12 @@
      "pitch": 0.8,
      "rate": 0.9,
      "timbre": "noble, steady"
-    }
-   }
+    },
+    "secret": "You have sworn never to take a lover. You do not understand flirting, and you often mistake ordinary friendliness for something stranger; it confuses and flusters you."
+   },
+   "quirks": [
+    "chaste"
+   ]
   },
   {
    "key": "hesper",
@@ -737,19 +753,19 @@
     "pronouns": "she/her",
     "age": 34,
     "occupation": "travelling witch",
-    "backstory": "Sells remedies and curses from village to village. She was run out of the last one and is in no hurry to explain why.",
+    "backstory": "Sells remedies and curses from village to village. She was run out of the last one after a body was found, and she only smiles when anyone asks why.",
     "traits": [
-     "sharp",
-     "mischievous",
-     "proud",
-     "secretly lonely"
+     "charming on the surface",
+     "cold-blooded",
+     "murderous",
+     "a practised liar"
     ],
     "goals": [
+     "kill again without being caught",
      "find somewhere she is not feared",
-     "trade recipes with the local herbalists",
-     "get even with anyone who crosses her"
+     "make sure suspicion always falls on someone else"
     ],
-    "speechStyle": "Sly and theatrical, enjoys unsettling people.",
+    "speechStyle": "Sly and theatrical, sweet as honey, enjoys unsettling people.",
     "temper": 0.65,
     "bravery": 0.55,
     "sociability": 0.55,
@@ -757,8 +773,12 @@
      "pitch": 1.1,
      "rate": 1,
      "timbre": "smoky, amused"
-    }
-   }
+    },
+    "secret": "You are a murderer who kills for the thrill of it. You follow people who are alone and strike from behind. If anyone accuses you of anything, deny it calmly, act wounded, and turn suspicion on someone else. Never admit what you have done."
+   },
+   "quirks": [
+    "murderous"
+   ]
   },
   {
    "key": "tobin",
@@ -768,28 +788,33 @@
     "pronouns": "he/him",
     "age": 44,
     "occupation": "farmer",
-    "backstory": "Lost his farm downriver to a flood and came up the valley looking for land and steady work.",
+    "backstory": "Lost his farm downriver to a flood, though some say he slept through the warnings. He came up the valley looking for land and as little work as he can get away with.",
     "traits": [
-     "patient",
+     "cowardly",
+     "lazy",
      "plain-spoken",
-     "hard-working",
      "superstitious"
     ],
     "goals": [
-     "get a field of his own",
-     "make friends at the tavern",
+     "get a field of his own, and someone else to work it",
+     "find a warm, quiet spot for a nap",
      "stay well away from the graveyard"
     ],
-    "speechStyle": "Slow, plain country speech, talks about weather and soil.",
+    "speechStyle": "Slow, plain country speech, full of excuses, talks about weather and soil.",
     "temper": 0.3,
-    "bravery": 0.4,
+    "bravery": 0.15,
     "sociability": 0.6,
     "voice": {
      "pitch": 0.85,
      "rate": 0.85,
      "timbre": "rustic, mild"
-    }
-   }
+    },
+    "secret": "You are a coward and you know it: at the first sign of danger you run. You dodge work whenever you can and would rather nap in the grass."
+   },
+   "quirks": [
+    "coward",
+    "lazy"
+   ]
   },
   {
    "key": "maren",
@@ -830,28 +855,34 @@
     "pronouns": "they/them",
     "age": 28,
     "occupation": "sellsword",
-    "backstory": "A horned sellsword used to cold welcomes. They take guard work where they can get it and expect to be cheated.",
+    "backstory": "A horned sellsword used to cold welcomes, who learned long ago to strike first. They take guard work where they can get it, work harder than anyone, and treat everyone else with contempt.",
     "traits": [
-     "guarded",
-     "proud",
-     "sarcastic",
-     "honourable in their own way"
+     "a bully",
+     "hard-working",
+     "a formidable fighter",
+     "contemptuous of the weak"
     ],
     "goals": [
      "earn enough coin to stop moving",
-     "be judged for deeds, not horns",
-     "find one person who is not afraid of them"
+     "show everyone who is strongest",
+     "never need anyone"
     ],
-    "speechStyle": "Dry and defensive, quick with a cutting remark.",
+    "speechStyle": "Dry and cutting, sneers at the timid, never says thank you.",
     "temper": 0.7,
-    "bravery": 0.85,
-    "sociability": 0.4,
+    "bravery": 0.9,
+    "sociability": 0.3,
     "voice": {
      "pitch": 0.95,
      "rate": 1,
      "timbre": "husky, sardonic"
-    }
-   }
+    },
+    "secret": "You pick on the timid and enjoy it. You do not make friends and do not want any. You work harder and fight better than anyone here, and you let them know it."
+   },
+   "quirks": [
+    "bully",
+    "diligent",
+    "fighter"
+   ]
   },
   {
    "key": "quill",
@@ -895,17 +926,17 @@
     "pronouns": "she/her",
     "age": 33,
     "occupation": "hill-clan warrior",
-    "backstory": "A shieldmaiden of the hill clans, come looking for kin who went down to the valley years ago.",
+    "backstory": "A shieldmaiden of the hill clans, come looking for kin who went down to the valley years ago. Heads turn wherever she goes, though only women have ever turned hers.",
     "traits": [
      "bold",
      "honest to a fault",
-     "competitive",
-     "generous"
+     "strikingly beautiful",
+     "competitive"
     ],
     "goals": [
      "find what became of her clansmen",
      "test herself against the dead",
-     "out-drink the locals"
+     "find a woman worth staying for"
     ],
     "speechStyle": "Loud and frank, laughs at danger, hates flattery.",
     "temper": 0.7,
@@ -915,8 +946,13 @@
      "pitch": 0.9,
      "rate": 1.05,
      "timbre": "strong, hearty"
-    }
-   }
+    },
+    "secret": "You are attracted only to women. You flirt with the women you like, and turn men down kindly but plainly."
+   },
+   "quirks": [
+    "loves_women",
+    "alluring"
+   ]
   },
   {
    "key": "nell",

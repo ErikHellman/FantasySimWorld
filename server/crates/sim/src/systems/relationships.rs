@@ -6,9 +6,12 @@ use fsw_core::time::TICKS_PER_DAY;
 
 use crate::events::{Emote, SimEvent};
 use crate::state::{
-    Character, ChronicleKind, Feeling, Id, MemoryKind, RelationLabel, Relationship, StimulusKind, TalkTone,
+    Character, ChronicleKind, Feeling, Id, MemoryKind, Quirk, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
-use crate::util::{Ctx, chemistry, first_name, living_ids, rel, rel_or_default};
+use crate::util::{Ctx, can_fall_for, first_name, living_ids, rel, rel_or_default};
+
+/// The warmest a bully ever feels about anyone: short of friendship.
+const BULLY_AFFINITY_CAP: f64 = 20.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RelationDelta {
@@ -99,12 +102,35 @@ fn label_note(label: RelationLabel, name: &str) -> Option<String> {
     })
 }
 
+/// How quirks bend a change in feeling: nobody warms to a bully, and attraction
+/// only grows where it can.
+fn shaped(ctx: &Ctx, from: &str, to_id: &str, mut delta: RelationDelta) -> RelationDelta {
+    let Some(to) = ctx.state.characters.get(to_id) else { return delta };
+    let me = ctx.cr(from);
+    if to.has(Quirk::Bully) {
+        delta.affinity = if delta.affinity > 0.0 { 0.0 } else { delta.affinity * 1.3 };
+    }
+    if delta.attraction > 0.0 {
+        if !can_fall_for(me, to) {
+            delta.attraction = 0.0;
+        } else if to.has(Quirk::Alluring) {
+            delta.attraction *= 2.0;
+        }
+    }
+    delta
+}
+
 /// Applies a change to how `from` feels about `to_id` and updates the label.
 pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, delta: RelationDelta) {
     let tick = ctx.tick();
+    let delta = shaped(ctx, from, to_id, delta);
+    let bully = ctx.cr(from).has(Quirk::Bully);
     let r = rel(ctx.c(from), to_id);
     if delta.affinity != 0.0 {
         r.affinity = clamp(r.affinity + delta.affinity, -100.0, 100.0);
+        if bully {
+            r.affinity = r.affinity.min(BULLY_AFFINITY_CAP);
+        }
     }
     if delta.trust != 0.0 {
         r.trust = clamp(r.trust + delta.trust, -100.0, 100.0);
@@ -198,7 +224,7 @@ pub fn apply_conversation(
     } else if base >= 3.0 {
         let me = ctx.cr(self_id);
         let r = rel_or_default(me, other_id);
-        if r.affinity >= 30.0 && me.partner_id.is_none() && !r.kin && chemistry(me, ctx.cr(other_id)) {
+        if r.affinity >= 30.0 && me.partner_id.is_none() && !r.kin && can_fall_for(me, ctx.cr(other_id)) {
             delta.attraction = 2.0;
         }
     }

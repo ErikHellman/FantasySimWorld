@@ -29,6 +29,8 @@ export interface LabelState {
   hurt: boolean;
   hostile: boolean;
   selected: boolean;
+  /** asleep out in the open: a lasting 💤 instead of a passing emote */
+  asleep: boolean;
 }
 
 /**
@@ -135,7 +137,12 @@ export class Overlay {
       if (state.hurt) label.fill.style.width = `${Math.round(Math.max(0, Math.min(1, state.hp)) * 100)}%`;
       const speaking = now < label.bubbleUntil;
       label.bubble.style.display = speaking ? '' : 'none';
-      label.emote.style.display = now < label.emoteUntil ? '' : 'none';
+      const emoting = now < label.emoteUntil;
+      if (state.asleep && !emoting && label.emote.textContent !== EMOTE_GLYPH.sleep) {
+        label.emote.textContent = EMOTE_GLYPH.sleep;
+        label.emote.classList.remove('pop');
+      }
+      label.emote.style.display = emoting || state.asleep ? '' : 'none';
       if (speaking) bubbles.push({ label, x: sx, y: sy });
     }
     this.spreadBubbles(bubbles);

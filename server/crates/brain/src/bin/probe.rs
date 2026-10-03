@@ -85,6 +85,7 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
                 topic: String::new(),
                 feelings: Default::default(),
                 fallback: Fallback { lines: Vec::new(), topic: String::new(), feelings: Default::default() },
+                rumour: None,
             };
             let (a, b) = (state.characters[&id].clone(), state.characters[&other].clone());
             let prompt = conversation_prompt(state, &convo, &a, &b, MAX_TOKENS);

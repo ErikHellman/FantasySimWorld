@@ -52,10 +52,48 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -
         anim: AnimId::SkeletonSpawn,
         anim_seq: 0,
         stuck: 0,
+        name: None,
+        lasting: false,
+        was_id: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
     ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
     id
+}
+
+/// By day, one of the dead who does not crumble keeps to the ruins, unless
+/// someone has come to fight it there. True while it is lying low.
+fn lie_low(ctx: &mut Ctx, id: &str) -> bool {
+    let tick = ctx.tick();
+    let monster = &ctx.state.monsters[id];
+    let def = monster.kind.def();
+    let challenger = monster
+        .target_id
+        .as_deref()
+        .and_then(|t| ctx.state.characters.get(t))
+        .filter(|c| c.inside.is_none() && dist(c.pos, monster.pos) < def.sight * 1.8)
+        .is_some();
+    if challenger && monster.phase == MonsterPhase::Chase {
+        return false;
+    }
+    let lair = get_place("ruins").door;
+    let monster = ctx.m(id);
+    monster.target_id = None;
+    monster.phase = MonsterPhase::Roam;
+    if dist(monster.pos, lair) < 6.0 {
+        monster.path.clear();
+        set_anim(monster, AnimId::SkeletonIdle, false);
+        return true;
+    }
+    if monster.path.is_empty() || tick >= monster.repath_tick {
+        monster.path = route_to(monster.pos, lair).unwrap_or_default();
+        monster.repath_tick = tick + seconds_to_ticks(5.0);
+    }
+    let mut path = std::mem::take(&mut monster.path);
+    advance(monster, &mut path, def.speed * 0.8);
+    monster.path = path;
+    set_anim(monster, AnimId::SkeletonWalk, false);
+    true
 }
 
 pub fn random_monster_kind(ctx: &mut Ctx) -> MonsterKind {
@@ -110,7 +148,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
             }
             continue;
         }
-        if daylight {
+        if daylight && !monster.lasting {
             die(tick, monster);
             crumbled += 1;
             continue;
@@ -122,6 +160,10 @@ pub fn update_monsters(ctx: &mut Ctx) {
             }
             continue;
         }
+        if daylight && lie_low(ctx, &id) {
+            continue;
+        }
+        let monster = ctx.m(&id);
 
         // A blow already swinging lands first.
         if monster.hit_tick > 0 {
@@ -167,6 +209,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
 
         let monster = &ctx.state.monsters[&id];
         if monster.kind == MonsterKind::Necromancer
+            && !daylight
             && tick >= monster.next_summon_tick
             && ctx.state.monsters.len() < MAX_MONSTERS
         {

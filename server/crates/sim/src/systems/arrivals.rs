@@ -11,7 +11,7 @@ use crate::data::classes::ClassId;
 use crate::events::SimEvent;
 use crate::state::{
     Character, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource, Inventory, Look,
-    MemoryKind, Needs, PlanSource, Profile, Pronouns, SimState, StimulusKind, VoiceProfile,
+    MemoryKind, Needs, PlanSource, Profile, Pronouns, Quirk, QuirkState, SimState, StimulusKind, VoiceProfile,
 };
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::label_for;
@@ -151,6 +151,8 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         killer: false,
         next_social_tick: 0,
         next_perception_tick: 0,
+        quirks: entry.quirks.clone(),
+        quirk_state: QuirkState::default(),
     }
 }
 
@@ -218,7 +220,9 @@ fn wanderer(ctx: &mut Ctx) -> CastEntry {
             bravery,
             sociability,
             voice: VoiceProfile { pitch, rate, timbre: "plain".into() },
+            secret: String::new(),
         },
+        quirks: Vec::new(),
     }
 }
 
@@ -260,11 +264,16 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
         MemoryKind::Event,
         Vec::new(),
     );
+    let bully = ctx.cr(&id).has(Quirk::Bully);
     for other in living_ids(ctx.state) {
         if other == id {
             continue;
         }
         let mut r = new_relationship();
+        // Some people put everyone's back up before they have said a word.
+        if bully {
+            r.affinity = -fsw_core::jsmath::js_round(ctx.range(5.0, 15.0));
+        }
         r.label = label_for(&r, false);
         ctx.c(&other).relationships.insert(id.clone(), r);
         ctx.c(&id).relationships.insert(other.clone(), new_relationship());
