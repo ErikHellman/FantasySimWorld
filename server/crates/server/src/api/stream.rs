@@ -1,4 +1,5 @@
-//! `GET /api/stream?viewer=<id>`: the world as server-sent events.
+//! `GET /api/stream?viewer=<id>&name=<chat name>`: the world as server-sent events. `name` is
+//! the chat name this browser would like, if it is free (optional).
 //!
 //! A new connection gets `hello`, then either a replay of the ticks it missed
 //! (a `Last-Event-ID` from this boot within the replay ring) or a `snapshot`,
@@ -10,7 +11,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::extract::{Extension, Query, State};
 use axum::http::{HeaderMap, HeaderName};
@@ -148,7 +149,8 @@ pub async fn stream(
     let opening = opening(&app, viewer.role, last_event_id);
     let guard = ViewerGuard::new(app.clone(), viewer_id.clone());
     let admin = viewer.role == Role::Admin;
-    let (chat_guard, welcome) = app.chat.join(ChatKey::of(&viewer, &viewer_id));
+    let wanted_name = query.get("name").map(String::as_str);
+    let (chat_guard, welcome) = app.chat.join(ChatKey::of(&viewer, &viewer_id), wanted_name, Instant::now());
 
     let events = async_stream::stream! {
         let _guard = guard;

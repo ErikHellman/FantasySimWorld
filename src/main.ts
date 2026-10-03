@@ -174,19 +174,13 @@ async function start(): Promise<void> {
     },
     brainlog: (record) => addBrainLog([record]),
     worldReset: () => location.reload(),
-    chatWelcome: (welcome) => {
-      fromChatWelcome(welcome);
-      // A fresh connection gets a fresh name; ask again for the one this browser chose, if it is free.
-      const wanted = loadChatSettings().name;
-      if (welcome.you !== null && wanted && wanted !== welcome.you) {
-        api.chatName({ viewer, name: wanted }).then((you) => (ui.chatName.value = you.name)).catch(() => {});
-      }
-    },
+    chatWelcome: fromChatWelcome,
     chat: addChat,
     chatYou: (you) => (ui.chatName.value = you.name),
     refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),
     connection: (state) => (ui.connection.value = state),
-  });
+    // Each connection asks for the name this browser chose, so the chat says it joined under that name.
+  }, () => loadChatSettings().name);
 
   view.rig.onClick = (event) => select(view.pick(event.clientX, event.clientY));
   actions.select = select;

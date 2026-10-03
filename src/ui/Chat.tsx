@@ -79,13 +79,20 @@ function History({ messages, me }: { messages: readonly ChatMessage[]; me: strin
   if (messages.length === 0) return <p class="muted chat-empty">Nobody has said anything yet. Say hello!</p>;
   return (
     <ol class="chat-history" ref={list} onScroll={onScroll}>
-      {messages.map((message) => (
-        <li key={message.id} class={message.author === me ? 'chat-line mine' : 'chat-line'}>
-          <span class="chat-time">{timeOf(message.at)}</span>
-          <span class="chat-who">{message.author}</span>
-          <span class="chat-text"><ChatText text={message.text} /></span>
-        </li>
-      ))}
+      {messages.map((message) =>
+        message.kind === 'say' ? (
+          <li key={message.id} class={message.author === me ? 'chat-line mine' : 'chat-line'}>
+            <span class="chat-time">{timeOf(message.at)}</span>
+            <span class="chat-who">{message.author}</span>
+            <span class="chat-text"><ChatText text={message.text} /></span>
+          </li>
+        ) : (
+          <li key={message.id} class="chat-line">
+            <span class="chat-time">{timeOf(message.at)}</span>
+            <span class="chat-notice"><b>{message.author}</b> {message.kind === 'join' ? 'joined' : 'left'}</span>
+          </li>
+        ),
+      )}
     </ol>
   );
 }
@@ -227,7 +234,7 @@ export function ChatPanel() {
     );
   }
 
-  const last = messages.at(-1);
+  const last = messages.findLast((message) => message.kind === 'say');
   const expanded = view === 'expanded';
   return (
     <section class={`panel chat ${view}`} ref={panel} aria-label="Chat">

@@ -11,7 +11,7 @@ function stubStorage(initial: Record<string, string> = {}): Map<string, string> 
   return store;
 }
 
-const message = (id: number): ChatMessage => ({ id, at: 0, author: 'Mossy Wren', text: `message ${id}` });
+const message = (id: number): ChatMessage => ({ id, at: 0, kind: 'say', author: 'Mossy Wren', text: `message ${id}` });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -52,6 +52,18 @@ describe('chat history', () => {
     expect(ui.chatUnread.value).toBe(1);
     setChatView('expanded');
     expect(ui.chatUnread.value).toBe(0);
+  });
+
+  it('does not count comings and goings as unread', () => {
+    stubStorage();
+    setChatView('collapsed');
+    ui.chatUnread.value = 0;
+    fromChatWelcome({ you: 'Mossy Wren', history: [], maxLength: 500 });
+    addChat({ id: 1, at: 0, kind: 'join', author: 'Old Tom', text: '' });
+    addChat({ id: 2, at: 0, kind: 'leave', author: 'Old Tom', text: '' });
+    addChat(message(3));
+    expect(ui.chat.value.map((m) => m.kind)).toEqual(['join', 'leave', 'say']);
+    expect(ui.chatUnread.value).toBe(1);
   });
 
   it('keeps the last fifty', () => {
