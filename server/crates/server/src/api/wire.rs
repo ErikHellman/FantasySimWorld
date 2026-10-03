@@ -15,7 +15,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -633,6 +633,8 @@ pub enum ChatKind {
     Join,
     /// someone has been gone for a few minutes
     Leave,
+    /// a viewer made something happen in the world, or the village prayed to one; reads as "{author} {text}"
+    Event,
 }
 
 /// One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
@@ -645,10 +647,11 @@ pub struct ChatMessage {
     #[ts(type = "number")]
     pub at: u64,
     pub kind: ChatKind,
-    /// the author's name when they sent it; for a join or a leave, who came or went
+    /// the author's name when they sent it; for a join or a leave, who came or went;
+    /// for an event, whose doing it was
     pub author: String,
     /// markdown, already tidied and filtered by the server; render it as text, never as HTML.
-    /// Empty for a join or a leave.
+    /// Empty for a join or a leave. For an event, plain text: what they did.
     pub text: String,
 }
 
@@ -684,6 +687,88 @@ pub struct ChatRename {
     /// random per tab, as in `?viewer=` on the stream
     pub viewer: String,
     pub name: String,
+}
+
+// ---------------------------------------------------------------------------
+// Credits
+// ---------------------------------------------------------------------------
+
+/// What an offer needs from the viewer who buys it.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CreditTarget {
+    /// nothing: it happens to the whole village
+    None,
+    /// `characterId`: the villager the viewer has selected
+    Character,
+    /// `x` and `z`: the spot the viewer's camera looks at
+    Point,
+}
+
+/// How the shop groups its offers.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CreditGroup {
+    Gift,
+    Monster,
+    Blessing,
+    Threat,
+}
+
+/// One thing credits can buy.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct CreditOffer {
+    /// what `POST /api/credits/buy` takes as `offer`
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub cost: u32,
+    pub target: CreditTarget,
+    pub group: CreditGroup,
+}
+
+/// `GET /api/credits?viewer=<tab>`: this viewer's credits and what they buy.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditsState {
+    pub balance: u32,
+    /// watching and prayer earn nothing past this
+    pub cap: u32,
+    /// credits for a minute of watching with the tab in front; 0 when credits are off
+    pub per_minute: u32,
+    /// seconds between the reports of watching the server expects (`POST /api/presence`)
+    pub beat_seconds: u32,
+    /// cheapest first within each group; empty when credits are off
+    pub offers: Vec<CreditOffer>,
+}
+
+/// The answer to `POST /api/presence` and `POST /api/credits/buy`: what the viewer has now.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct CreditsBalance {
+    pub balance: u32,
+}
+
+/// `POST /api/presence`: this tab is in front and being watched. Sent every
+/// [`CreditsState::beat_seconds`] while that is true; each one that arrives on time earns credits.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct PresenceRequest {
+    /// random per tab, as in `?viewer=` on the stream
+    pub viewer: String,
+}
+
+/// `POST /api/credits/buy`
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BuyRequest {
+    /// random per tab, as in `?viewer=` on the stream
+    pub viewer: String,
+    /// a [`CreditOffer::id`]
+    pub offer: String,
+    /// for a [`CreditTarget::Character`] offer
+    pub character_id: Option<Id>,
+    /// for a [`CreditTarget::Point`] offer: world units
+    pub x: Option<f64>,
+    pub z: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -950,6 +1035,13 @@ pub fn typescript() -> String {
         ChatYou,
         ChatPost,
         ChatRename,
+        CreditTarget,
+        CreditGroup,
+        CreditOffer,
+        CreditsState,
+        CreditsBalance,
+        PresenceRequest,
+        BuyRequest,
         WatchRequest,
         Me,
         ChroniclePage,

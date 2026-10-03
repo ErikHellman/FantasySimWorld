@@ -15,7 +15,7 @@ use crate::events::{Emote, SimEvent};
 use crate::state::{ChronicleKind, Id, ItemId, MemoryKind, MonsterKind, MonsterPhase, Power, SimState, StimulusKind};
 use crate::systems::combat::{max_hp, witnesses};
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
-use crate::util::{Ctx, first_name, is_present, living, living_ids, place_name_at};
+use crate::util::{Ctx, is_present, living, living_ids, name_of, place_name_at};
 
 /// How long one of the dead raised by a viewer walks before it crumbles, in game minutes.
 pub const BOUGHT_MINUTES: f64 = 180.0;
@@ -129,6 +129,23 @@ pub fn check(state: &SimState, event: &ViewerEvent) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// What `event` does, as the rest of a sentence about whoever did it ("sent Rowan some food"),
+/// for the chronicle and the viewers' chat.
+pub fn describe(state: &SimState, event: &ViewerEvent) -> String {
+    match event {
+        ViewerEvent::Gift { character_id, item } => {
+            format!("sent {} {}", name_of(state, character_id), describe_item(*item))
+        }
+        ViewerEvent::Monster { monster, pos } => {
+            format!("raised a {} at {}", monster.def().label, place_name_at(rise_spot(*pos).unwrap_or(*pos)))
+        }
+        ViewerEvent::Raid => "called the dead up from the old graveyard".into(),
+        ViewerEvent::Necromancer => "set a necromancer walking in the old graveyard".into(),
+        ViewerEvent::Heal => "closed every wound in the village".into(),
+        ViewerEvent::Feast => "filled every belly in the village".into(),
+    }
+}
+
 /// The power as villagers speak of it and to it.
 struct Patron {
     /// starts a sentence about them: their name, or "A nameless power"
@@ -216,13 +233,13 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
     };
     let name = name.as_deref();
     let who = &patron.who;
+    let done = describe(ctx.state, &event);
 
     match event {
         ViewerEvent::Gift { character_id, item } => {
             note(ctx, name, StimulusKind::Favour);
             let what = describe_item(item);
             *ctx.c(&character_id).inventory.get_mut(item) += 1;
-            let receiver = first_name(ctx.cr(&character_id)).to_owned();
             ctx.remember(
                 &character_id,
                 format!("{} put {what} in my pack.", patron.introduced()),
@@ -237,7 +254,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
                 let line = prayers::line(ctx.pick(&THANKS), &patron.address);
                 ctx.say(&character_id, line, None, false);
             }
-            ctx.chronicle(ChronicleKind::World, format!("{who} sent {receiver} {what}."), vec![character_id]);
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), vec![character_id]);
         }
         ViewerEvent::Monster { monster, pos } => {
             let Some(spot) = rise_spot(pos) else { return };
@@ -251,7 +268,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
                 ctx.stimulate(id, StimulusKind::Wrath, memory.as_str(), 2, None);
             }
             cry_out(ctx, saw, &PLEAS, &patron.address, true);
-            ctx.chronicle(ChronicleKind::World, format!("{who} raised a {label} at {place}."), Vec::new());
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), Vec::new());
         }
         ViewerEvent::Raid => {
             note(ctx, name, StimulusKind::Wrath);
@@ -270,11 +287,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
             tell_everyone(ctx, StimulusKind::Wrath, &memory, 2);
             let present = present_ids(ctx.state);
             cry_out(ctx, present, &PLEAS, &patron.address, true);
-            ctx.chronicle(
-                ChronicleKind::World,
-                format!("{who} called the dead up from the old graveyard."),
-                Vec::new(),
-            );
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), Vec::new());
             ctx.emit(SimEvent::SavePoint { reason: "a viewer's raid".into() });
         }
         ViewerEvent::Necromancer => {
@@ -286,11 +299,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
             tell_everyone(ctx, StimulusKind::Wrath, &memory, 2);
             let present = present_ids(ctx.state);
             cry_out(ctx, present, &PLEAS, &patron.address, true);
-            ctx.chronicle(
-                ChronicleKind::World,
-                format!("{who} set a necromancer walking in the old graveyard."),
-                Vec::new(),
-            );
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), Vec::new());
             ctx.emit(SimEvent::SavePoint { reason: "a viewer's necromancer".into() });
         }
         ViewerEvent::Heal => {
@@ -303,7 +312,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
             tell_everyone(ctx, StimulusKind::Favour, &memory, 1);
             let present = present_ids(ctx.state);
             cry_out(ctx, present, &PRAISE, &patron.address, false);
-            ctx.chronicle(ChronicleKind::World, format!("{who} closed every wound in the village."), Vec::new());
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), Vec::new());
             ctx.emit(SimEvent::SavePoint { reason: "a viewer's healing".into() });
         }
         ViewerEvent::Feast => {
@@ -315,7 +324,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
             tell_everyone(ctx, StimulusKind::Favour, &memory, 1);
             let present = present_ids(ctx.state);
             cry_out(ctx, present, &PRAISE, &patron.address, false);
-            ctx.chronicle(ChronicleKind::World, format!("{who} filled every belly in the village."), Vec::new());
+            ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), Vec::new());
             ctx.emit(SimEvent::SavePoint { reason: "a viewer's feast".into() });
         }
     }

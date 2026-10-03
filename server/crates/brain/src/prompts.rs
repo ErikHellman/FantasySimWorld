@@ -349,7 +349,7 @@ fn powers_line(state: &SimState) -> String {
     if powers.is_empty() {
         return String::new();
     }
-    powers.sort_by(|a, b| b.1.last_tick.cmp(&a.1.last_tick));
+    powers.sort_by_key(|(_, power)| std::cmp::Reverse(power.last_tick));
     let named: Vec<String> =
         powers.iter().take(POWERS_NAMED).map(|(name, power)| format!("{name} ({})", power.repute())).collect();
     format!("Powers that watch the valley: {}.", named.join(", "))

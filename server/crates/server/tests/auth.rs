@@ -930,3 +930,41 @@ async fn signed_in_people_each_get_a_chat_name_and_viewers_may_talk() {
     let post = app.mutate("POST", "/api/chat", &viewer, json!({"viewer": "t2", "text": "hello"})).await;
     assert_eq!(post.status(), StatusCode::NO_CONTENT);
 }
+
+#[tokio::test]
+async fn a_signed_in_viewer_spends_credits_kept_with_their_account() {
+    let app = app().await;
+    app.store.allow("viewer@example.com", fsw_server::api::wire::Role::Viewer, ADMIN, "").await.unwrap();
+    let viewer = app.session_for(SignIn::google("g-viewer", "viewer@example.com")).await;
+    let id = app.store.user_by_email("viewer@example.com").await.unwrap().unwrap().id;
+
+    let mut tab = app.get("/api/stream?viewer=t1", &viewer).await.into_body();
+    let name = chat_welcome(&mut tab).await["you"].as_str().unwrap().to_owned();
+    let state = app.get("/api/credits?viewer=t1", &viewer).await;
+    let state: Value = serde_json::from_str(&text(state).await).unwrap();
+    assert_eq!(state["balance"], 10);
+
+    // A viewer, not an admin, may change the world this way; another site may not do it for them.
+    let food = json!({"viewer": "t1", "offer": "food", "characterId": "c1"});
+    let forged = Request::post("/api/credits/buy")
+        .header(header::COOKIE, &viewer)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ORIGIN, "https://evil.example")
+        .header("sec-fetch-site", "cross-site")
+        .body(Body::from(food.to_string()))
+        .unwrap();
+    assert_eq!(app.send(forged).await.status(), StatusCode::FORBIDDEN);
+    let bought = app.mutate("POST", "/api/credits/buy", &viewer, food).await;
+    assert_eq!(bought.status(), StatusCode::OK);
+    assert_eq!(text(bought).await, r#"{"balance":5}"#);
+    let dear = app.mutate("POST", "/api/credits/buy", &viewer, json!({"viewer": "t1", "offer": "raid"})).await;
+    assert_eq!(dear.status(), StatusCode::PAYMENT_REQUIRED);
+
+    // The balance and the name they are known by are the account's, whatever tab asks.
+    assert_eq!(app.store.credits(id).await.unwrap(), 5);
+    assert_eq!(app.store.power_owner(name.to_lowercase()).await.unwrap(), Some(id));
+    let report = app.mutate("POST", "/api/presence", &viewer, json!({"viewer": "t1"})).await;
+    assert_eq!(text(report).await, r#"{"balance":5}"#);
+    let purchases = app.store.purchases().await.unwrap();
+    assert_eq!((purchases.len(), purchases[0].user_id), (1, Some(id)));
+}

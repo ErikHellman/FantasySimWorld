@@ -31,6 +31,7 @@ use crate::api::wire::ChronicleEntry;
 pub mod brain_log;
 pub mod chronicle;
 pub mod commands;
+pub mod credits;
 pub mod db;
 pub mod maintenance;
 pub mod migrations;
@@ -41,6 +42,7 @@ pub mod worlds;
 
 pub use brain_log::{BrainLogWrite, UsageRow};
 pub use commands::CommandRecord;
+pub use credits::{Purchase, STARTING_CREDITS};
 pub use snapshots::{LoadedSnapshot, SnapshotReason, SnapshotSaved, SnapshotWrite, Tier};
 pub use users::{LoginOutcome, SessionRecord, User};
 pub use worlds::World;
@@ -323,6 +325,21 @@ pub(crate) mod testing {
     pub async fn store() -> (Store, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         (Store::open(dir.path()).await.unwrap(), dir)
+    }
+
+    /// A viewer's account, as a sign-in would have made it; returns its id.
+    pub async fn user(store: &Store, email: &str) -> i64 {
+        let email = email.to_owned();
+        store
+            .write(move |conn| {
+                conn.execute(
+                    "INSERT INTO users (email, display_name, role, created_at) VALUES (?1, ?1, 'viewer', ?2)",
+                    (&email, now_ms()),
+                )?;
+                Ok(conn.last_insert_rowid())
+            })
+            .await
+            .unwrap()
     }
 }
 
