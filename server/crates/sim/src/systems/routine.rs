@@ -327,14 +327,23 @@ pub fn update_routine(ctx: &mut Ctx) {
             }
         }
 
-        // Watch duty starts on time, whatever the plan said.
+        // Watch duty starts on time, whatever the plan said, but a meal is finished first: a starving
+        // guard sent to eat would otherwise be called back the moment they sat down, and starve.
         let c = ctx.c(&id);
         let due_on_watch = tick < c.watch_until_tick && !(5.2..20.5).contains(&hour);
         if due_on_watch
             && let Some(Intent {
                 action: IntentAction::Activity { activity, .. }, source: IntentSource::Routine, ..
             }) = &c.intent
-            && *activity != ActivityId::Watch
+            && !matches!(activity, ActivityId::Watch | ActivityId::Eat)
+            && c.act.phase == crate::state::ActPhase::Perform
+        {
+            c.act.until_tick = c.act.until_tick.min(tick);
+        }
+        // Hunger is otherwise weighed only between stretches of watch, and a stretch of up to 150 minutes
+        // burns about 16 points: a starving guard leaves the post now and `choose` sends them to eat.
+        if c.needs.hunger < 12.0
+            && c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Watch))
             && c.act.phase == crate::state::ActPhase::Perform
         {
             c.act.until_tick = c.act.until_tick.min(tick);
