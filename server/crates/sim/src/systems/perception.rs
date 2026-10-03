@@ -5,7 +5,8 @@ use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 
 use crate::events::{Emote, SimEvent};
 use crate::state::{
-    ActPhase, Character, ChronicleKind, FightMode, Id, IntentSource, MemoryKind, Monster, MonsterPhase, StimulusKind,
+    ActPhase, Character, ChronicleKind, FightMode, Id, IntentAction, IntentSource, MemoryKind, Monster, MonsterPhase,
+    StimulusKind,
 };
 use crate::systems::combat::{max_hp, start_fight, start_flee};
 use crate::systems::conversation::abort_conversation;
@@ -61,7 +62,11 @@ fn stand_down(ctx: &mut Ctx) {
     let tick = ctx.tick();
     let since = (tick - minutes_to_ticks(90.0)).max(1);
     let fighters: Vec<(Id, String)> = living(ctx.state)
-        .filter(|c| c.combat.next_attack_tick > since)
+        // Those still running from it did not hold the line.
+        .filter(|c| {
+            c.combat.next_attack_tick > since
+                && !c.intent.as_ref().is_some_and(|i| matches!(i.action, IntentAction::Flee))
+        })
         .map(|c| (c.id.clone(), first_name(c).to_owned()))
         .collect();
     ctx.state.director.alarm_until_tick = tick;

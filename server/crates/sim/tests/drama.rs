@@ -3,8 +3,10 @@
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
-use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, RelationLabel, TalkTone};
+use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, RelationLabel, TalkTone};
+use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, panic_chance, start_fight};
 use fsw_sim::systems::death::kill_character;
+use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, Rung, label_for, lethal_unlocked, rung_of};
 use fsw_sim::util::{Ctx, first_name, living, new_relationship, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
@@ -198,6 +200,63 @@ fn a_duel_resolves_if_no_decision_arrives() {
     if let Some(a) = w.sim.state.characters.get(&aldric) {
         assert!(!a.combat.yielded);
     }
+}
+
+#[test]
+fn everyone_has_their_own_chance_to_panic_and_none_above_the_cap() {
+    let mut w = World::new(1);
+    let mut chances: Vec<f64> = living(&w.sim.state).map(panic_chance).collect();
+    assert!(chances.iter().all(|&p| (0.0..=PANIC_MAX).contains(&p)), "{chances:?}");
+    chances.sort_by(f64::total_cmp);
+    chances.dedup();
+    assert!(chances.len() > 5, "{chances:?}");
+
+    let id = w.who("Mira");
+    let c = w.sim.state.characters.get_mut(&id).unwrap();
+    (c.profile.bravery, c.profile.temper) = (0.0, 0.0);
+    assert_eq!(panic_chance(c), PANIC_MAX);
+    (c.profile.bravery, c.profile.temper) = (1.0, 1.0);
+    assert!(panic_chance(c) < 1e-9);
+}
+
+/// Puts a villager with the given nerve in a fight with a skeleton and lets it land up to `blows` light blows.
+/// Returns whether the villager ran.
+fn take_blows(bravery: f64, temper: f64, blows: usize) -> (World, String, bool) {
+    let mut w = World::new(3);
+    let id = w.who("Mira");
+    let c = w.sim.state.characters.get_mut(&id).unwrap();
+    (c.profile.bravery, c.profile.temper) = (bravery, temper);
+    let mut events = Vec::new();
+    let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
+    let pos = ctx.cr(&id).pos;
+    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0);
+    start_fight(&mut ctx, &id, &monster, FightMode::Monster, IntentSource::Reflex, None);
+    let mut ran = false;
+    for _ in 0..blows {
+        ctx.c(&id).hp = 60.0;
+        let by = Assailant { id: monster.clone(), label: "skeleton".into(), character: None };
+        damage_character(&mut ctx, &id, 1, by, FightMode::Monster);
+        if matches!(ctx.cr(&id).intent.as_ref().map(|i| &i.action), Some(IntentAction::Flee)) {
+            ran = true;
+            break;
+        }
+    }
+    (w, id, ran)
+}
+
+#[test]
+fn a_timid_villager_fighting_the_dead_can_panic_and_run_home() {
+    let (w, id, ran) = take_blows(0.0, 0.0, 80);
+    assert!(ran, "never panicked");
+    let name = &w.sim.state.characters[&id].profile.name;
+    assert!(w.sim.state.chronicle.iter().any(|e| e.text.starts_with(&format!("{name} panicked and fled home"))));
+    assert!(w.sim.state.characters[&id].memories.iter().any(|m| m.text.starts_with("I panicked")));
+}
+
+#[test]
+fn the_fearless_do_not_panic() {
+    let (_, _, ran) = take_blows(1.0, 1.0, 80);
+    assert!(!ran);
 }
 
 #[test]
