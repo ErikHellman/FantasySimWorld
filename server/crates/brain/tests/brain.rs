@@ -71,7 +71,7 @@ fn reply(calls: Value) -> Value {
 }
 
 fn harness(responder: Responder, conversations: ConversationMode) -> Harness {
-    let link = Arc::new(Link { sim: Mutex::new(Sim::new(create_state(21))), logs: Mutex::new(Vec::new()) });
+    let link = Arc::new(Link { sim: Mutex::new(Sim::new(create_state(30))), logs: Mutex::new(Vec::new()) });
     let transport = FakeTransport::new(move |request| {
         let body = request.json();
         let tools: Vec<String> = body["tools"]

@@ -106,22 +106,23 @@
     "pronouns": "he/him",
     "age": 36,
     "occupation": "woodcutter and miner",
-    "backstory": "Came down from the hill clans with his brother Halric. Halric died on one of Aldric's patrols three winters ago, and Garrick has never forgiven the captain for coming back without him.",
+    "backstory": "Came down from the hill clans with his brother Halric. Three winters ago Halric went out on one of Aldric's patrols and never came back, and Garrick buried an empty coffin. He thinks the village forgot Halric far too quickly, and he has been looking for someone to make pay ever since.",
     "traits": [
-     "boisterous",
-     "proud",
-     "quick to anger",
-     "fiercely loyal"
+     "bitter",
+     "spiteful",
+     "cynical",
+     "spoiling for a fight"
     ],
     "goals": [
-     "hear Aldric admit he failed Halric",
-     "out-drink and out-work everyone",
-     "look after Dorn, his only real friend"
+     "make Aldric pay for coming home without Halric",
+     "find someone in this soft village worth fighting",
+     "keep Dorn, the one man who still puts up with him"
     ],
-    "speechStyle": "Loud, hearty, swears by his ancestors, speaks before he thinks.",
-    "temper": 0.85,
+    "speechStyle": "Snarling and sarcastic; goads and mocks, picks at old wounds, swears on Halric's grave, never backs down.",
+    "temper": 1,
     "bravery": 0.95,
     "sociability": 0.75,
+    "spite": 1,
     "voice": {
      "pitch": 0.65,
      "rate": 1,
@@ -315,22 +316,26 @@
     "pronouns": "she/her",
     "age": 26,
     "occupation": "market trader",
-    "backstory": "Runs the best stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them.",
+    "backstory": "Runs the busiest stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them. She learned long ago that a smile opens more purses than quick fingers, and nothing amuses her more than two men glaring at each other over her, a scene she is not above arranging.",
     "traits": [
+     "flirtatious",
+     "seductive",
      "witty",
-     "charming",
-     "opportunistic",
-     "a gossip"
+     "scheming",
+     "loves a drama",
+     "without scruples"
     ],
     "goals": [
-     "keep her past buried",
-     "turn a profit",
-     "know every secret in the village"
+     "have every man in the village a little in love with her",
+     "set her admirers against each other and enjoy the show",
+     "get what she wants with a smile rather than honest work",
+     "keep her past buried"
     ],
-    "speechStyle": "Fast, teasing, full of gossip and bargains.",
+    "speechStyle": "Low, teasing and full of double meanings; flatters shamelessly, pouts when refused, and drops a rival's name just to watch a man bristle.",
     "temper": 0.45,
     "bravery": 0.5,
     "sociability": 0.9,
+    "allure": 0.9,
     "voice": {
      "pitch": 1.2,
      "rate": 1.2,
@@ -504,6 +509,53 @@
      "timbre": "gruff, dry"
     }
    }
+  },
+  {
+   "key": "torvald",
+   "classId": "barbarian",
+   "model": "Barbarian_Large",
+   "hide": [
+    "Barbarian_Large_BearHat"
+   ],
+   "homeId": "home_8",
+   "jobs": [
+    "chop_wood",
+    "mine"
+   ],
+   "hobbies": [
+    "train",
+    "relax",
+    "stroll"
+   ],
+   "profile": {
+    "name": "Torvald Greymane",
+    "pronouns": "he/him",
+    "age": 28,
+    "occupation": "woodcutter and hauler",
+    "backstory": "The biggest man the hill clans ever sent down to the valley, and the quietest. He came down with Garrick's people as a boy and stayed when the rest went home. He can fell an oak alone and carry it in on his shoulder, but a woman wishing him good morning leaves him red to the ears and staring at his boots. Half the village is a little in love with him, and he has no idea.",
+    "traits": [
+     "painfully shy",
+     "fearless",
+     "gentle",
+     "loyal to the bone once he trusts you"
+    ],
+    "goals": [
+     "keep the village safe from the dead",
+     "find the courage to talk to Brenna that he finds in every fight",
+     "send word home to his little brother Bjarke"
+    ],
+    "speechStyle": "Few words, mumbled, eyes on the ground, long silences. With a woman he barely knows he loses the end of every sentence. With someone he trusts, a slow, warm voice and a dry humour nobody expects.",
+    "temper": 0.2,
+    "bravery": 0.97,
+    "sociability": 0.2,
+    "shyness": 0.85,
+    "looks": 0.95,
+    "voice": {
+     "pitch": 0.55,
+     "rate": 0.85,
+     "timbre": "deep, soft, hesitant"
+    }
+   }
   }
  ],
  "seedBonds": [
@@ -545,11 +597,11 @@
   {
    "from": "garrick",
    "to": "aldric",
-   "affinity": -32,
-   "trust": -25,
-   "grievance": 54,
+   "affinity": -55,
+   "trust": -45,
+   "grievance": 78,
    "familiarity": 55,
-   "summary": "He led my brother Halric out and came back without him."
+   "summary": "He led Halric out to die and walked home whole. One day I will make him bleed for it."
   },
   {
    "from": "aldric",
@@ -562,11 +614,20 @@
   },
   {
    "from": "garrick",
+   "to": "brenna",
+   "affinity": -20,
+   "trust": -15,
+   "grievance": 35,
+   "familiarity": 50,
+   "summary": "Aldric's lapdog. She would lick his boots if he asked."
+  },
+  {
+   "from": "garrick",
    "to": "dorn",
-   "affinity": 55,
-   "trust": 60,
+   "affinity": 45,
+   "trust": 55,
    "familiarity": 75,
-   "summary": "My drinking brother. The only one who tells me when I am being a fool."
+   "summary": "The only one who still drinks with me, and even he has started to look at me like a wound that will not close."
   },
   {
    "from": "dorn",
@@ -574,7 +635,7 @@
    "affinity": 52,
    "trust": 45,
    "familiarity": 75,
-   "summary": "Big-hearted oaf. Someone has to keep him out of trouble."
+   "summary": "Grief has turned him mean. Someone has to stop him killing somebody."
   },
   {
    "from": "rowan",
@@ -653,7 +714,7 @@
    "trust": 15,
    "attraction": 38,
    "familiarity": 45,
-   "summary": "The sharpest tongue at the market. I cannot tell if she likes me or my coin."
+   "summary": "She smiles at me one day and at Kael the next, and it is driving me mad."
   },
   {
    "from": "mira",
@@ -662,7 +723,59 @@
    "trust": 10,
    "attraction": 28,
    "familiarity": 45,
-   "summary": "Charming, useless, and oddly sweet."
+   "summary": "Sweet, silly Theron. He would fetch me the moon if I pouted prettily enough."
+  },
+  {
+   "from": "kael",
+   "to": "mira",
+   "affinity": 28,
+   "trust": 10,
+   "attraction": 36,
+   "familiarity": 40,
+   "summary": "She has a smile that could sink a fishing boat. Trouble, and I like trouble."
+  },
+  {
+   "from": "mira",
+   "to": "kael",
+   "affinity": 26,
+   "trust": 5,
+   "attraction": 10,
+   "familiarity": 40,
+   "summary": "Kael thinks he is the charmer of this village. Let him keep thinking it."
+  },
+  {
+   "from": "dorn",
+   "to": "mira",
+   "affinity": 30,
+   "trust": 15,
+   "attraction": 35,
+   "familiarity": 45,
+   "summary": "She talks me down to half my price and I thank her for it."
+  },
+  {
+   "from": "mira",
+   "to": "dorn",
+   "affinity": 22,
+   "trust": 10,
+   "familiarity": 45,
+   "summary": "Dorn goes as red as his forge whenever I smile. A useful man to have about."
+  },
+  {
+   "from": "garrick",
+   "to": "mira",
+   "affinity": 25,
+   "trust": 10,
+   "attraction": 30,
+   "familiarity": 40,
+   "summary": "Loud laugh, quick tongue. I like a woman who answers back."
+  },
+  {
+   "from": "mira",
+   "to": "garrick",
+   "affinity": 20,
+   "trust": 5,
+   "familiarity": 40,
+   "summary": "All muscle and temper. Point him the right way and stand back."
   },
   {
    "from": "aldric",
@@ -695,9 +808,138 @@
    "trust": 40,
    "familiarity": 50,
    "summary": "Sylvi is so calm. I wish I had her courage."
+  },
+  {
+   "from": "torvald",
+   "to": "garrick",
+   "affinity": 60,
+   "trust": 55,
+   "familiarity": 75,
+   "summary": "Garrick brought me down from the hills. He talks enough for both of us."
+  },
+  {
+   "from": "garrick",
+   "to": "torvald",
+   "affinity": 60,
+   "trust": 60,
+   "familiarity": 75,
+   "summary": "The quiet giant from the hills. Hits like a falling tree and talks like one too."
+  },
+  {
+   "from": "torvald",
+   "to": "brenna",
+   "affinity": 45,
+   "trust": 15,
+   "attraction": 60,
+   "familiarity": 35,
+   "summary": "Brave and bright as a drawn blade. When she looks at me I cannot get a word out."
+  },
+  {
+   "from": "brenna",
+   "to": "torvald",
+   "affinity": 40,
+   "trust": 30,
+   "attraction": 35,
+   "familiarity": 35,
+   "summary": "The giant who fights beside me and never says a word to me. I wish he would."
+  },
+  {
+   "from": "mira",
+   "to": "torvald",
+   "affinity": 35,
+   "trust": 20,
+   "attraction": 40,
+   "familiarity": 30,
+   "summary": "Prettiest man in the valley, and he turns red when I wink at him. Far too easy."
+  },
+  {
+   "from": "isolde",
+   "to": "torvald",
+   "affinity": 38,
+   "trust": 35,
+   "attraction": 30,
+   "familiarity": 30,
+   "summary": "He carried my herbs home through the rain and never said a word the whole way."
+  },
+  {
+   "from": "dorn",
+   "to": "torvald",
+   "affinity": 45,
+   "trust": 50,
+   "familiarity": 60,
+   "summary": "Strong as an ox and twice as quiet. I would trust him with my life, if I could get him to talk."
   }
  ],
  "newcomers": [
+  {
+   "key": "bjarke",
+   "classId": "barbarian",
+   "model": "Barbarian_Large",
+   "texture": "barbarian_texture_alt_B",
+   "hide": [
+    "Barbarian_Large_ShoulderpadLeft",
+    "Barbarian_Large_ShoulderpadRight"
+   ],
+   "mainHand": "sword_2handed",
+   "jobs": [
+    "chop_wood",
+    "mine"
+   ],
+   "hobbies": [
+    "train",
+    "stroll",
+    "rest"
+   ],
+   "profile": {
+    "name": "Bjarke Greymane",
+    "pronouns": "he/him",
+    "age": 24,
+    "occupation": "hill-clan hunter",
+    "backstory": "Torvald's younger brother, as tall and nearly as quiet, come down from the hills after two winters without a word from him. He has hunted the high slopes alone since he was a boy and is easier with wolves than with people, and far easier with men than with women. Wherever he goes, heads turn; he assumes something is wrong with his face.",
+    "traits": [
+     "shy",
+     "brave",
+     "kind",
+     "watchful"
+    ],
+    "goals": [
+     "find his brother Torvald",
+     "earn a place in the valley",
+     "learn to talk to people without wanting to hide"
+    ],
+    "speechStyle": "Short, quiet and polite; often just a nod. Talks freely about hunting and the hills, but with a woman he loses the thread halfway through and goes silent.",
+    "temper": 0.3,
+    "bravery": 0.9,
+    "sociability": 0.3,
+    "shyness": 0.75,
+    "looks": 0.9,
+    "voice": {
+     "pitch": 0.6,
+     "rate": 0.9,
+     "timbre": "low, gentle"
+    }
+   },
+   "bonds": [
+    {
+     "from": "bjarke",
+     "to": "torvald",
+     "affinity": 80,
+     "trust": 85,
+     "familiarity": 95,
+     "kin": true,
+     "summary": "My big brother. Two winters without a word, and here he is, felling trees as if nothing happened."
+    },
+    {
+     "from": "torvald",
+     "to": "bjarke",
+     "affinity": 85,
+     "trust": 85,
+     "familiarity": 95,
+     "kin": true,
+     "summary": "Little Bjarke. The only person I have never once been shy with."
+    }
+   ]
+  },
   {
    "key": "halvard",
    "classId": "paladin",

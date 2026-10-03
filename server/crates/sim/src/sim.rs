@@ -22,7 +22,7 @@ use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
 use crate::systems::needs::update_needs;
 use crate::systems::perception::update_perception;
-use crate::systems::relationships::{RUNG_FEUD, daily_relationships, lethal_unlocked};
+use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
@@ -48,7 +48,7 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
                 return true;
             }
             if *mode == FightMode::Brawl {
-                rel(ctx.c(id), target_id).grievance >= RUNG_FEUD
+                brawl_unlocked(ctx.cr(id), target_id)
             } else {
                 lethal_unlocked(ctx, id, target_id)
             }

@@ -7,7 +7,7 @@ use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, 
 use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, panic_chance, start_fight};
 use fsw_sim::systems::death::kill_character;
 use fsw_sim::systems::monsters::spawn_monster;
-use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, Rung, label_for, lethal_unlocked, rung_of};
+use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, RUNG_GRUDGE, Rung, label_for, lethal_unlocked, rung_of};
 use fsw_sim::util::{Ctx, first_name, living, new_relationship, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
 
@@ -123,6 +123,55 @@ fn the_ladder_refuses_a_brawl_without_a_feud_and_allows_one_with_it() {
 }
 
 #[test]
+fn a_spiteful_villager_comes_to_blows_over_a_grudge_short_of_a_feud() {
+    let mut w = World::new(31);
+    w.run(5);
+    let (mira, kael) = (w.who("Mira"), w.who("Kael"));
+    rel(w.sim.state.characters.get_mut(&mira).unwrap(), &kael).grievance = RUNG_GRUDGE + 10.0;
+    w.fight(&mira, &kael, FightMode::Brawl, None);
+    w.run(2);
+    assert!(!w.sim.state.characters[&mira].intent.as_ref().is_some_and(|i| i.is_fight()));
+    w.sim.state.characters.get_mut(&mira).unwrap().profile.spite = 1.0;
+    w.fight(&mira, &kael, FightMode::Brawl, None);
+    w.run(2);
+    let intent = w.sim.state.characters[&mira].intent.clone().unwrap();
+    assert!(matches!(intent.action, IntentAction::Fight { mode: FightMode::Brawl, .. }));
+}
+
+/// Hostile talks Garrick starts with people he holds no grudge against, over four days of a busy village.
+fn quarrels_picked_by_garrick(seed: u32, spite: f64) -> (usize, Sim) {
+    let mut sim = Sim::new(create_state(seed));
+    let garrick = living(&sim.state).find(|c| first_name(c) == "Garrick").unwrap().id.clone();
+    sim.state.characters.get_mut(&garrick).unwrap().profile.spite = spite;
+    let mut picked = 0;
+    for _ in 0..TICKS_PER_DAY * 4 {
+        for event in sim.step() {
+            if let SimEvent::ConversationStarted { a, b, tone: TalkTone::Hostile, .. } = event
+                && a == garrick
+                && sim.state.characters[&a].relationships.get(&b).is_none_or(|r| r.grievance < RUNG_GRUDGE)
+            {
+                picked += 1;
+            }
+        }
+    }
+    (picked, sim)
+}
+
+#[test]
+fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
+    // Worlds where Garrick and Dorn both live through the four days.
+    for seed in [4, 1] {
+        let (calm, _) = quarrels_picked_by_garrick(seed, 0.0);
+        let (spiteful, sim) = quarrels_picked_by_garrick(seed, 1.0);
+        assert_eq!(calm, 0, "seed {seed}");
+        assert!(spiteful >= 2, "seed {seed}: only {spiteful} quarrels picked");
+        let state = &sim.state;
+        let id = |name: &str| living(state).find(|c| first_name(c) == name).expect(name).id.clone();
+        assert!(state.characters[&id("Garrick")].relationships[&id("Dorn")].affinity > 0.0, "seed {seed}");
+    }
+}
+
+#[test]
 fn a_brawl_ends_with_a_winner_a_loser_and_nobody_dead() {
     let mut w = World::new(31);
     w.run(5);
@@ -132,7 +181,7 @@ fn a_brawl_ends_with_a_winner_a_loser_and_nobody_dead() {
     let blows = |w: &World| w.sim.state.chronicle.iter().any(|entry| entry.text.contains("came to blows"));
     w.run_until(6000, blows);
     assert!(blows(&w));
-    assert_eq!(w.sim.state.order.len(), 12);
+    assert_eq!(w.sim.state.order.len(), 13);
     let state = &w.sim.state;
     let (g, d) = (&state.characters[&garrick], &state.characters[&dorn]);
     assert!(g.hp.min(d.hp) > 0.0);
@@ -183,7 +232,7 @@ fn a_killing_is_permanent_with_a_grave_and_a_village_that_does_not_forgive() {
     w.run(5);
     let state = &w.sim.state;
     assert!(!state.characters.contains_key(&aldric));
-    assert_eq!(state.order.len(), 11);
+    assert_eq!(state.order.len(), 12);
     assert_eq!(state.dead[&aldric].killer_id.as_deref(), Some(garrick.as_str()));
     assert!(state.graves.iter().any(|grave| grave.character_id == aldric));
     assert!(state.characters[&garrick].killer);
@@ -261,7 +310,8 @@ fn the_fearless_do_not_panic() {
 
 #[test]
 fn a_newcomer_arrives_after_a_death() {
-    let mut w = World::new(5);
+    // A world where nobody else dies in the next few days, which would put the newcomer off.
+    let mut w = World::new(4);
     w.run(10);
     let victim = w.who("Isolde");
     {
@@ -269,12 +319,18 @@ fn a_newcomer_arrives_after_a_death() {
         let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
         kill_character(&mut ctx, &victim, "lost to a fever", None);
     }
-    assert_eq!(w.sim.state.order.len(), 11);
+    assert_eq!(w.sim.state.order.len(), 12);
     w.run_until(TICKS_PER_DAY * 4, |w| w.sim.state.director.arrivals > 0);
     assert_eq!(w.sim.state.director.arrivals, 1);
     let newcomer = living(&w.sim.state).find(|c| c.arrived_tick > 0).unwrap();
-    assert_eq!(newcomer.profile.name, "Halvard Dawnmere");
+    assert_eq!(newcomer.profile.name, "Bjarke Greymane");
     assert!(newcomer.home_id.starts_with("home_"));
+    // His brother is still alive, so they know each other at once.
+    let torvald = w.who("Torvald");
+    let state = &w.sim.state;
+    assert!(newcomer.relationships[&torvald].kin);
+    assert!(state.characters[&torvald].relationships[&newcomer.id].kin);
+    assert!(newcomer.relationships[&torvald].trust >= 80.0);
     let rowan = &w.sim.state.characters[&w.who("Rowan")];
     assert!(rowan.memories.iter().any(|m| m.text.contains("Isolde is dead")));
 }

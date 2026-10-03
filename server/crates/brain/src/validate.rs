@@ -6,8 +6,8 @@ use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone,
 };
-use fsw_sim::systems::relationships::RUNG_FEUD;
-use fsw_sim::util::{first_name, living, rel_or_default};
+use fsw_sim::systems::relationships::brawl_unlocked;
+use fsw_sim::util::{first_name, living};
 use fsw_world::places::{ActivityId, Place, places};
 use serde_json::{Map as JsonMap, Value};
 
@@ -364,7 +364,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     continue;
                 };
                 let lethal = call.name == "attack";
-                if !lethal && rel_or_default(c, &person.id).grievance < RUNG_FEUD {
+                if !lethal && !brawl_unlocked(c, &person.id) {
                     decision.problems.push(format!("not enough of a feud with {} to brawl", first_name(person)));
                     continue;
                 }
