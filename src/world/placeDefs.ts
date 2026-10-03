@@ -412,6 +412,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
     door: [0, 2.8],
     clear: 8,
     props: [
+      { model: 'custom/banner_board', at: [-4.4, 1.0], block: 0.9 },
       { model: 'dungeon/banner_shield_blue', at: [-4.4, 1.0], y: 0, block: 0 },
       { model: 'dungeon/torch_lit', at: [2.4, 2.2], y: 1.6, block: 0 },
       { model: 'dungeon/crates_stacked', at: [4.6, 0.6], rot: 20 },

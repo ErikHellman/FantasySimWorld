@@ -188,6 +188,29 @@ def notice_board(name):
     export(name)
 
 
+def banner_board(name):
+    """A plank board on two posts for a KayKit banner to hang on.
+
+    The banners are made for walls: the cloth has no back faces and hangs just in
+    front of glTF z = 0.378 (Blender y = -0.378). The board's front sits right
+    behind it so the banner looks nailed on and is solid from behind.
+    """
+    reset()
+    rng = random.Random(name)
+    planks = 4
+    width = 1.7
+    for index in range(planks):
+        x = -width / 2 + (index + 0.5) * width / planks
+        top = 3.95 + rng.uniform(-0.06, 0.06)
+        bottom = 0.35 + rng.uniform(-0.04, 0.04)
+        box((width / planks - 0.015, 0.1, top - bottom), (x, -0.31, (top + bottom) / 2), "wood_light" if index % 2 else "wood", rotation=(0, rng.uniform(-0.015, 0.015), 0))
+    for x in (-0.6, 0.6):
+        box((0.2, 0.2, 4.15), (x, -0.16, 2.075), "wood_dark", rotation=(0, 0, rng.uniform(-0.1, 0.1)))
+    box((1.95, 0.1, 0.22), (0, -0.01, 3.55), "wood", rotation=(0, rng.uniform(-0.02, 0.02), 0))
+    box((1.95, 0.1, 0.22), (0, -0.01, 0.85), "wood", rotation=(0, rng.uniform(-0.02, 0.02), 0))
+    export(name)
+
+
 fence("fence_wood")
 fence("fence_wood_broken", broken=True)
 fence_post("fence_wood_post")
@@ -198,3 +221,4 @@ flowers("flowers_mixed", ["petal_red", "petal_yellow", "petal_violet", "petal_bl
 mushrooms("mushrooms_red", "cap_red", 3, 5)
 mushrooms("mushrooms_brown", "cap_brown", 4, 6)
 notice_board("notice_board")
+banner_board("banner_board")
