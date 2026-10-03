@@ -33,6 +33,12 @@ importers:
       '@types/three':
         specifier: ^0.186.0
         version: 0.186.0
+      meshoptimizer:
+        specifier: 1.1.1
+        version: 1.1.1
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@26.6.3)
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

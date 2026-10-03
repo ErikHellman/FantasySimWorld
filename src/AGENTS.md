@@ -40,10 +40,11 @@ The wire types are in `generated/api.ts`, exported from `server/crates/server/sr
 - **The model's settings are not the browser's business**: the admin panel shows them read-only and offers a connection test. Do not add inputs for them.
 - **Audio settings** (on/off and volumes) are per browser, in local storage. Sounds are slots (`audio/slots.ts`, `audio/musicTracks.ts`) filled from `public/audio/`; only CC0, public domain or CC BY files, credited in `public/audio/CREDITS.md`.
 - **Rendering** goes through `three/webgpu` with a WebGL 2 fallback (`render/renderer.ts`); keep both working. `?renderer=webgl` or `?renderer=webgpu` forces one.
+- **Quality tiers** live in `render/quality.ts`: `high` is the full picture, `low` is what phones get, and `?quality=` forces either. A new cost (a light, a bigger texture, a post-processing pass) needs a `low` answer there. Static scenery goes through `SceneryBuilder`, which instances what repeats and bakes the rest into one mesh per material and chunk; do not add static meshes to the scene one by one.
 
 ## Checking a change in a browser
 
 - Start the server (see the root AGENTS.md; `AUTH_MODE=off` and a scratch `DATA_DIR` are simplest) and `pnpm dev`, then open <http://localhost:5173>. Vite forwards `/api` and `/auth` to the server.
-- The page exposes `window.__debug = { world, view, playback, stream, renderer, ui, actions, audio, mood }`. Read state through it rather than the DOM; Preact can render late.
+- The page exposes `window.__debug = { world, view, playback, stream, renderer, ui, actions, audio, mood, stats }`. `__debug.stats()` reports frame times, draw calls, triangles and GPU memory; check it before and after a change to the rendering. The renderer's counts leave out the instanced draws of the shadow pass, so compare shadow casters by counting them in the scene. Read state through it rather than the DOM; Preact can render late.
 - A browser tab that is hidden or in the background barely runs `requestAnimationFrame`, so the picture and the camera stand still there even though the stream keeps arriving. Screenshots of a hidden pane can show a stale frame.
 - `?render=off` follows the stream without drawing, for headless checks where software WebGL is far too slow; `?debug=nav` draws the navigation grid and activity spots.

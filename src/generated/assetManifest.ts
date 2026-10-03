@@ -3,59 +3,59 @@ import type { AssetManifest } from '../core/assetTypes';
 
 export const assetManifest: AssetManifest = {
  "textures": {
-  "barbarian_texture": "assets/textures/barbarian_texture.png",
-  "barbarian_texture_alt_A": "assets/textures/barbarian_texture_alt_A.png",
-  "barbarian_texture_alt_B": "assets/textures/barbarian_texture_alt_B.png",
-  "barbarian_texture_alt_C": "assets/textures/barbarian_texture_alt_C.png",
-  "caveman_texture": "assets/textures/caveman_texture.png",
-  "cleric_texture": "assets/textures/cleric_texture.png",
-  "druid_texture": "assets/textures/druid_texture.png",
-  "druid_texture_alt_A": "assets/textures/druid_texture_alt_A.png",
-  "druid_texture_alt_B": "assets/textures/druid_texture_alt_B.png",
-  "druid_texture_alt_C": "assets/textures/druid_texture_alt_C.png",
-  "dungeon_texture": "assets/textures/dungeon_texture.png",
-  "engineer_texture": "assets/textures/engineer_texture.png",
-  "engineer_texture_alt_A": "assets/textures/engineer_texture_alt_A.png",
-  "engineer_texture_alt_B": "assets/textures/engineer_texture_alt_B.png",
-  "engineer_texture_alt_C": "assets/textures/engineer_texture_alt_C.png",
-  "farmer_texture_A": "assets/textures/farmer_texture_A.png",
-  "forest_texture": "assets/textures/forest_texture.png",
-  "halloweenbits_texture": "assets/textures/halloweenbits_texture.png",
-  "hexagons_medieval": "assets/textures/hexagons_medieval.png",
-  "hexagons_medieval_Winter": "assets/textures/hexagons_medieval_Winter.png",
-  "hiker_texture": "assets/textures/hiker_texture.png",
-  "kaykit_texture_A": "assets/textures/kaykit_texture_A.png",
-  "knight_texture": "assets/textures/knight_texture.png",
-  "knight_texture_alt_A": "assets/textures/knight_texture_alt_A.png",
-  "knight_texture_alt_B": "assets/textures/knight_texture_alt_B.png",
-  "knight_texture_alt_C": "assets/textures/knight_texture_alt_C.png",
-  "lorekeeper_texture": "assets/textures/lorekeeper_texture.png",
-  "mage_texture": "assets/textures/mage_texture.png",
-  "mage_texture_alt_A": "assets/textures/mage_texture_alt_A.png",
-  "mage_texture_alt_B": "assets/textures/mage_texture_alt_B.png",
-  "mage_texture_alt_C": "assets/textures/mage_texture_alt_C.png",
-  "paladin_texture_A": "assets/textures/paladin_texture_A.png",
-  "ranger_texture": "assets/textures/ranger_texture.png",
-  "ranger_texture_alt_A": "assets/textures/ranger_texture_alt_A.png",
-  "ranger_texture_alt_B": "assets/textures/ranger_texture_alt_B.png",
-  "ranger_texture_alt_C": "assets/textures/ranger_texture_alt_C.png",
-  "resource_bits_texture": "assets/textures/resource_bits_texture.png",
-  "restaurantbits_extra": "assets/textures/restaurantbits_extra.png",
-  "rogue_texture": "assets/textures/rogue_texture.png",
-  "rogue_texture_alt_A": "assets/textures/rogue_texture_alt_A.png",
-  "rogue_texture_alt_B": "assets/textures/rogue_texture_alt_B.png",
-  "rogue_texture_alt_C": "assets/textures/rogue_texture_alt_C.png",
-  "skeleton_texture_A": "assets/textures/skeleton_texture_A.png",
-  "skeleton_texture_B": "assets/textures/skeleton_texture_B.png",
-  "tiefling_texture": "assets/textures/tiefling_texture.png",
-  "tools_bits_map": "assets/textures/tools_bits_map.png",
-  "tools_bits_texture": "assets/textures/tools_bits_texture.png",
-  "werewolf_A": "assets/textures/werewolf_A.png",
-  "witch_texture_A": "assets/textures/witch_texture_A.png"
+  "barbarian_texture": "assets/textures/barbarian_texture.png?v=9b168a9d6c",
+  "barbarian_texture_alt_A": "assets/textures/barbarian_texture_alt_A.png?v=d5fb1c4b7d",
+  "barbarian_texture_alt_B": "assets/textures/barbarian_texture_alt_B.png?v=3e5bd50893",
+  "barbarian_texture_alt_C": "assets/textures/barbarian_texture_alt_C.png?v=b3278a9e44",
+  "caveman_texture": "assets/textures/caveman_texture.png?v=ee47a639cc",
+  "cleric_texture": "assets/textures/cleric_texture.png?v=8a73032810",
+  "druid_texture": "assets/textures/druid_texture.png?v=f413288059",
+  "druid_texture_alt_A": "assets/textures/druid_texture_alt_A.png?v=c9b4fac9d9",
+  "druid_texture_alt_B": "assets/textures/druid_texture_alt_B.png?v=138cf9dea7",
+  "druid_texture_alt_C": "assets/textures/druid_texture_alt_C.png?v=141dd5e3ff",
+  "dungeon_texture": "assets/textures/dungeon_texture.png?v=9ab1e69fcc",
+  "engineer_texture": "assets/textures/engineer_texture.png?v=42520d5807",
+  "engineer_texture_alt_A": "assets/textures/engineer_texture_alt_A.png?v=ef36290cd7",
+  "engineer_texture_alt_B": "assets/textures/engineer_texture_alt_B.png?v=8c936fac1f",
+  "engineer_texture_alt_C": "assets/textures/engineer_texture_alt_C.png?v=5e5c6ab79a",
+  "farmer_texture_A": "assets/textures/farmer_texture_A.png?v=a051f64701",
+  "forest_texture": "assets/textures/forest_texture.png?v=6293796f2f",
+  "halloweenbits_texture": "assets/textures/halloweenbits_texture.png?v=47aad582e5",
+  "hexagons_medieval": "assets/textures/hexagons_medieval.png?v=f214286f09",
+  "hexagons_medieval_Winter": "assets/textures/hexagons_medieval_Winter.png?v=3beb3742ce",
+  "hiker_texture": "assets/textures/hiker_texture.png?v=3122a3e04f",
+  "kaykit_texture_A": "assets/textures/kaykit_texture_A.png?v=ddd6ee7de7",
+  "knight_texture": "assets/textures/knight_texture.png?v=02704aeea5",
+  "knight_texture_alt_A": "assets/textures/knight_texture_alt_A.png?v=7acdfdcd92",
+  "knight_texture_alt_B": "assets/textures/knight_texture_alt_B.png?v=bd22dceb9d",
+  "knight_texture_alt_C": "assets/textures/knight_texture_alt_C.png?v=cc1429e58b",
+  "lorekeeper_texture": "assets/textures/lorekeeper_texture.png?v=e0e480d13a",
+  "mage_texture": "assets/textures/mage_texture.png?v=a0bb753c77",
+  "mage_texture_alt_A": "assets/textures/mage_texture_alt_A.png?v=6f45aa2789",
+  "mage_texture_alt_B": "assets/textures/mage_texture_alt_B.png?v=c016d4b2e9",
+  "mage_texture_alt_C": "assets/textures/mage_texture_alt_C.png?v=d2a62eed6a",
+  "paladin_texture_A": "assets/textures/paladin_texture_A.png?v=b240f31872",
+  "ranger_texture": "assets/textures/ranger_texture.png?v=7638fcc837",
+  "ranger_texture_alt_A": "assets/textures/ranger_texture_alt_A.png?v=c986ba36d5",
+  "ranger_texture_alt_B": "assets/textures/ranger_texture_alt_B.png?v=d58a941d9b",
+  "ranger_texture_alt_C": "assets/textures/ranger_texture_alt_C.png?v=7a8c9979d2",
+  "resource_bits_texture": "assets/textures/resource_bits_texture.png?v=ca20584562",
+  "restaurantbits_extra": "assets/textures/restaurantbits_extra.png?v=9fbddbc9cf",
+  "rogue_texture": "assets/textures/rogue_texture.png?v=156e20755c",
+  "rogue_texture_alt_A": "assets/textures/rogue_texture_alt_A.png?v=d90ffa3970",
+  "rogue_texture_alt_B": "assets/textures/rogue_texture_alt_B.png?v=d02e073724",
+  "rogue_texture_alt_C": "assets/textures/rogue_texture_alt_C.png?v=70a0a3abb7",
+  "skeleton_texture_A": "assets/textures/skeleton_texture_A.png?v=61ebc74a77",
+  "skeleton_texture_B": "assets/textures/skeleton_texture_B.png?v=1ce2e1ee0a",
+  "tiefling_texture": "assets/textures/tiefling_texture.png?v=1aa2671b61",
+  "tools_bits_map": "assets/textures/tools_bits_map.png?v=d77f40cec4",
+  "tools_bits_texture": "assets/textures/tools_bits_texture.png?v=8aea9df486",
+  "werewolf_A": "assets/textures/werewolf_A.png?v=d92b450434",
+  "witch_texture_A": "assets/textures/witch_texture_A.png?v=ff1c5e91f4"
  },
  "bundles": {
   "hex": {
-   "url": "assets/bundles/hex.glb",
+   "url": "assets/bundles/hex.glb?v=41997ddff9",
    "models": {
     "hex_grass": {
      "bounds": [
@@ -1420,7 +1420,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "forest": {
-   "url": "assets/bundles/forest.glb",
+   "url": "assets/bundles/forest.glb?v=7262322ebd",
    "models": {
     "Bush_1_A": {
      "bounds": [
@@ -2715,7 +2715,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "halloween": {
-   "url": "assets/bundles/halloween.glb",
+   "url": "assets/bundles/halloween.glb?v=4c6c05875a",
    "models": {
     "arch": {
      "bounds": [
@@ -3350,7 +3350,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "dungeon": {
-   "url": "assets/bundles/dungeon.glb",
+   "url": "assets/bundles/dungeon.glb?v=4789952dc8",
    "models": {
     "banner_blue": {
      "bounds": [
@@ -4185,7 +4185,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "resource": {
-   "url": "assets/bundles/resource.glb",
+   "url": "assets/bundles/resource.glb?v=d0492af401",
    "models": {
     "Containers_Crate_Large": {
      "bounds": [
@@ -4770,7 +4770,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "tools": {
-   "url": "assets/bundles/tools.glb",
+   "url": "assets/bundles/tools.glb?v=2c900aa19b",
    "models": {
     "anvil": {
      "bounds": [
@@ -4935,7 +4935,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "props": {
-   "url": "assets/bundles/props.glb",
+   "url": "assets/bundles/props.glb?v=2623545ce7",
    "models": {
     "Campfire_Base": {
      "bounds": [
@@ -5240,7 +5240,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "weapons": {
-   "url": "assets/bundles/weapons.glb",
+   "url": "assets/bundles/weapons.glb?v=64c92d002b",
    "models": {
     "arrow_bow": {
      "bounds": [
@@ -5635,7 +5635,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "custom": {
-   "url": "assets/bundles/custom.glb",
+   "url": "assets/bundles/custom.glb?v=ec09f34132",
    "models": {
     "banner_board": {
      "bounds": [
@@ -5689,20 +5689,20 @@ export const assetManifest: AssetManifest = {
     },
     "flowers_red": {
      "bounds": [
-      -0.203,
+      -0.2,
       -0.001,
-      -0.364,
-      0.355,
+      -0.354,
+      0.352,
       0.661,
-      0.514
+      0.493
      ]
     },
     "flowers_violet": {
      "bounds": [
       -0.401,
       -0.001,
-      -0.512,
-      0.228,
+      -0.503,
+      0.225,
       0.661,
       0.275
      ]
@@ -5712,9 +5712,9 @@ export const assetManifest: AssetManifest = {
       -0.237,
       -0.001,
       -0.482,
-      0.464,
+      0.461,
       0.683,
-      0.265
+      0.244
      ]
     },
     "mushrooms_brown": {
@@ -5752,147 +5752,147 @@ export const assetManifest: AssetManifest = {
  },
  "characters": {
   "Knight": {
-   "url": "assets/characters/Knight.glb",
+   "url": "assets/characters/Knight.glb?v=d9d4ac2a31",
    "texture": "knight_texture",
    "height": 2.54,
    "rig": "medium",
    "scale": 1
   },
   "Barbarian": {
-   "url": "assets/characters/Barbarian.glb",
+   "url": "assets/characters/Barbarian.glb?v=a05c5e4633",
    "texture": "barbarian_texture",
    "height": 2.4,
    "rig": "medium",
    "scale": 1
   },
   "Mage": {
-   "url": "assets/characters/Mage.glb",
+   "url": "assets/characters/Mage.glb?v=2475be896a",
    "texture": "mage_texture",
    "height": 2.65,
    "rig": "medium",
    "scale": 1
   },
   "Ranger": {
-   "url": "assets/characters/Ranger.glb",
+   "url": "assets/characters/Ranger.glb?v=31b8bbd4e2",
    "texture": "ranger_texture",
    "height": 2.27,
    "rig": "medium",
    "scale": 1
   },
   "Rogue": {
-   "url": "assets/characters/Rogue.glb",
+   "url": "assets/characters/Rogue.glb?v=0661279d26",
    "texture": "rogue_texture",
    "height": 2.18,
    "rig": "medium",
    "scale": 1
   },
   "Rogue_Hooded": {
-   "url": "assets/characters/Rogue_Hooded.glb",
+   "url": "assets/characters/Rogue_Hooded.glb?v=9ee908bc04",
    "texture": "rogue_texture",
    "height": 2.17,
    "rig": "medium",
    "scale": 1
   },
   "Druid": {
-   "url": "assets/characters/Druid.glb",
+   "url": "assets/characters/Druid.glb?v=c8189f74bf",
    "texture": "druid_texture",
    "height": 2.75,
    "rig": "medium",
    "scale": 1
   },
   "Engineer": {
-   "url": "assets/characters/Engineer.glb",
+   "url": "assets/characters/Engineer.glb?v=28d4ec2c99",
    "texture": "engineer_texture",
    "height": 2.27,
    "rig": "medium",
    "scale": 1
   },
   "Skeleton_Minion": {
-   "url": "assets/characters/Skeleton_Minion.glb",
+   "url": "assets/characters/Skeleton_Minion.glb?v=4377ea26f4",
    "texture": "skeleton_texture_A",
    "height": 2.17,
    "rig": "medium",
    "scale": 1
   },
   "Skeleton_Warrior": {
-   "url": "assets/characters/Skeleton_Warrior.glb",
+   "url": "assets/characters/Skeleton_Warrior.glb?v=42c3cb6848",
    "texture": "skeleton_texture_A",
    "height": 2.59,
    "rig": "medium",
    "scale": 1
   },
   "Skeleton_Rogue": {
-   "url": "assets/characters/Skeleton_Rogue.glb",
+   "url": "assets/characters/Skeleton_Rogue.glb?v=573498a4ac",
    "texture": "skeleton_texture_A",
    "height": 2.31,
    "rig": "medium",
    "scale": 1
   },
   "Skeleton_Mage": {
-   "url": "assets/characters/Skeleton_Mage.glb",
+   "url": "assets/characters/Skeleton_Mage.glb?v=0a1e77589b",
    "texture": "skeleton_texture_A",
    "height": 2.63,
    "rig": "medium",
    "scale": 1
   },
   "Necromancer": {
-   "url": "assets/characters/Necromancer.glb",
+   "url": "assets/characters/Necromancer.glb?v=dca8946cd2",
    "texture": "skeleton_texture_A",
    "height": 2.44,
    "rig": "medium",
    "scale": 1
   },
   "Paladin": {
-   "url": "assets/characters/Paladin.glb",
+   "url": "assets/characters/Paladin.glb?v=2d82c4a3c2",
    "texture": "paladin_texture_A",
    "height": 2.36,
    "rig": "medium",
    "scale": 1
   },
   "Cleric": {
-   "url": "assets/characters/Cleric.glb",
+   "url": "assets/characters/Cleric.glb?v=cfbbe92b5f",
    "texture": "cleric_texture",
    "height": 2.17,
    "rig": "medium",
    "scale": 1
   },
   "Witch": {
-   "url": "assets/characters/Witch.glb",
+   "url": "assets/characters/Witch.glb?v=8201f229db",
    "texture": "witch_texture_A",
    "height": 2.62,
    "rig": "medium",
    "scale": 1
   },
   "Tiefling": {
-   "url": "assets/characters/Tiefling.glb",
+   "url": "assets/characters/Tiefling.glb?v=d0384cd6eb",
    "texture": "tiefling_texture",
    "height": 2.34,
    "rig": "medium",
    "scale": 1
   },
   "Lorekeeper": {
-   "url": "assets/characters/Lorekeeper.glb",
+   "url": "assets/characters/Lorekeeper.glb?v=edebdc5def",
    "texture": "lorekeeper_texture",
    "height": 2.14,
    "rig": "medium",
    "scale": 1
   },
   "Farmer_A": {
-   "url": "assets/characters/Farmer_A.glb",
+   "url": "assets/characters/Farmer_A.glb?v=808ed08cd3",
    "texture": "farmer_texture_A",
    "height": 2.41,
    "rig": "medium",
    "scale": 1
   },
   "Farmer_B": {
-   "url": "assets/characters/Farmer_B.glb",
+   "url": "assets/characters/Farmer_B.glb?v=30bc2913ed",
    "texture": "farmer_texture_A",
    "height": 2.33,
    "rig": "medium",
    "scale": 1
   },
   "Barbarian_Large": {
-   "url": "assets/characters/Barbarian_Large.glb",
+   "url": "assets/characters/Barbarian_Large.glb?v=bc7ed60182",
    "texture": "barbarian_texture",
    "height": 2.9,
    "rig": "large",
@@ -5901,7 +5901,7 @@ export const assetManifest: AssetManifest = {
  },
  "rigs": {
   "medium": {
-   "url": "assets/animations/rig-medium.glb",
+   "url": "assets/animations/rig-medium.glb?v=c3b6c3376c",
    "clips": {
     "Death_A": 0.8,
     "Death_A_Pose": 0,
@@ -5985,7 +5985,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "large": {
-   "url": "assets/animations/rig-large.glb",
+   "url": "assets/animations/rig-large.glb?v=3f27c7e577",
    "clips": {
     "Death_A": 1.667,
     "Death_A_Pose": 0,

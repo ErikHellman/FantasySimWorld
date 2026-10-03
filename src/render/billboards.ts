@@ -4,8 +4,8 @@ import { BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_WIDTH } from '../world/plac
 import type { Billboard } from '../world/places';
 import { LINE_HEIGHT, layoutLines } from './billboardText';
 
-/** Canvas pixels per metre of board face. */
-const PIXELS_PER_METRE = 300;
+/** The face is laid out at this many canvas pixels per metre; a smaller canvas is painted to the same layout, scaled down. */
+const LAYOUT_PIXELS_PER_METRE = 300;
 /** How far the face leans back, so it reads from the usual camera angle above. */
 const LEAN = 0.12;
 const FONT = '"Georgia", "Palatino Linotype", "Book Antiqua", serif';
@@ -35,7 +35,7 @@ class BoardView {
   private readonly texture: THREE.CanvasTexture;
   private shown = '';
 
-  constructor(board: Billboard, groundAt: (x: number, z: number) => number) {
+  constructor(board: Billboard, groundAt: (x: number, z: number) => number, private readonly pixelsPerMetre: number) {
     const w = BILLBOARD_WIDTH;
     const h = BILLBOARD_HEIGHT;
     const postX = w / 2 - 0.35;
@@ -60,8 +60,8 @@ class BoardView {
     const back = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, h + 0.24, 0.12), darkWood);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.12, 0.42), wood);
     roof.position.set(0, h / 2 + 0.2, 0.06);
-    this.canvas.width = Math.round(w * PIXELS_PER_METRE);
-    this.canvas.height = Math.round(h * PIXELS_PER_METRE);
+    this.canvas.width = Math.round(w * pixelsPerMetre);
+    this.canvas.height = Math.round(h * pixelsPerMetre);
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 4;
@@ -90,7 +90,10 @@ class BoardView {
   private paint(content: BoardContent | undefined): void {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;
-    const { width, height } = this.canvas;
+    const scale = this.pixelsPerMetre / LAYOUT_PIXELS_PER_METRE;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const width = this.canvas.width / scale;
+    const height = this.canvas.height / scale;
     const palette = PALETTES[content?.tone ?? 'absurd'];
     ctx.fillStyle = palette.paper;
     ctx.fillRect(0, 0, width, height);
@@ -128,9 +131,9 @@ export class Billboards {
   private readonly views = new Map<string, BoardView>();
   private content = new Map<string, BoardContent>();
 
-  constructor(boards: readonly Billboard[], groundAt: (x: number, z: number) => number) {
+  constructor(boards: readonly Billboard[], groundAt: (x: number, z: number) => number, pixelsPerMetre: number) {
     for (const board of boards) {
-      const view = new BoardView(board, groundAt);
+      const view = new BoardView(board, groundAt, pixelsPerMetre);
       view.show(undefined);
       this.views.set(board.id, view);
       this.group.add(view.root);

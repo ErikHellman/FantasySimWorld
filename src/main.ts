@@ -11,8 +11,10 @@ import { Playback } from './net/playback';
 import { Stream, viewerId } from './net/stream';
 import { ViewWorld } from './net/viewWorld';
 import { Assets } from './render/assets';
+import { pickQuality, qualitySettings, thisDevice } from './render/quality';
 import { backendFromUrl, createRenderer, fitRenderer } from './render/renderer';
 import { WorldView } from './render/scene';
+import { FrameStats } from './render/stats';
 import { SpeechBus } from './speech/speechBus';
 import { App } from './ui/App';
 import { watchLayout } from './ui/layout';
@@ -26,6 +28,11 @@ import { worldHash } from './world/navgrid';
 
 const UI_REFRESH_SECONDS = 0.25;
 const MAX_FRAME_SECONDS = 0.1;
+/** Frames further apart than this come from a hidden or stalled tab and say nothing about the device's speed. */
+const STALLED_FRAME_MS = 250;
+/** On a small machine, frames that keep taking longer than this lower the resolution, a step at a time. */
+const SLOW_FRAME_MS = 40;
+const PIXEL_RATIO_STEP = 0.25;
 /** monsters this close to where the camera looks make the music tense */
 const MONSTERS_NEAR = 60;
 
@@ -62,16 +69,18 @@ async function start(): Promise<void> {
   render(h(App, null), root);
 
   // `?render=off` keeps everything but the drawing: for headless protocol tests, where software WebGL is far too slow.
-  const handle = params.get('render') === 'off' ? null : await createRenderer(canvas, backendFromUrl());
+  const quality = qualitySettings(pickQuality(thisDevice()), window.devicePixelRatio);
+  const handle = params.get('render') === 'off' ? null : await createRenderer(canvas, backendFromUrl(), quality);
   const backend = handle?.backend ?? 'none';
   ui.backend.value = backend;
+  ui.quality.value = quality.quality;
   const assets = await Assets.load((done, total) => {
     ui.loading.value = `Loading the valley… ${Math.round((done / total) * 100)}%`;
   });
   ui.loading.value = 'Joining the world…';
 
   const world = new ViewWorld();
-  const view = new WorldView(assets, canvas, overlay);
+  const view = new WorldView(assets, canvas, overlay, quality);
   const viewer = viewerId();
 
   // Speech: every spoken line goes through the bus; bubbles and the transcript are its sinks today.
@@ -228,11 +237,15 @@ async function start(): Promise<void> {
     audio.music.update();
   };
 
+  const stats = new FrameStats();
   let last = performance.now();
+  let lastDrawn = last;
   let uiTimer = 0;
   let audioTimer = 0;
   const frame = (): void => {
     const now = performance.now();
+    // A capped frame rate skips the browser's frames that come too soon (with a little slack for its uneven timing).
+    if (handle && now - last < quality.frameSeconds * 1000 - 4) return;
     const dt = Math.min(MAX_FRAME_SECONDS, (now - last) / 1000);
     last = now;
     const { alpha, simDt } = playback.advance(dt);
@@ -257,14 +270,22 @@ async function start(): Promise<void> {
     if (!fitRenderer(handle.renderer, view.rig)) return;
     view.frame(dt, simDt, alpha, hour);
     handle.renderer.render(view.scene, view.rig.camera);
+    if (now - lastDrawn < STALLED_FRAME_MS) stats.record(now - lastDrawn, performance.now() - now, handle.renderer);
+    lastDrawn = now;
+    if (quality.adaptive && stats.settled) {
+      // Only ever downwards: stepping back up would have the picture pulse between two sizes.
+      const ratio = handle.renderer.getPixelRatio();
+      if (stats.p95() > SLOW_FRAME_MS && ratio > 1) handle.renderer.setPixelRatio(Math.max(1, ratio - PIXEL_RATIO_STEP));
+      stats.restart();
+    }
   };
   if (handle) handle.renderer.setAnimationLoop(frame);
   else setInterval(frame, 1000 / 30);
   stream.open();
 
   // For poking at the world from the browser console.
-  (window as unknown as { __debug: unknown }).__debug = { world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood };
-  console.info(`Fantasy Sim World: ${backend} backend, watching as ${ui.me.value.role}`);
+  (window as unknown as { __debug: unknown }).__debug = { world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood, stats: () => stats.report() };
+  console.info(`Fantasy Sim World: ${backend} backend, ${quality.quality} quality, watching as ${ui.me.value.role}`);
 }
 
 start().catch((error) => {

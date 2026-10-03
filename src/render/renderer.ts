@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import type { QualitySettings } from './quality';
 
 export type BackendChoice = 'auto' | 'webgl' | 'webgpu';
 
@@ -14,10 +15,10 @@ export function backendFromUrl(): BackendChoice {
   return value === 'webgl' || value === 'webgpu' ? value : 'auto';
 }
 
-export async function createRenderer(canvas: HTMLCanvasElement, choice: BackendChoice): Promise<RendererHandle> {
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL: choice === 'webgl' });
+export async function createRenderer(canvas: HTMLCanvasElement, choice: BackendChoice, quality: QualitySettings): Promise<RendererHandle> {
+  const renderer = new THREE.WebGPURenderer({ canvas, antialias: quality.antialias, forceWebGL: choice === 'webgl' });
   await renderer.init();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(quality.pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
