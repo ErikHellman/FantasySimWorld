@@ -11,7 +11,7 @@ const entity = (id: string, x: number): Entity => ({
 });
 
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
-  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [],
+  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [],
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -35,6 +35,18 @@ describe('view world', () => {
     world.apply({ t: 3, ev: [{ type: 'grave', grave: { plot: 0, characterId: 'c3', name: 'C', day: 3, cause: 'z' } }] });
     expect([...world.graves.keys()].sort()).toEqual(['0:c3', '1:c2']);
     expect(world.gravesVersion).toBe(version + 2);
+  });
+
+  it('keeps what each billboard shows, from the snapshot and then from events', () => {
+    const world = new ViewWorld();
+    const board = { id: 'green_board', place: 'the village green', text: 'Warning: the river is wet.', tone: 'absurd' as const, custom: false };
+    world.reset({ ...snapshot(1, []), billboards: [board] });
+    const version = world.billboardsVersion;
+    expect(world.billboards.get('green_board')?.text).toBe('Warning: the river is wet.');
+    world.apply({ t: 2, ev: [{ type: 'billboard', billboard: { ...board, text: 'Fresh bread!', tone: 'pushy', custom: true } }] });
+    expect(world.billboards.get('green_board')).toMatchObject({ text: 'Fresh bread!', custom: true });
+    expect(world.billboards.size).toBe(1);
+    expect(world.billboardsVersion).toBe(version + 1);
   });
 
   it('follows the server frame for frame', () => {

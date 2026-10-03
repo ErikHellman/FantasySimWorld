@@ -15,16 +15,19 @@ use fsw_core::jsmath::js_round;
 use fsw_core::time::TICK_SECONDS;
 use fsw_sim::data::anims::AnimId;
 use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
+use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, Character, ChronicleEntry as SimChronicleEntry, ChronicleKind as SimChronicleKind, Corpse,
     Grave as SimGrave, IntentAction, Look as SimLook, Monster, SimState, VoiceProfile as SimVoice,
 };
+use fsw_sim::systems::billboards::shown;
 use fsw_sim::util::first_name;
+use fsw_world::places::{billboards, get_place};
 use indexmap::IndexMap;
 
 use crate::api::wire::{
-    ChronicleEntry, ChronicleKind, Dyn, DynDelta, Emote, Entity, EntityKind, EntityStatic, Grave, Look, Ranged,
-    TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
+    Billboard, BillboardTone, ChronicleEntry, ChronicleKind, Dyn, DynDelta, Emote, Entity, EntityKind, EntityStatic,
+    Grave, Look, Ranged, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -244,6 +247,44 @@ pub fn grave_of(grave: &SimGrave) -> Grave {
     }
 }
 
+pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
+    match tone {
+        BoardTone::Uplifting => BillboardTone::Uplifting,
+        BoardTone::Absurd => BillboardTone::Absurd,
+        BoardTone::Pushy => BillboardTone::Pushy,
+        BoardTone::Ominous => BillboardTone::Ominous,
+        BoardTone::Wholesome => BillboardTone::Wholesome,
+    }
+}
+
+pub fn sim_tone(tone: BillboardTone) -> BoardTone {
+    match tone {
+        BillboardTone::Uplifting => BoardTone::Uplifting,
+        BillboardTone::Absurd => BoardTone::Absurd,
+        BillboardTone::Pushy => BoardTone::Pushy,
+        BillboardTone::Ominous => BoardTone::Ominous,
+        BillboardTone::Wholesome => BoardTone::Wholesome,
+    }
+}
+
+/// What every billboard shows, in map order.
+pub fn billboards_of(state: &SimState) -> Vec<Billboard> {
+    billboards()
+        .iter()
+        .enumerate()
+        .map(|(index, board)| {
+            let shown = shown(state, index);
+            Billboard {
+                id: board.id.clone(),
+                place: get_place(&board.place_id).name.to_owned(),
+                text: shown.text,
+                tone: billboard_tone(shown.tone),
+                custom: shown.custom,
+            }
+        })
+        .collect()
+}
+
 fn emote(emote: SimEmote) -> Emote {
     match emote {
         SimEmote::Heart => Emote::Heart,
@@ -336,6 +377,7 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
 pub struct Tracker {
     known: IndexMap<String, Entity>,
     graves: Vec<String>,
+    billboards: Vec<Billboard>,
 }
 
 impl Tracker {
@@ -348,11 +390,17 @@ impl Tracker {
     pub fn reset(&mut self, state: &SimState) {
         self.known = entities_of(state).into_iter().map(|e| (e.fixed.id.clone(), e)).collect();
         self.graves = state.graves.iter().map(grave_key).collect();
+        self.billboards = billboards_of(state);
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
     pub fn entities(&self) -> Vec<Entity> {
         self.known.values().cloned().collect()
+    }
+
+    /// What viewers have been told every billboard shows (for a snapshot).
+    pub fn billboards(&self) -> Vec<Billboard> {
+        self.billboards.clone()
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -388,6 +436,13 @@ impl Tracker {
             }
         }
         self.graves.retain(|key| state.graves.iter().any(|grave| &grave_key(grave) == key));
+        // Nor is a billboard changing: the day's slogan turns over at midnight, and admins change notices.
+        for (now, before) in billboards_of(state).into_iter().zip(self.billboards.iter_mut()) {
+            if now != *before {
+                *before = now.clone();
+                frame.ev.push(WireEvent::Billboard { billboard: now });
+            }
+        }
         frame
     }
 }
@@ -466,6 +521,30 @@ mod tests {
         let mut tracker = Tracker::new(&sim.state);
         let frame = tracker.frame(&sim.state, &[]);
         assert!(frame.add.is_empty() && frame.d.is_empty() && frame.del.is_empty());
+    }
+
+    #[test]
+    fn billboards_are_announced_when_they_change() {
+        let mut sim = Sim::new(create_state(3));
+        let mut tracker = Tracker::new(&sim.state);
+        let count = |frame: &TickFrame| frame.ev.iter().filter(|e| matches!(e, WireEvent::Billboard { .. })).count();
+        // An ordinary tick, then the next midnight, when every board turns to a new slogan.
+        assert_eq!(count(&tracker.frame(&sim.state, &[])), 0);
+        sim.state.tick += fsw_core::time::TICKS_PER_DAY;
+        assert_eq!(count(&tracker.frame(&sim.state, &[])), billboards().len());
+        assert_eq!(count(&tracker.frame(&sim.state, &[])), 0);
+
+        sim.enqueue(fsw_sim::Command::SetBillboard {
+            board_id: "market_board".into(),
+            notice: Some(fsw_sim::state::BoardNotice { text: "Cheese!".into(), tone: BoardTone::Absurd }),
+        });
+        let events = sim.step();
+        let frame = tracker.frame(&sim.state, &events);
+        assert_eq!(count(&frame), 1);
+        assert!(frame.ev.iter().any(
+            |e| matches!(e, WireEvent::Billboard { billboard } if billboard.text == "Cheese!" && billboard.custom)
+        ));
+        assert_eq!(tracker.billboards(), billboards_of(&sim.state));
     }
 
     #[test]

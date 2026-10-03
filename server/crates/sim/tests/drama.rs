@@ -160,7 +160,7 @@ fn quarrels_picked_by_garrick(seed: u32, spite: f64) -> (usize, Sim) {
 #[test]
 fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
     // Worlds where Garrick and Dorn both live through the four days.
-    for seed in [5, 3] {
+    for seed in [4, 1] {
         let (calm, _) = quarrels_picked_by_garrick(seed, 0.0);
         let (spiteful, sim) = quarrels_picked_by_garrick(seed, 1.0);
         assert_eq!(calm, 0, "seed {seed}");
@@ -310,7 +310,8 @@ fn the_fearless_do_not_panic() {
 
 #[test]
 fn a_newcomer_arrives_after_a_death() {
-    let mut w = World::new(5);
+    // A world where nobody else dies in the next few days, which would put the newcomer off.
+    let mut w = World::new(4);
     w.run(10);
     let victim = w.who("Isolde");
     {

@@ -1,7 +1,15 @@
 import { rotate, type Vec2 } from '../core/math2d';
 import { assetManifest } from '../generated/assetManifest';
 import { HEX_SCALE, hexCenter } from './hex';
-import { PLACE_DEFS, type ActivityId, type PlaceDef, type PlaceKind } from './placeDefs';
+import {
+  BILLBOARD_DEPTH,
+  BILLBOARD_READ_AT,
+  BILLBOARD_WIDTH,
+  PLACE_DEFS,
+  type ActivityId,
+  type PlaceDef,
+  type PlaceKind,
+} from './placeDefs';
 
 export type { ActivityId, PlaceKind } from './placeDefs';
 
@@ -33,6 +41,17 @@ export interface Slot {
   ranged: boolean;
 }
 
+/** A billboard in world space, with the two slots people stand in to read it. */
+export interface Billboard {
+  id: string;
+  placeId: string;
+  /** the middle of the board, on the ground */
+  pos: Vec2;
+  /** the direction its face looks, radians */
+  facing: number;
+  slotIds: string[];
+}
+
 export interface Place {
   id: string;
   name: string;
@@ -49,6 +68,7 @@ export interface Place {
   slots: Slot[];
   gravePlots: Array<{ pos: Vec2; facing: number }>;
   spawnPoints: Vec2[];
+  billboards: Billboard[];
 }
 
 function modelBounds(ref: string): { bundle: string; model: string; bounds: number[] } {
@@ -112,6 +132,18 @@ function resolve(def: PlaceDef): Place {
     }
   }
 
+  for (const board of def.billboards ?? []) {
+    const pos = toWorld(board.at);
+    obstacles.push({
+      kind: 'box',
+      x: pos.x,
+      z: pos.z,
+      halfX: BILLBOARD_WIDTH / 2,
+      halfZ: BILLBOARD_DEPTH / 2,
+      rotation: facing + board.rot * DEG,
+    });
+  }
+
   const slots: Slot[] = (def.slots ?? []).map((slot, index) => ({
     id: `${def.id}#${index}`,
     placeId: def.id,
@@ -121,6 +153,28 @@ function resolve(def: PlaceDef): Place {
     anim: slot.anim ?? null,
     ranged: slot.ranged ?? false,
   }));
+
+  // Reading spots come after the authored slots, so the ids saves refer to stay the same.
+  const billboards: Billboard[] = [];
+  for (const board of def.billboards ?? []) {
+    const turn = board.rot * DEG;
+    const slotIds: string[] = [];
+    for (const side of [-1, 1]) {
+      const spot = rotate({ x: side * BILLBOARD_READ_AT[0], z: BILLBOARD_READ_AT[1] }, turn);
+      const id = `${def.id}#${slots.length}`;
+      slotIds.push(id);
+      slots.push({
+        id,
+        placeId: def.id,
+        activities: ['read_board'],
+        pos: toWorld([board.at[0] + spot.x, board.at[1] + spot.z]),
+        facing: facing + (board.rot + 180) * DEG,
+        anim: null,
+        ranged: false,
+      });
+    }
+    billboards.push({ id: board.id, placeId: def.id, pos: toWorld(board.at), facing: facing + turn, slotIds });
+  }
 
   const door = toWorld(def.door ?? [0, 0]);
   return {
@@ -138,6 +192,7 @@ function resolve(def: PlaceDef): Place {
     slots,
     gravePlots: (def.gravePlots ?? []).map((p) => ({ pos: toWorld(p), facing })),
     spawnPoints: (def.spawnPoints ?? []).map(toWorld),
+    billboards,
   };
 }
 
@@ -167,6 +222,9 @@ export function slotsFor(activity: ActivityId): Slot[] {
 }
 
 export const homes: readonly Place[] = places.filter((place) => place.kind === 'home');
+
+/** Every billboard, in place order. A board's index here is fixed by the map. */
+export const billboards: readonly Billboard[] = places.flatMap((place) => place.billboards);
 
 /** The place whose origin is nearest to a point, within `maxDistance`. */
 export function nearestPlace(pos: Vec2, maxDistance = 14): Place | null {

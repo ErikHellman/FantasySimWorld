@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
 import type { WireEvent } from '../generated/api';
 import type { ViewEntity, ViewWorld } from '../net/viewWorld';
-import { getPlace, places } from '../world/places';
+import { billboards, getPlace, places } from '../world/places';
 import { scatter } from '../world/scatter';
 import type { Assets } from './assets';
+import { Billboards } from './billboards';
 import { CameraRig } from './camera';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
@@ -35,6 +36,8 @@ export class WorldView {
   private readonly actors = new Map<string, Actor>();
   private readonly graves = new Map<string, THREE.Object3D>();
   private gravesVersion = -1;
+  private readonly billboards: Billboards;
+  private billboardsVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -53,7 +56,8 @@ export class WorldView {
         x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale,
       });
     }
-    this.scene.add(builder.build(), this.actorGroup, this.effects.group);
+    this.billboards = new Billboards(billboards, this.heightAt);
+    this.scene.add(builder.build(), this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -92,6 +96,10 @@ export class WorldView {
     if (this.selectedId && !world.entities.has(this.selectedId)) this.selectedId = null;
 
     this.syncGraves(world);
+    if (this.billboardsVersion !== world.billboardsVersion) {
+      this.billboardsVersion = world.billboardsVersion;
+      this.billboards.show(world.billboards);
+    }
 
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus

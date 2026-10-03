@@ -6,7 +6,7 @@
  */
 export type ActivityId =
   | 'eat' | 'drink' | 'sleep' | 'rest' | 'smith' | 'farm' | 'chop_wood' | 'fish' | 'mine'
-  | 'trade' | 'shop' | 'pray' | 'train' | 'forage' | 'watch' | 'relax' | 'brew' | 'mourn' | 'stroll';
+  | 'trade' | 'shop' | 'pray' | 'train' | 'forage' | 'watch' | 'relax' | 'brew' | 'mourn' | 'stroll' | 'read_board';
 
 export type PlaceKind =
   | 'home' | 'tavern' | 'green' | 'market' | 'smithy' | 'chapel' | 'training' | 'farm' | 'lumber'
@@ -34,6 +34,24 @@ export interface SlotDef {
   ranged?: boolean;
 }
 
+/** A large billboard on two posts. Its face looks along board-local +z, towards the people reading it. */
+export interface BillboardDef {
+  id: string;
+  at: readonly [number, number];
+  /** local degrees */
+  rot: number;
+}
+
+/** Size of a billboard's face, in metres. */
+export const BILLBOARD_WIDTH = 3.4;
+export const BILLBOARD_HEIGHT = 1.9;
+/** Height of the bottom of the face above the ground. */
+export const BILLBOARD_LIFT = 1.3;
+/** Depth of the footprint people walk around. */
+export const BILLBOARD_DEPTH = 0.5;
+/** The two reading spots, board-local: (±x, z). */
+export const BILLBOARD_READ_AT = [0.8, 2.0] as const;
+
 export interface PlaceDef {
   id: string;
   name: string;
@@ -56,6 +74,7 @@ export interface PlaceDef {
   /** local points where the dead are buried / monsters rise */
   gravePlots?: ReadonlyArray<readonly [number, number]>;
   spawnPoints?: ReadonlyArray<readonly [number, number]>;
+  billboards?: readonly BillboardDef[];
 }
 
 const seatsAround = (cx: number, cz: number, r: number, activities: readonly ActivityId[]): SlotDef[] => [
@@ -134,6 +153,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'dungeon/banner_red', at: [2.2, 1.0], y: 1.6, block: 0 },
     ],
     slots: [...seatsAround(-2.8, 5.4, 1.55, ['eat', 'drink']), ...seatsAround(2.8, 5.4, 1.55, ['eat', 'drink'])],
+    billboards: [{ id: 'tavern_board', at: [-4.6, 9.0], rot: 10 }],
   },
   {
     id: 'green',
@@ -164,6 +184,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { activities: ['rest'], at: [-0.5, -4.4], face: 0, anim: 'sit_chair' },
       { activities: ['rest'], at: [0.5, -4.4], face: 0, anim: 'sit_chair' },
     ],
+    billboards: [{ id: 'green_board', at: [-2.0, 8.0], rot: 0 }],
   },
   {
     id: 'market',
@@ -191,6 +212,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { activities: ['shop'], at: [0.2, 5.2], face: 180, anim: 'interact' },
       { activities: ['shop'], at: [3.6, 5.4], face: 180, anim: 'interact' },
     ],
+    billboards: [{ id: 'market_board', at: [8.4, 6.4], rot: -40 }],
   },
   {
     id: 'smithy',
@@ -266,6 +288,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { activities: ['train'], at: [5.6, 6.6], face: 180, ranged: true },
       { activities: ['train'], at: [7.9, 7.6], face: 180, ranged: true },
     ],
+    billboards: [{ id: 'training_board', at: [3.0, 9.6], rot: 0 }],
   },
   {
     id: 'farm',
@@ -490,6 +513,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { model: 'halloween/sign_right', at: [3.2, 4.0], rot: 180, block: 0.3 },
       { model: 'halloween/post_lantern', at: [-3.0, 5.0], rot: 180, block: 0.3 },
     ],
+    billboards: [{ id: 'west_road_board', at: [4.4, 1.0], rot: -90 }],
   },
   home({ n: 1, name: 'the red cottage', hex: [4, 6], facing: 0, model: 'building_home_A_red' }),
   home({ n: 2, name: 'the blue house', hex: [9, 6], facing: 0, model: 'building_home_B_blue' }),

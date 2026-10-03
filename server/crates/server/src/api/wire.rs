@@ -216,6 +216,8 @@ pub struct Snapshot {
     pub llm: LlmStatus,
     /// recent spoken lines, newest first
     pub voices: Vec<Utterance>,
+    /// what every billboard shows, in map order
+    pub billboards: Vec<Billboard>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -311,6 +313,45 @@ pub enum WireEvent {
     Grave {
         grave: Grave,
     },
+    /// a billboard shows something new (each morning, or when an admin changes it)
+    Billboard {
+        billboard: Billboard,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BillboardTone {
+    Uplifting,
+    Absurd,
+    Pushy,
+    Ominous,
+    Wholesome,
+}
+
+/// What a billboard shows. Where it stands comes from the client's own copy of the map (`src/world`).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Billboard {
+    pub id: Id,
+    /// the name of the place it stands in
+    pub place: String,
+    pub text: String,
+    pub tone: BillboardTone,
+    /// put up by an admin rather than the day's slogan
+    pub custom: bool,
+}
+
+/// `POST /api/admin/billboards`: puts text up on a billboard, or with no text gives it back to the daily slogans.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BillboardRequest {
+    pub id: Id,
+    #[serde(default)]
+    pub text: Option<String>,
+    /// defaults to `absurd`
+    #[serde(default)]
+    pub tone: Option<BillboardTone>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -542,6 +583,7 @@ pub enum RequestKind {
     Converse,
     Decide,
     PlanDay,
+    Billboard,
     Reflect,
 }
 
@@ -870,6 +912,9 @@ pub fn typescript() -> String {
         ChronicleKind,
         ChronicleEntry,
         Grave,
+        BillboardTone,
+        Billboard,
+        BillboardRequest,
         LlmState,
         LlmStatus,
         AmbientCounts,

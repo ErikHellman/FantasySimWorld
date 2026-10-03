@@ -29,10 +29,17 @@ pub enum ActivityId {
     Brew,
     Mourn,
     Stroll,
+    ReadBoard,
 }
 
 impl ActivityId {
-    pub const ALL: [ActivityId; 19] = [
+    pub const ALL: [ActivityId; 20] = [
+        Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
+        Brew, Mourn, Stroll, ReadBoard,
+    ];
+
+    /// What a mind may choose: everything but reading a billboard, which only the routine sends people to.
+    pub const OFFERED: [ActivityId; 19] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
         Brew, Mourn, Stroll,
     ];
@@ -58,6 +65,7 @@ impl ActivityId {
             Brew => "brew",
             Mourn => "mourn",
             Stroll => "stroll",
+            ReadBoard => "read_board",
         }
     }
 
@@ -150,6 +158,29 @@ impl SlotDef {
     }
 }
 
+/// A large billboard on two posts. Its face looks along board-local +z, towards the people reading it.
+#[derive(Clone, Debug)]
+pub struct BillboardDef {
+    pub id: &'static str,
+    pub at: [f64; 2],
+    /// local degrees
+    pub rot: f64,
+}
+
+fn board(id: &'static str, x: f64, z: f64, rot: f64) -> BillboardDef {
+    BillboardDef { id, at: [x, z], rot }
+}
+
+/// Size of a billboard's face, in metres.
+pub const BILLBOARD_WIDTH: f64 = 3.4;
+pub const BILLBOARD_HEIGHT: f64 = 1.9;
+/// Height of the bottom of the face above the ground.
+pub const BILLBOARD_LIFT: f64 = 1.3;
+/// Depth of the footprint people walk around.
+pub const BILLBOARD_DEPTH: f64 = 0.5;
+/// The two reading spots, board-local: (±x, z).
+pub const BILLBOARD_READ_AT: [f64; 2] = [0.8, 2.0];
+
 #[derive(Clone, Debug)]
 pub struct BuildingDef {
     /// "bundle/model"
@@ -186,6 +217,7 @@ pub struct PlaceDef {
     /// local points where the dead are buried / monsters rise
     pub grave_plots: Vec<[f64; 2]>,
     pub spawn_points: Vec<[f64; 2]>,
+    pub billboards: Vec<BillboardDef>,
 }
 
 fn seats_around(cx: f64, cz: f64, r: f64, activities: &[ActivityId]) -> Vec<SlotDef> {
@@ -268,6 +300,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
             ]
             .concat(),
             slots: [seats_around(-2.8, 5.4, 1.55, &[Eat, Drink]), seats_around(2.8, 5.4, 1.55, &[Eat, Drink])].concat(),
+            billboards: vec![board("tavern_board", -4.6, 9.0, 10.0)],
             ..PlaceDef::default()
         },
         PlaceDef {
@@ -299,6 +332,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 slot(&[Rest], -0.5, -4.4, 0.0).anim("sit_chair"),
                 slot(&[Rest], 0.5, -4.4, 0.0).anim("sit_chair"),
             ],
+            billboards: vec![board("green_board", -2.0, 8.0, 0.0)],
             ..PlaceDef::default()
         },
         PlaceDef {
@@ -327,6 +361,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 slot(&[Shop], 0.2, 5.2, 180.0).anim("interact"),
                 slot(&[Shop], 3.6, 5.4, 180.0).anim("interact"),
             ],
+            billboards: vec![board("market_board", 8.4, 6.4, -40.0)],
             ..PlaceDef::default()
         },
         PlaceDef {
@@ -405,6 +440,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 slot(&[Train], 5.6, 6.6, 180.0).ranged(),
                 slot(&[Train], 7.9, 7.6, 180.0).ranged(),
             ],
+            billboards: vec![board("training_board", 3.0, 9.6, 0.0)],
             ..PlaceDef::default()
         },
         PlaceDef {
@@ -662,6 +698,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 prop("halloween/sign_right", 3.2, 4.0).rot(180.0).block(0.3),
                 prop("halloween/post_lantern", -3.0, 5.0).rot(180.0).block(0.3),
             ],
+            billboards: vec![board("west_road_board", 4.4, 1.0, -90.0)],
             ..PlaceDef::default()
         },
         home(1, "the red cottage", [4, 6], 0.0, "building_home_A_red"),

@@ -1,5 +1,5 @@
 import type {
-  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou,
+  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou,
   ChroniclePage, HealthReport,
   LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
   WatchRequest,
@@ -49,6 +49,8 @@ export const api = {
   chronicle: (before: number, limit = 100) => request<ChroniclePage>('GET', `/api/chronicle?before=${before}&limit=${limit}`),
   admin: {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),
+    /** puts text up on a billboard, or without text gives it back to the daily slogans; the change comes back on the stream */
+    billboard: (body: BillboardRequest) => request<void>('POST', '/api/admin/billboards', body),
     llmSettings: () => request<LlmSettingsView>('GET', '/api/admin/settings/llm'),
     /** asks the model the server was started with for one decision */
     testLlm: () => request<LlmTestResult>('POST', '/api/admin/llm/test'),

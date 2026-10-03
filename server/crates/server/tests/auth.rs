@@ -394,6 +394,10 @@ async fn unknown_email_is_refused_recorded_and_can_be_allowed() {
     let forbidden = app.get("/api/admin/allowlist", &viewer).await;
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
     assert_eq!(text(forbidden).await, r#"{"error":"admins only"}"#);
+    let billboard = app
+        .mutate("POST", "/api/admin/billboards", &viewer, json!({"id": "green_board", "text": "Viewers rule"}))
+        .await;
+    assert_eq!(billboard.status(), StatusCode::FORBIDDEN);
     let list: Value = serde_json::from_str(&text(app.get("/api/admin/allowlist", &admin).await).await).unwrap();
     assert_eq!(list.as_array().unwrap().len(), 2);
 }
@@ -518,6 +522,13 @@ async fn cross_site_requests_to_admin_routes_are_rejected() {
         .body(Body::from(r#"{"email":"mallory@evil.example","role":"admin"}"#))
         .unwrap();
     assert_eq!(app.send(json_from_elsewhere).await.status(), StatusCode::FORBIDDEN);
+    let billboard_from_elsewhere = Request::post("/api/admin/billboards")
+        .header(header::COOKIE, &admin)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ORIGIN, "https://evil.example")
+        .body(Body::from(r#"{"id":"green_board","text":"Buy evil"}"#))
+        .unwrap();
+    assert_eq!(app.send(billboard_from_elsewhere).await.status(), StatusCode::FORBIDDEN);
     // …and a same-origin form body is not JSON.
     let same_site_form = Request::post("/api/admin/allowlist")
         .header(header::COOKIE, &admin)
