@@ -10,11 +10,12 @@ use fsw_world::places::ActivityId;
 
 use crate::data::activities::activity;
 use crate::state::{FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock, PlanSource, StimulusKind, TalkTone};
+use crate::systems::charm;
 use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::relationships::{RUNG_GRUDGE, brawl_unlocked, lethal_unlocked};
-use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel};
+use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, rel_or_default};
 
 const SOCIAL_RADIUS: f64 = 15.0;
 
@@ -91,14 +92,17 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
             candidates.push(other);
         }
     }
+    let allure = ctx.cr(id).profile.allure;
     let weights: Vec<f64> = candidates
         .iter()
         .map(|o| {
             let c = ctx.c(id);
-            // The spiteful are drawn twice as hard to the people they resent.
             let spite = c.profile.spite;
             let r = rel(c, o);
-            1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance * (1.0 + spite) / 12.0
+            // The spiteful are drawn twice as hard to the people they resent.
+            let weight = 1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance * (1.0 + spite) / 12.0;
+            // A charmer seeks out whoever wants her. Added only for one, so nobody else's weights change.
+            if allure > 0.0 { weight + allure * rel_or_default(ctx.cr(o), id).attraction / 20.0 } else { weight }
         })
         .collect();
     let index = rng::weighted_pick_index(&mut ctx.state.rng, &weights, |w| *w)?;
@@ -127,6 +131,15 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         && partner.as_ref().is_none_or(|p| p == &other)
         && ctx.chance(0.3)
     {
+        tone = TalkTone::Romantic;
+    } else if allure > 0.0
+        && !r.kin
+        && r.grievance < RUNG_GRUDGE
+        && rel_or_default(ctx.cr(&other), id).attraction >= charm::MARK
+        && ctx.chance(allure * 0.5)
+    {
+        // A charmer flirts with anyone already a little drawn to her, partners or no partners.
+        // Checked last and only for a charmer, so nobody else draws from the RNG differently.
         tone = TalkTone::Romantic;
     }
     ctx.c(id).next_social_tick = tick + minutes_to_ticks(40.0);

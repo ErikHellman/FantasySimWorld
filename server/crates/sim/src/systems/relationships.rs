@@ -8,6 +8,7 @@ use crate::events::{Emote, SimEvent};
 use crate::state::{
     Character, ChronicleKind, Feeling, Id, MemoryKind, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
+use crate::systems::charm;
 use crate::util::{Ctx, chemistry, first_name, living_ids, rel, rel_or_default};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -211,6 +212,15 @@ pub fn apply_conversation(
         if r.affinity >= 30.0 && me.partner_id.is_none() && !r.kin && chemistry(me, ctx.cr(other_id)) {
             delta.attraction = 2.0;
         }
+    }
+    // A charmer rarely falls for anyone herself, but her flirting works on
+    // anyone who does not take it badly, chemistry or none.
+    let (mine, theirs) = (ctx.cr(self_id).profile.allure, ctx.cr(other_id).profile.allure);
+    if mine > 0.0 && delta.attraction > 0.0 {
+        delta.attraction *= 1.0 - mine * 0.75;
+    }
+    if theirs > 0.0 && tone == TalkTone::Romantic && base >= 0.0 && !rel_or_default(ctx.cr(self_id), other_id).kin {
+        delta.attraction += theirs * charm::CHARM;
     }
     adjust(ctx, self_id, other_id, delta);
     let tick = ctx.tick();

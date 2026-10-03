@@ -68,6 +68,11 @@ pub struct Profile {
     /// comes to blows sooner. Left out of saves at 0, so the old browser saves round-trip unchanged.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub spite: f64,
+    /// 0 none .. 1 shameless: flirts freely, charms admirers and enjoys being
+    /// fought over (`systems::charm`). Left out of saves when 0, so saves made
+    /// before it existed load and write back unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allure: f64,
     pub voice: VoiceProfile,
 }
 

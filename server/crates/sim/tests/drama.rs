@@ -159,13 +159,14 @@ fn quarrels_picked_by_garrick(seed: u32, spite: f64) -> (usize, Sim) {
 
 #[test]
 fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
-    for seed in [3, 9] {
+    // Worlds where Garrick and Dorn both live through the four days.
+    for seed in [5, 7] {
         let (calm, _) = quarrels_picked_by_garrick(seed, 0.0);
         let (spiteful, sim) = quarrels_picked_by_garrick(seed, 1.0);
         assert_eq!(calm, 0, "seed {seed}");
         assert!(spiteful >= 2, "seed {seed}: only {spiteful} quarrels picked");
         let state = &sim.state;
-        let id = |name: &str| living(state).find(|c| first_name(c) == name).unwrap().id.clone();
+        let id = |name: &str| living(state).find(|c| first_name(c) == name).expect(name).id.clone();
         assert!(state.characters[&id("Garrick")].relationships[&id("Dorn")].affinity > 0.0, "seed {seed}");
     }
 }

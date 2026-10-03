@@ -218,6 +218,7 @@ fn wanderer(ctx: &mut Ctx) -> CastEntry {
             bravery,
             sociability,
             spite: 0.0,
+            allure: 0.0,
             voice: VoiceProfile { pitch, rate, timbre: "plain".into() },
         },
     }
