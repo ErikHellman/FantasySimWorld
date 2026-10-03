@@ -12,9 +12,10 @@ use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     Character, Conversation, ConversationLine, Memory, MonsterPhase, Relationship, SimState, TalkTone,
 };
-use fsw_sim::systems::relationships::{RUNG_FEUD, Rung, lethal_unlocked_read, rung_of};
+use fsw_sim::systems::charm;
+use fsw_sim::systems::relationships::{RUNG_FEUD, RUNG_TENSION, Rung, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::{first_name, living, name_of, place_name_at, rel_or_default};
+use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, places};
 
 use crate::llm::types::{ChatMessage, ToolDef};
@@ -106,6 +107,17 @@ pub fn persona(c: &Character) -> String {
         format!("How you speak: {}", p.speech_style),
         format!("What you want: {}.", p.goals.join("; ")),
     ];
+    if p.allure >= 0.34 {
+        let flirt = level(
+            p.allure,
+            [
+                "",
+                "You flirt easily and like to be admired.",
+                "You are a shameless flirt: you use your charm to get your way, partner or no partner, and nothing delights you more than rivals quarrelling over you.",
+            ],
+        );
+        lines.insert(3, flirt.to_owned());
+    }
     if !c.summary.is_empty() {
         lines.push(format!("How you see yourself lately: {}", c.summary));
     }
@@ -348,6 +360,32 @@ fn first_names(people: &[&Character]) -> Vec<String> {
     people.iter().map(|o| first_name(o).to_owned()).collect()
 }
 
+/// For a charmer: who wants her, and which of them are at odds over it.
+fn admirers_note(state: &SimState, c: &Character) -> String {
+    if c.profile.allure <= 0.0 {
+        return String::new();
+    }
+    let admirers = charm::admirers(state, &c.id, charm::ADMIRER);
+    if admirers.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = admirers.iter().map(|id| name_of(state, id)).collect();
+    let mut note = format!("Drawn to you: {}.", join_names(&names));
+    let mut rivals = Vec::new();
+    for (i, x) in admirers.iter().enumerate() {
+        for y in &admirers[i + 1..] {
+            let (xc, yc) = (&state.characters[x], &state.characters[y]);
+            if rel_or_default(xc, y).grievance >= RUNG_TENSION || rel_or_default(yc, x).grievance >= RUNG_TENSION {
+                rivals.push(format!("{} and {}", first_name(xc), first_name(yc)));
+            }
+        }
+    }
+    if !rivals.is_empty() {
+        note.push_str(&format!(" At odds over you: {}.", rivals.join("; ")));
+    }
+    note
+}
+
 /// "What do you do next?"
 pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt {
     let time = game_time(state.tick);
@@ -405,6 +443,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prom
                     )
                 },
             ),
+            section(1, admirers_note(state, c)),
             section(
                 4,
                 if far.is_empty() {
@@ -573,9 +612,13 @@ fn brief(c: &Character) -> String {
 }
 
 fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
+    let a_allure = a.profile.allure;
     let (a, b) = (first_name(a), first_name(b));
     match tone {
         TalkTone::Hostile => format!("{a} has come to confront {b} over a grievance."),
+        TalkTone::Romantic if a_allure >= charm::CHARMER => {
+            format!("{a} is flirting with {b} for the fun of it, promising nothing.")
+        }
         TalkTone::Romantic => format!("{a} is making a romantic approach to {b}."),
         TalkTone::Apology => format!("{a} has come to make amends with {b}."),
         TalkTone::Friendly => format!("{a} has stopped to talk with {b}."),
@@ -608,11 +651,14 @@ pub fn conversation_prompt(
             Some(p) => format!(" Already has a partner ({}).", name_of(state, p)),
             None => String::new(),
         };
-        let mut lines = vec![
-            brief(me),
+        let mut lines = vec![brief(me)];
+        if me.profile.allure >= charm::CHARMER {
+            lines.push("Flirts shamelessly; enjoys being wanted far more than wanting.".to_owned());
+        }
+        lines.extend([
             format!("Right now: {}.", need_words(me)),
             format!("Towards {}: {}.{thinks}{couple}", first_name(other), feeling_words(&r)),
-        ];
+        ]);
         if !memories.is_empty() {
             lines.push(format!("Remembers:\n{}", memory_lines(&memories, time.day)));
         }
@@ -857,6 +903,22 @@ mod tests {
         let narrow = prompt_text(&decide_prompt(&state, c, 300));
         assert!(narrow.len() < wide.len());
         assert!(narrow.contains("Decide what you do next."));
+    }
+
+    #[test]
+    fn a_charmer_is_told_she_flirts_and_who_wants_her() {
+        let state = world();
+        let (mira, aldric) = (&state.characters["c8"], &state.characters["c1"]);
+        let text = prompt_text(&decide_prompt(&state, mira, 4000));
+        assert!(text.contains("You are a shameless flirt"), "{text}");
+        assert!(text.contains("Drawn to you: Theron"), "{text}");
+        let plain = prompt_text(&decide_prompt(&state, aldric, 4000));
+        assert!(!plain.contains("shameless flirt") && !plain.contains("Drawn to you"), "{plain}");
+        assert_eq!(
+            tone_words(TalkTone::Romantic, mira, aldric),
+            "Mira is flirting with Aldric for the fun of it, promising nothing."
+        );
+        assert_eq!(tone_words(TalkTone::Romantic, aldric, mira), "Aldric is making a romantic approach to Mira.");
     }
 
     #[test]

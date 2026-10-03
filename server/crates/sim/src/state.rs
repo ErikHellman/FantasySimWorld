@@ -64,7 +64,16 @@ pub struct Profile {
     pub bravery: f64,
     /// 0 solitary .. 1 gregarious
     pub sociability: f64,
+    /// 0 none .. 1 shameless: flirts freely, charms admirers and enjoys being
+    /// fought over (`systems::charm`). Left out of saves when 0, so saves made
+    /// before it existed load and write back unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allure: f64,
     pub voice: VoiceProfile,
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
