@@ -79,6 +79,7 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         alarm: is_alarm(state),
         llm: world.llm.lock().clone(),
         voices: core.voices.iter().cloned().collect(),
+        billboards: core.tracker.billboards(),
     }
 }
 

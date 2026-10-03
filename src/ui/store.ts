@@ -2,8 +2,8 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry, Snapshot,
-  Status, Utterance,
+  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry,
+  Snapshot, Status, Utterance,
 } from '../generated/api';
 import type { ConnectionState } from '../net/stream';
 
@@ -64,6 +64,8 @@ export const ui = {
   /** older chronicle entries exist on the server */
   chronicleMore: signal(true),
   graves: signal<Grave[]>([]),
+  /** what each billboard shows, in map order (the admin panel edits them) */
+  billboards: signal<Billboard[]>([]),
   panel: signal<'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help'>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -121,6 +123,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.chronicle.value = snapshot.chronicle;
   ui.chronicleMore.value = true;
   ui.graves.value = snapshot.graves;
+  ui.billboards.value = snapshot.billboards;
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -144,6 +147,10 @@ export function addChronicle(entry: ChronicleEntry): void {
 /** A new grave takes its plot from whoever lay there before (a full graveyard reuses its oldest plot). */
 export function addGrave(grave: Grave): void {
   ui.graves.value = [...ui.graves.value.filter((existing) => existing.plot !== grave.plot), grave];
+}
+
+export function setBillboard(board: Billboard): void {
+  ui.billboards.value = ui.billboards.value.map((existing) => (existing.id === board.id ? board : existing));
 }
 
 export function addVoice(utterance: Utterance): void {

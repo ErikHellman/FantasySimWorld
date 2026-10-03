@@ -40,6 +40,7 @@ fn kind(kind: Kind) -> RequestKind {
         Kind::Converse => RequestKind::Converse,
         Kind::Decide => RequestKind::Decide,
         Kind::PlanDay => RequestKind::PlanDay,
+        Kind::Billboard => RequestKind::Billboard,
         Kind::Reflect => RequestKind::Reflect,
     }
 }

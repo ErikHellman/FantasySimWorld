@@ -201,11 +201,12 @@ pub fn resolve_activity(value: Option<&Value>) -> Option<ActivityId> {
     if wanted.is_empty() {
         return None;
     }
-    if let Some(id) = ActivityId::parse(&wanted) {
+    let offered = |text: &str| ActivityId::parse(text).filter(|id| ActivityId::OFFERED.contains(id));
+    if let Some(id) = offered(&wanted) {
         return Some(id);
     }
     for word in wanted.split('_') {
-        if let Some(id) = ActivityId::parse(word) {
+        if let Some(id) = offered(word) {
             return Some(id);
         }
         if let Some((_, id)) = ACTIVITY_ALIASES.iter().find(|(alias, _)| *alias == word) {
@@ -213,7 +214,7 @@ pub fn resolve_activity(value: Option<&Value>) -> Option<ActivityId> {
         }
     }
     let spaced = wanted.replace('_', " ");
-    ActivityId::ALL
+    ActivityId::OFFERED
         .into_iter()
         .find(|id| fsw_sim::data::activities::activity(*id).label.to_lowercase().contains(&spaced))
 }
@@ -552,6 +553,9 @@ mod tests {
         assert_eq!(resolve_activity(Some(&json!("breakfast"))), Some(ActivityId::Eat));
         assert_eq!(resolve_activity(Some(&json!("chop wood"))), Some(ActivityId::ChopWood));
         assert_eq!(resolve_activity(Some(&json!("dance"))), None);
+        // Only the routine sends people to the billboards.
+        assert_eq!(resolve_activity(Some(&json!("read_board"))), None);
+        assert_eq!(resolve_activity(Some(&json!("read the billboard"))), None);
     }
 
     #[test]

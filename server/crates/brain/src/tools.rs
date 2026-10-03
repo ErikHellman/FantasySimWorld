@@ -26,7 +26,7 @@ fn feeling(description: &str) -> Value {
 }
 
 fn activity_ids() -> Vec<&'static str> {
-    ActivityId::ALL.iter().map(|id| id.as_str()).collect()
+    ActivityId::OFFERED.iter().map(|id| id.as_str()).collect()
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> ToolDef {
@@ -53,6 +53,7 @@ pub struct Tools {
     pub spare: ToolDef,
     pub finish: ToolDef,
     pub reflection: ToolDef,
+    pub billboard: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -204,5 +205,19 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             },
         }),
         &["summary", "insights"],
+    ),
+    billboard: tool(
+        "react_to_billboard",
+        "Say how you take what the billboard says.",
+        json!({
+            "reaction": {
+                "type": "string",
+                "enum": ["laugh", "love", "scoff", "annoyed", "uneasy"],
+                "description": "laugh: it amuses you. love: it moves or cheers you. scoff: you think little of it. annoyed: it irritates you. uneasy: it unsettles you.",
+            },
+            "say": { "type": "string", "description": "Optional. What you mutter or say aloud about it: one short sentence in your own voice, no quotation marks." },
+            "thought": thought(),
+        }),
+        &["reaction"],
     ),
 });

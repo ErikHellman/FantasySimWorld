@@ -19,7 +19,7 @@ import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setClock, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setClock, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -123,6 +123,7 @@ async function start(): Promise<void> {
     for (const event of events) {
       if (event.type === 'chronicle') addChronicle(event.entry);
       else if (event.type === 'grave') addGrave(event.grave);
+      else if (event.type === 'billboard') setBillboard(event.billboard);
     }
     speech.handle(events);
     if (!fast) {

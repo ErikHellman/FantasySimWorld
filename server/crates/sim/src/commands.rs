@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{ConversationLine, Feeling, Id, Intent, Map, PlanBlock};
+use crate::state::{BoardNotice, BoardReaction, ConversationLine, Feeling, Id, Intent, Map, PlanBlock};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,5 +74,21 @@ pub enum Command {
     },
     Tuning {
         tuning: TuningPatch,
+    },
+    /// Puts text up on a billboard; `None` returns it to the daily slogans.
+    SetBillboard {
+        board_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notice: Option<BoardNotice>,
+    },
+    /// How someone reading a billboard takes it; ignored unless they are still reading it and have not reacted.
+    BillboardReaction {
+        id: Id,
+        board_id: String,
+        reaction: BoardReaction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        say: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought: Option<String>,
     },
 }

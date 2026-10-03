@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
-  AllowlistEntry, AuthAttempt, HealthReport, LlmSettingsView, Role,
+  AllowlistEntry, AuthAttempt, Billboard, BillboardTone, HealthReport, LlmSettingsView, Role,
 } from '../generated/api';
 import { api } from '../net/api';
 import { actions, ui } from './store';
@@ -83,6 +83,59 @@ function WorldSection() {
         ) : <p class="muted">…</p>}
         <button onClick={refresh}>Refresh</button>
       </details>
+    </>
+  );
+}
+
+/** The most a billboard holds, in UTF-16 code units; the server says so too. */
+const BILLBOARD_MAX = 90;
+const TONES: Record<BillboardTone, string> = {
+  absurd: 'absurd', uplifting: 'uplifting', wholesome: 'wholesome', pushy: 'pushy (an advert)', ominous: 'ominous',
+};
+
+function BillboardRow({ board }: { board: Billboard }) {
+  const [text, setText] = useState('');
+  const [tone, setTone] = useState<BillboardTone>('absurd');
+  const [message, setMessage] = useState('');
+  const send = (body: { text?: string; tone?: BillboardTone }): void => {
+    setMessage('');
+    api.admin.billboard({ id: board.id, text: body.text ?? null, tone: body.tone ?? null }).then(() => {
+      setText('');
+      setMessage(body.text ? 'Put up.' : 'Back to the daily slogans.');
+    }, (error) => setMessage(errorText(error)));
+  };
+  return (
+    <li class="billboard-row">
+      <div class="row">
+        <strong>{board.place}</strong>
+        <span class={`badge ${board.custom ? 'good' : ''}`}>{board.custom ? 'set by an admin' : 'daily slogan'}</span>
+        <span class="muted">“{board.text}”</span>
+      </div>
+      <div class="row">
+        <input type="text" placeholder="New text" maxLength={BILLBOARD_MAX} value={text} onInput={(event) => setText(event.currentTarget.value)} />
+        <select value={tone} onChange={(event) => setTone(event.currentTarget.value as BillboardTone)} style={{ maxWidth: '150px' }}>
+          {(Object.keys(TONES) as BillboardTone[]).map((value) => <option value={value}>{TONES[value]}</option>)}
+        </select>
+        <button onClick={() => send({ text, tone })} disabled={text.trim() === ''}>Put up</button>
+        {board.custom && <button onClick={() => send({})}>Back to slogans</button>}
+      </div>
+      {message && <p class="test-result">{message}</p>}
+    </li>
+  );
+}
+
+/** What the billboards say. Text put up here stays until it is taken down; the others change every morning. */
+function BillboardsSection() {
+  return (
+    <>
+      <h3>Billboards</h3>
+      <p class="muted">
+        Each board shows a new slogan every morning unless you put something up. The tone colours the board and how the
+        villagers take it. While the world is paused, a change shows when it resumes.
+      </p>
+      <ul class="graves">
+        {ui.billboards.value.map((board) => <BillboardRow key={board.id} board={board} />)}
+      </ul>
     </>
   );
 }
@@ -208,7 +261,7 @@ function AccessSection() {
   );
 }
 
-/** Running the shared world: speed, saves, the language model and who may watch. Admins only. */
+/** Running the shared world: speed, saves, billboards, the language model and who may watch. Admins only. */
 export function AdminPanel() {
   return (
     <div class="modal" onClick={() => (ui.panel.value = 'none')}>
@@ -216,6 +269,7 @@ export function AdminPanel() {
         <button class="close" title="Close" onClick={() => (ui.panel.value = 'none')}>×</button>
         <h2>Admin</h2>
         <WorldSection />
+        <BillboardsSection />
         <LlmSection />
         <AccessSection />
         <footer>

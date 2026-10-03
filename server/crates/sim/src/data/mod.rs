@@ -1,7 +1,8 @@
-//! Static game data: animations, classes, monsters, activities, the cast and small talk.
+//! Static game data: animations, classes, monsters, activities, the cast, small talk and the billboards' slogans.
 
 pub mod activities;
 pub mod anims;
+pub mod billboards;
 pub mod cast;
 pub mod classes;
 pub mod monsters;
