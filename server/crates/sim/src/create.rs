@@ -5,22 +5,17 @@ use std::collections::HashMap;
 use fsw_core::jsmath::js_round;
 use fsw_core::rng::range;
 
-use crate::data::cast::{CastEntry, SeedBond, cast, seed_bonds};
+use crate::data::cast::{cast, seed_bonds};
 use crate::state::{ChronicleEntry, ChronicleKind, Director, Id, SAVE_VERSION, SimState, Tuning};
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::director::tick_at;
-use crate::systems::relationships::{charm_welcome, label_for};
+use crate::systems::relationships::{label_for, looks_welcome};
 use crate::util::new_relationship;
 
 pub const DEFAULT_SEED: u32 = 1337;
 
 pub fn create_state(seed: u32) -> SimState {
-    create_state_with(seed, cast(), seed_bonds())
-}
-
-/// A new world with a given founding cast. Tests use it to rebuild worlds from
-/// before the cast grew; everything else wants [`create_state`].
-pub fn create_state_with(seed: u32, founders: &[CastEntry], bonds: &[SeedBond]) -> SimState {
+    let founders = cast();
     let mut state = SimState {
         version: SAVE_VERSION,
         seed,
@@ -72,11 +67,11 @@ pub fn create_state_with(seed: u32, founders: &[CastEntry], bonds: &[SeedBond]) 
             r.familiarity = range(&mut state.rng, 18.0, 32.0);
             r.affinity = js_round(range(&mut state.rng, 0.0, 14.0));
             r.trust = js_round(range(&mut state.rng, 0.0, 12.0));
-            r.affinity += charm_welcome(&state.characters[b]);
+            r.affinity += looks_welcome(&state.characters[b]);
             state.characters[a].relationships.insert(b.clone(), r);
         }
     }
-    for bond in bonds {
+    for bond in seed_bonds() {
         let (Some(from), Some(to)) = (by_key.get(bond.from.as_str()), by_key.get(bond.to.as_str())) else {
             panic!("Seed bond refers to unknown cast member {} -> {}", bond.from, bond.to);
         };

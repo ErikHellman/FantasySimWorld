@@ -64,13 +64,27 @@ pub struct Profile {
     pub bravery: f64,
     /// 0 solitary .. 1 gregarious
     pub sociability: f64,
+    /// 0 lets things go .. 1 goes looking for trouble: quarrels without a grudge, nurses grudges and
+    /// comes to blows sooner. Left out of saves at 0, so the old browser saves round-trip unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spite: f64,
+    /// 0 none .. 1 shameless: flirts freely, charms admirers and enjoys being
+    /// fought over (`systems::charm`). Left out of saves when 0, so saves made
+    /// before it existed load and write back unchanged.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allure: f64,
     /// 0 at ease .. 1 tongue-tied with anyone they do not yet trust (worse with women)
     #[serde(default, skip_serializing_if = "is_zero")]
     pub shyness: f64,
-    /// 0 unremarkable .. 1 everyone's eye: others warm to them and fall for them faster
+    /// 0 unremarkable .. 1 striking: others warm to them and fall for them faster,
+    /// whatever they do (unlike `allure`, which is flirting on purpose)
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub charm: f64,
+    pub looks: f64,
     pub voice: VoiceProfile,
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -712,10 +726,6 @@ fn founding_population() -> usize {
 
 fn is_founding_population(target: &usize) -> bool {
     *target == FOUNDING_POPULATION
-}
-
-fn is_zero(value: &f64) -> bool {
-    *value == 0.0
 }
 
 /// Knobs the brain layer may turn (through a command) without breaking determinism.

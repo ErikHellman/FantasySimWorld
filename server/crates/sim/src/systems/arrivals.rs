@@ -14,7 +14,7 @@ use crate::state::{
     MemoryKind, Needs, PlanSource, Profile, Pronouns, SimState, StimulusKind, VoiceProfile,
 };
 use crate::systems::intents::fresh_act;
-use crate::systems::relationships::{charm_welcome, label_for};
+use crate::systems::relationships::{label_for, looks_welcome};
 use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
 
 const FIRST_NAMES: [&str; 15] = [
@@ -217,8 +217,10 @@ fn wanderer(ctx: &mut Ctx) -> CastEntry {
             temper,
             bravery,
             sociability,
+            spite: 0.0,
+            allure: 0.0,
             shyness: 0.0,
-            charm: 0.0,
+            looks: 0.0,
             voice: VoiceProfile { pitch, rate, timbre: "plain".into() },
         },
         bonds: Vec::new(),
@@ -261,7 +263,7 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
     let id = c.id.clone();
     let (name, occupation, home_name) =
         (c.profile.name.clone(), c.profile.occupation.clone(), get_place(&c.home_id).name);
-    let welcome = charm_welcome(&c);
+    let welcome = looks_welcome(&c);
     ctx.state.characters.insert(id.clone(), c);
     ctx.state.order.push(id.clone());
 

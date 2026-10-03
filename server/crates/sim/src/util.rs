@@ -371,9 +371,9 @@ pub fn chemistry(a: &Character, b: &Character) -> bool {
 }
 
 /// Whether `me` could fall for `other`: the pair's chemistry, or simply that
-/// `other` is charming enough to turn most heads.
+/// `other` is good-looking enough to turn most heads.
 pub fn drawn_to(me: &Character, other: &Character) -> bool {
-    pair_roll(me, other) < CHEMISTRY.max((other.profile.charm * 100.0) as u32)
+    pair_roll(me, other) < CHEMISTRY.max((other.profile.looks * 100.0) as u32)
 }
 
 /// Trust at which a shy character talks as freely as anyone.

@@ -7,7 +7,7 @@ use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, 
 use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, panic_chance, start_fight};
 use fsw_sim::systems::death::kill_character;
 use fsw_sim::systems::monsters::spawn_monster;
-use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, Rung, label_for, lethal_unlocked, rung_of};
+use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, RUNG_GRUDGE, Rung, label_for, lethal_unlocked, rung_of};
 use fsw_sim::util::{Ctx, first_name, living, new_relationship, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
 
@@ -120,6 +120,55 @@ fn the_ladder_refuses_a_brawl_without_a_feud_and_allows_one_with_it() {
     w.run(2);
     let intent = w.sim.state.characters[&mira].intent.clone().unwrap();
     assert!(matches!(intent.action, IntentAction::Fight { mode: FightMode::Brawl, .. }));
+}
+
+#[test]
+fn a_spiteful_villager_comes_to_blows_over_a_grudge_short_of_a_feud() {
+    let mut w = World::new(31);
+    w.run(5);
+    let (mira, kael) = (w.who("Mira"), w.who("Kael"));
+    rel(w.sim.state.characters.get_mut(&mira).unwrap(), &kael).grievance = RUNG_GRUDGE + 10.0;
+    w.fight(&mira, &kael, FightMode::Brawl, None);
+    w.run(2);
+    assert!(!w.sim.state.characters[&mira].intent.as_ref().is_some_and(|i| i.is_fight()));
+    w.sim.state.characters.get_mut(&mira).unwrap().profile.spite = 1.0;
+    w.fight(&mira, &kael, FightMode::Brawl, None);
+    w.run(2);
+    let intent = w.sim.state.characters[&mira].intent.clone().unwrap();
+    assert!(matches!(intent.action, IntentAction::Fight { mode: FightMode::Brawl, .. }));
+}
+
+/// Hostile talks Garrick starts with people he holds no grudge against, over four days of a busy village.
+fn quarrels_picked_by_garrick(seed: u32, spite: f64) -> (usize, Sim) {
+    let mut sim = Sim::new(create_state(seed));
+    let garrick = living(&sim.state).find(|c| first_name(c) == "Garrick").unwrap().id.clone();
+    sim.state.characters.get_mut(&garrick).unwrap().profile.spite = spite;
+    let mut picked = 0;
+    for _ in 0..TICKS_PER_DAY * 4 {
+        for event in sim.step() {
+            if let SimEvent::ConversationStarted { a, b, tone: TalkTone::Hostile, .. } = event
+                && a == garrick
+                && sim.state.characters[&a].relationships.get(&b).is_none_or(|r| r.grievance < RUNG_GRUDGE)
+            {
+                picked += 1;
+            }
+        }
+    }
+    (picked, sim)
+}
+
+#[test]
+fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
+    // Worlds where Garrick and Dorn both live through the four days.
+    for seed in [5, 3] {
+        let (calm, _) = quarrels_picked_by_garrick(seed, 0.0);
+        let (spiteful, sim) = quarrels_picked_by_garrick(seed, 1.0);
+        assert_eq!(calm, 0, "seed {seed}");
+        assert!(spiteful >= 2, "seed {seed}: only {spiteful} quarrels picked");
+        let state = &sim.state;
+        let id = |name: &str| living(state).find(|c| first_name(c) == name).expect(name).id.clone();
+        assert!(state.characters[&id("Garrick")].relationships[&id("Dorn")].affinity > 0.0, "seed {seed}");
+    }
 }
 
 #[test]

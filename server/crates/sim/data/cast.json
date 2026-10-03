@@ -106,22 +106,23 @@
     "pronouns": "he/him",
     "age": 36,
     "occupation": "woodcutter and miner",
-    "backstory": "Came down from the hill clans with his brother Halric. Halric died on one of Aldric's patrols three winters ago, and Garrick has never forgiven the captain for coming back without him.",
+    "backstory": "Came down from the hill clans with his brother Halric. Three winters ago Halric went out on one of Aldric's patrols and never came back, and Garrick buried an empty coffin. He thinks the village forgot Halric far too quickly, and he has been looking for someone to make pay ever since.",
     "traits": [
-     "boisterous",
-     "proud",
-     "quick to anger",
-     "fiercely loyal"
+     "bitter",
+     "spiteful",
+     "cynical",
+     "spoiling for a fight"
     ],
     "goals": [
-     "hear Aldric admit he failed Halric",
-     "out-drink and out-work everyone",
-     "look after Dorn, his only real friend"
+     "make Aldric pay for coming home without Halric",
+     "find someone in this soft village worth fighting",
+     "keep Dorn, the one man who still puts up with him"
     ],
-    "speechStyle": "Loud, hearty, swears by his ancestors, speaks before he thinks.",
-    "temper": 0.85,
+    "speechStyle": "Snarling and sarcastic; goads and mocks, picks at old wounds, swears on Halric's grave, never backs down.",
+    "temper": 1,
     "bravery": 0.95,
     "sociability": 0.75,
+    "spite": 1,
     "voice": {
      "pitch": 0.65,
      "rate": 1,
@@ -315,22 +316,26 @@
     "pronouns": "she/her",
     "age": 26,
     "occupation": "market trader",
-    "backstory": "Runs the best stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them.",
+    "backstory": "Runs the busiest stall at the market and knows everybody's business. Few know she was a cutpurse in the city before she came here; Vex is one of them. She learned long ago that a smile opens more purses than quick fingers, and nothing amuses her more than two men glaring at each other over her, a scene she is not above arranging.",
     "traits": [
+     "flirtatious",
+     "seductive",
      "witty",
-     "charming",
-     "opportunistic",
-     "a gossip"
+     "scheming",
+     "loves a drama",
+     "without scruples"
     ],
     "goals": [
-     "keep her past buried",
-     "turn a profit",
-     "know every secret in the village"
+     "have every man in the village a little in love with her",
+     "set her admirers against each other and enjoy the show",
+     "get what she wants with a smile rather than honest work",
+     "keep her past buried"
     ],
-    "speechStyle": "Fast, teasing, full of gossip and bargains.",
+    "speechStyle": "Low, teasing and full of double meanings; flatters shamelessly, pouts when refused, and drops a rival's name just to watch a man bristle.",
     "temper": 0.45,
     "bravery": 0.5,
     "sociability": 0.9,
+    "allure": 0.9,
     "voice": {
      "pitch": 1.2,
      "rate": 1.2,
@@ -544,7 +549,7 @@
     "bravery": 0.97,
     "sociability": 0.2,
     "shyness": 0.85,
-    "charm": 0.95,
+    "looks": 0.95,
     "voice": {
      "pitch": 0.55,
      "rate": 0.85,
@@ -592,11 +597,11 @@
   {
    "from": "garrick",
    "to": "aldric",
-   "affinity": -32,
-   "trust": -25,
-   "grievance": 54,
+   "affinity": -55,
+   "trust": -45,
+   "grievance": 78,
    "familiarity": 55,
-   "summary": "He led my brother Halric out and came back without him."
+   "summary": "He led Halric out to die and walked home whole. One day I will make him bleed for it."
   },
   {
    "from": "aldric",
@@ -609,11 +614,20 @@
   },
   {
    "from": "garrick",
+   "to": "brenna",
+   "affinity": -20,
+   "trust": -15,
+   "grievance": 35,
+   "familiarity": 50,
+   "summary": "Aldric's lapdog. She would lick his boots if he asked."
+  },
+  {
+   "from": "garrick",
    "to": "dorn",
-   "affinity": 55,
-   "trust": 60,
+   "affinity": 45,
+   "trust": 55,
    "familiarity": 75,
-   "summary": "My drinking brother. The only one who tells me when I am being a fool."
+   "summary": "The only one who still drinks with me, and even he has started to look at me like a wound that will not close."
   },
   {
    "from": "dorn",
@@ -621,7 +635,7 @@
    "affinity": 52,
    "trust": 45,
    "familiarity": 75,
-   "summary": "Big-hearted oaf. Someone has to keep him out of trouble."
+   "summary": "Grief has turned him mean. Someone has to stop him killing somebody."
   },
   {
    "from": "rowan",
@@ -700,7 +714,7 @@
    "trust": 15,
    "attraction": 38,
    "familiarity": 45,
-   "summary": "The sharpest tongue at the market. I cannot tell if she likes me or my coin."
+   "summary": "She smiles at me one day and at Kael the next, and it is driving me mad."
   },
   {
    "from": "mira",
@@ -709,7 +723,59 @@
    "trust": 10,
    "attraction": 28,
    "familiarity": 45,
-   "summary": "Charming, useless, and oddly sweet."
+   "summary": "Sweet, silly Theron. He would fetch me the moon if I pouted prettily enough."
+  },
+  {
+   "from": "kael",
+   "to": "mira",
+   "affinity": 28,
+   "trust": 10,
+   "attraction": 36,
+   "familiarity": 40,
+   "summary": "She has a smile that could sink a fishing boat. Trouble, and I like trouble."
+  },
+  {
+   "from": "mira",
+   "to": "kael",
+   "affinity": 26,
+   "trust": 5,
+   "attraction": 10,
+   "familiarity": 40,
+   "summary": "Kael thinks he is the charmer of this village. Let him keep thinking it."
+  },
+  {
+   "from": "dorn",
+   "to": "mira",
+   "affinity": 30,
+   "trust": 15,
+   "attraction": 35,
+   "familiarity": 45,
+   "summary": "She talks me down to half my price and I thank her for it."
+  },
+  {
+   "from": "mira",
+   "to": "dorn",
+   "affinity": 22,
+   "trust": 10,
+   "familiarity": 45,
+   "summary": "Dorn goes as red as his forge whenever I smile. A useful man to have about."
+  },
+  {
+   "from": "garrick",
+   "to": "mira",
+   "affinity": 25,
+   "trust": 10,
+   "attraction": 30,
+   "familiarity": 40,
+   "summary": "Loud laugh, quick tongue. I like a woman who answers back."
+  },
+  {
+   "from": "mira",
+   "to": "garrick",
+   "affinity": 20,
+   "trust": 5,
+   "familiarity": 40,
+   "summary": "All muscle and temper. Point him the right way and stand back."
   },
   {
    "from": "aldric",
@@ -846,7 +912,7 @@
     "bravery": 0.9,
     "sociability": 0.3,
     "shyness": 0.75,
-    "charm": 0.9,
+    "looks": 0.9,
     "voice": {
      "pitch": 0.6,
      "rate": 0.9,

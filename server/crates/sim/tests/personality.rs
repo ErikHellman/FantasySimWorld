@@ -1,8 +1,8 @@
-//! Shyness and charm: the Greymane brothers' traits, and that everyone else is untouched by them.
+//! Shyness and looks: the Greymane brothers' traits, and that everyone else is untouched by them.
 
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{Character, Profile, Pronouns, SimState};
-use fsw_sim::systems::relationships::{RelationDelta, adjust, charm_welcome};
+use fsw_sim::systems::relationships::{RelationDelta, adjust, looks_welcome};
 use fsw_sim::util::{Ctx, chemistry, drawn_to, first_name, living, openness, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
 
@@ -69,14 +69,14 @@ fn a_shy_villager_seldom_starts_a_conversation_with_a_woman() {
 }
 
 #[test]
-fn everyone_warms_to_a_charming_person_and_keeps_warming() {
+fn everyone_warms_to_a_good_looking_person_and_keeps_warming() {
     let mut state = create_state(1);
     let (torvald, garrick, kael) = (who(&state, "Torvald"), who(&state, "Garrick"), who(&state, "Kael"));
-    // Kael has no authored bond with him: the head start comes from charm alone.
-    let welcome = charm_welcome(&state.characters[&torvald]);
+    // Kael has no authored bond with him: the head start comes from his looks alone.
+    let welcome = looks_welcome(&state.characters[&torvald]);
     assert!(welcome >= 19.0);
     assert!(state.characters[&kael].relationships[&torvald].affinity >= welcome);
-    assert_eq!(charm_welcome(&state.characters[&garrick]), 0.0);
+    assert_eq!(looks_welcome(&state.characters[&garrick]), 0.0);
 
     let before = |state: &SimState, to: &str| state.characters[&kael].relationships[to].affinity;
     let (to_torvald, to_garrick) = (before(&state, &torvald), before(&state, &garrick));
@@ -90,13 +90,13 @@ fn everyone_warms_to_a_charming_person_and_keeps_warming() {
 }
 
 #[test]
-fn a_charming_person_turns_most_heads() {
+fn a_good_looking_person_turns_most_heads() {
     let state = create_state(1);
     let torvald = &state.characters[&who(&state, "Torvald")];
     let others: Vec<&Character> = living(&state).filter(|c| c.id != torvald.id).collect();
     let drawn = others.iter().filter(|c| drawn_to(c, torvald)).count();
     assert!(drawn * 10 >= others.len() * 8, "{drawn} of {}", others.len());
-    // Without charm, being drawn to someone is just the pair's chemistry.
+    // Without looks, being drawn to someone is just the pair's chemistry.
     for a in &others {
         for b in &others {
             if a.id != b.id {
@@ -107,13 +107,13 @@ fn a_charming_person_turns_most_heads() {
 }
 
 #[test]
-fn profiles_without_shyness_or_charm_read_and_write_as_before() {
+fn profiles_without_shyness_or_looks_read_and_write_as_before() {
     let state = create_state(1);
     let garrick = &state.characters[&who(&state, "Garrick")].profile;
     let json = serde_json::to_value(garrick).unwrap();
-    assert!(json.get("shyness").is_none() && json.get("charm").is_none());
+    assert!(json.get("shyness").is_none() && json.get("looks").is_none());
     let back: Profile = serde_json::from_value(json).unwrap();
-    assert_eq!((back.shyness, back.charm), (0.0, 0.0));
+    assert_eq!((back.shyness, back.looks), (0.0, 0.0));
 
     let torvald = &state.characters[&who(&state, "Torvald")].profile;
     let json = serde_json::to_value(torvald).unwrap();
