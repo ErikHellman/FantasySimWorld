@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 pub mod api;
 pub mod auth;
 pub mod brain_task;
+pub mod chat;
 pub mod config;
 pub mod digest;
 pub mod encode;
@@ -32,6 +33,8 @@ pub struct AppState {
     pub auth: Auth,
     /// the language-model brain (off unless `LLM_BASE_URL` and `LLM_MODEL` are set)
     pub brain: Brain,
+    /// the viewers' chat (in memory: survives a new world, not a restart)
+    pub chat: Arc<chat::ChatHub>,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,
 }
@@ -55,6 +58,7 @@ impl AppState {
             store,
             auth,
             brain,
+            chat: Arc::default(),
             shutdown,
         }))
     }

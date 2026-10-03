@@ -15,7 +15,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
-use crate::api::{llm, stream, world};
+use crate::api::{chat, llm, stream, world};
 use crate::auth;
 
 /// A save is a few hundred KB; a long-lived world stays well under this.
@@ -42,6 +42,8 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/stream", get(stream::stream))
         .route("/me", get(auth::me))
         .route("/watch", post(world::watch))
+        .route("/chat", post(chat::post))
+        .route("/chat/name", post(chat::rename))
         .route("/characters/{id}", get(world::character))
         .route("/chronicle", get(world::chronicle))
         .route("/logout", post(auth::logout))

@@ -18,7 +18,8 @@ import { App } from './ui/App';
 import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
-  actions, addBrainLog, addChronicle, addGrave, addVoice, fromSnapshot, fromStatus, loadAudioSettings, saveAudioSettings, setClock, ui,
+  actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setClock, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -78,6 +79,7 @@ async function start(): Promise<void> {
 
   const audio = new AudioEngine();
   ui.audio.value = loadAudioSettings();
+  ui.chatView.value = loadChatSettings().view;
   audio.apply(ui.audio.value);
   const publishSlots = (): void => {
     const loaded = audio.loaded;
@@ -172,6 +174,16 @@ async function start(): Promise<void> {
     },
     brainlog: (record) => addBrainLog([record]),
     worldReset: () => location.reload(),
+    chatWelcome: (welcome) => {
+      fromChatWelcome(welcome);
+      // A fresh connection gets a fresh name; ask again for the one this browser chose, if it is free.
+      const wanted = loadChatSettings().name;
+      if (welcome.you !== null && wanted && wanted !== welcome.you) {
+        api.chatName({ viewer, name: wanted }).then((you) => (ui.chatName.value = you.name)).catch(() => {});
+      }
+    },
+    chat: addChat,
+    chatYou: (you) => (ui.chatName.value = you.name),
     refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),
     connection: (state) => (ui.connection.value = state),
   });
@@ -191,6 +203,13 @@ async function start(): Promise<void> {
     ui.audio.value = settings;
     saveAudioSettings(settings);
     audio.apply(settings);
+  };
+  actions.sendChat = (text) => api.chat({ viewer, text });
+  actions.renameChat = async (name) => {
+    const you = await api.chatName({ viewer, name });
+    ui.chatName.value = you.name;
+    saveChatSettings({ ...loadChatSettings(), name: you.name });
+    return you.name;
   };
 
   const updateMusic = (hour: number): void => {

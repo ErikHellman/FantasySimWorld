@@ -152,6 +152,17 @@ and start the server against it:
 cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 ```
 
+## Chat
+
+Everyone watching shares a chat along the bottom of the screen. It can be expanded, collapsed to one line showing the latest message, or hidden behind a 💬 button that counts what you missed.
+
+- Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody connected at the same time has it (ignoring case). The chosen name is kept in this browser and asked for again after each connect; if someone else has it by then, you keep the made-up one.
+- Signed in with Google or Apple, all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person.
+- The server keeps the last 50 messages, in memory, and sends them to everyone who connects. They survive a new world but not a server restart.
+- A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
+- Each person may send about one message a second, in bursts of up to five.
+- Every message passes through `filter` in [server/crates/server/src/chat.rs](server/crates/server/src/chat.rs) before anyone sees it. It allows everything for now; it is where moderation goes.
+
 ## Sound
 
 The game ships ambient loops, effects and background music, all CC0, public domain or CC BY ([credits](public/audio/CREDITS.md)). The ambience follows the camera, the time of day and what the villagers are doing. The music follows what you are watching, from calm day, evening and night pieces to tension when the alarm is up or monsters are near, battle when a fight is in view, and grief after a death, with short victory and defeat stings. Settings turns ambience, effects and music on or off, and sets their volumes, in this browser only.
@@ -189,12 +200,12 @@ Other tools:
 | `src/world` | The hex map, places and activity spots, scatter, navigation grid, pathfinding (terrain, scenery and camera bounds in the browser) |
 | `src/net` | The event stream, the world as this viewer knows it, the jitter buffer, REST calls |
 | `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table |
-| `src/ui` | The HUD, admin panel, login and no-access pages (Preact and signals) |
+| `src/ui` | The HUD, chat, admin panel, login and no-access pages (Preact and signals) |
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
 | `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
-| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, sign-in, SQLite store) |
+| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, chat, sign-in, SQLite store) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
 On the server the sim depends only on `core` and `world`; the brain reads the world and talks to the sim through commands applied at tick boundaries, so a run is reproducible for a given command stream. The browser depends on `core`, `world`, `net` and `generated`, never on the sim.

@@ -7,7 +7,8 @@
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
 //! `roster` (a list of [`RosterEntry`]), `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
-//! `world_reset` [`WorldReset`]. Event ids are `"<bootId>:<tick>"`.
+//! `world_reset` [`WorldReset`], `chat_welcome` [`ChatWelcome`], `chat` [`ChatMessage`], `chat_you` [`ChatYou`].
+//! Event ids are `"<bootId>:<tick>"`.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -577,6 +578,59 @@ pub struct BrainLogRecord {
 }
 
 // ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+
+/// One message in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct ChatMessage {
+    /// rises by one per message since the server started
+    #[ts(type = "number")]
+    pub id: u64,
+    /// ms since the epoch
+    #[ts(type = "number")]
+    pub at: u64,
+    /// the author's name when they sent it
+    pub author: String,
+    /// markdown, already tidied and filtered by the server; render it as text, never as HTML
+    pub text: String,
+}
+
+/// `chat_welcome`, sent after the opening events (and again if a stream falls behind on chat).
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatWelcome {
+    /// this viewer's chat name; `null` when they can only read
+    pub you: Option<String>,
+    /// the last messages, oldest first; replaces whatever the client had
+    pub history: Vec<ChatMessage>,
+    /// the longest message the server accepts, in UTF-16 code units
+    pub max_length: u32,
+}
+
+/// `chat_you` on the stream, and the answer to `POST /api/chat/name`: this viewer's chat name now.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct ChatYou {
+    pub name: String,
+}
+
+/// `POST /api/chat`
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct ChatPost {
+    /// random per tab, as in `?viewer=` on the stream
+    pub viewer: String,
+    pub text: String,
+}
+
+/// `POST /api/chat/name`
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct ChatRename {
+    /// random per tab, as in `?viewer=` on the stream
+    pub viewer: String,
+    pub name: String,
+}
+
+// ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
 
@@ -819,6 +873,11 @@ pub fn typescript() -> String {
         RequestKind,
         LogStatus,
         BrainLogRecord,
+        ChatMessage,
+        ChatWelcome,
+        ChatYou,
+        ChatPost,
+        ChatRename,
         WatchRequest,
         Me,
         ChroniclePage,
@@ -840,7 +899,8 @@ pub fn typescript() -> String {
         "/** Payload of each named event on `GET /api/stream`. */\n\
          export type StreamEvents = {\n  \
          hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
-         detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n};\n",
+         detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
+         chat_welcome: ChatWelcome;\n  chat: ChatMessage;\n  chat_you: ChatYou;\n};\n",
     );
     out
 }

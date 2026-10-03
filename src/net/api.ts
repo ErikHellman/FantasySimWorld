@@ -1,5 +1,6 @@
 import type {
-  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BrainLogRecord, CharacterDetail, ChroniclePage, HealthReport,
+  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou,
+  ChroniclePage, HealthReport,
   LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
   WatchRequest,
 } from '../generated/api';
@@ -41,6 +42,10 @@ export const api = {
   logout: () => request<void>('POST', '/api/logout'),
   watch: (body: WatchRequest) => request<void>('POST', '/api/watch', body),
   character: (id: string) => request<CharacterDetail>('GET', `/api/characters/${encodeURIComponent(id)}`),
+  /** says something in the viewers' chat; it comes back on the stream */
+  chat: (body: ChatPost) => request<void>('POST', '/api/chat', body),
+  /** takes a chat name, if nobody connected has it */
+  chatName: (body: ChatRename) => request<ChatYou>('POST', '/api/chat/name', body),
   chronicle: (before: number, limit = 100) => request<ChroniclePage>('GET', `/api/chronicle?before=${before}&limit=${limit}`),
   admin: {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),

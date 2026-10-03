@@ -290,6 +290,67 @@ at: number, character: string, kind: RequestKind, status: LogStatus, latencyMs: 
 commands: Array<string>, };
 
 /**
+ * One message in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
+ */
+export type ChatMessage = { 
+/**
+ * rises by one per message since the server started
+ */
+id: number, 
+/**
+ * ms since the epoch
+ */
+at: number, 
+/**
+ * the author's name when they sent it
+ */
+author: string, 
+/**
+ * markdown, already tidied and filtered by the server; render it as text, never as HTML
+ */
+text: string, };
+
+/**
+ * `chat_welcome`, sent after the opening events (and again if a stream falls behind on chat).
+ */
+export type ChatWelcome = { 
+/**
+ * this viewer's chat name; `null` when they can only read
+ */
+you: string | null, 
+/**
+ * the last messages, oldest first; replaces whatever the client had
+ */
+history: Array<ChatMessage>, 
+/**
+ * the longest message the server accepts, in UTF-16 code units
+ */
+maxLength: number, };
+
+/**
+ * `chat_you` on the stream, and the answer to `POST /api/chat/name`: this viewer's chat name now.
+ */
+export type ChatYou = { name: string, };
+
+/**
+ * `POST /api/chat`
+ */
+export type ChatPost = { 
+/**
+ * random per tab, as in `?viewer=` on the stream
+ */
+viewer: string, text: string, };
+
+/**
+ * `POST /api/chat/name`
+ */
+export type ChatRename = { 
+/**
+ * random per tab, as in `?viewer=` on the stream
+ */
+viewer: string, name: string, };
+
+/**
  * `POST /api/watch`: which character's `detail` this viewer (one tab) receives.
  */
 export type WatchRequest = { 
@@ -428,4 +489,7 @@ export type StreamEvents = {
   detail: CharacterDetail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;
+  chat_welcome: ChatWelcome;
+  chat: ChatMessage;
+  chat_you: ChatYou;
 };

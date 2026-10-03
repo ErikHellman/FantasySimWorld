@@ -255,9 +255,9 @@ button.link { border: 0; background: none; padding: 0; font-weight: 700; text-de
 .chronicle {
   position: absolute;
   left: 10px;
-  bottom: 10px;
+  bottom: calc(10px + var(--chat-h, 0px));
   width: min(430px, calc(100% - 20px));
-  max-height: 36%;
+  max-height: calc(36% - var(--chat-h, 0px) / 2);
   padding: 10px 6px 8px 10px;
   display: flex;
   flex-direction: column;
@@ -278,7 +278,7 @@ button.chron-text:hover { text-decoration: underline; background: none; }
   top: 58px;
   right: 10px;
   width: min(330px, calc(100% - 20px));
-  max-height: calc(100% - 68px);
+  max-height: calc(100% - 68px - var(--chat-h, 0px));
   padding: 12px 6px 10px 14px;
   display: flex;
   flex-direction: column;
@@ -379,7 +379,7 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 @media (max-width: 760px) {
   .brand, .clock-part { display: none; }
   .roster { width: 170px; }
-  .inspector { top: auto; bottom: 10px; max-height: 55%; }
+  .inspector { top: auto; bottom: calc(10px + var(--chat-h, 0px)); max-height: calc(55% - var(--chat-h, 0px) / 2); }
   .chronicle { display: none; }
 }
 
@@ -387,3 +387,35 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 .feed-tabs button { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 10px; }
 .chron.voice .chron-text { color: #e9e4d6; }
 .alarm.calm { background: rgba(40, 60, 110, 0.92); animation: none; }
+
+/* Chat: a strip along the bottom edge; the panels above move up by --chat-h, which Chat.tsx keeps current. */
+.chat { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-direction: column; padding: 6px 8px 6px 12px; font-size: 13px; }
+.chat-head { display: flex; align-items: center; gap: 10px; min-height: 28px; cursor: pointer; }
+.chat-head h2 { margin: 0; flex: none; }
+.chat-preview { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-toggle { border: 0; background: none; padding: 2px 8px; font-size: 14px; line-height: 1; }
+.chat-unread { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: #23200f; font-size: 11px; font-weight: 800; text-align: center; }
+.chat-history { list-style: none; margin: 6px 0 0; padding: 0 4px 0 0; max-height: min(34vh, 280px); overflow-y: auto; }
+.chat-empty { margin: 8px 0; }
+.chat-line { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline; padding: 2px 0; line-height: 1.4; }
+.chat-time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chat-who { font-weight: 800; white-space: nowrap; }
+.chat-line.mine .chat-who { color: var(--accent); }
+.chat-text { min-width: 0; overflow-wrap: anywhere; }
+.chat-text code { background: rgba(0, 0, 0, 0.35); padding: 0 4px; border-radius: 4px; font-size: 12px; }
+.chat-text pre { margin: 4px 0; padding: 6px 8px; background: rgba(0, 0, 0, 0.35); border-radius: 6px; white-space: pre-wrap; font-size: 12px; }
+.chat-text pre code { background: none; padding: 0; }
+.chat-compose { position: relative; margin-top: 6px; }
+.chat-row { display: flex; gap: 6px; align-items: flex-end; }
+.chat-row textarea { flex: 1; resize: none; min-height: 32px; max-height: 110px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 8px; line-height: 1.35; }
+.chat-row button { height: 32px; }
+.chat-status { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; font-size: 12px; }
+.emoji-grid { position: absolute; right: 70px; bottom: 40px; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; padding: 6px; border-radius: 10px; background: rgba(22, 26, 38, 0.97); border: 1px solid var(--panel-border); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+.emoji-grid button { border: 0; background: none; padding: 0; height: 32px; font-size: 18px; }
+.chat-reopen { position: absolute; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; background: var(--panel); font-size: 16px; }
+
+@media (max-width: 760px) {
+  .chat-time { display: none; }
+  .chat-line { grid-template-columns: auto 1fr; }
+  .emoji-grid { right: 0; grid-template-columns: repeat(8, 30px); }
+}
