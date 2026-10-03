@@ -1,8 +1,8 @@
 import type {
-  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou,
-  ChroniclePage, HealthReport,
+  AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BillboardRequest, BrainLogRecord, BuyRequest, CharacterDetail, ChatPost, ChatRename, ChatYou,
+  ChroniclePage, CreditsBalance, CreditsState, HealthReport,
   LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
-  WatchRequest,
+  PresenceRequest, WatchRequest,
 } from '../generated/api';
 
 /** A failed request: the HTTP status and the server's `ApiError` message. */
@@ -46,6 +46,12 @@ export const api = {
   chat: (body: ChatPost) => request<void>('POST', '/api/chat', body),
   /** takes a chat name, if nobody connected has it */
   chatName: (body: ChatRename) => request<ChatYou>('POST', '/api/chat/name', body),
+  /** this viewer's credits and what they buy; `viewer` is the tab's id */
+  credits: (viewer: string) => request<CreditsState>('GET', `/api/credits?viewer=${encodeURIComponent(viewer)}`),
+  /** reports that this tab is being watched, which earns credits */
+  presence: (body: PresenceRequest) => request<CreditsBalance>('POST', '/api/presence', body),
+  /** spends credits on something in the world; rejects with the server's reason when it cannot happen */
+  buy: (body: BuyRequest) => request<CreditsBalance>('POST', '/api/credits/buy', body),
   chronicle: (before: number, limit = 100) => request<ChroniclePage>('GET', `/api/chronicle?before=${before}&limit=${limit}`),
   admin: {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),

@@ -7,7 +7,7 @@ Guidance for coding agents (and people) working in this repository. [README.md](
 One shared village runs on a Rust server; browsers only watch it.
 
 - `server/` is a Cargo workspace and owns everything that changes: the simulation (`fsw-sim`), the language-model brain (`fsw-brain`), the SQLite store, sign-in and the event stream (`fsw-server`). `fsw-core` and `fsw-world` hold the maths and the static world.
-- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves.
+- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves. Viewers reach the world only by spending credits (`POST /api/credits/buy`), which the server checks and turns into a `Command`.
 - Every type that crosses the wire is a Rust struct in `server/crates/server/src/api/wire.rs`, exported to `src/generated/api.ts`.
 - The TypeScript simulation and brain the Rust port was checked against live only at the `ts-sim-reference` tag. Comments in the crates that name `src/sim/…`, `src/brain/…` or `tools/…` files that no longer exist refer to that tag. Do not bring those folders back to `src/`.
 

@@ -32,8 +32,9 @@ export function HelpPanel() {
         <button class="close" title="Close (Esc)" onClick={close}>×</button>
         <h2>How to watch the village</h2>
         <p>
-          The village runs on the server around the clock, and everyone watching sees the same world. You cannot change
-          what happens; you can only look around, follow the villagers and talk with the other people watching.
+          The village runs on the server around the clock, and everyone watching sees the same world. You look around,
+          follow the villagers and talk with the other people watching. Watching also earns you credits (the ✦ in the
+          top bar), which buy gifts, blessings and trouble for the village; the villagers will know who sent them.
         </p>
 
         {isTouchScreen() && (

@@ -68,6 +68,7 @@ set -a; . ./.env; set +a
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
+- The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)).
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
@@ -89,6 +90,8 @@ All settings come from environment variables, read at start:
 | `STATIC_DIR` | `dist` | The web build the server serves |
 | `DATA_DIR` | `data` | Where `world.db` and its backups live |
 | `INITIAL_SPEED` | `1` | Speed of a new world: `0` (paused), `1`, `2` or `4` |
+| `CREDITS_PER_MINUTE` | `2` | Credits a viewer earns for a minute of watching with the tab in front; `0` turns credits off |
+| `CREDITS_CAP` | `400` | The most credits watching and prayer can build up |
 | `TRUST_PROXY` | `false` | Take the client's address from `Fly-Client-IP` / `X-Forwarded-For`; only behind a proxy that sets them |
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
@@ -169,6 +172,17 @@ Everyone watching shares a chat along the bottom of the screen. It can be expand
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
 - Each person may send about one message a second, in bursts of up to five.
 - Every message passes through `filter` in [server/crates/server/src/chat.rs](server/crates/server/src/chat.rs) before anyone sees it. It allows everything for now; it is where moderation goes.
+
+## Credits
+
+People watching earn credits and spend them on things that happen in the village.
+
+- **Earning.** A browser tab that is on screen and has the focus tells the server so every 30 seconds, and each report that arrives on time earns half a minute's worth (`CREDITS_PER_MINUTE`, 2 by default, up to `CREDITS_CAP`). A hidden or unfocused tab earns nothing, and neither do extra tabs or reports sent faster: the server counts at most one every 25 seconds per person. A new account starts with 10.
+- **Spending.** The ✦ pill opens the list. Gifts (food 5, a healing potion 8, a small gift 10) go into the pack of the villager you have selected. One of the dead (20 to 50) rises where your view is centred, whatever the hour, and crumbles after three hours of the village's day. A feast (80) and a healing (100) are for everyone. A raid (150) and a necromancer (250) come from the graveyard. The server refuses, and takes nothing for, what cannot happen: a full pack, a spot nothing can stand on, too many of the dead abroad already, a paused world. One person may buy three things in a row, then one every five seconds.
+- **The villagers know who did it.** To them you are one of the powers that watch the valley, known by your chat name. The chat and the chronicle say what you did; villagers remember it, thank you or plead with you on the spot, pray to you at the chapel and the shrine, and with a language model connected they speak of you in their own words. A new chat name is a new power to them. Names end up in saves and exports with the rest of the chronicle.
+- **Prayer pays.** When three different villagers have spoken your name in one day of the village, you earn 15 credits, once that day, whether or not you are watching.
+- **Where it is kept.** With provider sign-in the balance belongs to the account and lives in the database, with a record of each purchase kept for 90 days. With token sign-in or sign-in off there are no accounts, so each tab has its own balance, in memory, gone after an hour away or a server restart.
+- The offers and their prices are the `OFFERS` table in [server/crates/server/src/credits.rs](server/crates/server/src/credits.rs); what each does in the village is in [server/crates/sim/src/systems/viewer_events.rs](server/crates/sim/src/systems/viewer_events.rs).
 
 ## Sound
 

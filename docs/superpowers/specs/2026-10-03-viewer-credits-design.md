@@ -113,6 +113,18 @@ Names: the sim accepts `by` only if it passes the chat name rules (letters, digi
 
 - `README.md` settings table and a short "Credits" section; `docs/deploy.md` line for the two settings; AGENTS.md route list mention if needed.
 
+## As built
+
+Where the code differs from the design above:
+
+- **Prayers are counted by their own task**, not the world task: `credits::spawn_prayers` listens to the sim's events, as the brain does, because the credits live on `AppState` and the world task does not see it.
+- **A name the villagers could not say** leaves no power behind: the chronicle says "A nameless power", villagers say "lord", and no prayer is counted.
+- **Blessings nobody needs are refused** (nobody hurt, nobody hungry), so credits are not spent on nothing.
+- **Too few credits is 402**; other refusals are 409 with the reason as a sentence. The balance is checked before the rate limit, so only a purchase that would go through uses one of the three turns.
+- **`GET /api/credits` takes `?viewer=<tab>`** and also answers `beatSeconds`; when credits are off it answers `perMinute: 0` and no offers, and the other two routes are 404.
+- **The page reloads its credits** when the chat shows an event under its own name, which is how a prayer bonus shows up without waiting for the next report.
+- **A power's name is matched in speech as whole words, whatever the case.** A viewer who takes a common word, or a villager's name, as a chat name would be "prayed to" by ordinary talk; the once-a-day bonus bounds what that earns.
+
 ## Order of work (tests first in each step)
 
 1. Spec document.

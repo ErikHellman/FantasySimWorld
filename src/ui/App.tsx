@@ -8,7 +8,8 @@ import { isTouchScreen } from './layout';
 import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
-import { actions, closeSheet, isAdmin, togglePanel, ui } from './store';
+import { ShopPanel } from './Shop';
+import { actions, closeSheet, creditsOn, isAdmin, togglePanel, ui } from './store';
 
 function TopBar() {
   const clock = ui.clock.value;
@@ -38,6 +39,11 @@ function TopBar() {
           </button>
         )}
         <LlmPill />
+        {creditsOn() && (
+          <button class="pill credits" title="Your credits: spend them on the village" onClick={() => togglePanel('shop')}>
+            ✦ {ui.credits.value?.balance}
+          </button>
+        )}
         {admin && (
           <button class="pill" title="Run the world: model, access, saves" onClick={() => togglePanel('admin')}>
             🛠 Admin
@@ -152,6 +158,7 @@ export function App() {
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
       {ui.panel.value === 'graves' && <Graves />}
       {ui.panel.value === 'help' && <HelpPanel />}
+      {ui.panel.value === 'shop' && creditsOn() && <ShopPanel />}
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
       )}

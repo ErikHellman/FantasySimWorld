@@ -44,6 +44,6 @@ The wire types are in `generated/api.ts`, exported from `server/crates/server/sr
 ## Checking a change in a browser
 
 - Start the server (see the root AGENTS.md; `AUTH_MODE=off` and a scratch `DATA_DIR` are simplest) and `pnpm dev`, then open <http://localhost:5173>. Vite forwards `/api` and `/auth` to the server.
-- The page exposes `window.__debug = { world, view, playback, stream, renderer, ui, actions, audio, mood }`. Read state through it rather than the DOM; Preact can render late.
+- The page exposes `window.__debug = { world, view, playback, stream, renderer, ui, actions, audio, mood, heartbeat }` (`heartbeat()` is the credits heartbeat, once it has started). Read state through it rather than the DOM; Preact can render late.
 - A browser tab that is hidden or in the background barely runs `requestAnimationFrame`, so the picture and the camera stand still there even though the stream keeps arriving. Screenshots of a hidden pane can show a stale frame.
 - `?render=off` follows the stream without drawing, for headless checks where software WebGL is far too slow; `?debug=nav` draws the navigation grid and activity spots.
