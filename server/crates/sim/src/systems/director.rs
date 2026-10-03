@@ -8,11 +8,11 @@ use fsw_world::places::{ActivityId, get_place};
 
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind};
 use crate::systems::arrivals::arrive;
-use crate::systems::monsters::{random_monster_kind, spawn_monster};
+use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
 use crate::util::{Ctx, first_name, join_names, living};
 
 pub const TARGET_POPULATION: usize = 12;
-const MAX_WAVE: i64 = 5;
+const MAX_WAVE: i64 = 7;
 
 /// Tick at which a given hour of a given day begins.
 pub fn tick_at(day: i64, hour: f64) -> i64 {
@@ -30,12 +30,13 @@ fn spawn_wave(ctx: &mut Ctx) {
     let (day, hour) = (ctx.time.day, ctx.time.hour);
     let alive = ctx.state.order.len() as i64;
     let night = if hour < 12.0 { day - 1 } else { day };
-    let mut size = 1 + alive / 5 + (night / 5).min(2);
+    let mut size = 2 + alive / 5 + (night / 4).min(2);
     if night == 1 {
-        size = 2;
+        size = 3;
     }
+    // A village still burying its dead gets a little breathing room.
     if recent_deaths(ctx, 3) >= 2 {
-        size -= 1;
+        size -= 2;
     }
     if alive < 8 {
         size -= 1;
@@ -43,7 +44,7 @@ fn spawn_wave(ctx: &mut Ctx) {
     size = size.clamp(1, MAX_WAVE);
     // `monsterList` counts the dying too.
     let monsters = ctx.state.monsters.len() as i64;
-    size = size.min(9 - monsters);
+    size = size.min(MAX_MONSTERS as i64 - monsters);
     if size <= 0 {
         return;
     }

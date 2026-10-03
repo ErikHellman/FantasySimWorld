@@ -71,7 +71,7 @@ export function HelpPanel() {
           <li>A day lasts 24 minutes at normal speed: one game minute is one second.</li>
           <li>Villagers keep to a plan for the day: work, meals, rest and time with others. They grow hungry, tired and lonely, and see to it.</li>
           <li>They talk, and every conversation shifts how they feel about each other. Friendships, rivalries and love grow from it; grudges can end in a fight.</li>
-          <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running.</li>
+          <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often.</li>
           <li>Death is for good: the fallen get a grave, and now and then a newcomer arrives in the valley.</li>
           <li>With a language model connected the villagers make their own choices and plans; without one they follow their routines. Either way the world goes on.</li>
         </ul>
