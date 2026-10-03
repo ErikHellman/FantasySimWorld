@@ -6,7 +6,8 @@ use fsw_world::places::get_place;
 
 use crate::data::anims::AnimId;
 use crate::events::{Emote, SimEvent};
-use crate::state::{ChronicleKind, Corpse, DeadRecord, Grave, MemoryKind, StimulusKind};
+use crate::state::{ChronicleKind, Corpse, DeadRecord, Grave, MemoryKind, Quirk, StimulusKind};
+use crate::systems::combat::witnesses;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{Ctx, first_name, living_ids, place_name_at, rel};
@@ -26,7 +27,7 @@ pub fn detach(ctx: &mut Ctx, id: &str) {
     }
 }
 
-fn free_grave_plot(ctx: &mut Ctx) -> i64 {
+pub fn free_grave_plot(ctx: &mut Ctx) -> i64 {
     let plots = get_place("graveyard").grave_plots.len() as i64;
     for i in 0..plots {
         if !ctx.state.graves.iter().any(|grave| grave.plot == i) {
@@ -37,9 +38,25 @@ fn free_grave_plot(ctx: &mut Ctx) -> i64 {
     if ctx.state.graves.is_empty() { 0 } else { ctx.state.graves.remove(0).plot }
 }
 
+/// Whether a killing went unseen: a murderer at work, with nobody awake near enough to see it.
+fn unseen_murder(ctx: &Ctx, victim_id: &str, killer: Option<&str>) -> bool {
+    let Some(killer) = killer else { return false };
+    ctx.cr(killer).has(Quirk::Murderous) && witnesses(ctx, ctx.cr(victim_id).pos, &[killer, victim_id]).is_empty()
+}
+
 /// Permadeath. The character leaves the living, gets a grave, and everyone who
-/// knew them reacts. `killer` is set when another villager did it.
+/// knew them reacts. `killer` is set when another villager did it; when a
+/// murderer killed unseen, nobody but the murderer knows who it was.
 pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Option<&str>) {
+    let unseen = unseen_murder(ctx, victim_id, killer);
+    let (hidden, killer) = if unseen { (killer, None) } else { (None, killer) };
+    let unseen_cause;
+    let cause = if unseen {
+        unseen_cause = format!("found struck down from behind at {}", place_name_at(ctx.cr(victim_id).pos));
+        unseen_cause.as_str()
+    } else {
+        cause
+    };
     detach(ctx, victim_id);
     let tick = ctx.tick();
     let day = ctx.time.day;
@@ -72,6 +89,7 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
             day,
             cause: cause.to_owned(),
             killer_id: killer.map(str::to_owned),
+            hidden_killer_id: hidden.map(str::to_owned),
         },
     );
     ctx.state.order.retain(|id| id != victim_id);
@@ -103,6 +121,16 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
         };
         let subjects = vec![victim.id.clone()];
 
+        if hidden == Some(other.as_str()) {
+            ctx.remember(
+                &other,
+                format!("I killed {name} at {where_}, and nobody saw. Nobody will ever know."),
+                10.0,
+                MemoryKind::Event,
+                subjects,
+            );
+            continue;
+        }
         if killer == Some(other.as_str()) {
             ctx.remember(
                 &other,
@@ -159,7 +187,7 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
         }
     }
 
-    if let Some(killer) = killer {
+    if let Some(killer) = killer.or(hidden) {
         ctx.c(killer).killer = true;
         ctx.state.director.last_lethal_tick = tick;
     }
@@ -168,6 +196,9 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
             format!("{} was killed by {} at {where_}.", victim.profile.name, ctx.cr(k).profile.name),
             vec![victim.id.clone(), k.to_owned()],
         ),
+        None if unseen => {
+            (format!("{} was {cause}. Nobody saw who did it.", victim.profile.name), vec![victim.id.clone()])
+        }
         None => (format!("{} has died, {cause}.", victim.profile.name), vec![victim.id.clone()]),
     };
     ctx.chronicle(ChronicleKind::Death, text, ids);
@@ -180,6 +211,12 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
     ctx.emit(SimEvent::SavePoint { reason: "death".into() });
 
     ctx.state.director.death_ticks.push(tick);
+    schedule_arrival_after_loss(ctx);
+}
+
+/// The village is a soul short: someone new will come up the road before long.
+pub fn schedule_arrival_after_loss(ctx: &mut Ctx) {
+    let tick = ctx.tick();
     let wait = if ctx.state.order.len() < 8 { ctx.range(0.4, 0.9) } else { ctx.range(1.2, 2.4) };
     let director = &mut ctx.state.director;
     director.next_arrival_tick =

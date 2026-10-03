@@ -48,6 +48,7 @@ fn convo(state: &SimState, a: &str, b: &str) -> Conversation {
         topic: String::new(),
         feelings: Default::default(),
         fallback: Fallback { lines: Vec::new(), topic: String::new(), feelings: Default::default() },
+        rumour: None,
     }
 }
 

@@ -114,6 +114,13 @@ pub fn update_perception(ctx: &mut Ctx) {
         if (tick + i as i64 * 3) % 10 != 0 || c.combat.yielded {
             continue;
         }
+        // Someone asleep on the grass wakes at the alarm, or at the sound of the dead close by.
+        if c.asleep && c.inside.is_none() && (alarm || nearest_monster(&monsters, c, SIGHT).is_some()) {
+            let c = ctx.c(id);
+            c.asleep = false;
+            ctx.emit(SimEvent::Emote { id: id.clone(), emote: Emote::Alert });
+            continue;
+        }
         let awake_outside = c.inside.is_none() && !c.asleep;
         let on_watch = c.intent.as_ref().is_some_and(|i| i.is_activity(fsw_world::places::ActivityId::Watch))
             && c.act.phase == ActPhase::Perform;

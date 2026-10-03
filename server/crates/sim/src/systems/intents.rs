@@ -6,22 +6,25 @@ use fsw_core::{Vec2, vec2};
 use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get_slot, slots_for};
 
-use crate::data::activities::{ITEM_CAP, activity};
+use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     Act, ActPhase, Character, ChronicleKind, Intent, IntentAction, IntentSource, ItemId, MemoryKind, MonsterPhase,
-    StimulusKind, TalkTone,
+    Quirk, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
-use crate::systems::combat::{max_hp, run_fight};
+use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
 use crate::systems::movement::{advance, route_to, step_toward};
+use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
+/// Close enough to strike from behind.
+const STRIKE_REACH: f64 = 1.8;
 const GIVE_REACH: f64 = 2.3;
 const STROLL_STOPS: [&str; 8] =
     ["green", "tavern", "market", "smithy", "chapel", "training_yard", "docks", "west_road"];
@@ -38,7 +41,10 @@ pub fn fresh_act(tick: i64) -> Act {
     }
 }
 
-fn walk_anim(c: &Character) -> AnimId {
+fn walk_anim(c: &Character, tick: i64) -> AnimId {
+    if c.drunk(tick) {
+        return AnimId::WalkDrunk;
+    }
     let last = c.id.encode_utf16().last().unwrap_or(0);
     match last % 3 {
         0 => AnimId::Walk,
@@ -47,13 +53,16 @@ fn walk_anim(c: &Character) -> AnimId {
     }
 }
 
-fn speed_of(c: &Character) -> f64 {
-    WALK_SPEED * if c.needs.energy < 15.0 { 0.8 } else { 1.0 }
+fn speed_of(c: &Character, tick: i64) -> f64 {
+    WALK_SPEED * if c.needs.energy < 15.0 || c.drunk(tick) { 0.8 } else { 1.0 }
 }
 
-/// Steps out of a building back onto the street.
+/// Steps out of a building back onto the street (or gets up off the grass).
 pub fn leave_building(c: &mut Character) {
-    let Some(inside) = c.inside.take() else { return };
+    let Some(inside) = c.inside.take() else {
+        c.asleep = false;
+        return;
+    };
     if let Some(place) = find_place(&inside) {
         c.pos = nearest_walkable(place.door, 4).unwrap_or(place.door);
     }
@@ -88,15 +97,15 @@ fn travel_to(tick: i64, c: &mut Character, dest: Vec2) -> bool {
 }
 
 /// Walks the current route; true on arrival.
-fn travel(c: &mut Character, speed: Option<f64>) -> bool {
+fn travel(tick: i64, c: &mut Character, speed: Option<f64>) -> bool {
     if c.act.path.is_empty() {
         return true;
     }
-    let speed = speed.unwrap_or_else(|| speed_of(c));
+    let speed = speed.unwrap_or_else(|| speed_of(c, tick));
     let mut path = std::mem::take(&mut c.act.path);
     let arrived = advance(c, &mut path, speed);
     c.act.path = path;
-    let anim = if speed > WALK_SPEED * 1.3 { AnimId::Run } else { walk_anim(c) };
+    let anim = if speed > WALK_SPEED * 1.3 { AnimId::Run } else { walk_anim(c, tick) };
     set_anim(c, anim, false);
     arrived
 }
@@ -224,7 +233,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
     }
 
     if phase == ActPhase::Travel {
-        if !travel(ctx.c(id), None) {
+        if !travel(tick, ctx.c(id), None) {
             return;
         }
         if activity_id == ActivityId::Sleep {
@@ -261,15 +270,17 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             return;
         };
         let c = ctx.c(id);
-        let speed = speed_of(c);
+        let speed = speed_of(c, tick);
         if !step_toward(c, slot.pos, speed) {
-            let anim = walk_anim(c);
+            let anim = walk_anim(c, tick);
             set_anim(c, anim, false);
             return;
         }
         c.facing = slot.facing;
         c.act.phase = ActPhase::Perform;
         c.act.since_tick = tick;
+        // The idle find a reason to knock off early.
+        let minutes = if c.has(Quirk::Lazy) && def.kind == ActivityKind::Work { minutes * 0.5 } else { minutes };
         c.act.until_tick = tick + minutes_to_ticks(minutes);
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
@@ -345,11 +356,116 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             let what = if item == ItemId::Food { "some food" } else { "a small gift" };
             finish(ctx, id, format!("You picked up {what} at the market."));
         }
+        ActivityId::Drink => {
+            set_anim(c, AnimId::Idle, false);
+            finish(ctx, id, format!("You finished {}.", def.verb));
+            after_drink(ctx, id);
+        }
         _ => {
             set_anim(c, AnimId::Idle, false);
             finish(ctx, id, format!("You finished {}.", def.verb));
         }
     }
+}
+
+/// Somewhere on the grass not far off, or on the village green.
+fn nap_spot(ctx: &mut Ctx, from: Vec2) -> Vec2 {
+    let near = if ctx.chance(0.5) { get_place("green").door } else { from };
+    let x = near.x + ctx.range(-7.0, 7.0);
+    let z = near.z + ctx.range(-7.0, 7.0);
+    nearest_walkable(vec2(x, z), 6).unwrap_or(from)
+}
+
+/// Lies down on the grass and sleeps a while, in plain sight.
+fn run_nap(ctx: &mut Ctx, id: &str, minutes: f64) {
+    let tick = ctx.tick();
+    match ctx.cr(id).act.phase {
+        ActPhase::Start => {
+            let from = ctx.cr(id).pos;
+            let spot = nap_spot(ctx, from);
+            let c = ctx.c(id);
+            if !travel_to(tick, c, spot) {
+                finish(ctx, id, "You could not find a quiet spot to lie down.");
+            }
+        }
+        ActPhase::Travel => {
+            let c = ctx.c(id);
+            if !travel(tick, c, None) {
+                return;
+            }
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + minutes_to_ticks(minutes);
+            c.asleep = true;
+            set_anim(c, AnimId::LieDown, true);
+            ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Sleep });
+        }
+        _ => {
+            let c = ctx.c(id);
+            if !c.asleep {
+                // Woken by something: up and about again.
+                set_anim(c, AnimId::Idle, false);
+                finish(ctx, id, "You were woken from your nap.");
+                return;
+            }
+            let elapsed = tick - c.act.since_tick;
+            if c.anim == AnimId::LieDown && elapsed >= seconds_to_ticks(AnimId::LieDown.seconds()) {
+                set_anim(c, AnimId::Lie, false);
+            }
+            if elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
+                activity_minute(c, ActivityId::Sleep, 0);
+            }
+            if tick >= c.act.until_tick || c.needs.energy >= 99.0 {
+                c.asleep = false;
+                set_anim(c, AnimId::Idle, false);
+                ctx.stimulate(id, StimulusKind::Woke, "You have just woken from a nap on the grass.", 0, None);
+                finish(ctx, id, "You napped on the grass and feel rested.");
+            }
+        }
+    }
+}
+
+/// Follows someone at a stroll, and strikes once nobody else is about.
+fn run_stalk(ctx: &mut Ctx, id: &str, target_id: &str) {
+    let tick = ctx.tick();
+    let hour = ctx.time.hour;
+    let Some(target) = ctx.state.characters.get(target_id) else {
+        end_hunt(ctx, id);
+        finish(ctx, id, "You lost track of them.");
+        return;
+    };
+    let (target_pos, gone) = (target.pos, target.inside.is_some() || target.convo_id.is_some());
+    let c = ctx.c(id);
+    if c.act.phase == ActPhase::Start {
+        leave_building(c);
+        c.act.phase = ActPhase::Travel;
+        c.act.since_tick = tick;
+        c.act.until_tick = tick + minutes_to_ticks(90.0);
+        c.act.repath_tick = 0;
+    }
+    if gone || tick >= c.act.until_tick || !(8.0..19.4).contains(&hour) {
+        end_hunt(ctx, id);
+        let c = ctx.c(id);
+        set_anim(c, AnimId::Idle, false);
+        finish(ctx, id, "You gave up following them, for today.");
+        return;
+    }
+    let d = dist(c.pos, target_pos);
+    if d <= STRIKE_REACH {
+        c.act.path.clear();
+        if witnesses(ctx, target_pos, &[id, target_id]).is_empty() {
+            sneak_attack(ctx, id, target_id);
+        } else {
+            // Too many eyes: loiter as if admiring the view.
+            set_anim(ctx.c(id), AnimId::Idle, false);
+        }
+        return;
+    }
+    if c.act.path.is_empty() || tick >= c.act.repath_tick {
+        c.act.path = route_to(c.pos, target_pos).unwrap_or_default();
+        c.act.repath_tick = tick + seconds_to_ticks(1.5);
+    }
+    travel(tick, c, None);
 }
 
 fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &str) {
@@ -398,7 +514,7 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
             return;
         }
     }
-    travel(c, None);
+    travel(tick, c, None);
 }
 
 fn describe_item(item: ItemId) -> &'static str {
@@ -483,7 +599,7 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
         c.act.repath_tick = tick + seconds_to_ticks(1.5);
     }
     if d > GIVE_REACH * 0.8 {
-        travel(c, None);
+        travel(tick, c, None);
     }
 }
 
@@ -503,7 +619,7 @@ fn run_flee(ctx: &mut Ctx, id: &str) {
         }
         ActPhase::Travel => {
             let c = ctx.c(id);
-            if !travel(c, Some(RUN_SPEED)) {
+            if !travel(tick, c, Some(RUN_SPEED)) {
                 return;
             }
             c.inside = Some(c.home_id.clone());
@@ -594,7 +710,7 @@ pub fn update_intents(ctx: &mut Ctx) {
                         if !travel_to(tick, c, place.door) {
                             finish(ctx, &id, format!("You could not find a way to {}.", place.name));
                         }
-                    } else if travel(c, None) {
+                    } else if travel(tick, c, None) {
                         set_anim(c, AnimId::Idle, false);
                         finish(ctx, &id, format!("You arrived at {}.", place.name));
                     }
@@ -609,6 +725,8 @@ pub fn update_intents(ctx: &mut Ctx) {
             }
             IntentAction::Fight { target_id, mode } => run_fight(ctx, &id, target_id, *mode, intent.source),
             IntentAction::Flee => run_flee(ctx, &id),
+            IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
+            IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);
                 if c.act.phase == ActPhase::Start {

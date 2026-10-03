@@ -5,10 +5,10 @@
 use fsw_core::rng::{chance, next_float, pick_index};
 use fsw_core::time::{TICKS_PER_DAY, part_of_day};
 
-use crate::state::{Character, ConversationLine, Feeling, Relationship, SimState, TalkTone};
+use crate::state::{Character, ConversationLine, Feeling, Quirk, Relationship, Rumour, SimState, TalkTone};
 use crate::systems::charm::CHARMER;
 use crate::systems::relationships::RUNG_GRUDGE;
-use crate::util::{first_name, living, rel_or_default};
+use crate::util::{first_name, living, name_of, rel_or_default};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum When {
@@ -260,6 +260,113 @@ const APOLOGY_NO: &[Exchange] = &[ex(
     &["Sorry does not mend it.", "I know. I wanted you to hear it anyway.", "I have heard it."],
 )];
 
+/// Someone sworn off love, being courted and not understanding a word of it.
+const ROMANTIC_FLUSTERED: &[Exchange] = &[
+    ex(
+        "a misunderstanding",
+        "{b}, there is something I have wanted to tell you for a long time.",
+        &[
+            "Is it about the watch rota? I did mean to raise it with the captain.",
+            "No, {b}. It is about you. And me.",
+            "Ah. Yes. Well. I... I believe I am needed at the chapel. Good day.",
+        ],
+    ),
+    ex(
+        "an evening walk",
+        "Walk with me a while, {b}? Just the two of us.",
+        &[
+            "Of course. Two blades are better than one on the roads at dusk.",
+            "That is not quite what I meant.",
+            "Then I confess I do not know what you meant.",
+        ],
+    ),
+];
+
+/// Ordinary warmth, taken for something else.
+const CONFUSED: &[Exchange] = &[
+    ex(
+        "good intentions",
+        "Good to see you, {b}. You look well.",
+        &["Do I? Is something the matter with how I usually look?", "No, I only meant...", "I see. I think. Good day."],
+    ),
+    ex(
+        "a kind word",
+        "You are always welcome at our table, {b}.",
+        &[
+            "Welcome? Why? What is it you want of me?",
+            "Nothing at all. It was only kindly meant.",
+            "...I shall pray on it.",
+        ],
+    ),
+];
+
+/// A bully picking on someone who has done nothing to deserve it.
+const BULLYING: &[Exchange] = &[
+    ex(
+        "a sneer",
+        "Out of my way, {b}. Or are you too slow for that as well?",
+        &["I was only passing.", "Pass faster.", "...Fine."],
+    ),
+    ex(
+        "contempt",
+        "Is that the best you can manage, {b}? Pathetic.",
+        &["Leave me be, {a}.", "Or what? You will cry at me?"],
+    ),
+    ex(
+        "a shove",
+        "Look at you, {b}. The dead would not even bother with you.",
+        &["What have I ever done to you?", "Nothing. That is the point."],
+    ),
+];
+
+/// A killer, accused, and lying with a smile.
+const DENIAL: &[Exchange] = &[
+    ex(
+        "an accusation",
+        "I know what you are, {b}. I know what you did.",
+        &[
+            "What I did? I sold a love charm and a cure for warts. Hang me for it.",
+            "Do not play the fool with me.",
+            "Look closer to home before you go pointing fingers, {a}.",
+        ],
+    ),
+    ex(
+        "suspicion",
+        "Where were you when it happened, {b}?",
+        &[
+            "Picking herbs, alone, as I do every day. Do you suspect the nettles too?",
+            "Somebody did it.",
+            "Then go and find them, and leave me be.",
+        ],
+    ),
+];
+
+/// A gossip passing on a story about someone who is not there; `{t}` is who it is about.
+const RUMOUR: &[Exchange] = &[
+    ex(
+        "a story about {t}",
+        "Heard about {t}? You did not hear it from me. {story}",
+        &["{t}? Never. Are you sure?", "Sure as sunrise.", "Well. I shall be keeping an eye on {t}, then."],
+    ),
+    ex(
+        "a story about {t}",
+        "Come here, {b}. About {t}. {story}",
+        &["You are making that up.", "Ask anyone.", "Hm. I always did wonder about {t}."],
+    ),
+];
+
+/// Made-up stories a gossip tells about the neighbours; `{t}` is who it is about, `{b}` the listener.
+pub const FALSE_STORIES: [&str; 8] = [
+    "{t} has been pinching coins from the market stalls when nobody is looking.",
+    "{t} goes out to the graveyard after dark and talks to the graves.",
+    "{t} called you a fool behind your back, {b}.",
+    "{t} waters down the ale at the tavern and pockets the difference.",
+    "{t} ran from the dead the other night and left the rest to it.",
+    "{t} is sweet on someone who is already spoken for.",
+    "{t} keeps a bag of stolen trinkets under the floorboards.",
+    "{t} was seen whispering with strangers on the west road.",
+];
+
 fn fill(text: &str, state: &SimState, a: &Character, b: &Character) -> String {
     let hour = ((6.0 * 60.0 + state.tick as f64 / 20.0) % 1440.0) / 60.0;
     let newcomer = living(state).find(|c| {
@@ -277,6 +384,10 @@ pub struct LocalScript {
     pub opener: String,
     pub lines: Vec<ConversationLine>,
     pub feelings: [Feeling; 2],
+}
+
+fn told(text: &str, rumour: &Rumour, state: &SimState) -> String {
+    text.replace("{t}", &name_of(state, &rumour.about)).replace("{story}", &rumour.text)
 }
 
 fn roll_feeling(rng: &mut u32, warmth: f64) -> Feeling {
@@ -302,7 +413,13 @@ fn warmth(c: &Character, r: &Relationship) -> f64 {
 /// how each comes away feeling. Reads relationships without creating them (the
 /// TypeScript sim's `rel()` creates a default record here; the two always know
 /// each other by the time they talk, so nothing changes).
-pub fn local_script(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone) -> LocalScript {
+pub fn local_script(
+    state: &mut SimState,
+    a_id: &str,
+    b_id: &str,
+    tone: TalkTone,
+    rumour: Option<&Rumour>,
+) -> LocalScript {
     let (ab, ba, b_temper, b_partner, a_allure, b_allure) = {
         let a = &state.characters[a_id];
         let b = &state.characters[b_id];
@@ -315,11 +432,42 @@ pub fn local_script(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone
             b.profile.allure,
         )
     };
+    let (b_chaste, b_murderous, a_bully) = {
+        let b = &state.characters[b_id];
+        (b.has(Quirk::Chaste), b.has(Quirk::Murderous), state.characters[a_id].has(Quirk::Bully))
+    };
     let rng = &mut state.rng;
     let pool: &[Exchange];
     let feelings: [Feeling; 2];
 
     match tone {
+        TalkTone::Friendly if rumour.is_some() => {
+            pool = RUMOUR;
+            // A juicy story is a pleasure to tell and, mostly, to hear.
+            let heard = if chance(rng, 0.6) { Feeling::Better } else { Feeling::Same };
+            feelings = [Feeling::Better, heard];
+        }
+        TalkTone::Hostile if a_bully && ab.grievance < 40.0 => {
+            pool = BULLYING;
+            // The bully enjoys it; the one picked on does not.
+            let hurt = if chance(rng, 0.5) { Feeling::Worse } else { Feeling::MuchWorse };
+            feelings = [Feeling::Better, hurt];
+        }
+        TalkTone::Hostile if b_murderous => {
+            pool = DENIAL;
+            feelings = [Feeling::Worse, Feeling::Same];
+        }
+        TalkTone::Romantic if b_chaste => {
+            pool = ROMANTIC_FLUSTERED;
+            feelings = [Feeling::Same, Feeling::Same];
+        }
+        TalkTone::Friendly if b_chaste && chance(rng, 0.35) => {
+            pool = CONFUSED;
+            let a = &state.characters[a_id];
+            let wa = warmth(a, &ab);
+            let rng = &mut state.rng;
+            feelings = [roll_feeling(rng, wa), Feeling::Same];
+        }
         TalkTone::Hostile => {
             let cools = chance(rng, 0.22 + (1.0 - b_temper) * 0.15);
             pool = if cools { HOSTILE_RESOLVED } else { HOSTILE };
@@ -375,16 +523,20 @@ pub fn local_script(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone
     let exchange = choices[pick_index(&mut state.rng, choices.len())];
     let a = &state.characters[a_id];
     let b = &state.characters[b_id];
+    let write = |text: &str| match rumour {
+        Some(rumour) => fill(&told(text, rumour, state), state, a, b),
+        None => fill(text, state, a, b),
+    };
     let lines = exchange
         .lines
         .iter()
         .enumerate()
         .map(|(index, text)| ConversationLine {
             speaker_id: if index % 2 == 0 { b.id.clone() } else { a.id.clone() },
-            text: fill(text, state, a, b),
+            text: write(text),
         })
         .collect();
-    LocalScript { topic: exchange.topic.into(), opener: fill(exchange.opener, state, a, b), lines, feelings }
+    LocalScript { topic: write(exchange.topic), opener: write(exchange.opener), lines, feelings }
 }
 
 fn generic(tone: TalkTone) -> &'static [&'static [&'static str]] {
@@ -410,8 +562,14 @@ fn generic(tone: TalkTone) -> &'static [&'static [&'static str]] {
 }
 
 /// A neutral way to wind up a conversation whose opening line was written elsewhere.
-pub fn generic_continuation(state: &mut SimState, a_id: &str, b_id: &str, tone: TalkTone) -> LocalScript {
-    let script = local_script(state, a_id, b_id, tone);
+pub fn generic_continuation(
+    state: &mut SimState,
+    a_id: &str,
+    b_id: &str,
+    tone: TalkTone,
+    rumour: Option<&Rumour>,
+) -> LocalScript {
+    let script = local_script(state, a_id, b_id, tone, rumour);
     let options = generic(tone);
     let replies = options[pick_index(&mut state.rng, options.len())];
     LocalScript {

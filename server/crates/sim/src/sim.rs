@@ -6,6 +6,7 @@ use fsw_core::time::game_time;
 use fsw_world::places::{find_billboard, find_place};
 
 use crate::commands::Command;
+use crate::create::refresh_authored;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
@@ -22,6 +23,7 @@ use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
 use crate::systems::needs::update_needs;
 use crate::systems::perception::update_perception;
+use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
 use crate::util::{Ctx, get_monster, rel, set_anim};
@@ -53,7 +55,9 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
                 lethal_unlocked(ctx, id, target_id)
             }
         }
-        IntentAction::Flee | IntentAction::Wait { .. } => true,
+        IntentAction::Flee | IntentAction::Wait { .. } | IntentAction::Nap { .. } => true,
+        // Murder is the sim's own doing, never a decision handed in from outside.
+        IntentAction::Stalk { .. } => false,
     }
 }
 
@@ -244,7 +248,10 @@ pub struct Sim {
 }
 
 impl Sim {
-    pub fn new(state: SimState) -> Self {
+    /// A running sim from a state, new or saved. Authored characters in a saved
+    /// world are brought up to date with the cast as it is written now.
+    pub fn new(mut state: SimState) -> Self {
+        refresh_authored(&mut state);
         Self { state, pending: Vec::new() }
     }
 
@@ -281,6 +288,7 @@ impl Sim {
 
         update_director(&mut ctx);
         update_routine(&mut ctx);
+        update_quirks(&mut ctx);
         update_intents(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);

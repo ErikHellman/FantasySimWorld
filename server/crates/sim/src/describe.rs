@@ -5,9 +5,15 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState};
+use crate::systems::quirks::reading_late;
 use crate::util::name_of;
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
+    let doing = doing(state, c);
+    if c.drunk(state.tick) { format!("{doing} (drunk)") } else { doing }
+}
+
+fn doing(state: &SimState, c: &Character) -> String {
     if c.combat.yielded {
         return "beaten, at someone's mercy".into();
     }
@@ -28,6 +34,9 @@ pub fn describe_activity(state: &SimState, c: &Character) -> String {
         IntentAction::Activity { activity: id, .. } => {
             let def = activity(*id);
             if *id == ActivityId::Sleep {
+                if reading_late(state, c) {
+                    return "up late at home, reading by candlelight".into();
+                }
                 return if c.asleep { "asleep at home".into() } else { "heading home to sleep".into() };
             }
             if *id == ActivityId::Stroll {
@@ -59,6 +68,9 @@ pub fn describe_activity(state: &SimState, c: &Character) -> String {
         IntentAction::Wait { .. } => {
             if c.anim == AnimId::SitFloor { "sitting on the ground, recovering" } else { "pausing a moment" }.into()
         }
+        IntentAction::Nap { .. } => if c.asleep { "napping on the grass" } else { "looking for a spot to nap" }.into(),
+        // A stalker looks like anyone else taking the air.
+        IntentAction::Stalk { .. } => "strolling around the village".into(),
     }
 }
 

@@ -6,6 +6,7 @@ use std::time::Duration;
 use fsw_brain::brain::{Brain, BrainStatus, LogRecord, LogStatus, RequestKind, WorldLink};
 use fsw_brain::llm::transport::{FakeTransport, HttpResponse};
 use fsw_brain::settings::{ApiKey, ConversationMode, LlmSettings, WireProtocol};
+use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{Intent, IntentAction, IntentSource, SimState, Stimulus, StimulusKind, TalkTone};
 use fsw_sim::util::{first_name, living};
 use fsw_sim::{Command, Sim, SimEvent, create_state};
@@ -71,7 +72,13 @@ fn reply(calls: Value) -> Value {
 }
 
 fn harness(responder: Responder, conversations: ConversationMode) -> Harness {
-    let link = Arc::new(Link { sim: Mutex::new(Sim::new(create_state(30))), logs: Mutex::new(Vec::new()) });
+    let mut state = create_state(30);
+    // Nobody falls into talk on their own: the tests start the conversations they need, and who
+    // happens to be chatting at dawn otherwise depends on the dice.
+    for c in state.characters.values_mut() {
+        c.next_social_tick = TICKS_PER_DAY;
+    }
+    let link = Arc::new(Link { sim: Mutex::new(Sim::new(state)), logs: Mutex::new(Vec::new()) });
     let transport = FakeTransport::new(move |request| {
         let body = request.json();
         let tools: Vec<String> = body["tools"]

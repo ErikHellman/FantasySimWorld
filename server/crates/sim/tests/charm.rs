@@ -91,19 +91,19 @@ fn a_charmer_draws_admirers_without_chemistry_and_rarely_falls_herself() {
 fn a_charmer_flirts_for_sport_teases_those_who_want_her_and_is_rebuffed_by_those_who_do_not() {
     let mut sim = quiet(31);
     let (mira, theron, vex) = (who(&sim.state, "Mira"), who(&sim.state, "Theron"), who(&sim.state, "Vex"));
-    let flirt = local_script(&mut sim.state, &mira, &theron, TalkTone::Romantic);
+    let flirt = local_script(&mut sim.state, &mira, &theron, TalkTone::Romantic, None);
     assert_eq!(flirt.feelings, [Feeling::Better, Feeling::Better]);
-    let cold = local_script(&mut sim.state, &mira, &vex, TalkTone::Romantic);
+    let cold = local_script(&mut sim.state, &mira, &vex, TalkTone::Romantic, None);
     assert_eq!(cold.topic, "a cold shoulder");
     assert_eq!(cold.feelings, [Feeling::Same, Feeling::Worse]);
-    let tease = local_script(&mut sim.state, &theron, &mira, TalkTone::Romantic);
+    let tease = local_script(&mut sim.state, &theron, &mira, TalkTone::Romantic, None);
     assert_eq!(tease.topic, "feelings, teased");
     assert_eq!(tease.feelings, [Feeling::Same, Feeling::Better]);
 }
 
 /// Romantic talks Mira started in two days of an ordinary village.
-fn mira_flirts(allure: f64) -> usize {
-    let mut sim = Sim::new(create_state(1));
+fn mira_flirts(seed: u32, allure: f64) -> usize {
+    let mut sim = Sim::new(create_state(seed));
     let mira = who(&sim.state, "Mira");
     sim.state.characters.get_mut(&mira).unwrap().profile.allure = allure;
     let mut flirts = 0;
@@ -119,8 +119,10 @@ fn mira_flirts(allure: f64) -> usize {
 
 #[test]
 fn a_charmer_starts_flirting_on_her_own() {
-    assert!(mira_flirts(0.9) >= 1);
-    assert_eq!(mira_flirts(0.0), 0);
+    // Over several worlds, since in any one of them she may simply be busy.
+    let seeds = 1..=4;
+    assert!(seeds.clone().map(|seed| mira_flirts(seed, 0.9)).sum::<usize>() >= 2);
+    assert!(seeds.into_iter().all(|seed| mira_flirts(seed, 0.0) == 0));
 }
 
 #[test]

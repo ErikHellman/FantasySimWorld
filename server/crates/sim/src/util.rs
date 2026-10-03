@@ -11,7 +11,7 @@ use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
     Character, ChronicleEntry, ChronicleKind, Id, IntentAction, Memory, MemoryKind, Monster, MonsterPhase, Pronouns,
-    RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
+    Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
 };
 
 pub const MEMORY_CAP: usize = 140;
@@ -390,6 +390,20 @@ pub fn openness(me: &Character, other: &Character) -> f64 {
     let wary = 1.0 - clamp(trust / TRUSTED, 0.0, 1.0);
     let towards = if other.profile.pronouns == Pronouns::SheHer { 1.0 } else { 0.6 };
     1.0 - shyness * wary * towards
+}
+
+/// Whether `from` could fall for `to` at all, whatever the chemistry: never for
+/// those sworn off love, and only for women for those who love only women.
+pub fn open_to(from: &Character, to: &Character) -> bool {
+    if from.has(Quirk::Chaste) {
+        return false;
+    }
+    !from.has(Quirk::LovesWomen) || to.profile.pronouns == Pronouns::SheHer
+}
+
+/// Whether `from` could fall for `to` on their own: `drawn_to`, if they are `open_to` it.
+pub fn can_fall_for(from: &Character, to: &Character) -> bool {
+    open_to(from, to) && drawn_to(from, to)
 }
 
 pub fn hp_fraction(c: &Character, max_hp: f64) -> f64 {
