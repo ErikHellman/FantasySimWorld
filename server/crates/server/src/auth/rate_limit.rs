@@ -1,33 +1,48 @@
-//! A per-address token bucket for `/auth/*`.
+//! A token bucket per key: per address for `/auth/*`, per person for chat.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::Instant;
 
 use axum::extract::{ConnectInfo, Request};
 
-/// Requests one address may make in a burst.
+/// Requests one address may make to `/auth/*` in a burst.
 pub const BURST: f64 = 30.0;
-/// Sustained rate: one request every two seconds.
+/// Sustained `/auth/*` rate: one request every two seconds.
 pub const PER_SECOND: f64 = 0.5;
-/// Past this many tracked addresses, full buckets are forgotten.
+/// Past this many tracked keys, full buckets are forgotten.
 const TRACKED: usize = 10_000;
 
-#[derive(Default)]
-pub struct RateLimiter {
-    buckets: Mutex<HashMap<Option<IpAddr>, (f64, Instant)>>,
+/// Allows `burst` requests at once per key, refilling at `per_second`.
+pub struct RateLimiter<K = Option<IpAddr>> {
+    buckets: Mutex<HashMap<K, (f64, Instant)>>,
+    burst: f64,
+    per_second: f64,
 }
 
-impl RateLimiter {
-    /// Takes one token for `ip` (`None`: address unknown, shared by all such requests).
-    pub fn allow(&self, ip: Option<IpAddr>, now: Instant) -> bool {
+/// The `/auth/*` limiter, keyed by client address.
+impl Default for RateLimiter<Option<IpAddr>> {
+    fn default() -> Self {
+        Self::new(BURST, PER_SECOND)
+    }
+}
+
+impl<K: Hash + Eq + Clone> RateLimiter<K> {
+    pub fn new(burst: f64, per_second: f64) -> Self {
+        Self { buckets: Mutex::new(HashMap::new()), burst, per_second }
+    }
+
+    /// Takes one token for `key` (for addresses, `None` means unknown: shared by all such requests).
+    pub fn allow(&self, key: K, now: Instant) -> bool {
+        let (burst, rate) = (self.burst, self.per_second);
         let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
         if buckets.len() > TRACKED {
-            buckets.retain(|_, (tokens, at)| *tokens + now.duration_since(*at).as_secs_f64() * PER_SECOND < BURST);
+            buckets.retain(|_, (tokens, at)| *tokens + now.duration_since(*at).as_secs_f64() * rate < burst);
         }
-        let (tokens, at) = buckets.entry(ip).or_insert((BURST, now));
-        *tokens = (*tokens + now.duration_since(*at).as_secs_f64() * PER_SECOND).min(BURST);
+        let (tokens, at) = buckets.entry(key).or_insert((burst, now));
+        *tokens = (*tokens + now.duration_since(*at).as_secs_f64() * rate).min(burst);
         *at = now;
         if *tokens >= 1.0 {
             *tokens -= 1.0;

@@ -3,6 +3,7 @@ import { formatClock, gameTime } from '../core/time';
 import { api } from '../net/api';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
+import { ChatPanel } from './Chat';
 import { Inspector } from './Inspector';
 import { SettingsPanel } from './Settings';
 import { actions, isAdmin, ui } from './store';
@@ -254,6 +255,7 @@ export function App() {
       <Roster />
       <Chronicle />
       <Inspector />
+      <ChatPanel />
       {ui.panel.value === 'settings' && <SettingsPanel />}
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}

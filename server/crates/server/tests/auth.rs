@@ -583,3 +583,38 @@ async fn the_login_page_learns_which_providers_are_on() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(text(response).await, r#"{"open":false,"token":false,"google":true,"apple":true}"#);
 }
+
+/// Reads `body` until a `chat_welcome` arrives and returns its JSON.
+async fn chat_welcome(body: &mut Body) -> Value {
+    let mut seen = String::new();
+    let marker = "event: chat_welcome\ndata: ";
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !seen.contains(marker) || !seen[seen.find(marker).unwrap()..].contains("\n\n") {
+        let frame = tokio::time::timeout_at(deadline, body.frame()).await.expect(&seen).unwrap().unwrap();
+        if let Ok(data) = frame.into_data() {
+            seen.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    let start = seen.find(marker).unwrap() + marker.len();
+    serde_json::from_str(seen[start..].lines().next().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn signed_in_people_each_get_a_chat_name_and_viewers_may_talk() {
+    let app = app().await;
+    app.store.allow("viewer@example.com", fsw_server::api::wire::Role::Viewer, ADMIN, "").await.unwrap();
+    let admin = app.session_for(SignIn::google("g-admin", ADMIN)).await;
+    let viewer = app.session_for(SignIn::google("g-viewer", "viewer@example.com")).await;
+
+    let mut admin_tab = app.get("/api/stream?viewer=t1", &admin).await.into_body();
+    let mut viewer_tab = app.get("/api/stream?viewer=t2", &viewer).await.into_body();
+    // A second tab of the same account shares its name.
+    let mut viewer_tab2 = app.get("/api/stream?viewer=t3", &viewer).await.into_body();
+    let admin_name = chat_welcome(&mut admin_tab).await["you"].clone();
+    let viewer_name = chat_welcome(&mut viewer_tab).await["you"].clone();
+    assert_ne!(admin_name, viewer_name);
+    assert_eq!(chat_welcome(&mut viewer_tab2).await["you"], viewer_name);
+
+    let post = app.mutate("POST", "/api/chat", &viewer, json!({"viewer": "t2", "text": "hello"})).await;
+    assert_eq!(post.status(), StatusCode::NO_CONTENT);
+}

@@ -2,7 +2,8 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  BrainLogRecord, CharacterDetail, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry, Snapshot, Status, Utterance,
+  BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, LlmStatus, Me, RosterEntry, Snapshot,
+  Status, Utterance,
 } from '../generated/api';
 import type { ConnectionState } from '../net/stream';
 
@@ -28,6 +29,19 @@ export interface VoiceLine {
 const VOICES_KEPT = 80;
 const CHRONICLE_KEPT = 400;
 const BRAIN_LOG_KEPT = 150;
+/** as many as the server keeps */
+const CHAT_KEPT = 50;
+
+/** How much of the chat strip is showing. */
+export type ChatView = 'expanded' | 'collapsed' | 'hidden';
+const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
+
+/** What this browser remembers about the chat. */
+export interface ChatSettings {
+  view: ChatView;
+  /** the name this browser asked for; claimed again after each connect, if it is free */
+  name?: string;
+}
 
 export const ui = {
   loading: signal<string | null>('Loading the valley…'),
@@ -60,6 +74,15 @@ export const ui = {
   voices: signal<VoiceLine[]>([]),
   /** the world is being held at 1x while the language model catches up */
   throttled: signal(false),
+  /** the viewers' chat, oldest first */
+  chat: signal<ChatMessage[]>([]),
+  /** this viewer's chat name; null until the stream says (or when they can only read) */
+  chatName: signal<string | null>(null),
+  /** the longest message the server accepts, in UTF-16 code units */
+  chatMax: signal(500),
+  chatView: signal<ChatView>('collapsed'),
+  /** messages that arrived while the chat was not expanded */
+  chatUnread: signal(0),
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
@@ -70,6 +93,10 @@ export interface UiActions {
   setSpeed(speed: number): void;
   select(id: string | null): void;
   applyAudio(settings: AudioSettings): void;
+  /** rejects with an `HttpError` the chat shows */
+  sendChat(text: string): Promise<void>;
+  /** resolves to the name as the server stored it */
+  renameChat(name: string): Promise<string>;
 }
 
 export const actions: UiActions = {
@@ -77,6 +104,8 @@ export const actions: UiActions = {
   setSpeed: () => {},
   select: () => {},
   applyAudio: () => {},
+  sendChat: () => Promise.resolve(),
+  renameChat: (name) => Promise.resolve(name),
 };
 
 let voiceId = 0;
@@ -127,6 +156,25 @@ export function addBrainLog(records: readonly BrainLogRecord[]): void {
   ui.brainLog.value = [...byId.values()].sort((a, b) => b.id - a.id).slice(0, BRAIN_LOG_KEPT);
 }
 
+export function fromChatWelcome(welcome: ChatWelcome): void {
+  ui.chat.value = welcome.history.slice(-CHAT_KEPT);
+  ui.chatName.value = welcome.you;
+  ui.chatMax.value = welcome.maxLength;
+}
+
+export function addChat(message: ChatMessage): void {
+  const last = ui.chat.value.at(-1);
+  if (last && last.id >= message.id) return; // already in the welcome's history
+  ui.chat.value = [...ui.chat.value, message].slice(-CHAT_KEPT);
+  if (ui.chatView.value !== 'expanded') ui.chatUnread.value++;
+}
+
+export function setChatView(view: ChatView): void {
+  ui.chatView.value = view;
+  if (view === 'expanded') ui.chatUnread.value = 0;
+  saveChatSettings({ ...loadChatSettings(), view });
+}
+
 export function setClock(tick: number): void {
   const time = gameTime(tick);
   const next = { day: time.day, time: formatClock(time.minuteOfDay), part: partOfDay(time.hour) };
@@ -149,6 +197,27 @@ export function loadAudioSettings(): AudioSettings {
 export function saveAudioSettings(settings: AudioSettings): void {
   try {
     localStorage.setItem(AUDIO_KEY, JSON.stringify(settings));
+  } catch {
+    // storage blocked: the settings last until the page closes
+  }
+}
+
+/** The chat's view and chosen name live in this browser only. */
+const CHAT_KEY = 'fsw.chat';
+
+export function loadChatSettings(): ChatSettings {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CHAT_KEY) ?? '{}') as Partial<ChatSettings>;
+    const view = CHAT_VIEWS.includes(stored.view as ChatView) ? (stored.view as ChatView) : 'collapsed';
+    return typeof stored.name === 'string' && stored.name ? { view, name: stored.name } : { view };
+  } catch {
+    return { view: 'collapsed' };
+  }
+}
+
+export function saveChatSettings(settings: ChatSettings): void {
+  try {
+    localStorage.setItem(CHAT_KEY, JSON.stringify(settings));
   } catch {
     // storage blocked: the settings last until the page closes
   }

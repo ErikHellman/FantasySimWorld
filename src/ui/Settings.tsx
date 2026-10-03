@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'preact/hooks';
 import { SOUND_CREDITS } from '../audio/credits';
 import type { AudioSettings } from '../audio/engine';
 import { api } from '../net/api';
+import { chatError } from './Chat';
 import { actions, ui } from './store';
 
 type Toggle = 'ambientOn' | 'effectsOn' | 'musicOn';
@@ -12,7 +14,41 @@ const CATEGORIES: readonly { on: Toggle; volume: Volume; label: string; hint: st
   { on: 'musicOn', volume: 'music', label: 'Music', hint: 'Background music that follows what you are watching' },
 ];
 
-/** This viewer's own settings: sound (kept in this browser) and signing out. */
+/** The name this viewer goes by in the chat. */
+function ChatName() {
+  const current = ui.chatName.value;
+  const [name, setName] = useState(current ?? '');
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => setName(current ?? ''), [current]);
+
+  const save = async (event: Event): Promise<void> => {
+    event.preventDefault();
+    try {
+      const saved = await actions.renameChat(name);
+      setResult({ ok: true, text: `You are ${saved} in the chat.` });
+    } catch (error) {
+      setResult({ ok: false, text: chatError(error) });
+    }
+  };
+
+  return (
+    <>
+      <h3>Chat</h3>
+      <p class="muted">Your name in the chat, kept in this browser. Nobody connected at the same time can have the same one.</p>
+      {current === null ? (
+        <p class="muted">Not connected to the chat yet.</p>
+      ) : (
+        <form class="row" onSubmit={(event) => void save(event)}>
+          <input type="text" aria-label="Chat name" maxLength={24} value={name} onInput={(event) => setName(event.currentTarget.value)} />
+          <button type="submit" disabled={!name.trim() || name.trim() === current}>Save</button>
+        </form>
+      )}
+      {result && <p class={result.ok ? 'muted' : 'bad-text'}>{result.text}</p>}
+    </>
+  );
+}
+
+/** This viewer's own settings: sound and chat name (kept in this browser) and signing out. */
 export function SettingsPanel() {
   const audio = ui.audio.value;
   const setAudio = (patch: Partial<AudioSettings>): void => actions.applyAudio({ ...audio, ...patch });
@@ -74,6 +110,8 @@ export function SettingsPanel() {
             ))}
           </ul>
         </details>
+
+        <ChatName />
 
         {me && (
           <>

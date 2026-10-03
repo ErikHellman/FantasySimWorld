@@ -2,8 +2,9 @@
 //!
 //! A new connection gets `hello`, then either a replay of the ticks it missed
 //! (a `Last-Event-ID` from this boot within the replay ring) or a `snapshot`,
-//! then the current `status`, `roster` and the `detail` it watches; after
-//! that, every `tick` and whatever changes. Event ids are `"<bootId>:<tick>"`.
+//! then the current `status`, `roster`, the `detail` it watches and the chat
+//! (`chat_welcome`); after that, every `tick` and whatever changes. Event ids
+//! are `"<bootId>:<tick>"`.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -20,6 +21,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::AppState;
 use crate::api::wire::{Hello, PROTOCOL_VERSION, Role, Snapshot};
 use crate::auth::{Viewer, session};
+use crate::chat::{ChatKey, ChatOut};
 use crate::digest::{chronicle_tail, is_alarm, roster_of};
 use crate::encode::grave_of;
 use crate::world_task::{Core, Outgoing, World};
@@ -118,6 +120,16 @@ fn opening(app: &AppState, role: Role, last_event_id: Option<&str>) -> Opening {
     }
 }
 
+/// Whichever channel spoke first.
+enum Next {
+    World(Result<Outgoing, RecvError>),
+    Chat(Result<ChatOut, RecvError>),
+}
+
+fn to_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).expect("wire types always serialise")
+}
+
 fn watched(world: &World, viewer: &str) -> Option<String> {
     world.watches.lock().get(viewer).and_then(|watch| watch.id.clone())
 }
@@ -131,13 +143,16 @@ pub async fn stream(
     let viewer_id = query.get("viewer").cloned().unwrap_or_default();
     // Subscribe before taking the opening, so no tick falls between the two.
     let mut outgoing = app.world.outgoing.subscribe();
+    let mut chat = app.chat.out.subscribe();
     let last_event_id = headers.get("last-event-id").and_then(|v| v.to_str().ok());
     let opening = opening(&app, viewer.role, last_event_id);
     let guard = ViewerGuard::new(app.clone(), viewer_id.clone());
     let admin = viewer.role == Role::Admin;
+    let (chat_guard, welcome) = app.chat.join(ChatKey::of(&viewer, &viewer_id));
 
     let events = async_stream::stream! {
         let _guard = guard;
+        let chat_guard = chat_guard;
         let world = app.world.clone();
         let boot = opening.boot;
         let mut last_tick = opening.tick;
@@ -169,6 +184,9 @@ pub async fn stream(
                 last_detail = Some(detail);
             }
         }
+        // Messages sent between subscribing and joining are in both; skip them on the channel.
+        let mut last_chat = welcome.history.last().map_or(0, |m| m.id);
+        yield Ok(Event::default().event("chat_welcome").data(to_json(&welcome)));
 
         let mut recheck = tokio::time::interval_at(tokio::time::Instant::now() + SESSION_RECHECK, SESSION_RECHECK);
         loop {
@@ -181,7 +199,34 @@ pub async fn stream(
                     tracing::info!(event = "stream_signed_out", "session ended; closing the stream");
                     break;
                 }
-                item = outgoing.recv() => item,
+                item = outgoing.recv() => Next::World(item),
+                said = chat.recv() => Next::Chat(said),
+            };
+            let item = match item {
+                Next::World(item) => item,
+                Next::Chat(said) => {
+                    match said {
+                        Ok(ChatOut::Message { id, json }) => {
+                            if id > last_chat {
+                                last_chat = id;
+                                yield Ok(Event::default().event("chat").data(&*json));
+                            }
+                        }
+                        Ok(ChatOut::Renamed { key, json }) => {
+                            if chat_guard.key() == Some(&key) {
+                                yield Ok(Event::default().event("chat_you").data(&*json));
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => {
+                            // Chat is small: rather than drop the viewer, send the room as it is now.
+                            let welcome = app.chat.welcome(chat_guard.key());
+                            last_chat = welcome.history.last().map_or(last_chat, |m| m.id);
+                            yield Ok(Event::default().event("chat_welcome").data(to_json(&welcome)));
+                        }
+                        Err(RecvError::Closed) => break,
+                    }
+                    continue;
+                }
             };
             match item {
                 Ok(Outgoing::Ticks(frames)) => {

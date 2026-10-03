@@ -1,6 +1,6 @@
 import {
-  PROTOCOL_VERSION, type BrainLogRecord, type CharacterDetail, type Hello, type RosterEntry, type Snapshot, type Status,
-  type TickFrame, type WorldReset,
+  PROTOCOL_VERSION, type BrainLogRecord, type CharacterDetail, type ChatMessage, type ChatWelcome, type ChatYou, type Hello,
+  type RosterEntry, type Snapshot, type Status, type TickFrame, type WorldReset,
 } from '../generated/api';
 import { HttpError, api } from './api';
 
@@ -16,6 +16,11 @@ export interface StreamHandlers {
   detail(detail: CharacterDetail): void;
   brainlog(record: BrainLogRecord): void;
   worldReset(reset: WorldReset): void;
+  /** the chat history and this viewer's chat name; replaces what came before */
+  chatWelcome(welcome: ChatWelcome): void;
+  chat(message: ChatMessage): void;
+  /** this viewer's chat name changed (here or in another tab of the same account) */
+  chatYou(you: ChatYou): void;
   /** the server refused the stream and `/api/me` says this browser is not signed in (401) or not allowed (403) */
   refused(status: 401 | 403): void;
   connection(state: ConnectionState): void;
@@ -123,6 +128,9 @@ export class Stream {
     on<RosterEntry[]>('roster', (roster) => this.handlers.roster(roster));
     on<CharacterDetail>('detail', (detail) => this.handlers.detail(detail));
     on<BrainLogRecord>('brainlog', (record) => this.handlers.brainlog(record));
+    on<ChatWelcome>('chat_welcome', (welcome) => this.handlers.chatWelcome(welcome));
+    on<ChatMessage>('chat', (message) => this.handlers.chat(message));
+    on<ChatYou>('chat_you', (you) => this.handlers.chatYou(you));
     on<WorldReset>('world_reset', (reset) => {
       this.close();
       this.handlers.worldReset(reset);
