@@ -2,18 +2,25 @@
 //! every message passes before anyone sees it.
 //!
 //! Chat lives beside the world, not in it: nothing here touches the sim, and the history
-//! survives a new world (but not a restart). Names are unique among the people connected
-//! right now; a name is freed when its owner's last stream closes.
+//! survives a new world (but not a restart). Names are unique among the people in the room.
+//!
+//! Comings and goings go into the history as lines of their own. A reload, or a tab that was
+//! hidden for a while, closes a stream and opens another, so someone is only said to have
+//! left once they have been gone for [`AWAY`], and someone back within that time was never
+//! said to have gone. Until then they are still in the room as far as anyone can tell, so
+//! their name stays theirs: nobody else can take it, and a reload gets it back.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fsw_core::jsmath::utf16_len;
 use parking_lot::Mutex;
 use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
-use crate::api::wire::{ChatMessage, ChatWelcome, ChatYou};
+use crate::api::wire::{ChatKind, ChatMessage, ChatWelcome, ChatYou};
 use crate::auth::Viewer;
 use crate::auth::rate_limit::RateLimiter;
 use crate::store::now_ms;
@@ -32,6 +39,11 @@ const PER_SECOND: f64 = 1.0;
 const CHANNEL: usize = 256;
 /// More blank lines in a row than this are dropped.
 const BLANK_LINES_KEPT: usize = 2;
+/// How long someone must be gone before they are said to have left; back sooner, and
+/// neither the leaving nor the coming back is announced.
+pub const AWAY: Duration = Duration::from_secs(5 * 60);
+/// How often [`spawn_sweeper`] looks for people who have now been gone for [`AWAY`].
+const SWEEP_EVERY: Duration = Duration::from_secs(15);
 
 const ADJECTIVES: [&str; 40] = [
     "Amber",
@@ -233,8 +245,16 @@ pub fn validate_name(raw: &str) -> Result<String, ChatRefusal> {
 
 struct Member {
     name: String,
-    /// open streams under this key; the name is freed at zero
+    /// open streams under this key; at zero they are [`Gone`]
     streams: u32,
+}
+
+/// Someone whose last stream closed, not yet said to have left. Their name is kept for them
+/// until they are.
+struct Gone {
+    /// their name when they went
+    name: String,
+    at: Instant,
 }
 
 #[derive(Default)]
@@ -243,13 +263,17 @@ struct Inner {
     history: VecDeque<ChatMessage>,
     next_id: u64,
     members: HashMap<ChatKey, Member>,
+    gone: HashMap<ChatKey, Gone>,
 }
 
 impl Inner {
-    /// Whether someone other than `key` is called `name` (ignoring case).
+    /// Whether someone other than `key`, here or not yet said to have left, is called `name`
+    /// (ignoring case).
     fn taken(&self, key: Option<&ChatKey>, name: &str) -> bool {
         let wanted = name.to_lowercase();
-        self.members.iter().any(|(k, m)| Some(k) != key && m.name.to_lowercase() == wanted)
+        let here = self.members.iter().map(|(k, m)| (k, &m.name));
+        let away = self.gone.iter().map(|(k, g)| (k, &g.name));
+        here.chain(away).any(|(k, name)| Some(k) != key && name.to_lowercase() == wanted)
     }
 
     fn fresh_name(&self) -> String {
@@ -264,6 +288,49 @@ impl Inner {
         let [a, b] = random_pair();
         let base = format!("{} {}", ADJECTIVES[a % ADJECTIVES.len()], NOUNS[b % NOUNS.len()]);
         (2..).map(|n| format!("{base} {n}")).find(|name| !self.taken(None, name)).expect("some number is free")
+    }
+
+    /// `wanted` if it is a valid name nobody else has, otherwise a fresh one.
+    fn name_for(&self, key: &ChatKey, wanted: Option<&str>) -> String {
+        wanted
+            .and_then(|wanted| validate_name(wanted).ok())
+            .filter(|name| !self.taken(Some(key), name))
+            .unwrap_or_else(|| self.fresh_name())
+    }
+
+    /// Adds a line to the history and sends it to every stream. Callers hold the lock, so
+    /// streams see ids in order.
+    fn record(
+        &mut self,
+        out: &broadcast::Sender<ChatOut>,
+        kind: ChatKind,
+        author: String,
+        text: String,
+    ) -> ChatMessage {
+        self.next_id += 1;
+        let message = ChatMessage { id: self.next_id, at: now_ms().max(0) as u64, kind, author, text };
+        self.history.push_back(message.clone());
+        while self.history.len() > HISTORY_KEPT {
+            self.history.pop_front();
+        }
+        let json = serde_json::to_string(&message).expect("messages serialise");
+        let _ = out.send(ChatOut::Message { id: message.id, json: Arc::from(json) });
+        message
+    }
+
+    /// Says goodbye to everyone gone for [`AWAY`] by `now`, longest gone first.
+    fn sweep(&mut self, out: &broadcast::Sender<ChatOut>, now: Instant) {
+        let mut left: Vec<(ChatKey, Instant)> = self
+            .gone
+            .iter()
+            .filter(|(_, gone)| now.saturating_duration_since(gone.at) >= AWAY)
+            .map(|(key, gone)| (key.clone(), gone.at))
+            .collect();
+        left.sort_by_key(|(_, at)| *at);
+        for (key, _) in left {
+            let gone = self.gone.remove(&key).expect("listed above");
+            self.record(out, ChatKind::Leave, gone.name, String::new());
+        }
     }
 
     fn welcome(&self, key: Option<&ChatKey>) -> ChatWelcome {
@@ -299,16 +366,40 @@ impl Default for ChatHub {
 }
 
 impl ChatHub {
-    /// Counts a stream under `key` (giving the person a name if this is their first) and
-    /// returns what the stream starts with. The name lasts as long as the guard.
-    pub fn join(self: &Arc<Self>, key: Option<ChatKey>) -> (ChatGuard, ChatWelcome) {
+    /// Counts a stream under `key` and returns what the stream starts with. The name lasts as
+    /// long as the guard.
+    ///
+    /// On a person's first stream they are named `wanted` (the name their browser remembers)
+    /// if it is valid and free, or else given a fresh name, and the room is told they joined,
+    /// unless they were here less than [`AWAY`] ago.
+    pub fn join(
+        self: &Arc<Self>,
+        key: Option<ChatKey>,
+        wanted: Option<&str>,
+        now: Instant,
+    ) -> (ChatGuard, ChatWelcome) {
         let mut inner = self.inner.lock();
+        inner.sweep(&self.out, now);
         if let Some(key) = &key {
-            if let Some(member) = inner.members.get_mut(key) {
+            if inner.members.contains_key(key) {
+                // Another tab of theirs, or a reload that beat the old stream's close: they keep
+                // their place, and take the name they asked for if it is free.
+                let renamed = wanted
+                    .and_then(|wanted| validate_name(wanted).ok())
+                    .filter(|name| inner.members[key].name != *name && !inner.taken(Some(key), name));
+                let member = inner.members.get_mut(key).expect("checked above");
                 member.streams += 1;
+                if let Some(name) = renamed {
+                    member.name = name.clone();
+                    self.renamed(key, name);
+                }
             } else {
-                let name = inner.fresh_name();
-                inner.members.insert(key.clone(), Member { name, streams: 1 });
+                let back = inner.gone.remove(key);
+                let name = inner.name_for(key, wanted.or(back.as_ref().map(|gone| gone.name.as_str())));
+                inner.members.insert(key.clone(), Member { name: name.clone(), streams: 1 });
+                if back.is_none() {
+                    inner.record(&self.out, ChatKind::Join, name, String::new());
+                }
             }
         }
         let welcome = inner.welcome(key.as_ref());
@@ -335,9 +426,14 @@ impl ChatHub {
             return Err(ChatRefusal::TooFast);
         }
         inner.members.get_mut(key).expect("checked above").name = name.clone();
-        let json = serde_json::to_string(&ChatYou { name: name.clone() }).expect("names serialise");
-        let _ = self.out.send(ChatOut::Renamed { key: key.clone(), json: Arc::from(json) });
+        self.renamed(key, name.clone());
         Ok(name)
+    }
+
+    /// Tells `key`'s streams their new name.
+    fn renamed(&self, key: &ChatKey, name: String) {
+        let json = serde_json::to_string(&ChatYou { name }).expect("names serialise");
+        let _ = self.out.send(ChatOut::Renamed { key: key.clone(), json: Arc::from(json) });
     }
 
     /// Cleans, filters, records and sends a message from `key`.
@@ -354,20 +450,31 @@ impl ChatHub {
         let mut inner = self.inner.lock();
         // The name now, in case it changed while the filter ran.
         let author = inner.members.get(key).ok_or(ChatRefusal::NotConnected)?.name.clone();
-        inner.next_id += 1;
-        let message = ChatMessage { id: inner.next_id, at: now_ms().max(0) as u64, author, text };
-        inner.history.push_back(message.clone());
-        while inner.history.len() > HISTORY_KEPT {
-            inner.history.pop_front();
-        }
-        // Sent under the lock, so streams see ids in order.
-        let json = serde_json::to_string(&message).expect("messages serialise");
-        let _ = self.out.send(ChatOut::Message { id: message.id, json: Arc::from(json) });
-        Ok(message)
+        Ok(inner.record(&self.out, ChatKind::Say, author, text))
+    }
+
+    /// Announces everyone who has now been gone for [`AWAY`].
+    pub fn sweep(&self, now: Instant) {
+        self.inner.lock().sweep(&self.out, now);
     }
 }
 
-/// Keeps a stream's person in the room; their name is freed when their last guard drops.
+/// Runs [`ChatHub::sweep`] every few seconds, so a leave is announced even when nothing else
+/// happens in the chat.
+pub fn spawn_sweeper(hub: Arc<ChatHub>, shutdown: CancellationToken) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(SWEEP_EVERY);
+        loop {
+            tokio::select! {
+                () = shutdown.cancelled() => break,
+                _ = every.tick() => hub.sweep(Instant::now()),
+            }
+        }
+    })
+}
+
+/// Keeps a stream's person in the room. When their last guard drops they are [`Gone`], and
+/// [`ChatHub::sweep`] later says they left and frees their name.
 pub struct ChatGuard {
     hub: Arc<ChatHub>,
     key: Option<ChatKey>,
@@ -386,7 +493,8 @@ impl Drop for ChatGuard {
         if let Some(member) = inner.members.get_mut(key) {
             member.streams -= 1;
             if member.streams == 0 {
-                inner.members.remove(key);
+                let name = inner.members.remove(key).expect("found above").name;
+                inner.gone.insert(key.clone(), Gone { name, at: Instant::now() });
             }
         }
     }
@@ -409,7 +517,7 @@ mod tests {
     #[test]
     fn keeps_the_newest_fifty_messages_oldest_first() {
         let hub = Arc::new(ChatHub::default());
-        let (_guard, _) = hub.join(tab("a"));
+        let (_guard, _) = hub.join(tab("a"), None, Instant::now());
         let key = ChatKey::Tab("a".into());
         let start = Instant::now();
         for i in 0..60 {
@@ -426,8 +534,8 @@ mod tests {
     fn an_accounts_tabs_share_a_name_until_the_last_one_closes() {
         let hub = Arc::new(ChatHub::default());
         let key = ChatKey::User(7);
-        let (first, welcome) = hub.join(Some(key.clone()));
-        let (second, again) = hub.join(Some(key.clone()));
+        let (first, welcome) = hub.join(Some(key.clone()), None, Instant::now());
+        let (second, again) = hub.join(Some(key.clone()), None, Instant::now());
         assert_eq!(welcome.you, again.you);
         drop(first);
         assert_eq!(name(&hub, &key), welcome.you);
@@ -438,7 +546,7 @@ mod tests {
     #[test]
     fn readers_without_a_key_get_the_history_but_no_name() {
         let hub = Arc::new(ChatHub::default());
-        let (guard, welcome) = hub.join(None);
+        let (guard, welcome) = hub.join(None, None, Instant::now());
         assert_eq!(welcome.you, None);
         assert_eq!(welcome.max_length, MAX_TEXT as u32);
         assert!(guard.key().is_none());
@@ -448,7 +556,7 @@ mod tests {
     fn auto_names_never_collide_with_someone_connected() {
         let hub = Arc::new(ChatHub::default());
         // More people than adjective-noun pairs tried before numbering kicks in.
-        let guards: Vec<_> = (0..300).map(|i| hub.join(tab(&format!("t{i}")))).collect();
+        let guards: Vec<_> = (0..300).map(|i| hub.join(tab(&format!("t{i}")), None, Instant::now())).collect();
         let mut names: Vec<_> = guards.iter().map(|(_, w)| w.you.clone().unwrap().to_lowercase()).collect();
         names.sort();
         names.dedup();
@@ -459,14 +567,20 @@ mod tests {
     fn renames_are_unique_among_connected_people_ignoring_case() {
         let hub = Arc::new(ChatHub::default());
         let (a, b) = (ChatKey::Tab("a".into()), ChatKey::Tab("b".into()));
-        let (_ga, _) = hub.join(Some(a.clone()));
-        let (gb, _) = hub.join(Some(b.clone()));
+        let (_ga, _) = hub.join(Some(a.clone()), None, Instant::now());
+        let (gb, _) = hub.join(Some(b.clone()), None, Instant::now());
         let now = Instant::now();
         assert_eq!(hub.rename(&b, "  Old   Tom ", now), Ok("Old Tom".into()));
         assert_eq!(hub.rename(&a, "old tom", now), Err(ChatRefusal::NameTaken));
         assert_eq!(hub.rename(&b, "OLD TOM", now), Ok("OLD TOM".into()), "re-casing your own name is fine");
         drop(gb);
-        assert_eq!(hub.rename(&a, "Old Tom", now), Ok("Old Tom".into()), "a name is freed when its owner leaves");
+        assert_eq!(
+            hub.rename(&a, "Old Tom", now),
+            Err(ChatRefusal::NameTaken),
+            "still theirs while they might be back"
+        );
+        hub.sweep(Instant::now() + AWAY * 2);
+        assert_eq!(hub.rename(&a, "Old Tom", now), Ok("Old Tom".into()), "freed once they are said to have left");
     }
 
     #[test]
@@ -474,12 +588,15 @@ mod tests {
         let hub = Arc::new(ChatHub::default());
         let mut out = hub.out.subscribe();
         let (a, b) = (ChatKey::Tab("a".into()), ChatKey::Tab("b".into()));
-        let (_ga, _) = hub.join(Some(a.clone()));
-        let (_gb, _) = hub.join(Some(b.clone()));
+        let (_ga, _) = hub.join(Some(a.clone()), None, Instant::now());
+        let (_gb, _) = hub.join(Some(b.clone()), None, Instant::now());
         let now = Instant::now();
         let old = name(&hub, &a).unwrap();
         hub.rename(&a, "Bramblewick", now).unwrap();
         assert_eq!(hub.rename(&b, &old, now), Ok(old));
+        // Past the two join lines.
+        assert!(matches!(out.try_recv().unwrap(), ChatOut::Message { .. }));
+        assert!(matches!(out.try_recv().unwrap(), ChatOut::Message { .. }));
         match out.try_recv().unwrap() {
             ChatOut::Renamed { key, json } => {
                 assert_eq!(key, a);
@@ -487,6 +604,142 @@ mod tests {
             }
             other => panic!("expected a rename, got {other:?}"),
         }
+    }
+
+    /// The kind and name of each line in the history, oldest first.
+    fn lines(hub: &ChatHub) -> Vec<(ChatKind, String)> {
+        hub.welcome(None).history.into_iter().map(|m| (m.kind, m.author)).collect()
+    }
+
+    #[test]
+    fn a_newcomer_is_announced_under_the_name_they_asked_for() {
+        let hub = Arc::new(ChatHub::default());
+        let mut out = hub.out.subscribe();
+        let (_guard, welcome) = hub.join(tab("a"), Some(" Old  Tom "), Instant::now());
+        assert_eq!(welcome.you.as_deref(), Some("Old Tom"));
+        assert_eq!(lines(&hub), [(ChatKind::Join, "Old Tom".to_owned())]);
+        let line = &welcome.history[0];
+        assert!(line.text.is_empty());
+        match out.try_recv().unwrap() {
+            ChatOut::Message { id, json } => {
+                assert_eq!(id, line.id);
+                assert!(json.contains(r#""kind":"join""#), "{json}");
+            }
+            other => panic!("expected the join line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_wanted_name_that_is_taken_or_invalid_gets_a_fresh_one() {
+        let hub = Arc::new(ChatHub::default());
+        let (_a, _) = hub.join(tab("a"), Some("Old Tom"), Instant::now());
+        let (_b, taken) = hub.join(tab("b"), Some("old tom"), Instant::now());
+        let (_c, invalid) = hub.join(tab("c"), Some("<b>"), Instant::now());
+        for welcome in [taken, invalid] {
+            let name = welcome.you.unwrap();
+            assert!(!name.eq_ignore_ascii_case("old tom") && name != "<b>", "{name}");
+        }
+    }
+
+    #[test]
+    fn more_tabs_of_one_account_are_not_announced_again() {
+        let hub = Arc::new(ChatHub::default());
+        let key = Some(ChatKey::User(7));
+        let (_first, _) = hub.join(key.clone(), None, Instant::now());
+        let (_second, _) = hub.join(key, Some("Someone Else"), Instant::now());
+        assert_eq!(lines(&hub).len(), 1);
+    }
+
+    #[test]
+    fn a_stream_that_arrives_before_the_old_one_closes_still_takes_the_name_it_asks_for() {
+        let hub = Arc::new(ChatHub::default());
+        let mut out = hub.out.subscribe();
+        let key = ChatKey::Tab("a".into());
+        let (_old, _) = hub.join(Some(key.clone()), None, Instant::now());
+        let (_new, welcome) = hub.join(Some(key.clone()), Some("Old Tom"), Instant::now());
+        assert_eq!(welcome.you.as_deref(), Some("Old Tom"));
+        assert!(matches!(out.try_recv().unwrap(), ChatOut::Message { .. }), "the first join");
+        match out.try_recv().unwrap() {
+            ChatOut::Renamed { key: renamed, json } => {
+                assert_eq!(renamed, key);
+                assert_eq!(&*json, r#"{"name":"Old Tom"}"#);
+            }
+            other => panic!("expected a rename for the older stream, got {other:?}"),
+        }
+        assert_eq!(lines(&hub).len(), 1, "a rename is not a join");
+    }
+
+    #[test]
+    fn readers_without_a_key_come_and_go_unannounced() {
+        let hub = Arc::new(ChatHub::default());
+        drop(hub.join(None, None, Instant::now()));
+        hub.sweep(Instant::now() + AWAY * 2);
+        assert!(lines(&hub).is_empty());
+    }
+
+    #[test]
+    fn a_quick_return_is_quiet_and_keeps_the_name() {
+        let hub = Arc::new(ChatHub::default());
+        let (guard, welcome) = hub.join(tab("a"), None, Instant::now());
+        drop(guard);
+        let soon = Instant::now() + AWAY / 2;
+        hub.sweep(soon);
+        let (_guard, again) = hub.join(tab("a"), None, soon);
+        assert_eq!(again.you, welcome.you, "back under the name they left with");
+        assert_eq!(lines(&hub).len(), 1, "only the first join");
+        hub.sweep(soon + AWAY * 2);
+        assert_eq!(lines(&hub).len(), 1, "still here, so never said to have left");
+    }
+
+    #[test]
+    fn someone_gone_for_a_while_is_said_to_have_left_and_announced_when_back() {
+        let hub = Arc::new(ChatHub::default());
+        let (guard, _) = hub.join(tab("a"), Some("Old Tom"), Instant::now());
+        let (_other, _) = hub.join(tab("b"), Some("Bramblewick"), Instant::now());
+        drop(guard);
+        let later = Instant::now() + AWAY + Duration::from_secs(1);
+        hub.sweep(later);
+        let (_back, _) = hub.join(tab("a"), Some("Old Tom"), later);
+        assert_eq!(
+            lines(&hub),
+            [
+                (ChatKind::Join, "Old Tom".to_owned()),
+                (ChatKind::Join, "Bramblewick".to_owned()),
+                (ChatKind::Leave, "Old Tom".to_owned()),
+                (ChatKind::Join, "Old Tom".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn nobody_else_can_take_the_name_of_someone_briefly_away() {
+        let hub = Arc::new(ChatHub::default());
+        drop(hub.join(tab("a"), Some("Old Tom"), Instant::now()));
+        let (_b, welcome) = hub.join(tab("b"), Some("Old Tom"), Instant::now());
+        assert_ne!(welcome.you.as_deref(), Some("Old Tom"));
+        let (_back, welcome) = hub.join(tab("a"), Some("Old Tom"), Instant::now());
+        assert_eq!(welcome.you.as_deref(), Some("Old Tom"));
+    }
+
+    #[test]
+    fn a_late_sweep_says_goodbye_before_the_same_person_comes_back() {
+        let hub = Arc::new(ChatHub::default());
+        drop(hub.join(tab("a"), Some("Old Tom"), Instant::now()));
+        // No sweep ran while they were away; their return runs it first.
+        let (_back, _) = hub.join(tab("a"), Some("Old Tom"), Instant::now() + AWAY * 2);
+        let kinds: Vec<_> = lines(&hub).into_iter().map(|(kind, _)| kind).collect();
+        assert_eq!(kinds, [ChatKind::Join, ChatKind::Leave, ChatKind::Join]);
+    }
+
+    #[test]
+    fn a_leave_names_whoever_they_were_when_they_went() {
+        let hub = Arc::new(ChatHub::default());
+        let key = ChatKey::Tab("a".into());
+        let (guard, _) = hub.join(Some(key.clone()), None, Instant::now());
+        hub.rename(&key, "Bramblewick", Instant::now()).unwrap();
+        drop(guard);
+        hub.sweep(Instant::now() + AWAY * 2);
+        assert_eq!(lines(&hub).last(), Some(&(ChatKind::Leave, "Bramblewick".to_owned())));
     }
 
     #[test]
@@ -523,7 +776,7 @@ mod tests {
         let key = ChatKey::Tab("a".into());
         let now = Instant::now();
         assert_eq!(hub.post(&key, "hello", now), Err(ChatRefusal::NotConnected));
-        let (_guard, _) = hub.join(Some(key.clone()));
+        let (_guard, _) = hub.join(Some(key.clone()), None, Instant::now());
         for _ in 0..BURST as usize {
             hub.post(&key, "hello", now).unwrap();
         }
