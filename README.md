@@ -63,6 +63,7 @@ set -a; . ./.env; set +a
 ### In the browser
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
+- Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
