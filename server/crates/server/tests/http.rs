@@ -633,8 +633,9 @@ async fn credits_buy_things_that_happen_in_the_world() {
     let bought = app.clone().oneshot(buy(food())).await.unwrap();
     assert_eq!(bought.status(), StatusCode::OK);
     assert_eq!(text(bought).await, r#"{"balance":295}"#);
-    // The chat says who did it, and so does the chronicle once the sim has applied it.
-    let seen = read_events(&mut a, |seen| seen.contains("sent Aldric some food.")).await;
+    // The chat says who did it, and so does the chronicle once the sim has applied it; either may come first.
+    let seen =
+        read_events(&mut a, |seen| seen.contains("sent Aldric some food.") && seen.contains("event: chat\n")).await;
     let said = last_event(&seen, "chat");
     assert_eq!(
         (said["kind"].as_str(), said["author"].as_str(), said["text"].as_str()),
