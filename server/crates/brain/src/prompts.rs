@@ -13,7 +13,7 @@ use fsw_sim::state::{
     Character, Conversation, ConversationLine, Memory, MonsterPhase, Relationship, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
-use fsw_sim::systems::relationships::{RUNG_FEUD, RUNG_TENSION, Rung, lethal_unlocked_read, rung_of};
+use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, places};
@@ -73,6 +73,9 @@ How to play:
 - A \"thought\" is one private sentence in the first person.
 - Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.";
 
+/// From here a character's spite shows in the prompts; below it, it only shows in what they do.
+const SPITEFUL: f64 = 0.5;
+
 fn level(value: f64, words: [&'static str; 3]) -> &'static str {
     if value < 0.34 {
         words[0]
@@ -107,6 +110,9 @@ pub fn persona(c: &Character) -> String {
         format!("How you speak: {}", p.speech_style),
         format!("What you want: {}.", p.goals.join("; ")),
     ];
+    if p.spite >= SPITEFUL {
+        lines[2].push_str(" You nurse every grudge and go looking for a fight.");
+    }
     if p.allure >= 0.34 {
         let flirt = level(
             p.allure,
@@ -396,8 +402,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prom
     let cue_text = format!("{} {}", events.join(" "), place_name_at(c.pos));
     let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: &cue_text }, 7);
 
-    let feuds: Vec<&Character> =
-        living(state).filter(|o| o.id != c.id && rel_or_default(c, &o.id).grievance >= RUNG_FEUD).collect();
+    let feuds: Vec<&Character> = living(state).filter(|o| o.id != c.id && brawl_unlocked(c, &o.id)).collect();
     let killable = feuds.iter().any(|o| lethal_unlocked_read(state, c, &o.id));
     let mut tools = vec![
         TOOLS.go_to.clone(),
@@ -601,20 +606,24 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt
 fn brief(c: &Character) -> String {
     let p = &c.profile;
     format!(
-        "{}, {}, {} ({}). {}. Speaks: {}",
+        "{}, {}, {} ({}). {}.{} Speaks: {}",
         p.name,
         p.age,
         p.occupation,
         p.pronouns.as_str(),
         capital(&p.traits.join(", ")),
+        if p.spite >= SPITEFUL { " Holds grudges and picks quarrels." } else { "" },
         p.speech_style
     )
 }
 
 fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
+    // The spiteful go looking for a quarrel even with someone who has done them no wrong.
+    let picking_a_quarrel = a.profile.spite >= SPITEFUL && rel_or_default(a, &b.id).grievance < RUNG_GRUDGE;
     let a_allure = a.profile.allure;
     let (a, b) = (first_name(a), first_name(b));
     match tone {
+        TalkTone::Hostile if picking_a_quarrel => format!("{a} has come looking for a quarrel with {b}."),
         TalkTone::Hostile => format!("{a} has come to confront {b} over a grievance."),
         TalkTone::Romantic if a_allure >= charm::CHARMER => {
             format!("{a} is flirting with {b} for the fun of it, promising nothing.")

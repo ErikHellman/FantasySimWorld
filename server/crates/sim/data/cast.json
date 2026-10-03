@@ -106,22 +106,23 @@
     "pronouns": "he/him",
     "age": 36,
     "occupation": "woodcutter and miner",
-    "backstory": "Came down from the hill clans with his brother Halric. Halric died on one of Aldric's patrols three winters ago, and Garrick has never forgiven the captain for coming back without him.",
+    "backstory": "Came down from the hill clans with his brother Halric. Three winters ago Halric went out on one of Aldric's patrols and never came back, and Garrick buried an empty coffin. He thinks the village forgot Halric far too quickly, and he has been looking for someone to make pay ever since.",
     "traits": [
-     "boisterous",
-     "proud",
-     "quick to anger",
-     "fiercely loyal"
+     "bitter",
+     "spiteful",
+     "cynical",
+     "spoiling for a fight"
     ],
     "goals": [
-     "hear Aldric admit he failed Halric",
-     "out-drink and out-work everyone",
-     "look after Dorn, his only real friend"
+     "make Aldric pay for coming home without Halric",
+     "find someone in this soft village worth fighting",
+     "keep Dorn, the one man who still puts up with him"
     ],
-    "speechStyle": "Loud, hearty, swears by his ancestors, speaks before he thinks.",
-    "temper": 0.85,
+    "speechStyle": "Snarling and sarcastic; goads and mocks, picks at old wounds, swears on Halric's grave, never backs down.",
+    "temper": 1,
     "bravery": 0.95,
     "sociability": 0.75,
+    "spite": 1,
     "voice": {
      "pitch": 0.65,
      "rate": 1,
@@ -549,11 +550,11 @@
   {
    "from": "garrick",
    "to": "aldric",
-   "affinity": -32,
-   "trust": -25,
-   "grievance": 54,
+   "affinity": -55,
+   "trust": -45,
+   "grievance": 78,
    "familiarity": 55,
-   "summary": "He led my brother Halric out and came back without him."
+   "summary": "He led Halric out to die and walked home whole. One day I will make him bleed for it."
   },
   {
    "from": "aldric",
@@ -566,11 +567,20 @@
   },
   {
    "from": "garrick",
+   "to": "brenna",
+   "affinity": -20,
+   "trust": -15,
+   "grievance": 35,
+   "familiarity": 50,
+   "summary": "Aldric's lapdog. She would lick his boots if he asked."
+  },
+  {
+   "from": "garrick",
    "to": "dorn",
-   "affinity": 55,
-   "trust": 60,
+   "affinity": 45,
+   "trust": 55,
    "familiarity": 75,
-   "summary": "My drinking brother. The only one who tells me when I am being a fool."
+   "summary": "The only one who still drinks with me, and even he has started to look at me like a wound that will not close."
   },
   {
    "from": "dorn",
@@ -578,7 +588,7 @@
    "affinity": 52,
    "trust": 45,
    "familiarity": 75,
-   "summary": "Big-hearted oaf. Someone has to keep him out of trouble."
+   "summary": "Grief has turned him mean. Someone has to stop him killing somebody."
   },
   {
    "from": "rowan",
