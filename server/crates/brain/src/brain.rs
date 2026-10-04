@@ -549,6 +549,12 @@ impl Brain {
                 },
                 _ => None,
             };
+            // A request cancelled while its cue was embedded (a death, a conversation's end) is given up as if
+            // `build` had refused it: its commands would act on a decision nobody is waiting for any more.
+            if cancel.is_cancelled() {
+                fail();
+                return Ok(0);
+            }
             let built = {
                 let recall = memory.as_deref().map(|m| Recall { lookup: m.cache(), cue: cue_vector.as_deref() });
                 read(&*link, |state| build(state, recall.as_ref()))
@@ -1090,7 +1096,9 @@ impl Brain {
             format!("v:{convo_id}"),
             Some(speaker),
             Duration::from_secs(20),
-            Some(Box::new(move |_: &SimState| {
+            Some(Box::new(move |state: &SimState| {
+                // The same refusal as the build below: nothing is embedded for a conversation that is over.
+                state.conversations.get(&cue_id).filter(|c| !c.closed)?;
                 turns_for_cue.inner.state.lock().turns.get(&cue_id).map(|lines| reply_cue(lines))
             })),
             move |state, recall| {

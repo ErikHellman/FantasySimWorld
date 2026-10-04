@@ -125,13 +125,13 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let embed_model = args.iter().position(|arg| arg == "--embed").and_then(|at| {
-        let model = args.get(at + 1).cloned();
-        args.drain(at..(at + 2).min(args.len()));
-        model
-    });
+    let usage = "usage: probe <base-url> <model> [runs] [api-key] [--embed <embed-model>]";
+    let Ok(embed_model) = take_embed(&mut args) else {
+        eprintln!("{usage}");
+        return ExitCode::FAILURE;
+    };
     let (Some(base_url), Some(model)) = (args.first(), args.get(1)) else {
-        eprintln!("usage: probe <base-url> <model> [runs] [api-key]");
+        eprintln!("{usage}");
         return ExitCode::FAILURE;
     };
     let runs: usize = args.get(2).and_then(|r| r.parse().ok()).unwrap_or(12);
@@ -181,6 +181,17 @@ async fn main() -> ExitCode {
     if embeddings_ok { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
+/// Takes `--embed <embed-model>` out of the arguments. `Err` when `--embed` has no model after it, which would
+/// otherwise skip the embedding check without a word.
+fn take_embed(args: &mut Vec<String>) -> Result<Option<String>, ()> {
+    let Some(at) = args.iter().position(|arg| arg == "--embed") else {
+        return Ok(None);
+    };
+    let model = args.get(at + 1).cloned().ok_or(())?;
+    args.drain(at..at + 2);
+    Ok(Some(model))
+}
+
 /// Embeds three sentences and checks that the two about a fire are closer to each other than to bread.
 async fn check_embeddings(base_url: &str, model: &str, key: &str, transport: Arc<dyn LlmTransport>) -> bool {
     let settings = EmbedSettings { base_url: base_url.trim_end_matches('/').to_owned(), model: model.to_owned() };
@@ -208,5 +219,23 @@ async fn check_embeddings(base_url: &str, model: &str, key: &str, transport: Arc
             println!("embeddings failed: {error}");
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::take_embed;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| (*a).to_owned()).collect()
+    }
+
+    #[test]
+    fn takes_the_embedding_model_and_refuses_a_flag_without_one() {
+        let mut given = args(&["http://x/v1", "m", "--embed", "e", "20"]);
+        assert_eq!(take_embed(&mut given), Ok(Some("e".to_owned())));
+        assert_eq!(given, args(&["http://x/v1", "m", "20"]));
+        assert_eq!(take_embed(&mut args(&["http://x/v1", "m"])), Ok(None));
+        assert_eq!(take_embed(&mut args(&["http://x/v1", "m", "--embed"])), Err(()));
     }
 }

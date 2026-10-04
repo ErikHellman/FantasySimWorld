@@ -8,6 +8,7 @@ use fsw_brain::llm::embed::Embedder;
 use fsw_brain::llm::transport::{FakeTransport, HttpResponse};
 use fsw_brain::recall::MemoryIndex;
 use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, WireProtocol};
+use fsw_core::Vec2;
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{
     Intent, IntentAction, IntentSource, Memory, MemoryKind, SimState, Stimulus, StimulusKind, TalkTone,
@@ -635,4 +636,26 @@ async fn a_hung_embedding_endpoint_does_not_hold_up_a_decision() {
     let log = h.log("Aldric", RequestKind::Decide).unwrap();
     assert_eq!(log.status, LogStatus::Ok);
     assert!(!log.prompt.contains(FLAMES));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_request_cancelled_while_its_cue_waits_is_never_built_or_sent() {
+    const SMOKE: &str = "Smoke is rising from a house nearby.";
+    let mut h = harness(continue_otherwise(|_, _| None), ConversationMode::Batched);
+    h.settle().await;
+    let id = h.who("Aldric");
+    let hung = FakeTransport::new(|_| std::future::pending::<Result<HttpResponse, String>>());
+    h.brain.set_memory(Some(memory_index(hung.clone())));
+    h.stimulate(&id, SMOKE);
+    h.brain.update(true);
+    h.wait().await;
+    assert_eq!(hung.requests().len(), 1, "the decision waits for its cue");
+
+    // A death cancels the villager's requests; this one is still waiting for its cue.
+    h.brain.handle(&[SimEvent::Death { id: id.clone(), name: "Aldric".into(), pos: Vec2::default(), monster: false }]);
+    h.wait().await;
+    h.step(1);
+    let stimuli = h.link.sim.lock().state.characters[&id].stimuli.clone();
+    assert!(stimuli.iter().any(|s| s.text == SMOKE), "the build's commands were not sent");
+    assert!(!h.transport.bodies().iter().any(|body| body.to_string().contains(SMOKE)), "no prompt was sent");
 }
