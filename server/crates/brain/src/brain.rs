@@ -778,7 +778,7 @@ impl Brain {
                 if me.convo_id.is_some() || me.asleep || is_fighting(me) || me.combat.yielded {
                     return None;
                 }
-                let prompt = decide_prompt(state, me, budget);
+                let prompt = decide_prompt(state, me, budget, None);
                 Some(Built {
                     prompt,
                     commands: vec![Command::ClearStimuli { id: build_id.clone(), through_tick: state.tick }],
@@ -866,7 +866,7 @@ impl Brain {
             Duration::from_secs(90),
             move |state| {
                 let me = state.characters.get(&build_id).filter(|c| !c.asleep && !is_fighting(c))?;
-                built(plan_prompt(state, me, budget), ())
+                built(plan_prompt(state, me, budget, None), ())
             },
             move |_, response, ()| {
                 let Some(plan) = interpret_plan(&response.calls) else {
@@ -1048,7 +1048,7 @@ impl Brain {
                 let me = state.characters.get(&build_speaker)?;
                 let other_id = if convo.a == build_speaker { &convo.b } else { &convo.a };
                 let other = state.characters.get(other_id)?;
-                built(reply_prompt(state, convo, &lines, me, other, budget), ())
+                built(reply_prompt(state, convo, &lines, me, other, budget, None), ())
             },
             move |state, response, ()| {
                 let Some(convo) = state.conversations.get(&apply_id).filter(|c| !c.closed) else {

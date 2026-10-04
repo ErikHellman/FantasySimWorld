@@ -20,6 +20,7 @@ use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_nam
 use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
 
 use crate::llm::types::{ChatMessage, ToolDef};
+use crate::recall::Recall;
 use crate::retrieval::{Cue, retrieve, since};
 use crate::tools::TOOLS;
 
@@ -474,15 +475,30 @@ fn admirers_note(state: &SimState, c: &Character) -> String {
     note
 }
 
+/// What a decision is about, in words: recent events and where the villager stands.
+pub fn decide_cue(state: &SimState, c: &Character) -> String {
+    format!("{} {}", recent_events(state, c).join(" "), place_name_at(c.pos))
+}
+
+/// What a day's plan is about, for recalling by meaning only: the villager's goals.
+pub fn plan_cue(c: &Character) -> String {
+    c.profile.goals.join("; ")
+}
+
+/// What has been said so far in a conversation.
+pub fn reply_cue(lines: &[ConversationLine]) -> String {
+    lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join(" ")
+}
+
 /// "What do you do next?"
-pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt {
+pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall: Option<&Recall>) -> Prompt {
     let time = game_time(state.tick);
     let (near, far) = people(state, c);
     let events = recent_events(state, c);
     let subjects: Vec<String> =
         near.iter().map(|o| o.id.clone()).chain(c.stimuli.iter().filter_map(|s| s.subject_id.clone())).collect();
-    let cue_text = format!("{} {}", events.join(" "), place_name_at(c.pos));
-    let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: &cue_text }, 7);
+    let cue_text = decide_cue(state, c);
+    let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: &cue_text }, 7, recall);
 
     let feuds: Vec<&Character> = living(state).filter(|o| o.id != c.id && brawl_unlocked(c, &o.id)).collect();
     let killable = feuds.iter().any(|o| lethal_unlocked_read(state, c, &o.id));
@@ -627,7 +643,7 @@ pub fn react_prompt(state: &SimState, c: &Character) -> Prompt {
 }
 
 /// "Plan your day."
-pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt {
+pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize, recall: Option<&Recall>) -> Prompt {
     let time = game_time(state.tick);
     let (near, far) = people(state, c);
     let notable: Vec<&Character> = near
@@ -644,7 +660,7 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize) -> Prompt
         .copied()
         .collect();
     let subjects: Vec<String> = notable.iter().map(|o| o.id.clone()).collect();
-    let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: "" }, 8);
+    let memories = retrieve(c, state.tick, Cue { subjects: &subjects, text: "" }, 8, recall);
     let watch = if state.tick < c.watch_until_tick {
         "You have the night watch at the watchtower tonight (from about 20:30); rest in the afternoon."
     } else {
@@ -786,7 +802,7 @@ pub fn conversation_prompt(
     let time = game_time(state.tick);
     let side = |me: &Character, other: &Character| {
         let subjects = [other.id.clone()];
-        let memories: Vec<&Memory> = retrieve(me, state.tick, Cue { subjects: &subjects, text: "" }, 4)
+        let memories: Vec<&Memory> = retrieve(me, state.tick, Cue { subjects: &subjects, text: "" }, 4, None)
             .into_iter()
             .filter(|m| m.subjects.contains(&other.id) || m.importance >= 7)
             .collect();
@@ -865,11 +881,12 @@ pub fn reply_prompt(
     me: &Character,
     other: &Character,
     max_tokens: usize,
+    recall: Option<&Recall>,
 ) -> Prompt {
     let time = game_time(state.tick);
     let subjects = [other.id.clone()];
-    let said = lines.iter().map(|line| line.text.as_str()).collect::<Vec<_>>().join(" ");
-    let memories = retrieve(me, state.tick, Cue { subjects: &subjects, text: &said }, 5);
+    let said = reply_cue(lines);
+    let memories = retrieve(me, state.tick, Cue { subjects: &subjects, text: &said }, 5, recall);
     let transcript = if lines.is_empty() {
         "(nothing has been said yet; you speak first)".to_owned()
     } else {
@@ -925,7 +942,7 @@ pub fn reply_prompt(
 pub fn mercy_prompt(state: &SimState, attacker: &Character, victim: &Character) -> Prompt {
     let time = game_time(state.tick);
     let subjects = [victim.id.clone()];
-    let memories = retrieve(attacker, state.tick, Cue { subjects: &subjects, text: "" }, 5);
+    let memories = retrieve(attacker, state.tick, Cue { subjects: &subjects, text: "" }, 5, None);
     let watching: Vec<String> = living(state)
         .filter(|o| o.id != attacker.id && o.id != victim.id && o.inside.is_none() && dist(o.pos, attacker.pos) < 22.0)
         .map(|o| first_name(o).to_owned())
@@ -1052,32 +1069,32 @@ mod tests {
         let mut state = world();
         let home = state.characters["c3"].home_id.clone();
         let other = state.characters.values().find(|c| c.home_id != home).unwrap().id.clone();
-        assert!(!prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500)).contains("rebuild"));
+        assert!(!prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500, None)).contains("rebuild"));
 
         let house = |phase, built| House { phase, fire: 40.0, built, since_tick: 0, helpers: Vec::new() };
         state.houses.insert(home.clone(), house(HousePhase::Burning, 0.0));
-        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500));
+        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500, None));
         assert!(text.contains("is on fire! Everyone is carrying water to put it out."), "{text}");
         assert!(text.contains("Your home, "));
         assert!(!text.contains("rebuild ("));
 
         state.houses.insert(home.clone(), house(HousePhase::Ruined, fire::REBUILD_WORK * 0.35));
-        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500));
+        let text = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500, None));
         assert!(text.contains("burned to the ground: you sleep rough by the campfire"), "{text}");
         assert!(text.contains("The village is rebuilding it (35% done)."), "{text}");
         assert!(text.contains("; rebuild (help rebuild the house that burned down)."), "{text}");
-        let text = prompt_text(&decide_prompt(&state, &state.characters[&other], 1500));
+        let text = prompt_text(&decide_prompt(&state, &state.characters[&other], 1500, None));
         assert!(text.contains(" burned to the ground. The village is rebuilding it (35% done)."), "{text}");
         assert!(!text.contains("Your home, "));
         // A plan for the day is made of the usual activities; the routine sees to the rebuilding.
-        assert!(!prompt_text(&plan_prompt(&state, &state.characters["c3"], 900)).contains("rebuild ("));
+        assert!(!prompt_text(&plan_prompt(&state, &state.characters["c3"], 900, None)).contains("rebuild ("));
     }
 
     #[test]
     fn decide_prompts_name_the_person_place_and_tools() {
         let state = world();
         let c = &state.characters["c3"];
-        let prompt = decide_prompt(&state, c, 1500);
+        let prompt = decide_prompt(&state, c, 1500, None);
         let text = prompt_text(&prompt);
         assert!(text.starts_with("[system]\nYou are the mind of one villager"));
         assert!(text.contains("You are Garrick Stonefist, 36, woodcutter and miner (he/him). You are a barbarian."));
@@ -1094,14 +1111,14 @@ mod tests {
     #[test]
     fn prompts_name_the_powers_the_village_knows_and_how_it_sees_them() {
         let mut state = world();
-        let before = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500));
+        let before = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500, None));
         assert!(!before.contains("Powers that watch the valley:"));
 
         state.powers.insert("Erik".into(), Power { favours: 3, wraths: 0, last_tick: 10 });
         state.powers.insert("Mara".into(), Power { favours: 0, wraths: 2, last_tick: 20 });
         let c = &state.characters["c3"];
         let line = "Powers that watch the valley: Mara (cruel), Erik (generous).";
-        assert!(prompt_text(&decide_prompt(&state, c, 1500)).contains(line));
+        assert!(prompt_text(&decide_prompt(&state, c, 1500, None)).contains(line));
         assert!(prompt_text(&react_prompt(&state, c)).contains(line));
     }
 
@@ -1109,8 +1126,8 @@ mod tests {
     fn small_budgets_drop_the_least_important_sections() {
         let state = world();
         let c = &state.characters["c1"];
-        let wide = prompt_text(&decide_prompt(&state, c, 4000));
-        let narrow = prompt_text(&decide_prompt(&state, c, 300));
+        let wide = prompt_text(&decide_prompt(&state, c, 4000, None));
+        let narrow = prompt_text(&decide_prompt(&state, c, 300, None));
         assert!(narrow.len() < wide.len());
         assert!(narrow.contains("Decide what you do next."));
     }
@@ -1119,10 +1136,10 @@ mod tests {
     fn a_charmer_is_told_she_flirts_and_who_wants_her() {
         let state = world();
         let (mira, aldric) = (&state.characters["c8"], &state.characters["c1"]);
-        let text = prompt_text(&decide_prompt(&state, mira, 4000));
+        let text = prompt_text(&decide_prompt(&state, mira, 4000, None));
         assert!(text.contains("You are a shameless flirt"), "{text}");
         assert!(text.contains("Drawn to you: Theron"), "{text}");
-        let plain = prompt_text(&decide_prompt(&state, aldric, 4000));
+        let plain = prompt_text(&decide_prompt(&state, aldric, 4000, None));
         assert!(!plain.contains("shameless flirt") && !plain.contains("Drawn to you"), "{plain}");
         assert_eq!(
             tone_words(TalkTone::Romantic, mira, aldric),
@@ -1135,7 +1152,7 @@ mod tests {
     fn every_prompt_builds() {
         let state = world();
         let (a, b) = (&state.characters["c1"], &state.characters["c2"]);
-        assert_eq!(plan_prompt(&state, a, 900).tools[0].name, "set_plan");
+        assert_eq!(plan_prompt(&state, a, 900, None).tools[0].name, "set_plan");
         assert_eq!(react_prompt(&state, a).tools.len(), 2);
         assert_eq!(mercy_prompt(&state, a, b).tools[1].name, "finish");
         assert_eq!(reflect_prompt(&state, a, 900).tools[0].name, "reflection");
@@ -1185,9 +1202,9 @@ mod tests {
         assert!(with_brenna.contains("Torvald does not trust Brenna enough to talk freely"), "{with_brenna}");
         assert!(!with_brenna.contains("Brenna trusts") && !with_brenna.contains("Brenna does not trust"));
 
-        let reply = prompt_text(&reply_prompt(&state, &talk(brenna, torvald), &[], torvald, brenna, 1500));
+        let reply = prompt_text(&reply_prompt(&state, &talk(brenna, torvald), &[], torvald, brenna, 1500, None));
         assert!(reply.contains("You do not trust Brenna enough yet: the words stick"), "{reply}");
-        let reply = prompt_text(&reply_prompt(&state, &talk(torvald, brenna), &[], brenna, torvald, 1500));
+        let reply = prompt_text(&reply_prompt(&state, &talk(torvald, brenna), &[], brenna, torvald, 1500, None));
         assert!(!reply.contains("trust Torvald enough"));
     }
 }

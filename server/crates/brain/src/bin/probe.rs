@@ -47,7 +47,7 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
                 urgency: 0,
             }];
             let snapshot = Arc::new(state.clone());
-            let prompt = decide_prompt(state, &state.characters[&id], MAX_TOKENS);
+            let prompt = decide_prompt(state, &state.characters[&id], MAX_TOKENS, None);
             ProbeCase {
                 kind: "decide".into(),
                 request: request(prompt),
@@ -65,7 +65,7 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
         }
         2 => ProbeCase {
             kind: "plan_day".into(),
-            request: request(plan_prompt(state, &state.characters[&id], MAX_TOKENS)),
+            request: request(plan_prompt(state, &state.characters[&id], MAX_TOKENS, None)),
             usable: Box::new(|calls| interpret_plan(calls).is_none().then(|| "plan could not be read".into())),
         },
         3 => {

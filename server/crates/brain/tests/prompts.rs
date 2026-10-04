@@ -55,8 +55,8 @@ fn convo(state: &SimState, a: &str, b: &str) -> Conversation {
 fn build(state: &SimState, case: &Case) -> Prompt {
     let c = |i: usize| &state.characters[&case.ids[i]];
     match case.kind.as_str() {
-        "decide" => decide_prompt(state, c(0), case.budget),
-        "plan" => plan_prompt(state, c(0), case.budget),
+        "decide" => decide_prompt(state, c(0), case.budget, None),
+        "plan" => plan_prompt(state, c(0), case.budget, None),
         "react" => react_prompt(state, c(0)),
         "reflect" => reflect_prompt(state, c(0), case.budget),
         "mercy" => mercy_prompt(state, c(0), c(1)),
@@ -65,7 +65,7 @@ fn build(state: &SimState, case: &Case) -> Prompt {
         }
         "reply" => {
             let convo = convo(state, &case.ids[1], &case.ids[0]);
-            reply_prompt(state, &convo, &convo.lines, c(0), c(1), case.budget)
+            reply_prompt(state, &convo, &convo.lines, c(0), c(1), case.budget, None)
         }
         other => panic!("unknown prompt kind {other}"),
     }
