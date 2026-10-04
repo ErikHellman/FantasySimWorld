@@ -36,6 +36,9 @@ const INDEX_EVERY: Duration = Duration::from_secs(5);
 const INDEX_BATCHES: usize = 4;
 /// How often kept vectors are marked as in use and the cache is trimmed to the memories of the living.
 const TOUCH_EVERY: Duration = Duration::from_secs(3600);
+/// How long after start the first touch runs. A server restarted more often than hourly would otherwise never
+/// refresh `used_ms`, and vectors still in use would be swept as unused after a week.
+const FIRST_TOUCH: Duration = Duration::from_secs(60);
 
 struct Link {
     world: Arc<World>,
@@ -250,12 +253,21 @@ pub fn spawn_indexer(
     tokio::spawn(async move {
         let mut every = tokio::time::interval(INDEX_EVERY);
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut touching = tokio::time::interval_at(tokio::time::Instant::now() + TOUCH_EVERY, TOUCH_EVERY);
+        let mut touching = tokio::time::interval_at(tokio::time::Instant::now() + FIRST_TOUCH, TOUCH_EVERY);
+        // A pass is raced against shutdown because a hung endpoint can hold it for the embed timeout, and the
+        // store must still be closed in time. A pass dropped here only loses vectors not yet stored; they are
+        // embedded again at the next start.
         loop {
             tokio::select! {
                 () = shutdown.cancelled() => break,
-                _ = every.tick() => { index_once(&index, &world, &store).await; }
-                _ = touching.tick() => touch(&index, &world, &store).await,
+                _ = every.tick() => tokio::select! {
+                    () = shutdown.cancelled() => break,
+                    _ = index_once(&index, &world, &store) => {}
+                },
+                _ = touching.tick() => tokio::select! {
+                    () = shutdown.cancelled() => break,
+                    () = touch(&index, &world, &store) => {}
+                },
             }
         }
     })
@@ -314,24 +326,26 @@ mod tests {
     use super::*;
     use crate::store::testing;
 
+    fn remember_bonfire(world: &World) {
+        let mut core = world.core.write();
+        let c = core.sim.state.characters.values_mut().next().unwrap();
+        let memory = Memory {
+            tick: 0,
+            day: 0,
+            text: "Watched the bonfire on the green.".into(),
+            importance: 4,
+            kind: MemoryKind::Event,
+            subjects: vec![],
+        };
+        c.memories.push(memory);
+    }
+
     #[tokio::test]
     async fn indexes_the_memories_of_the_living_once_and_keeps_them() {
         let (store, _dir) = testing::store().await;
         let shutdown = CancellationToken::new();
         let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
-        {
-            let mut core = world.core.write();
-            let c = core.sim.state.characters.values_mut().next().unwrap();
-            let memory = Memory {
-                tick: 0,
-                day: 0,
-                text: "Watched the bonfire on the green.".into(),
-                importance: 4,
-                kind: MemoryKind::Event,
-                subjects: vec![],
-            };
-            c.memories.push(memory);
-        }
+        remember_bonfire(&world);
         let endpoint = FakeTransport::new(|request: HttpRequest| {
             let count = request.json()["input"].as_array().map_or(0, Vec::len);
             let data: Vec<_> = (0..count).map(|i| json!({ "index": i, "embedding": [1.0, i as f64 + 1.0] })).collect();
@@ -357,6 +371,30 @@ mod tests {
         let usage = store.usage(today, today).await.unwrap();
         assert!(usage.iter().any(|row| row.kind == EMBED_USAGE && row.requests == requests as u64));
         assert_eq!(store.usage_today().await.unwrap().requests_24h, 0, "embeddings do not count against the model");
+
+        shutdown.cancel();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn a_failing_endpoint_stores_nothing_and_counts_one_failure() {
+        let (store, _dir) = testing::store().await;
+        let shutdown = CancellationToken::new();
+        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        remember_bonfire(&world);
+        let endpoint = FakeTransport::new(|_: HttpRequest| async { Ok(HttpResponse::json(500, &json!({}))) });
+        let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
+        let index = MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint.clone()));
+
+        assert_eq!(index_once(&index, &world, &store).await, 0);
+        assert_eq!(endpoint.requests().len(), 1, "a failed request ends the pass");
+        assert!(store.load_vectors("e1").await.unwrap().is_empty());
+        assert_eq!(index.cache().len(), 0);
+
+        let today = utc_day(now_ms());
+        let usage = store.usage(today, today).await.unwrap();
+        let row = usage.iter().find(|row| row.kind == EMBED_USAGE).expect("a usage row for the failure");
+        assert_eq!((row.requests, row.failures), (0, 1));
 
         shutdown.cancel();
         let _ = task.await;
