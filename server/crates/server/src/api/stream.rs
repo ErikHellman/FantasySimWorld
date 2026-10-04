@@ -80,6 +80,7 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         llm: world.llm.lock().clone(),
         voices: core.voices.iter().cloned().collect(),
         billboards: core.tracker.billboards(),
+        houses: core.tracker.houses(),
     }
 }
 

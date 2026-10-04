@@ -18,6 +18,7 @@ use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
+use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
@@ -59,6 +60,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Flee | IntentAction::Wait { .. } | IntentAction::Nap { .. } => true,
         // Murder is the sim's own doing, never a decision handed in from outside.
         IntentAction::Stalk { .. } => false,
+        // Nor is the bucket chain: the fire itself calls people to it.
+        IntentAction::FightFire { .. } => false,
     }
 }
 
@@ -74,6 +77,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
+    // Nobody talks their way out of the bucket chain; only a fight or flight comes before a burning house.
+    if fighting_fire(ctx.cr(id)) && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
+        return;
+    }
     let thought = first.thought.clone().filter(|t| !t.is_empty());
     match &first.action {
         IntentAction::Fight { target_id, mode } => {
@@ -294,6 +301,7 @@ impl Sim {
         update_intents(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
+        update_fire(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

@@ -11,12 +11,13 @@ use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
-    Act, ActPhase, Character, ChronicleKind, Intent, IntentAction, IntentSource, ItemId, MemoryKind, MonsterPhase,
-    Quirk, StimulusKind, TalkTone,
+    Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, MemoryKind,
+    MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
+use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
@@ -27,6 +28,8 @@ const TALK_REACH: f64 = 9.0;
 /// Close enough to strike from behind.
 const STRIKE_REACH: f64 = 1.8;
 const GIVE_REACH: f64 = 2.3;
+/// Energy a game minute of sleep on the bare ground gives less than a bed does.
+const ROUGH_SLEEP_PENALTY: f64 = 0.1;
 const STROLL_STOPS: [&str; 8] =
     ["green", "tavern", "market", "smithy", "chapel", "training_yard", "docks", "west_road"];
 
@@ -78,7 +81,7 @@ fn release_slot(ctx: &mut Ctx, id: &str) {
     }
 }
 
-fn finish(ctx: &mut Ctx, id: &str, outcome: impl Into<String>) {
+pub(crate) fn finish(ctx: &mut Ctx, id: &str, outcome: impl Into<String>) {
     release_slot(ctx, id);
     let c = ctx.c(id);
     c.tool = None;
@@ -87,7 +90,7 @@ fn finish(ctx: &mut Ctx, id: &str, outcome: impl Into<String>) {
 }
 
 /// Sets a route; false when there is none.
-fn travel_to(tick: i64, c: &mut Character, dest: Vec2) -> bool {
+pub(crate) fn travel_to(tick: i64, c: &mut Character, dest: Vec2) -> bool {
     leave_building(c);
     let Some(route) = route_to(c.pos, dest) else { return false };
     c.act.path = route;
@@ -98,7 +101,7 @@ fn travel_to(tick: i64, c: &mut Character, dest: Vec2) -> bool {
 }
 
 /// Walks the current route; true on arrival.
-fn travel(tick: i64, c: &mut Character, speed: Option<f64>) -> bool {
+pub(crate) fn travel(tick: i64, c: &mut Character, speed: Option<f64>) -> bool {
     if c.act.path.is_empty() {
         return true;
     }
@@ -204,9 +207,32 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
                 c.asleep = true;
                 return;
             }
-            let door = get_place(&c.home_id).door;
-            if !travel_to(tick, c, door) {
-                finish(ctx, id, "You could not find a way home.");
+            // Those whose home is burning or in ruins sleep on the ground by the campfire.
+            let usable = home_usable(ctx.state, ctx.cr(id));
+            let c = ctx.c(id);
+            let bed = if usable { get_place(&c.home_id).door } else { rough_spot(c) };
+            if !travel_to(tick, c, bed) {
+                finish(ctx, id, if usable { "You could not find a way home." } else { "You found nowhere to sleep." });
+            }
+            return;
+        }
+        if activity_id == ActivityId::Rebuild {
+            let ruined = |state: &SimState, place: &str| {
+                state.houses.get(place).is_some_and(|house| house.phase == HousePhase::Ruined)
+            };
+            let ruin =
+                place_id.filter(|place| ruined(ctx.state, place)).or_else(|| fire::ruin(ctx.state).map(str::to_owned));
+            let Some(ruin) = ruin else {
+                finish(ctx, id, "There was nothing to rebuild.");
+                return;
+            };
+            let spot = fire::build_spot(get_place(&ruin), id);
+            let c = ctx.c(id);
+            if let Some(Intent { action: IntentAction::Activity { place_id, .. }, .. }) = &mut c.intent {
+                *place_id = Some(ruin);
+            }
+            if !travel_to(tick, c, spot) {
+                finish(ctx, id, "You could not get to the ruin.");
             }
             return;
         }
@@ -238,13 +264,30 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             return;
         }
         if activity_id == ActivityId::Sleep {
+            let usable = home_usable(ctx.state, ctx.cr(id));
             let c = ctx.c(id);
-            c.inside = Some(c.home_id.clone());
+            if usable {
+                c.inside = Some(c.home_id.clone());
+            } else {
+                set_anim(c, AnimId::LieDown, true);
+            }
             c.asleep = true;
             c.act.phase = ActPhase::Perform;
             c.act.since_tick = tick;
             c.act.until_tick = tick + minutes_to_ticks(minutes);
             ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Sleep });
+            return;
+        }
+        if activity_id == ActivityId::Rebuild {
+            let c = ctx.c(id);
+            if let Some(place) = place_id.as_deref().and_then(find_place) {
+                c.facing = facing_to(c.pos, place.origin);
+            }
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + minutes_to_ticks(minutes);
+            c.tool = def.tool.map(str::to_owned);
+            set_anim(c, def.anim, true);
             return;
         }
         if activity_id == ActivityId::Stroll {
@@ -310,6 +353,30 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         activity_minute(c, activity_id, elapsed / TICKS_PER_GAME_MINUTE);
     }
 
+    if activity_id == ActivityId::Rebuild && elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
+        let place = place_id.unwrap_or_default();
+        if fire::add_work(ctx, id, &place) {
+            set_anim(ctx.c(id), AnimId::Idle, false);
+            finish(ctx, id, "The house stands again.");
+            return;
+        }
+    }
+    let c = ctx.c(id);
+    // Asleep on the ground with no home to go to: a poorer night, and anything may wake you.
+    if activity_id == ActivityId::Sleep && c.inside.is_none() {
+        if !c.asleep {
+            set_anim(c, AnimId::Idle, false);
+            finish(ctx, id, "You were woken where you lay.");
+            return;
+        }
+        if c.anim == AnimId::LieDown && elapsed >= seconds_to_ticks(AnimId::LieDown.seconds()) {
+            set_anim(c, AnimId::Lie, false);
+        }
+        if elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
+            c.needs.energy = (c.needs.energy - ROUGH_SLEEP_PENALTY).max(0.0);
+        }
+    }
+
     if activity_id == ActivityId::Train {
         let weapon = &c.class_id.def().weapon;
         let every = seconds_to_ticks(weapon.interval + 1.2);
@@ -332,11 +399,23 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
 
     match activity_id {
         ActivityId::Sleep => {
+            let rough = c.inside.is_none();
             leave_building(c);
             set_anim(c, AnimId::Idle, false);
-            ctx.stimulate(id, StimulusKind::Woke, "You have just woken up.", 0, None);
+            if rough {
+                let text = "You have woken cold and stiff on the ground by the campfire: you have no home to sleep in.";
+                ctx.stimulate(id, StimulusKind::Woke, text, 1, None);
+                let text = "Slept on the ground by the campfire, with no home to go to.";
+                ctx.remember(id, text, 4.0, MemoryKind::Event, Vec::new());
+            } else {
+                ctx.stimulate(id, StimulusKind::Woke, "You have just woken up.", 0, None);
+            }
             ctx.emit(SimEvent::Woke { id: id.into() });
-            finish(ctx, id, "You slept and feel rested.");
+            finish(
+                ctx,
+                id,
+                if rough { "You slept rough and feel only half rested." } else { "You slept and feel rested." },
+            );
         }
         ActivityId::ReadBoard => {
             let reader = ctx.cr(id);
@@ -610,7 +689,8 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
 fn run_flee(ctx: &mut Ctx, id: &str) {
     let tick = ctx.tick();
     let c = ctx.cr(id);
-    let home = get_place(&c.home_id);
+    // Home, or the tavern for those whose home is burning or gone.
+    let home = shelter_of(ctx.state, c);
     match c.act.phase {
         ActPhase::Start => {
             let c = ctx.c(id);
@@ -626,17 +706,19 @@ fn run_flee(ctx: &mut Ctx, id: &str) {
             if !travel(tick, c, Some(RUN_SPEED)) {
                 return;
             }
-            c.inside = Some(c.home_id.clone());
+            c.inside = Some(home.id.clone());
             c.act.phase = ActPhase::Perform;
             c.act.since_tick = tick;
         }
         _ => {
             // Hiding indoors until the danger has passed.
             let waited = tick - c.act.since_tick;
+            // With a house on fire nobody hides for long: out again as soon as the dead have moved off.
+            let (reach, patience) = if fire::burning(ctx.state).is_some() { (20.0, 3.0) } else { (45.0, 12.0) };
             let danger =
-                ctx.state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && dist(m.pos, home.door) < 45.0);
+                ctx.state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && dist(m.pos, home.door) < reach);
             let hunted = living(ctx.state).any(|other| other.intent.as_ref().is_some_and(|i| i.fights(id)));
-            if waited > minutes_to_ticks(12.0) && !danger && !hunted {
+            if waited > minutes_to_ticks(patience) && !danger && !hunted {
                 let c = ctx.c(id);
                 leave_building(c);
                 set_anim(c, AnimId::Idle, false);
@@ -731,6 +813,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::Flee => run_flee(ctx, &id),
             IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
+            IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);
                 if c.act.phase == ActPhase::Start {

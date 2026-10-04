@@ -9,6 +9,7 @@ import { CameraRig } from './camera';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
+import { Houses, isHomeBuilding } from './houses';
 import { Lighting } from './lighting';
 import { Overlay, type LabelState } from './overlay';
 import type { QualitySettings } from './quality';
@@ -39,6 +40,8 @@ export class WorldView {
   private gravesVersion = -1;
   private readonly billboards: Billboards;
   private billboardsVersion = -1;
+  private readonly houses: Houses;
+  private housesVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -59,7 +62,8 @@ export class WorldView {
         x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale, castShadow,
       });
     };
-    for (const model of places.flatMap((entry) => entry.models)) place(model, true);
+    // The homes are left out here: `Houses` keeps each as its own object, because a house can burn down.
+    for (const entry of places) for (const model of entry.models) if (!isHomeBuilding(entry, model)) place(model, true);
     // Grass, flowers and the like are most of the valley's triangles; their shadows are specks nobody would miss.
     // A small machine draws only some of them, the same ones every time.
     let cover = 0;
@@ -68,7 +72,8 @@ export class WorldView {
       else if (cover++ % quality.groundCoverStep === 0) place(model, false);
     }
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
-    this.scene.add(builder.build(), this.billboards.group, this.actorGroup, this.effects.group);
+    this.houses = new Houses(assets, places, this.heightAt, quality);
+    this.scene.add(builder.build(), this.houses.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -111,6 +116,10 @@ export class WorldView {
       this.billboardsVersion = world.billboardsVersion;
       this.billboards.show(world.billboards);
     }
+    if (this.housesVersion !== world.housesVersion) {
+      this.housesVersion = world.housesVersion;
+      this.houses.show(world.houses);
+    }
 
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
@@ -148,6 +157,8 @@ export class WorldView {
   /** Per rendered frame: camera, light, interpolated actors, effects and labels. */
   frame(dt: number, simDt: number, alpha: number, hour: number): void {
     this.rig.update(dt);
+    this.houses.update(dt);
+    this.lighting.setFire(this.houses.light());
     this.lighting.update(hour, this.rig.target, this.rig.distance);
     this.effects.update(simDt);
 

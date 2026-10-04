@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -171,7 +171,11 @@ voices: Array<Utterance>,
 /**
  * what every billboard shows, in map order
  */
-billboards: Array<Billboard>, };
+billboards: Array<Billboard>, 
+/**
+ * the homes that are burning or in ruins; every other home stands whole
+ */
+houses: Array<House>, };
 
 export type WorldReset = { 
 /**
@@ -203,9 +207,9 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, };
 
-export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival";
+export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire";
 
 export type ChronicleEntry = { tick: number, kind: ChronicleKind, text: string, ids: Array<string>, };
 
@@ -234,6 +238,29 @@ export type BillboardRequest = { id: string, text: string | null,
  * defaults to `absurd`
  */
 tone: BillboardTone | null, };
+
+export type HousePhase = "intact" | "burning" | "ruin";
+
+/**
+ * The condition of a home. Where it stands comes from the client's own copy of the map (`src/world`).
+ */
+export type House = { 
+/**
+ * the place id of the home
+ */
+id: string, 
+/**
+ * its name, for the banner
+ */
+name: string, phase: HousePhase, 
+/**
+ * how far the fire has taken hold, 0..100 in steps of 5
+ */
+fire: number, 
+/**
+ * how far a ruin has been rebuilt, in percent
+ */
+built: number, };
 
 export type LlmState = "off" | "ready" | "busy" | "error";
 
@@ -298,7 +325,11 @@ time: string, text: string, current: boolean, };
 /**
  * The inspector, with every label already rendered (the client has no sim helpers).
  */
-export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, home: string, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, home: string, 
+/**
+ * that home has burned down and is not yet rebuilt
+ */
+homeless: boolean, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */

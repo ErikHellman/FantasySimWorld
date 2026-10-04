@@ -13,6 +13,7 @@ use crate::data::monsters::{MONSTERS, MonsterKind};
 use crate::events::{Projectile, SimEvent};
 use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterPhase};
 use crate::systems::combat::{Assailant, damage_character};
+use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
 use crate::util::{Ctx, living, monster_ids, set_anim};
 
@@ -56,6 +57,7 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -
         lasting: false,
         was_id: None,
         until_tick: None,
+        arson: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
     ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
@@ -281,6 +283,11 @@ pub fn update_monsters(ctx: &mut Ctx) {
                     set_anim(monster, AnimId::SkeletonIdle, false);
                 }
             }
+            continue;
+        }
+
+        // With the whole village asleep, a roaming monster goes for a house instead.
+        if arson(ctx, &id, (tick + id_number(&id)) % 10 == 0) {
             continue;
         }
 

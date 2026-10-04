@@ -10,6 +10,7 @@ use crate::state::{
 };
 use crate::systems::combat::{max_hp, start_fight, start_flee};
 use crate::systems::conversation::abort_conversation;
+use crate::systems::fire::burning;
 use crate::systems::intents::leave_building;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{Ctx, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at};
@@ -18,6 +19,7 @@ const SIGHT: f64 = 18.0;
 const WATCH_SIGHT: f64 = 48.0;
 const RESPONDER_BRAVERY: f64 = 0.6;
 const ALARM_RANGE: f64 = 150.0;
+const FIRE_COURAGE: f64 = 0.2;
 
 fn nearest_monster<'m>(monsters: &'m [Monster], c: &Character, limit: f64) -> Option<&'m Monster> {
     let mut best = None;
@@ -33,11 +35,12 @@ fn nearest_monster<'m>(monsters: &'m [Monster], c: &Character, limit: f64) -> Op
 }
 
 /// Stand and fight, or run? Instinct only; an LLM "react" decision may overrule it.
-fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize) -> bool {
+fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_burning: bool) -> bool {
     let hp_left = c.hp / max_hp(c);
     let score = c.profile.bravery * 0.75 + hp_left * 0.35 + allies_near as f64 * 0.08
         - (monsters_near as f64 - 1.0).max(0.0) * 0.07;
-    score > 0.72
+    // With a house on fire there is more to lose by running: people find courage they did not know they had.
+    score + if house_burning { FIRE_COURAGE } else { 0.0 } > 0.72
 }
 
 fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
@@ -100,6 +103,7 @@ pub fn update_perception(ctx: &mut Ctx) {
     let monsters: Vec<Monster> =
         ctx.state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).cloned().collect();
     let alarm = tick < ctx.state.director.alarm_until_tick;
+    let house_burning = burning(ctx.state).is_some();
 
     if monsters.is_empty() {
         if ctx.state.director.alarm_pos.is_some() {
@@ -150,7 +154,7 @@ pub fn update_perception(ctx: &mut Ctx) {
                 .filter(|o| o.id != c.id && o.inside.is_none() && o.intent.as_ref().is_some_and(|i| i.is_fight()))
                 .filter(|o| dist(o.pos, c.pos) < 20.0)
                 .count();
-            if on_watch || stands_ground(c, monsters_near, allies_near) {
+            if on_watch || stands_ground(c, monsters_near, allies_near, house_burning) {
                 start_fight(ctx, id, &seen.id, FightMode::Monster, IntentSource::Reflex, None);
             } else {
                 start_flee(ctx, id, IntentSource::Reflex);
@@ -174,7 +178,8 @@ pub fn update_perception(ctx: &mut Ctx) {
                 ctx.stimulate(id, StimulusKind::Alarm, text, 2, Some(&target.id));
             }
             start_fight(ctx, id, &target.id, FightMode::Monster, IntentSource::Reflex, None);
-        } else if awake_outside && nearest_monster(&monsters, c, 45.0).is_some() {
+        } else if awake_outside && !house_burning && nearest_monster(&monsters, c, 45.0).is_some() {
+            // (With a house on fire the timid keep carrying water until the dead are right upon them.)
             start_flee(ctx, id, IntentSource::Reflex);
         }
     }

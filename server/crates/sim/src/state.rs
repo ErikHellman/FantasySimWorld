@@ -372,6 +372,10 @@ pub enum IntentAction {
     Stalk {
         target_id: Id,
     },
+    /// carries water, bucket by bucket, to a house that is on fire
+    FightFire {
+        place_id: String,
+    },
 }
 
 impl IntentAction {
@@ -386,6 +390,7 @@ impl IntentAction {
             Self::Wait { .. } => "wait",
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
+            Self::FightFire { .. } => "fight_fire",
         }
     }
 
@@ -664,6 +669,40 @@ pub struct Monster {
     /// raised by a viewer: daylight does not touch it, and it crumbles at this tick whatever the hour
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until_tick: Option<i64>,
+    /// the house this monster means to set on fire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arson: Option<Arson>,
+}
+
+/// A monster's plan to burn a house while the village sleeps.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Arson {
+    pub place_id: String,
+    /// when the fire catches; 0 until the monster has reached the door
+    pub light_tick: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HousePhase {
+    Burning,
+    Ruined,
+}
+
+/// A home that is not whole: on fire, or burned down and being rebuilt.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct House {
+    pub phase: HousePhase,
+    /// how far the fire has taken hold, 0..100; at 100 the house is lost
+    pub fire: f64,
+    /// villager-minutes of work put into rebuilding
+    pub built: f64,
+    /// tick the current phase began
+    pub since_tick: i64,
+    /// who carried water (while burning) or worked on it (while in ruins)
+    pub helpers: Vec<Id>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -806,6 +845,7 @@ pub enum ChronicleKind {
     Combat,
     Death,
     Arrival,
+    Fire,
 }
 
 impl ChronicleKind {
@@ -818,6 +858,7 @@ impl ChronicleKind {
             Self::Combat => "combat",
             Self::Death => "death",
             Self::Arrival => "arrival",
+            Self::Fire => "fire",
         }
     }
 }
@@ -845,6 +886,9 @@ pub struct Director {
     /// newcomers arrive while fewer than this many are alive: the founding cast's size
     #[serde(default = "founding_population", skip_serializing_if = "is_founding_population")]
     pub population_target: usize,
+    /// tick the last house fire was lit; the dead leave the houses alone for a while after one
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_fire_tick: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -894,6 +938,9 @@ pub struct SimState {
     /// billboard id -> what an admin (or, later, an advertiser) put up; boards not listed show the day's slogan
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub billboards: IndexMap<String, BoardNotice>,
+    /// home id -> its condition, for homes that are burning or in ruins; a home not listed stands whole
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub houses: IndexMap<String, House>,
     /// name -> what the village has had from that viewer; see [`Power`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub powers: IndexMap<String, Power>,

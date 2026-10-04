@@ -60,6 +60,9 @@ function About({ d }: { d: CharacterDetail }) {
         Carrying: {d.inventory.food} food · {d.inventory.potion} potion{d.inventory.potion === 1 ? '' : 's'} · {d.inventory.gift} gift{d.inventory.gift === 1 ? '' : 's'}
         {d.kills > 0 && ` · ${d.kills} monster${d.kills === 1 ? '' : 's'} destroyed`}
       </p>
+      <p class="muted inventory">
+        {d.homeless ? `Homeless: ${d.home} burned down. Sleeps rough by the campfire until it is rebuilt.` : `Home: ${d.home}`}
+      </p>
     </div>
   );
 }
