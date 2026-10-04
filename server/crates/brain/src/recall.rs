@@ -9,7 +9,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::Instant;
 
-use crate::llm::embed::{BATCH, Embedder};
+use crate::llm::embed::{BATCH, EmbedError, Embedder};
 
 /// The cache key for a text under a model: FNV-1a over the model name, a separator byte
 /// and the text, as a signed number so SQLite can keep it as an integer key.
@@ -96,14 +96,38 @@ impl VectorLookup for VectorCache {
     }
 }
 
+/// Embedding requests to count in the usage table. `requests` counts every request sent, failed ones too,
+/// as the language model's rows do; a refusal that sent nothing is not a request.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct EmbedUsage {
+    pub requests: u64,
+    pub failures: u64,
+    pub tokens: u64,
+}
+
+impl EmbedUsage {
+    /// Whether there is nothing to count.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Adds another count to this one.
+    pub fn add(&mut self, other: EmbedUsage) {
+        self.requests += other.requests;
+        self.failures += other.failures;
+        self.tokens += other.tokens;
+    }
+}
+
 /// What one indexing pass did: the new vectors to keep, and the usage to count.
 #[derive(Debug, Default)]
 pub struct Indexed {
     pub added: Vec<(i64, Arc<[f32]>)>,
-    pub requests: u64,
-    pub failures: u64,
-    pub tokens: u64,
+    pub usage: EmbedUsage,
+    /// Why a request failed, if one did.
     pub error: Option<String>,
+    /// Whether the embedder refused to send (it is resting or over its limit), which ended the pass early.
+    pub refused: bool,
 }
 
 /// How long cues are skipped after one fails or times out. A cue that gives up at its wait never lets
@@ -116,12 +140,14 @@ pub struct MemoryIndex {
     cache: VectorCache,
     /// until when cues are skipped because the last one failed
     cue_resting_until: Mutex<Option<Instant>>,
+    /// the cues' requests since the indexer last took the count; it records them with its own
+    cue_usage: Mutex<EmbedUsage>,
 }
 
 impl MemoryIndex {
     pub fn new(embedder: Embedder) -> Self {
         let cache = VectorCache::new(embedder.model());
-        Self { embedder, cache, cue_resting_until: Mutex::new(None) }
+        Self { embedder, cache, cue_resting_until: Mutex::new(None), cue_usage: Mutex::new(EmbedUsage::default()) }
     }
 
     pub fn cache(&self) -> &VectorCache {
@@ -140,13 +166,29 @@ impl MemoryIndex {
             return None;
         }
         let embedded = tokio::time::timeout(wait, self.embedder.embed(&[text.to_owned()])).await;
-        let vector = embedded.ok().and_then(Result::ok).and_then(|embedded| embedded.vectors.into_iter().next());
+        // A cue given up at its wait counts as a failed request even if it was still queued behind the indexer's:
+        // from the prompt's side the endpoint did not answer.
+        let (vector, usage) = match embedded {
+            Ok(Ok(embedded)) => {
+                let usage = EmbedUsage { requests: 1, failures: 0, tokens: embedded.tokens };
+                (embedded.vectors.into_iter().next(), usage)
+            }
+            Ok(Err(EmbedError::Refused(_))) => (None, EmbedUsage::default()),
+            Ok(Err(EmbedError::Failed(_))) | Err(_) => (None, EmbedUsage { requests: 1, failures: 1, tokens: 0 }),
+        };
+        self.cue_usage.lock().add(usage);
         *self.cue_resting_until.lock() = if vector.is_some() { None } else { Some(Instant::now() + CUE_REST) };
         vector.map(Arc::from)
     }
 
+    /// The cues' usage since the last call, which the indexer adds to the usage table with its own.
+    pub fn take_cue_usage(&self) -> EmbedUsage {
+        std::mem::take(&mut *self.cue_usage.lock())
+    }
+
     /// Embeds the texts that have no vector yet, [`BATCH`] at a time and at most
-    /// `max_batches` requests, and adds them to the cache. Stops at the first failure.
+    /// `max_batches` requests, and adds them to the cache. Stops at the first failure, and at a
+    /// refusal, which counts as nothing because nothing was sent.
     pub async fn index(&self, texts: &[String], max_batches: usize) -> Indexed {
         let mut seen = HashSet::new();
         let missing: Vec<String> = texts
@@ -161,16 +203,19 @@ impl MemoryIndex {
         for chunk in missing.chunks(BATCH).take(max_batches) {
             match self.embedder.embed(chunk).await {
                 Ok(embedded) => {
-                    indexed.requests += 1;
-                    indexed.tokens += embedded.tokens;
+                    indexed.usage.add(EmbedUsage { requests: 1, failures: 0, tokens: embedded.tokens });
                     for (text, vector) in chunk.iter().zip(embedded.vectors) {
                         let (key, vector) = (self.cache.key(text), Arc::<[f32]>::from(vector));
                         self.cache.insert(key, vector.clone());
                         indexed.added.push((key, vector));
                     }
                 }
-                Err(error) => {
-                    indexed.failures += 1;
+                Err(EmbedError::Refused(_)) => {
+                    indexed.refused = true;
+                    break;
+                }
+                Err(EmbedError::Failed(error)) => {
+                    indexed.usage.add(EmbedUsage { requests: 1, failures: 1, tokens: 0 });
                     indexed.error = Some(error);
                     break;
                 }
@@ -188,7 +233,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{MemoryIndex, Recall, VectorCache, VectorLookup, text_key};
+    use super::{EmbedUsage, MemoryIndex, Recall, VectorCache, VectorLookup, text_key};
     use crate::llm::embed::{BATCH, Embedder};
     use crate::llm::transport::{FakeTransport, HttpRequest, HttpResponse};
     use crate::settings::{ApiKey, EmbedSettings};
@@ -240,7 +285,7 @@ mod tests {
         let index = index(transport.clone());
         let texts: Vec<String> = ["a", "b", "a"].iter().map(|t| (*t).to_owned()).collect();
         let indexed = index.index(&texts, 4).await;
-        assert_eq!((indexed.added.len(), indexed.requests, indexed.tokens), (2, 1, 3));
+        assert_eq!((indexed.added.len(), indexed.usage.requests, indexed.usage.tokens), (2, 1, 3));
         assert!(index.cache().vector("a").is_some() && index.cache().vector("b").is_some());
         let again = index.index(&texts, 4).await;
         assert!(again.added.is_empty());
@@ -255,9 +300,48 @@ mod tests {
 
         let failing = self::index(endpoint(true));
         let indexed = failing.index(&many, 2).await;
-        assert!(indexed.added.is_empty() && indexed.error.is_some());
-        assert_eq!((indexed.requests, indexed.failures), (0, 1));
+        assert!(indexed.added.is_empty() && indexed.error.is_some() && !indexed.refused);
+        assert_eq!((indexed.usage.requests, indexed.usage.failures), (1, 1));
         assert!(failing.cache().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_pass_the_resting_embedder_refuses_counts_nothing_and_sends_nothing() {
+        let failing = endpoint(true);
+        let index = index(failing.clone());
+        let texts = vec!["smoke".to_owned()];
+        // Four failures in a row put the embedder to rest.
+        for _ in 0..4 {
+            assert_eq!(index.index(&texts, 4).await.usage.failures, 1);
+        }
+        let refused = index.index(&texts, 4).await;
+        assert!(refused.refused && refused.error.is_none());
+        assert_eq!(refused.usage, EmbedUsage::default());
+        assert_eq!(failing.requests().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn cues_count_their_requests_until_the_count_is_taken() {
+        let index = index(endpoint(false));
+        let wait = Duration::from_secs(2);
+        index.cue("smoke", wait).await.unwrap();
+        index.cue("fire", wait).await.unwrap();
+        assert_eq!(index.take_cue_usage(), EmbedUsage { requests: 2, failures: 0, tokens: 6 });
+        assert_eq!(index.take_cue_usage(), EmbedUsage::default());
+
+        let failing = self::index(endpoint(true));
+        assert_eq!(failing.cue("smoke", wait).await, None);
+        // The next cue rests and sends nothing, so it is not a request.
+        assert_eq!(failing.cue("smoke", wait).await, None);
+        assert_eq!(failing.take_cue_usage(), EmbedUsage { requests: 1, failures: 1, tokens: 0 });
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cue_that_times_out_counts_as_a_failed_request() {
+        let hung = FakeTransport::new(|_| std::future::pending::<Result<HttpResponse, String>>());
+        let index = self::index(hung);
+        assert_eq!(index.cue("smoke", Duration::from_secs(2)).await, None);
+        assert_eq!(index.take_cue_usage(), EmbedUsage { requests: 1, failures: 1, tokens: 0 });
     }
 
     #[tokio::test]

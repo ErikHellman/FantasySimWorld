@@ -24,9 +24,31 @@ const REST: Duration = Duration::from_secs(60);
 /// Vectors in the order of the texts, each scaled to unit length.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Embedded {
+    /// One unit vector per text, in the order the texts were given.
     pub vectors: Vec<Vec<f32>>,
+    /// The tokens the endpoint says the request used, or 0 when it does not say.
     pub tokens: u64,
 }
+
+/// Why [`Embedder::embed`] gave no vectors. A refusal sent nothing, so callers can tell a
+/// resting embedder from a failing endpoint and count only the requests that were made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedError {
+    /// Nothing was sent: the embedder is resting after repeated failures, or over its per-minute limit.
+    Refused(String),
+    /// The request failed, or could not be made at all.
+    Failed(String),
+}
+
+impl std::fmt::Display for EmbedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(message) | Self::Failed(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for EmbedError {}
 
 #[derive(Default)]
 struct Gate {
@@ -35,6 +57,7 @@ struct Gate {
     resting_until: Option<Instant>,
 }
 
+/// The client for the embedding endpoint, shared by cues and the indexer.
 pub struct Embedder {
     settings: EmbedSettings,
     key: ApiKey,
@@ -44,37 +67,40 @@ pub struct Embedder {
 }
 
 impl Embedder {
+    /// An embedder for these settings. The key comes apart from them, so the settings can be shown and logged
+    /// without it.
     pub fn new(settings: EmbedSettings, key: ApiKey, transport: Arc<dyn LlmTransport>) -> Self {
         Self { settings, key, transport, gate: tokio::sync::Mutex::new(Gate::default()) }
     }
 
+    /// The embedding model's name, which the cached vectors are keyed by.
     pub fn model(&self) -> &str {
         &self.settings.model
     }
 
     /// Embeds up to [`BATCH`] texts in one request.
-    pub async fn embed(&self, texts: &[String]) -> Result<Embedded, String> {
+    pub async fn embed(&self, texts: &[String]) -> Result<Embedded, EmbedError> {
         if texts.is_empty() {
             return Ok(Embedded { vectors: Vec::new(), tokens: 0 });
         }
         if texts.len() > BATCH {
-            return Err(format!("at most {BATCH} texts per request"));
+            return Err(EmbedError::Failed(format!("at most {BATCH} texts per request")));
         }
         let mut gate = self.gate.lock().await;
         let now = Instant::now();
         if gate.resting_until.is_some_and(|until| now < until) {
-            return Err("the embedding endpoint failed repeatedly and is resting".into());
+            return Err(EmbedError::Refused("the embedding endpoint failed repeatedly and is resting".into()));
         }
         while gate.sent.front().is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(60)) {
             gate.sent.pop_front();
         }
         if gate.sent.len() >= PER_MINUTE {
-            return Err("over the embedding requests allowed per minute".into());
+            return Err(EmbedError::Refused("over the embedding requests allowed per minute".into()));
         }
         gate.sent.push_back(now);
         let result = match tokio::time::timeout(TIMEOUT, self.send(texts)).await {
-            Ok(result) => result,
-            Err(_) => Err(format!("no answer within {} s", TIMEOUT.as_secs())),
+            Ok(result) => result.map_err(|error| EmbedError::Failed(self.redact(&error))),
+            Err(_) => Err(EmbedError::Failed(format!("no answer within {} s", TIMEOUT.as_secs()))),
         };
         if result.is_ok() {
             gate.failures = 0;
@@ -101,10 +127,17 @@ impl Embedder {
         };
         let response = self.transport.send(request).await?;
         if !response.ok() {
-            let body: String = response.body.chars().take(200).collect();
+            // Masked before it is cut short, so a key split by the cut cannot slip through in part.
+            let body: String = self.redact(&response.body).chars().take(200).collect();
             return Err(format!("HTTP {}: {body}", response.status));
         }
         parse(&response.body, texts.len())
+    }
+
+    /// Masks the key in text from the endpoint, which may echo what it was sent, so the key reaches no log and
+    /// no admin's test message.
+    fn redact(&self, text: &str) -> String {
+        if self.key.is_empty() { text.to_owned() } else { text.replace(self.key.expose(), "***") }
     }
 }
 
@@ -158,7 +191,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::llm::transport::FakeTransport;
+    use crate::llm::transport::{FakeTransport, HttpRequest, HttpResponse};
 
     fn embedder(transport: Arc<FakeTransport>) -> Embedder {
         let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "nomic".into() };
@@ -207,7 +240,20 @@ mod tests {
     async fn reports_an_error_status_with_its_body() {
         let transport = FakeTransport::always(404, json!({ "error": "no such model" }));
         let error = embedder(transport).embed(&texts(&["fire"])).await.unwrap_err();
+        assert!(matches!(error, EmbedError::Failed(_)), "{error:?}");
+        let error = error.to_string();
         assert!(error.contains("404") && error.contains("no such model"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn never_puts_the_key_in_an_error() {
+        let echo = FakeTransport::new(|request: HttpRequest| {
+            let said = request.header("Authorization").unwrap_or_default().to_owned();
+            async move { Ok(HttpResponse::json(401, &json!({ "error": format!("bad token: {said}") }))) }
+        });
+        let error = embedder(echo).embed(&texts(&["fire"])).await.unwrap_err().to_string();
+        assert!(!error.contains("sk-e"), "{error}");
+        assert!(error.contains("401") && error.contains("***"), "{error}");
     }
 
     #[tokio::test(start_paused = true)]
@@ -215,13 +261,25 @@ mod tests {
         let transport = FakeTransport::always(500, json!({}));
         let embedder = embedder(transport.clone());
         for _ in 0..4 {
-            assert!(embedder.embed(&texts(&["x"])).await.is_err());
+            assert!(matches!(embedder.embed(&texts(&["x"])).await, Err(EmbedError::Failed(_))));
         }
-        assert!(embedder.embed(&texts(&["x"])).await.unwrap_err().contains("resting"));
+        let resting = embedder.embed(&texts(&["x"])).await.unwrap_err();
+        assert!(matches!(&resting, EmbedError::Refused(why) if why.contains("resting")), "{resting:?}");
         assert_eq!(transport.requests().len(), 4);
         tokio::time::advance(Duration::from_secs(61)).await;
-        assert!(!embedder.embed(&texts(&["x"])).await.unwrap_err().contains("resting"));
+        assert!(matches!(embedder.embed(&texts(&["x"])).await, Err(EmbedError::Failed(_))));
         assert_eq!(transport.requests().len(), 5);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn refuses_without_sending_over_the_per_minute_limit() {
+        let transport = FakeTransport::always(200, json!({ "data": [{ "index": 0, "embedding": [1.0] }] }));
+        let embedder = embedder(transport.clone());
+        for _ in 0..PER_MINUTE {
+            assert!(embedder.embed(&texts(&["x"])).await.is_ok());
+        }
+        assert!(matches!(embedder.embed(&texts(&["x"])).await, Err(EmbedError::Refused(_))));
+        assert_eq!(transport.requests().len(), PER_MINUTE);
     }
 
     #[tokio::test]

@@ -215,19 +215,29 @@ fn memory_texts(world: &World) -> Vec<String> {
     living(&core.sim.state).flat_map(|c| c.memories.iter().map(|m| m.text.clone())).collect()
 }
 
-/// One indexer pass: embeds what has no vector yet, keeps it and counts the usage. Returns how many were added.
-pub async fn index_once(index: &MemoryIndex, world: &World, store: &Store) -> usize {
+/// One indexer pass: embeds what has no vector yet, keeps it and counts the usage, the cues' since the last pass
+/// included. Returns how many were added. `failing` is whether the last request the indexer made failed; the
+/// pass logs only when that changes, so an endpoint that stays down is reported once, not every few seconds.
+pub async fn index_once(index: &MemoryIndex, world: &World, store: &Store, failing: &mut bool) -> usize {
     let texts = memory_texts(world);
     let indexed = index.index(&texts, INDEX_BATCHES).await;
     if let Some(error) = &indexed.error {
-        tracing::warn!(%error, "embedding memories failed; recall falls back to shared words meanwhile");
+        if !*failing {
+            tracing::warn!(%error, "embedding memories failed; recall falls back to shared words meanwhile");
+        }
+        *failing = true;
+    } else if *failing && indexed.usage.requests > 0 {
+        tracing::info!("embedding memories works again");
+        *failing = false;
     }
     let added = indexed.added.len();
     if let Err(error) = store.put_vectors(index.cache().model(), indexed.added).await {
         tracing::error!(%error, "cannot keep memory vectors");
     }
-    if indexed.requests + indexed.failures > 0
-        && let Err(error) = store.add_usage(EMBED_USAGE, indexed.requests, indexed.failures, indexed.tokens).await
+    let mut usage = indexed.usage;
+    usage.add(index.take_cue_usage());
+    if !usage.is_empty()
+        && let Err(error) = store.add_usage(EMBED_USAGE, usage.requests, usage.failures, usage.tokens).await
     {
         tracing::error!(%error, "cannot count embedding usage");
     }
@@ -254,6 +264,7 @@ pub fn spawn_indexer(
         let mut every = tokio::time::interval(INDEX_EVERY);
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut touching = tokio::time::interval_at(tokio::time::Instant::now() + FIRST_TOUCH, TOUCH_EVERY);
+        let mut failing = false;
         // A pass is raced against shutdown because a hung endpoint can hold it for the embed timeout, and the
         // store must still be closed in time. A pass dropped here only loses vectors not yet stored; they are
         // embedded again at the next start.
@@ -262,7 +273,7 @@ pub fn spawn_indexer(
                 () = shutdown.cancelled() => break,
                 _ = every.tick() => tokio::select! {
                     () = shutdown.cancelled() => break,
-                    _ = index_once(&index, &world, &store) => {}
+                    _ = index_once(&index, &world, &store, &mut failing) => {}
                 },
                 _ = touching.tick() => tokio::select! {
                     () = shutdown.cancelled() => break,
@@ -355,14 +366,14 @@ mod tests {
         let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
         let index = MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint.clone()));
 
-        let mut passes = 0;
-        while index_once(&index, &world, &store).await > 0 {
+        let (mut passes, mut failing) = (0, false);
+        while index_once(&index, &world, &store, &mut failing).await > 0 {
             passes += 1;
             assert!(passes < 100, "the index never fills");
         }
         let requests = endpoint.requests().len();
         assert!(requests > 0);
-        assert_eq!(index_once(&index, &world, &store).await, 0);
+        assert_eq!(index_once(&index, &world, &store, &mut failing).await, 0);
         assert_eq!(endpoint.requests().len(), requests, "nothing is embedded twice");
         assert!(index.cache().vector("Watched the bonfire on the green.").is_some());
         assert_eq!(store.load_vectors("e1").await.unwrap().len(), index.cache().len());
@@ -382,19 +393,83 @@ mod tests {
         let shutdown = CancellationToken::new();
         let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
         remember_bonfire(&world);
-        let endpoint = FakeTransport::new(|_: HttpRequest| async { Ok(HttpResponse::json(500, &json!({}))) });
-        let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
-        let index = MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint.clone()));
+        let (endpoint, index) = failing_index();
 
-        assert_eq!(index_once(&index, &world, &store).await, 0);
+        let mut failing = false;
+        assert_eq!(index_once(&index, &world, &store, &mut failing).await, 0);
+        assert!(failing);
         assert_eq!(endpoint.requests().len(), 1, "a failed request ends the pass");
         assert!(store.load_vectors("e1").await.unwrap().is_empty());
         assert_eq!(index.cache().len(), 0);
+        let row = embed_usage(&store).await.expect("a usage row for the failure");
+        assert_eq!((row.requests, row.failures), (1, 1));
 
+        shutdown.cancel();
+        let _ = task.await;
+    }
+
+    fn failing_index() -> (Arc<FakeTransport>, MemoryIndex) {
+        let endpoint = FakeTransport::new(|_: HttpRequest| async { Ok(HttpResponse::json(500, &json!({}))) });
+        let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
+        (endpoint.clone(), MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint)))
+    }
+
+    async fn embed_usage(store: &Store) -> Option<crate::store::UsageRow> {
         let today = utc_day(now_ms());
-        let usage = store.usage(today, today).await.unwrap();
-        let row = usage.iter().find(|row| row.kind == EMBED_USAGE).expect("a usage row for the failure");
-        assert_eq!((row.requests, row.failures), (0, 1));
+        store.usage(today, today).await.unwrap().into_iter().find(|row| row.kind == EMBED_USAGE)
+    }
+
+    #[tokio::test]
+    async fn passes_while_the_embedder_rests_count_no_more_failures() {
+        let (store, _dir) = testing::store().await;
+        let shutdown = CancellationToken::new();
+        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        remember_bonfire(&world);
+        let (endpoint, index) = failing_index();
+
+        // Four failures in a row put the embedder to rest; the passes after that send nothing.
+        let mut failing = false;
+        for _ in 0..7 {
+            assert_eq!(index_once(&index, &world, &store, &mut failing).await, 0);
+        }
+        assert!(failing);
+        assert_eq!(endpoint.requests().len(), 4);
+        let row = embed_usage(&store).await.expect("a usage row for the failures");
+        assert_eq!((row.requests, row.failures), (4, 4));
+
+        shutdown.cancel();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn counts_the_cues_with_the_indexers_own_requests() {
+        let (store, _dir) = testing::store().await;
+        let shutdown = CancellationToken::new();
+        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        remember_bonfire(&world);
+        let endpoint = FakeTransport::new(|request: HttpRequest| {
+            let count = request.json()["input"].as_array().map_or(0, Vec::len);
+            let data: Vec<_> = (0..count).map(|i| json!({ "index": i, "embedding": [1.0, 0.0] })).collect();
+            let response = HttpResponse::json(200, &json!({ "data": data, "usage": { "total_tokens": 5 } }));
+            async move { Ok(response) }
+        });
+        let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
+        let index = MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint.clone()));
+
+        for cue in ["smoke", "bread", "a wolf"] {
+            assert!(index.cue(cue, Duration::from_secs(2)).await.is_some());
+        }
+        let mut failing = false;
+        index_once(&index, &world, &store, &mut failing).await;
+        let requests = endpoint.requests().len() as u64;
+        assert!(requests > 3, "the pass embedded memories too");
+        let row = embed_usage(&store).await.expect("a usage row");
+        assert_eq!((row.requests, row.failures, row.tokens), (requests, 0, requests * 5));
+
+        // The cues were counted once; the next pass adds only its own.
+        index_once(&index, &world, &store, &mut failing).await;
+        let row = embed_usage(&store).await.unwrap();
+        assert_eq!(row.requests, endpoint.requests().len() as u64);
 
         shutdown.cancel();
         let _ = task.await;
