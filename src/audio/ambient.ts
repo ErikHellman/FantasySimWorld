@@ -1,7 +1,7 @@
 import { isNight } from '../core/time';
-import type { AmbientCounts, WireEvent } from '../generated/api';
+import type { AmbientCounts, House, WireEvent } from '../generated/api';
 import { worldMap } from '../world/map';
-import { getPlace } from '../world/places';
+import { findPlace, getPlace } from '../world/places';
 import type { AudioEngine } from './engine';
 
 interface Listener {
@@ -31,12 +31,22 @@ function placeDistance(id: string, listener: Listener): number {
   return Math.hypot(place.origin.x - listener.x, place.origin.z - listener.z);
 }
 
+/** How loud the nearest burning house crackles: louder the bigger the fire, and heard from further than a campfire. */
+function blaze(houses: readonly House[], listener: Listener): number {
+  let loudest = 0;
+  for (const house of houses) {
+    if (house.phase !== 'burning' || !findPlace(house.id)) continue;
+    loudest = Math.max(loudest, near(placeDistance(house.id, listener), 70) * (0.5 + house.fire / 200));
+  }
+  return loudest;
+}
+
 /**
  * Decides how loud each ambient loop is from where the camera is looking, how
- * far it is zoomed out, the time of day and what the villagers are doing (the
- * server's counts, from `status`).
+ * far it is zoomed out, the time of day, what the villagers are doing (the
+ * server's counts, from `status`) and whether a house is on fire.
  */
-export function ambientLevels(counts: AmbientCounts, hour: number, listener: Listener): Record<string, number> {
+export function ambientLevels(counts: AmbientCounts, hour: number, listener: Listener, houses: readonly House[] = []): Record<string, number> {
   const closeness = Math.max(0.25, Math.min(1, 1.35 - listener.distance / 130));
   const dark = isNight(hour) ? 1 : hour > 19.5 ? (hour - 19.5) / 1.5 : hour < 6.5 ? (6.5 - hour) / 1 : 0;
   const day = 1 - Math.min(1, dark);
@@ -52,7 +62,8 @@ export function ambientLevels(counts: AmbientCounts, hour: number, listener: Lis
     village_day: day * near(placeDistance('green', listener), 70) * Math.min(1, awake / 8) * closeness,
     tavern: near(placeDistance('tavern', listener), 32) * Math.min(1, atTavern / 3) * closeness,
     smithy: near(placeDistance('smithy', listener), 32) * Math.min(1, counts.smithing) * closeness,
-    campfire: near(placeDistance('glade', listener), 26) * closeness * (counts.relaxing > 0 || dark > 0.5 ? 1 : 0.4),
+    // The crackle of the glade's campfire is also the sound of a house burning.
+    campfire: Math.max(near(placeDistance('glade', listener), 26) * closeness * (counts.relaxing > 0 || dark > 0.5 ? 1 : 0.4), blaze(houses, listener)),
   };
 }
 
@@ -70,7 +81,7 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'monster_spawn') {
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
-    } else if (event.type === 'speech' && event.loud && event.text.startsWith('To arms')) {
+    } else if (event.type === 'speech' && event.loud && (event.text.startsWith('To arms') || event.text.startsWith('Fire!'))) {
       engine.play('alarm', 0.9);
     }
   }

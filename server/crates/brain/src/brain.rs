@@ -22,6 +22,7 @@ use fsw_sim::state::{
     StimulusKind,
 };
 use fsw_sim::systems::billboards::{has_read, reading, shown};
+use fsw_sim::systems::fire::fighting_fire;
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
 use fsw_world::places::{billboards, get_place};
 use parking_lot::Mutex;
@@ -251,6 +252,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Wait { .. } => "wait".into(),
         IntentAction::Nap { .. } => "nap".into(),
         IntentAction::Stalk { target_id } => format!("stalk {}", name_of(state, target_id)),
+        IntentAction::FightFire { place_id } => format!("fight the fire at {place_id}"),
     }
 }
 
@@ -665,6 +667,8 @@ impl Brain {
                         || c.convo_id.is_some()
                         || c.combat.yielded
                         || c.combat.mercy_until_tick > 0
+                        // On the bucket chain there is nothing to decide: the sim keeps them at it.
+                        || fighting_fire(c)
                     {
                         continue;
                     }

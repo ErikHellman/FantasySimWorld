@@ -16,6 +16,7 @@ use crate::systems::billboards::wants_to_read;
 use crate::systems::charm;
 use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
+use crate::systems::fire::ruin_to_rebuild;
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::quirks::{NAP_HOURS, NAP_NOTE, STUDY_NOTE};
 use crate::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, brawl_unlocked, lethal_unlocked};
@@ -328,6 +329,12 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         return Some(act(ActivityId::ReadBoard, None, Some(place)));
     }
     let minutes = remaining.min(ctx.int_range(def.minutes[0], def.minutes[1]) as f64);
+    // While a house lies in ruins, working hours go to building it again.
+    if def.kind == ActivityKind::Work
+        && let Some(ruin) = ruin_to_rebuild(ctx.state, ctx.cr(id), ctx.time.day)
+    {
+        return Some(act(ActivityId::Rebuild, Some(minutes), Some(ruin)));
+    }
     Some(act(block.activity, Some(minutes), block.place_id))
 }
 

@@ -6,6 +6,7 @@ use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone,
 };
+use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
 use fsw_sim::util::{first_name, living};
 use fsw_world::places::{ActivityId, Place, places};
@@ -219,6 +220,14 @@ pub fn resolve_activity(value: Option<&Value>) -> Option<ActivityId> {
         .find(|id| fsw_sim::data::activities::activity(*id).label.to_lowercase().contains(&spaced))
 }
 
+/// As [`resolve_activity`], and also rebuilding while there is a ruin to rebuild.
+pub fn resolve_doable(state: &SimState, value: Option<&Value>) -> Option<ActivityId> {
+    if fire::ruin(state).is_some() && norm(value).contains("rebuild") {
+        return Some(ActivityId::Rebuild);
+    }
+    resolve_activity(value)
+}
+
 /// Removes `open … close` spans (non-nested), like `/\*[^*]*\*/g` or `/\([^)]*\)/g`.
 fn strip_spans(text: &str, open: char, close: char) -> String {
     let mut out = String::with_capacity(text.len());
@@ -323,7 +332,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                 Some(place) => decision.intents.push(intent(IntentAction::GoTo { place_id: place.id.clone() })),
                 None => decision.problems.push(format!("unknown place \"{}\"", shown(args.get("place")))),
             },
-            "do_activity" => match resolve_activity(args.get("activity")) {
+            "do_activity" => match resolve_doable(state, args.get("activity")) {
                 Some(activity) => {
                     decision.intents.push(intent(IntentAction::Activity { activity, place_id: None, minutes: None }))
                 }
@@ -556,6 +565,20 @@ mod tests {
         // Only the routine sends people to the billboards.
         assert_eq!(resolve_activity(Some(&json!("read_board"))), None);
         assert_eq!(resolve_activity(Some(&json!("read the billboard"))), None);
+        assert_eq!(resolve_activity(Some(&json!("rebuild"))), None);
+        // Rebuilding is only there to choose while a house lies in ruins.
+        let mut state = fsw_sim::create_state(1);
+        assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), None);
+        assert_eq!(resolve_doable(&state, Some(&json!("farm"))), Some(ActivityId::Farm));
+        let ruin = fsw_sim::state::House {
+            phase: fsw_sim::state::HousePhase::Ruined,
+            fire: 0.0,
+            built: 0.0,
+            since_tick: 0,
+            helpers: Vec::new(),
+        };
+        state.houses.insert("home_1".into(), ruin);
+        assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), Some(ActivityId::Rebuild));
     }
 
     #[test]

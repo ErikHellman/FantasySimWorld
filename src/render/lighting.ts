@@ -27,6 +27,7 @@ const KEYFRAMES: Keyframe[] = [
 /** However far out the camera is, shadows are drawn at least this far around its target, in metres. */
 const MIN_SHADOW_RANGE = 30;
 const LAMP_COLOR = 0xffb45e;
+const FIRE_COLOR = 0xff6a24;
 
 export interface Lamp {
   x: number;
@@ -46,6 +47,7 @@ export class Lighting {
   private readonly lampLights: THREE.PointLight[] = [];
   private readonly shadowRange: number;
   private lamps: Lamp[] = [];
+  private fire: Lamp | null = null;
   private readonly a = new THREE.Color();
   private readonly b = new THREE.Color();
   private readonly offset = new THREE.Vector3();
@@ -78,15 +80,29 @@ export class Lighting {
     this.lamps = lamps;
   }
 
+  /** A house on fire borrows one light from the pool (so the number of lights never changes); null gives it back. */
+  setFire(fire: Lamp | null): void {
+    this.fire = fire;
+  }
+
   private placeLamps(focus: THREE.Vector3): void {
+    let lights = this.lampLights;
+    const first = lights[0];
+    if (first) first.color.setHex(this.fire ? FIRE_COLOR : LAMP_COLOR);
+    if (this.fire && first) {
+      // A burning house lights its surroundings by day too, though the sun drowns most of it.
+      first.position.set(this.fire.x, this.fire.y, this.fire.z);
+      first.intensity = (0.35 + 0.65 * this.night) * 30 * this.fire.power;
+      lights = lights.slice(1);
+    }
     if (this.night <= 0.02) {
-      for (const light of this.lampLights) light.intensity = 0;
+      for (const light of lights) light.intensity = 0;
       return;
     }
     const nearest = [...this.lamps]
       .sort((p, q) => (p.x - focus.x) ** 2 + (p.z - focus.z) ** 2 - ((q.x - focus.x) ** 2 + (q.z - focus.z) ** 2))
-      .slice(0, this.lampLights.length);
-    this.lampLights.forEach((light, index) => {
+      .slice(0, lights.length);
+    lights.forEach((light, index) => {
       const lamp = nearest[index];
       if (!lamp) {
         light.intensity = 0;
