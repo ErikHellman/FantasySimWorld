@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Query, State};
+use fsw_brain::llm::embed::Embedder;
 use fsw_brain::llm::probe::probe;
-use fsw_brain::settings::{ApiKey, LlmSettings, parse_headers};
+use fsw_brain::settings::{ApiKey, EmbedSettings, LlmSettings, parse_headers};
 
 use crate::AppState;
 use crate::api::ApiFailure;
@@ -18,7 +19,7 @@ fn same<T: serde::Serialize, U: serde::de::DeserializeOwned>(value: T) -> U {
     serde_json::from_value(serde_json::to_value(value).expect("enums serialise")).expect("same names")
 }
 
-fn view(settings: &LlmSettings, key: &ApiKey) -> LlmSettingsView {
+fn view(settings: &LlmSettings, key: &ApiKey, embed: &EmbedSettings, embed_key: &ApiKey) -> LlmSettingsView {
     LlmSettingsView {
         enabled: settings.enabled,
         base_url: settings.base_url.clone(),
@@ -39,22 +40,53 @@ fn view(settings: &LlmSettings, key: &ApiKey) -> LlmSettingsView {
         requests_per_minute: settings.requests_per_minute,
         max_requests_per_day: settings.max_requests_per_day.min(u64::from(u32::MAX)) as u32,
         max_tokens_per_day: settings.max_tokens_per_day.min(u64::from(u32::MAX)) as u32,
+        embed_base_url: embed.enabled().then(|| embed.base_url.clone()),
+        embed_model: embed.enabled().then(|| embed.model.clone()),
+        embed_api_key_set: !embed_key.is_empty(),
     }
 }
 
 /// `GET /api/admin/settings/llm`: the model the server was started with (from its `LLM_*` variables).
 pub async fn get_settings(State(app): State<Arc<AppState>>) -> Json<LlmSettingsView> {
-    Json(view(&app.config.llm, &app.config.llm_api_key))
+    Json(view(&app.config.llm, &app.config.llm_api_key, &app.config.embed, &app.config.embed_api_key))
 }
 
-/// `POST /api/admin/llm/test`: asks the configured model for one decision. Changes nothing.
+/// `POST /api/admin/llm/test`: asks the configured model for one decision and the embedding
+/// model for one vector. Changes nothing.
 pub async fn test(State(app): State<Arc<AppState>>) -> Json<LlmTestResult> {
-    let settings = &app.config.llm;
-    if !settings.enabled {
+    let (settings, embed) = (&app.config.llm, &app.config.embed);
+    if !settings.enabled && !embed.enabled() {
         return Json(LlmTestResult { ok: false, message: "Set LLM_BASE_URL and LLM_MODEL on the server.".into() });
     }
-    let result = probe(settings, app.config.llm_api_key.clone(), transport()).await;
-    Json(LlmTestResult { ok: result.ok, message: result.message })
+    let (mut ok, mut parts) = (true, Vec::new());
+    if settings.enabled {
+        let result = probe(settings, app.config.llm_api_key.clone(), transport()).await;
+        ok &= result.ok;
+        parts.push(result.message);
+    }
+    if embed.enabled() {
+        let (embedded, message) = test_embeddings(embed, app.config.embed_api_key.clone()).await;
+        ok &= embedded;
+        parts.push(message);
+    }
+    Json(LlmTestResult { ok, message: parts.join(" ") })
+}
+
+/// Embeds one sentence; says how many numbers a vector has and how long it took.
+async fn test_embeddings(settings: &EmbedSettings, key: ApiKey) -> (bool, String) {
+    let embedder = Embedder::new(settings.clone(), key, transport());
+    let started = std::time::Instant::now();
+    match embedder.embed(&["The mill burned down in the night.".to_owned()]).await {
+        Ok(embedded) => (
+            true,
+            format!(
+                "Embeddings: {} numbers per memory, in {} ms.",
+                embedded.vectors[0].len(),
+                started.elapsed().as_millis()
+            ),
+        ),
+        Err(error) => (false, format!("Embeddings failed: {error}")),
+    }
 }
 
 /// `GET /api/admin/brain-log?before=<id>&limit=<n>`, newest first.
