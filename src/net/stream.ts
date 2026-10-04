@@ -1,5 +1,5 @@
 import {
-  PROTOCOL_VERSION, type BrainLogRecord, type CharacterDetail, type ChatMessage, type ChatWelcome, type ChatYou, type Hello,
+  PROTOCOL_VERSION, type BrainLogRecord, type CharacterDetail, type ChatMessage, type ChatWelcome, type ChatYou, type GuestEnd, type Hello,
   type RosterEntry, type Snapshot, type Status, type TickFrame, type WorldReset,
 } from '../generated/api';
 import { HttpError, api } from './api';
@@ -21,6 +21,8 @@ export interface StreamHandlers {
   chat(message: ChatMessage): void;
   /** this viewer's chat name changed (here or in another tab of the same account) */
   chatYou(you: ChatYou): void;
+  /** a guest's stream is over (time is up, they left, or another tab took it); it is not reopened */
+  guestEnd(end: GuestEnd): void;
   /** the server refused the stream and `/api/me` says this browser is not signed in (401) or not allowed (403) */
   refused(status: 401 | 403): void;
   connection(state: ConnectionState): void;
@@ -63,6 +65,11 @@ export class Stream {
   /** the world's speed as last reported; a paused world is silent by design */
   private speed = 1;
   private lastTickAt = Date.now();
+  /**
+   * Whether a hidden tab gives up its stream. Guests keep theirs: their seat goes to someone
+   * else soon after their stream closes, and their visit is short anyway.
+   */
+  suspendWhenHidden = true;
 
   /** `chatName` is the chat name this browser would like, asked for on each connect. */
   constructor(
@@ -142,6 +149,10 @@ export class Stream {
       this.close();
       this.handlers.worldReset(reset);
     });
+    on<GuestEnd>('guest_end', (end) => {
+      this.close();
+      this.handlers.guestEnd(end);
+    });
     source.onerror = () => {
       if (this.source !== source) return;
       if (source.readyState === EventSource.CONNECTING) {
@@ -190,6 +201,7 @@ export class Stream {
 
   private onVisibility(): void {
     if (document.hidden) {
+      if (!this.suspendWhenHidden) return;
       this.hiddenTimer = window.setTimeout(() => {
         if (!this.source) return;
         this.suspended = true;

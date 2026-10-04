@@ -58,6 +58,8 @@ export const ui = {
   quality: signal(''),
   /** who is watching; null until /api/me answers */
   me: signal<Me | null>(null),
+  /** when a guest's pass ends (ms since the epoch, by this browser's clock); null for everyone who signed in */
+  guestEndsAt: signal<number | null>(null),
   connection: signal<ConnectionState>('connecting'),
   clock: signal({ day: 1, time: '06:00', part: 'early morning' }),
   /** the world's speed as the server runs it (0 = paused) */
@@ -106,6 +108,14 @@ export const ui = {
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
+/** Watching without signing in: no chat, no credits, and only for a while. */
+export const isGuest = (): boolean => ui.me.value?.role === 'guest';
+
+/** How long a guest has left, in words: whole minutes rounded up, so the last minute reads as such. */
+export function guestTimeLeft(ms: number): string {
+  if (ms < 60_000) return 'under a minute left';
+  return `${Math.ceil(ms / 60_000)} min left`;
+}
 
 /** Things the UI can ask the app to do; filled in by main.ts. */
 export interface UiActions {
@@ -206,7 +216,7 @@ export function addChat(message: ChatMessage): void {
 }
 
 /** Whether credits are on and known, so the pill and the shop have something to show. */
-export const creditsOn = (): boolean => (ui.credits.value?.perMinute ?? 0) > 0;
+export const creditsOn = (): boolean => !isGuest() && (ui.credits.value?.perMinute ?? 0) > 0;
 
 export function setBalance(balance: number): void {
   const credits = ui.credits.value;

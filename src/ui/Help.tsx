@@ -1,6 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { isTouchScreen } from './layout';
-import { isAdmin, ui } from './store';
+import { isAdmin, isGuest, ui } from './store';
 
 /** One control: the keys or mouse movement on the left, what it does on the right. */
 function Control({ keys, children }: { keys: readonly string[]; children: ComponentChildren }) {
@@ -36,6 +36,12 @@ export function HelpPanel() {
           follow the villagers and talk with the other people watching. Watching also earns you credits (the ✦ in the
           top bar), which buy gifts, blessings and trouble for the village; the villagers will know who sent them.
         </p>
+        {isGuest() && (
+          <p>
+            As a guest you can look around and read the chat for a quarter of an hour. Signing in lets you stay, talk
+            and earn credits.
+          </p>
+        )}
 
         {isTouchScreen() && (
           <>

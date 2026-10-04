@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
+import { GuestNote, GuestPill } from './Guest';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
 import { isTouchScreen } from './layout';
@@ -9,7 +10,7 @@ import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
 import { ShopPanel } from './Shop';
-import { actions, closeSheet, creditsOn, isAdmin, togglePanel, ui } from './store';
+import { actions, closeSheet, creditsOn, isAdmin, isGuest, togglePanel, ui } from './store';
 
 function TopBar() {
   const clock = ui.clock.value;
@@ -39,6 +40,7 @@ function TopBar() {
           </button>
         )}
         <LlmPill />
+        {isGuest() && <GuestPill />}
         {creditsOn() && (
           <button class="pill credits" title="Your credits: spend them on the village" onClick={() => togglePanel('shop')}>
             ✦ {ui.credits.value?.balance}
@@ -110,7 +112,8 @@ function StartOverlay() {
             The villagers are running on their built-in routines{isAdmin() ? '. Set LLM_BASE_URL and LLM_MODEL on the server to give them minds of their own.' : '.'}
           </p>
         )}
-        {!loading && ui.me.value && <p class="muted small-text">Signed in as {ui.me.value.displayName || ui.me.value.email}.</p>}
+        {!loading && ui.me.value && !isGuest() && <p class="muted small-text">Signed in as {ui.me.value.displayName || ui.me.value.email}.</p>}
+        {!loading && isGuest() && <GuestNote />}
       </div>
     </div>
   );

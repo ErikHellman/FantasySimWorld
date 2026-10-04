@@ -6,7 +6,10 @@
 //! sessions. `AUTH_MODE=off`: no sign-in,
 //! everyone is an admin; the configuration allows it on this machine only. Every `/api` route needs a
 //! viewer ([`middleware::require_viewer`]), `/api/admin` an admin, and every
-//! mutating `/api` request passes the CSRF check.
+//! mutating `/api` request passes the CSRF check. In the first two modes people may also watch
+//! as guests for a while ([`guest`]), which lets them into the routes that only watch.
+
+use std::time::Instant;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +22,7 @@ use axum::response::{IntoResponse, Response};
 use crate::AppState;
 use crate::api::wire::{Me, Role, SignInOptions};
 use crate::config::{AuthMode, Config, ProviderConfig};
+use crate::guests::GuestPass;
 
 pub mod allowlist;
 pub mod apple;
@@ -26,6 +30,7 @@ pub mod discord;
 pub mod discovered;
 pub mod flow;
 pub mod github;
+pub mod guest;
 pub mod microsoft;
 pub mod middleware;
 pub mod provider;
@@ -49,6 +54,8 @@ pub struct Viewer {
     pub role: Role,
     /// the session's database key; `None` in token mode
     pub session: Option<[u8; 32]>,
+    /// a guest's pass; `None` for everyone who signed in
+    pub guest: Option<GuestPass>,
 }
 
 /// Sign-in state shared by the handlers.
@@ -96,16 +103,18 @@ impl Auth {
     }
 }
 
-/// The viewer behind a request, by the configured mode; plus a renewed session cookie, if any.
+/// The viewer behind a request, by the configured mode, or else a guest; plus a renewed
+/// session cookie, if any. Signing in wins over a guest pass left in the browser.
 pub async fn authenticate(
     app: &AppState,
     headers: &HeaderMap,
 ) -> crate::store::Result<Option<(Viewer, Option<HeaderValue>)>> {
-    match &app.config.auth {
-        AuthMode::Off => Ok(Some((open_viewer(), None))),
-        AuthMode::Token(_) => Ok(token::viewer(&app.config, headers).map(|v| (v, None))),
-        AuthMode::Oidc(_) => session::authenticate(app, headers).await,
-    }
+    let signed_in = match &app.config.auth {
+        AuthMode::Off => Some((open_viewer(), None)),
+        AuthMode::Token(_) => token::viewer(&app.config, headers).map(|v| (v, None)),
+        AuthMode::Oidc(_) => session::authenticate(app, headers).await?,
+    };
+    Ok(signed_in.or_else(|| guest::viewer(app, headers).map(|v| (v, None))))
 }
 
 /// Everyone, when sign-in is off: an admin with no database row, like the token holder.
@@ -116,6 +125,7 @@ fn open_viewer() -> Viewer {
         display_name: "Local developer".into(),
         role: Role::Admin,
         session: None,
+        guest: None,
     }
 }
 
@@ -154,19 +164,35 @@ pub fn safe_return(path: Option<&str>) -> &str {
 /// `GET /auth/providers`
 pub async fn providers(State(app): State<Arc<AppState>>) -> Json<SignInOptions> {
     Json(match &app.config.auth {
-        AuthMode::Off => SignInOptions { open: true, token: false, providers: Vec::new() },
-        AuthMode::Token(_) => SignInOptions { open: false, token: true, providers: Vec::new() },
-        AuthMode::Oidc(_) => SignInOptions { open: false, token: false, providers: app.auth.provider_kinds() },
+        AuthMode::Off => SignInOptions { open: true, token: false, providers: Vec::new(), guests: false },
+        AuthMode::Token(_) => {
+            SignInOptions { open: false, token: true, providers: Vec::new(), guests: app.config.guests_on() }
+        }
+        AuthMode::Oidc(_) => SignInOptions {
+            open: false,
+            token: false,
+            providers: app.auth.provider_kinds(),
+            guests: app.config.guests_on(),
+        },
     })
 }
 
 /// `GET /api/me`
 pub async fn me(Extension(viewer): Extension<Viewer>) -> Json<Me> {
-    Json(Me { email: viewer.email, display_name: viewer.display_name, role: viewer.role })
+    let guest_seconds_left =
+        viewer.guest.map(|pass| pass.ends.saturating_duration_since(Instant::now()).as_secs().try_into().unwrap_or(0));
+    Json(Me { email: viewer.email, display_name: viewer.display_name, role: viewer.role, guest_seconds_left })
 }
 
-/// `POST /api/logout`: ends this session and clears the cookie.
+/// `POST /api/logout`: ends this session (or guest pass, freeing the seat) and clears the cookie.
 pub async fn logout(State(app): State<Arc<AppState>>, Extension(viewer): Extension<Viewer>) -> Response {
+    if let Some(pass) = viewer.guest {
+        app.guests.end(pass.id);
+        tracing::info!(event = "guest_left");
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        response.headers_mut().append(header::SET_COOKIE, guest::clear_cookie(&app.config));
+        return response;
+    }
     if let Some(id) = viewer.session
         && let Err(error) = app.store.delete_session(id).await
     {

@@ -12,6 +12,8 @@ kill_timeout = 30
 
 [build]
 dockerfile = "Dockerfile"
+# Guest seats are fixed at build time (docs/deploy.md); 25 when this is left out, 0 for none.
+# args = { GUEST_STREAMS = "25" }
 
 [env]
 PORT = "8080"

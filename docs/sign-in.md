@@ -6,6 +6,8 @@ The server has three modes:
 - `AUTH_MODE=token` (the default): one shared secret in `AUTH_TOKEN` (16+ characters). Whoever opens `/auth/token` and types it gets a cookie and is an admin. Good for local work and a first deployment.
 - `AUTH_MODE=oidc`: people sign in with an account they already have (Google, Apple, Microsoft, LinkedIn, GitHub or Discord), and only e-mail addresses on the allowlist get in.
 
+With `token` and `oidc`, people who do not sign in may also watch as guests: a few at a time, for 15 minutes, without chat or credits (see [Guests](#guests) below).
+
 This page is about the last one. Set `PUBLIC_ORIGIN` to the address people type (for example `https://village.example.com`). Every provider sends people back to a redirect URI built from it, and the URI you register with the provider must match it exactly: same scheme, host, port and path, and no trailing slash.
 
 ## The providers
@@ -59,9 +61,18 @@ After the first sign-in the provider's account is linked to the person. Later si
    - as the admin, open **🛠 Admin → Who may watch**: the attempt is listed with the provider's name; press **Allow**;
    - the second account signs in again and watches the same world;
    - the admin changes the speed: both pages show it.
-4. `curl -i <PUBLIC_ORIGIN>/api/stream` without a cookie answers `401`.
+4. `curl -i <PUBLIC_ORIGIN>/api/stream` without a cookie (neither a session nor a guest pass) answers `401`.
 
 The sign-in pages are rate-limited per address. Behind a proxy that sets `Fly-Client-IP` or `X-Forwarded-For`, set `TRUST_PROXY=true` so the limit applies to the visitor rather than the proxy. Never set it otherwise, or anyone could pick their own address.
+
+## Guests
+
+`POST /auth/guest` hands out a guest seat: a pass in an HttpOnly cookie (`__Host-guest` over https, `guest` over http) that lasts 15 minutes and lets its holder into the routes that only watch (`/api/stream`, `/api/me`, `/api/watch`, `/api/characters/…`, `/api/chronicle` and `/api/logout`). Everything else under `/api` answers `403` to a guest, and the chat and credits treat them as having no identity at all.
+
+- How many guests may watch at once is `GUEST_STREAMS`, fixed when the server is built (25 by default, `0` turns guests off). See the [README](../README.md#guests).
+- When the seats are full, the answer is a ticket and a place in line instead of a cookie. The page asks again with the ticket once a minute; an earlier ask gets `429` with `Retry-After`, and the place is kept.
+- The route is behind the same per-address rate limit and the same cross-site check (JSON only, same `Origin`) as the rest.
+- A guest is never on the allowlist, and signing in wins over a guest pass still in the browser.
 
 ## When a sign-in fails
 
@@ -99,5 +110,7 @@ For Google, Apple, Microsoft and LinkedIn the answer includes a signed id_token.
 - removing someone from the list ends their sessions
 - cross-site requests to admin routes are rejected
 - the sign-in pages are rate-limited
+
+`server/crates/server/tests/http.rs` covers guests: a seat, the stream and the `403`s; the line and its `429`; the stream ending when the pass runs out or another tab takes over; and guests being off without seats or without sign-in. The seat-keeping itself is unit-tested in `server/crates/server/src/guests.rs`.
 
 A real account at each provider can only be tried against real credentials, which is step 3 above.

@@ -25,6 +25,9 @@ FROM chef AS builder
 COPY --from=planner /app/server/recipe.json recipe.json
 RUN cargo chef cook --release --locked --recipe-path recipe.json --bin fsw-server
 COPY server .
+# How many people may watch as guests at once is fixed when the server is built:
+# `--build-arg GUEST_STREAMS=10`, or 0 for no guests (docs/deploy.md).
+ARG GUEST_STREAMS=25
 RUN cargo build --release --locked --bin fsw-server
 
 # --- Litestream ---------------------------------------------------------------

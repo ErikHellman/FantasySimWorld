@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::wire::{ChatKind, ChatMessage, ChatWelcome, ChatYou};
+use crate::api::wire::{ChatKind, ChatMessage, ChatWelcome, ChatYou, Role};
 use crate::auth::Viewer;
 use crate::auth::rate_limit::RateLimiter;
 use crate::store::now_ms;
@@ -139,9 +139,12 @@ pub enum ChatKey {
 }
 
 impl ChatKey {
-    /// `None` when there is nothing to tell this person apart by (no account, no tab id):
-    /// they can read the chat but not take part.
+    /// `None` when there is nothing to tell this person apart by (no account, no tab id), or
+    /// for a guest: they can read the chat but not take part (and so have no credits either).
     pub fn of(viewer: &Viewer, tab: &str) -> Option<Self> {
+        if viewer.role == Role::Guest {
+            return None;
+        }
         match viewer.user_id {
             Some(id) => Some(Self::User(id)),
             None if !tab.is_empty() && tab.len() <= 64 => Some(Self::Tab(tab.to_owned())),
@@ -570,6 +573,20 @@ mod tests {
         assert_eq!(welcome.you, None);
         assert_eq!(welcome.max_length, MAX_TEXT as u32);
         assert!(guard.key().is_none());
+    }
+
+    #[test]
+    fn guests_have_no_key_even_with_a_tab() {
+        let viewer = |role| Viewer {
+            user_id: None,
+            email: String::new(),
+            display_name: String::new(),
+            role,
+            session: None,
+            guest: None,
+        };
+        assert_eq!(ChatKey::of(&viewer(Role::Admin), "tab"), Some(ChatKey::Tab("tab".into())));
+        assert_eq!(ChatKey::of(&viewer(Role::Guest), "tab"), None);
     }
 
     #[test]

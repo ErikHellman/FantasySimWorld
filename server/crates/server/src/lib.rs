@@ -13,6 +13,7 @@ pub mod config;
 pub mod credits;
 pub mod digest;
 pub mod encode;
+pub mod guests;
 pub mod store;
 pub mod world_task;
 
@@ -38,6 +39,8 @@ pub struct AppState {
     pub chat: Arc<chat::ChatHub>,
     /// the viewers' credits (accounts' balances are in the store; the rest is in memory)
     pub credits: credits::CreditsHub,
+    /// the guests' seats and the line for them (in memory)
+    pub guests: Arc<guests::GuestHub>,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,
 }
@@ -53,6 +56,7 @@ impl AppState {
     ) -> Result<Arc<Self>, String> {
         let auth = Auth::new(&config)?;
         let credits = credits::CreditsHub::new(config.credits_per_minute, config.credits_cap);
+        let guests = Arc::new(guests::GuestHub::new(config.guests));
         Ok(Arc::new(Self {
             config,
             world_hash: fsw_world::navgrid::world_hash(),
@@ -64,6 +68,7 @@ impl AppState {
             brain,
             chat: Arc::default(),
             credits,
+            guests,
             shutdown,
         }))
     }

@@ -40,20 +40,26 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/brain-log", get(llm::brain_log))
         .route_layer(middleware::from_fn(auth::middleware::require_admin));
 
-    // Layers run outside in: CSRF first, then the session, then the handler.
-    let api = Router::new()
-        .route("/stream", get(stream::stream))
-        .route("/me", get(auth::me))
-        .route("/watch", post(world::watch))
+    // Taking part (chat, credits) and running the world is for people who signed in; guests
+    // get 403 here, and anything added to this group is closed to them too.
+    let members = Router::new()
         .route("/chat", post(chat::post))
         .route("/chat/name", post(chat::rename))
         .route("/credits", get(credits::state))
         .route("/credits/buy", post(credits::buy))
         .route("/presence", post(credits::presence))
+        .nest("/admin", admin)
+        .route_layer(middleware::from_fn(auth::middleware::members_only));
+
+    // Layers run outside in: CSRF first, then the session, then the handler.
+    let api = Router::new()
+        .route("/stream", get(stream::stream))
+        .route("/me", get(auth::me))
+        .route("/watch", post(world::watch))
         .route("/characters/{id}", get(world::character))
         .route("/chronicle", get(world::chronicle))
         .route("/logout", post(auth::logout))
-        .nest("/admin", admin)
+        .merge(members)
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::require_viewer))
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf));
@@ -61,6 +67,10 @@ pub fn router(app: Arc<AppState>) -> Router {
     let sign_in = Router::new()
         .route("/providers", get(auth::providers))
         .route("/token", get(auth::token::form).post(auth::token::login))
+        .route(
+            "/guest",
+            post(auth::guest::ask).layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf)),
+        )
         .route("/{provider}/start", get(auth::flow::start))
         .route("/{provider}/callback", get(auth::flow::callback_get).post(auth::flow::callback_post))
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::rate_limit));

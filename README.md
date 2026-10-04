@@ -18,6 +18,7 @@ The server migration is complete. The world, the language-model brain and every 
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
+- Guests: a few people at a time may watch for 15 minutes without signing in, with a line when the seats are full (see [Guests](#guests)).
 - Ambient sound, effects and adaptive music.
 - A container image with Litestream backups and Fly.io settings.
 
@@ -69,7 +70,7 @@ set -a; . ./.env; set +a
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
-- The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)).
+- The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)). A guest sees ⏳ and the time they have left instead.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
@@ -97,6 +98,8 @@ All settings come from environment variables, read at start:
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
 | `EMBED_*` | off | Memory by meaning ([below](#memory-by-meaning)) |
+
+One setting is fixed when the server is built instead: `GUEST_STREAMS`, how many people may watch as guests at once (25 if it is not set, `0` for no guests). Set it in the environment of the build, as in `GUEST_STREAMS=10 cargo build --release`, or with `--build-arg GUEST_STREAMS=10` for the container image. A value that is not a whole number stops the build. See [Guests](#guests).
 
 A value the server cannot use stops it at start with a message naming the variable. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
@@ -175,13 +178,24 @@ Villagers recall memories by the people involved and the words they share with t
 
 The server embeds each new memory in the background (a few hundred short texts a day for a village), keeps the vectors in the database, and embeds what a decision, a reply or a morning plan is about when it asks the model. If the endpoint is slow (over two seconds) or down, recall falls back to shared words, and nothing else changes. The vectors are a cache: changing the model starts a fresh set, and vectors unused for a week are deleted. Embedding requests do not count against `LLM_MAX_REQUESTS_PER_DAY` or `LLM_MAX_TOKENS_PER_DAY`; **🛠 Admin → Language model → Test connection** tests both models. To check an endpoint first: `cargo run --release -p fsw-brain --bin probe -- <base-url> <model> 4 --embed <embed-model>`.
 
+## Guests
+
+People who have not signed in can still look in on the village for a while. The login page has a **Watch as a guest** button next to the sign-in buttons (with `AUTH_MODE=token` or `oidc`; with sign-in off everyone is in already).
+
+- **Seats.** At most `GUEST_STREAMS` guests (25 unless the server was built with another number) watch at once. A guest's seat is a cookie that the browser's tabs share; it holds one stream, and a newer tab takes it over from an older one.
+- **Fifteen minutes.** A visit lasts 15 minutes from the moment the seat is given, however often the page reconnects. Then the page goes back to the login page, which says the time is up. Watching again means asking for a new seat.
+- **The line.** When every seat is taken, the login page shows the guest's place in line and asks again once a minute; the server refuses asks that come sooner. A seat that comes free goes to whoever is first in line. Closing the page gives up the place after three minutes, and closing the world gives up the seat after one.
+- **Only watching.** Guests are anonymous. They can look around, follow villagers and read the chat, but cannot write in it, and have no credits: they neither earn nor spend them, and gifts and prayers never reach them. The server enforces all of this; the routes for chat, credits and admin answer `403` to a guest.
+- **Leaving.** Settings has a **Leave** button, which gives the seat to the next person straight away.
+- The seats and the line live in memory; a restart empties them.
+
 ## Chat
 
 Everyone watching shares a chat along the bottom of the screen. It can be expanded, collapsed to one line showing the latest message, or hidden behind a 💬 button that counts what you missed.
 
 - Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody else in the chat has it (ignoring case). The chosen name is kept in this browser and asked for on each connect; if someone else has it by then, you get a made-up one.
 - The chat says when someone joins and when they leave. A reload, or a tab that was hidden for a while, drops the connection for a moment, so someone only counts as gone after five minutes away; back sooner, and neither is mentioned. Until then their name stays theirs.
-- Signed in with an account (Google, GitHub and the rest), all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person.
+- Signed in with an account (Google, GitHub and the rest), all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person. [Guests](#guests) can read the chat but not write in it.
 - The server keeps the last 50 messages, in memory, and sends them to everyone who connects. They survive a new world but not a server restart.
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
 - Each person may send about one message a second, in bursts of up to five.
@@ -196,6 +210,7 @@ People watching earn credits and spend them on things that happen in the village
 - **The villagers know who did it.** To them you are one of the powers that watch the valley, known by your chat name. The chat and the chronicle say what you did; villagers remember it, thank you or plead with you on the spot, pray to you at the chapel and the shrine, and with a language model connected they speak of you in their own words. A new chat name is a new power to them. Names end up in saves and exports with the rest of the chronicle.
 - **Prayer pays.** When three different villagers have spoken your name in one day of the village, you earn 15 credits, once that day, whether or not you are watching.
 - **Gifts from an admin.** The admin panel lists everyone with the world open, with their balance and whether their tab is in front, and gives credits to one of them or to all. A gift may go past the cap, and the chat says it was given.
+- **Guests** have no credits (see [Guests](#guests)).
 - **Where it is kept.** With provider sign-in the balance belongs to the account and lives in the database, with a record of each purchase kept for 90 days. With token sign-in or sign-in off there are no accounts, so each tab has its own balance, in memory, gone after an hour away or a server restart.
 - The offers and their prices are the `OFFERS` table in [server/crates/server/src/credits.rs](server/crates/server/src/credits.rs); what each does in the village is in [server/crates/sim/src/systems/viewer_events.rs](server/crates/sim/src/systems/viewer_events.rs).
 

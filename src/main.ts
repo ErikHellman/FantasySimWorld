@@ -5,7 +5,7 @@ import { MoodTracker } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
-import type { AmbientCounts, WireEvent } from './generated/api';
+import type { AmbientCounts, GuestEndReason, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
 import { Playback } from './net/playback';
 import { Heartbeat, tabIsWatched } from './net/presence';
@@ -36,12 +36,17 @@ const SLOW_FRAME_MS = 40;
 const PIXEL_RATIO_STEP = 0.25;
 /** monsters this close to where the camera looks make the music tense */
 const MONSTERS_NEAR = 60;
+/** A guest's page gives up this long after their pass ends, in case the stream was down when the server ended it. */
+const GUEST_END_SLACK_MS = 5_000;
 
 /** The author of the chat line for an admin's gift to everyone (as the server writes it). */
 const EVERYONE = 'Everyone watching';
 
 const here = (): string => location.pathname + location.search;
 const toLogin = (): void => location.replace(`/login?return_to=${encodeURIComponent(here())}`);
+/** Back to the launch screen, saying why the guest's visit ended. */
+const guestEnded = (reason: GuestEndReason): void =>
+  location.replace(`/login?ended=${reason}&return_to=${encodeURIComponent(here())}`);
 
 /** The world is drawn from the server's stream: this page only renders, plays sound and shows the HUD. */
 async function start(): Promise<void> {
@@ -49,7 +54,7 @@ async function start(): Promise<void> {
   watchLayout();
   const params = new URLSearchParams(location.search);
   if (location.pathname === '/login') {
-    render(h(Login, { returnTo: params.get('return_to') ?? '/', error: params.get('error') }), root);
+    render(h(Login, { returnTo: params.get('return_to') ?? '/', error: params.get('error'), ended: params.get('ended') }), root);
     return;
   }
   if (location.pathname === '/no-access') {
@@ -66,6 +71,14 @@ async function start(): Promise<void> {
     render(h(App, null), root);
     setTimeout(() => location.reload(), 5000);
     return;
+  }
+
+  // A guest watches for a while, then goes back to the launch screen; the server ends their stream on time.
+  const guest = ui.me.value.role === 'guest';
+  if (guest) {
+    const left = (ui.me.value.guestSecondsLeft ?? 0) * 1000;
+    ui.guestEndsAt.value = Date.now() + left;
+    setTimeout(() => guestEnded('time'), left + GUEST_END_SLACK_MS);
   }
 
   const canvas = document.getElementById('world') as HTMLCanvasElement;
@@ -164,6 +177,8 @@ async function start(): Promise<void> {
   // Credits: the server counts them; this page reports that it is being watched and shows the balance.
   let heartbeat: Heartbeat | null = null;
   const loadCredits = (): void => {
+    // Guests have no credits; the server would refuse them anyway.
+    if (guest) return;
     api.credits(viewer).then(
       (credits) => {
         ui.credits.value = credits;
@@ -222,10 +237,12 @@ async function start(): Promise<void> {
       if (message.kind === 'event' && (message.author === ui.chatName.value || message.author === EVERYONE)) loadCredits();
     },
     chatYou: (you) => (ui.chatName.value = you.name),
+    guestEnd: (end) => guestEnded(end.reason),
     refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),
     connection: (state) => (ui.connection.value = state),
     // Each connection asks for the name this browser chose, so the chat says it joined under that name.
   }, () => loadChatSettings().name);
+  stream.suspendWhenHidden = !guest;
 
   view.rig.onClick = (event) => {
     // On a phone, a tap on the world first puts away the open pane, so the view is back without changing who is followed.
