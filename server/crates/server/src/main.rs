@@ -50,7 +50,11 @@ async fn main() -> ExitCode {
     }
     if config.embed.enabled() {
         let embed = &config.embed;
-        tracing::info!(base_url = %embed.base_url, model = %embed.model, key = !config.embed_api_key.is_empty(), "memory by meaning on");
+        if config.llm.enabled {
+            tracing::info!(base_url = %embed.base_url, model = %embed.model, key = !config.embed_api_key.is_empty(), "memory by meaning on");
+        } else {
+            tracing::info!(model = %embed.model, "memory by meaning waits for the language model; nothing is embedded while it is off");
+        }
     }
 
     let shutdown = CancellationToken::new();
@@ -64,7 +68,12 @@ async fn main() -> ExitCode {
     };
     let maintenance = store::maintenance::spawn(store.clone(), shutdown.clone());
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
-    let memory = brain_task::start_memory(&store, config.embed.clone(), config.embed_api_key.clone()).await;
+    // Only prompts recall by meaning, so without the language model the indexer would embed memories nobody asks for.
+    let memory = if config.llm.enabled {
+        brain_task::start_memory(&store, config.embed.clone(), config.embed_api_key.clone()).await
+    } else {
+        None
+    };
     brain.set_memory(memory.clone());
     let indexing = memory.map(|index| brain_task::spawn_indexer(index, world.clone(), store.clone(), shutdown.clone()));
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());

@@ -160,12 +160,12 @@ node tools/mock-llm.mjs
 and start the server against it:
 
 ```bash
-cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
+cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock EMBED_BASE_URL=http://localhost:8787/v1 EMBED_MODEL=mock-embed AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 ```
 
 ### Memory by meaning
 
-Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model.
+Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
 
 | Variable | Default | What it does |
 | --- | --- | --- |

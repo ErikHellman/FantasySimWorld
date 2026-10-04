@@ -174,7 +174,8 @@ impl Store {
         .await
     }
 
-    /// Today's (UTC) totals over all kinds; what the daily caps compare against.
+    /// Today's (UTC) totals over the language model's kinds, leaving out [`EMBED_USAGE`]; what the daily caps and
+    /// the admin's 24-hour count compare against.
     pub async fn usage_today(&self) -> Result<LlmUsage> {
         let today = utc_day(now_ms());
         let rows = self.usage(today, today).await?;
