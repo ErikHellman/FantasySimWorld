@@ -24,6 +24,26 @@ AUTH_TOKEN=… node tools/sse-probe.mjs https://<your-app>.fly.dev 120
 curl -sI --http2 https://<your-app>.fly.dev/healthz        # HTTP/2 to the client
 ```
 
+## Deploying from GitHub
+
+After the first deployment, later ones can run from GitHub Actions instead of a laptop. The **Deploy to Fly.io** workflow (`.github/workflows/deploy.yml`) only ever runs by hand: nothing deploys on a push or a merge.
+
+Once, before the first run:
+
+```bash
+fly tokens create deploy --app <your-app> --expiry 8760h    # a token that can deploy this one app, for a year
+```
+
+In the repository settings, create an environment called `production` and add that token to it as the secret `FLY_API_TOKEN`. The environment is also where to add required reviewers if a deploy should wait for someone's approval. If the app is not the one named in `fly.toml` (because `fly launch --name` renamed it locally), set the repository variable `FLY_APP` to its name.
+
+To deploy, open **Actions → Deploy to Fly.io → Run workflow** and pick the branch or tag. The workflow:
+
+1. runs the same checks as every push (`ci.yml`), and stops if any fail;
+2. runs `fly deploy --remote-only --ha=false`, so the image is built on Fly's builder (which keeps the Docker layer cache between deploys) and the app stays on its one machine, and labels the image with the commit;
+3. waits for the new machine to pass the health check in `fly.toml`, then asks `https://<app>.fly.dev/healthz` once more.
+
+Only one deploy runs at a time; a second one started meanwhile waits for the first to finish. Secrets are still set with `fly secrets set`, not from GitHub.
+
 ## Settings
 
 Secrets (`fly secrets set NAME=value`):

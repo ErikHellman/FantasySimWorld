@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  # The deploy workflow runs these checks first.
+  workflow_call:
 
 jobs:
   server:

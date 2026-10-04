@@ -19,7 +19,7 @@ The server migration is complete. The world, the language-model brain and every 
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
 - Ambient sound, effects and adaptive music.
-- A container image with Litestream backups and Fly.io settings.
+- A container image with Litestream backups and Fly.io settings, and a GitHub Actions workflow that deploys it when started by hand.
 
 Not yet done or not yet tried:
 
