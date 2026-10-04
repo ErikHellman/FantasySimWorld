@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use super::{Result, StoreError, now_ms};
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2), (3, V3)];
+const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4)];
 
 const V1: &str = "
 CREATE TABLE worlds (
@@ -165,6 +165,20 @@ CREATE TABLE credit_purchases (
     at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX credit_purchases_by_time ON credit_purchases (at);
+";
+
+/// Embedding vectors for memory texts, keyed by a hash of the model and the text
+/// (`fsw_brain::recall::text_key`). A cache: losing it only costs requests.
+const V4: &str = "
+CREATE TABLE memory_vectors (
+    key INTEGER PRIMARY KEY,
+    model TEXT NOT NULL,
+    dim INTEGER NOT NULL,
+    vec BLOB NOT NULL,
+    used_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX memory_vectors_by_model ON memory_vectors (model);
+CREATE INDEX memory_vectors_by_use ON memory_vectors (used_ms);
 ";
 
 /// Brings the schema up to date. Refuses a database written by a newer server.
