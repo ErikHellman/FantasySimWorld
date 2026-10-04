@@ -3,20 +3,24 @@
 //! `tools/llm-probe.ts`).
 //!
 //!   cargo run --release -p fsw-brain --bin probe -- <base-url> <model> [runs] [api-key]
+//!   cargo run --release -p fsw-brain --bin probe -- <base-url> <model> [runs] [api-key] --embed <embed-model>
 //!   cargo run --release -p fsw-brain --bin probe -- http://localhost:11434/v1 qwen3:8b 20
 //!   LLM_API_KEY=sk-... cargo run --release -p fsw-brain --bin probe -- https://api.openai.com/v1 <model> 20
 //!
 //! Options (environment): LLM_PROTOCOL=auto|tools|json, LLM_HEADERS="Name: value\nOther: value"
+//! Options (environment): EMBED_BASE_URL (defaults to <base-url>), EMBED_API_KEY (defaults to the model's key)
 
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use fsw_brain::llm::client::LlmClient;
+use fsw_brain::llm::embed::Embedder;
 use fsw_brain::llm::probe::{ProbeCase, run_cases};
-use fsw_brain::llm::transport::ReqwestTransport;
+use fsw_brain::llm::transport::{LlmTransport, ReqwestTransport};
 use fsw_brain::llm::types::LlmRequest;
 use fsw_brain::prompts::{Prompt, conversation_prompt, decide_prompt, plan_prompt, react_prompt, reflect_prompt};
-use fsw_brain::settings::{ApiKey, LlmSettings, WireProtocol};
+use fsw_brain::recall::cosine;
+use fsw_brain::settings::{ApiKey, EmbedSettings, LlmSettings, WireProtocol};
 use fsw_brain::validate::{interpret_conversation, interpret_decision, interpret_plan};
 use fsw_sim::state::{
     Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, Stimulus, StimulusKind, TalkTone,
@@ -47,7 +51,7 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
                 urgency: 0,
             }];
             let snapshot = Arc::new(state.clone());
-            let prompt = decide_prompt(state, &state.characters[&id], MAX_TOKENS);
+            let prompt = decide_prompt(state, &state.characters[&id], MAX_TOKENS, None);
             ProbeCase {
                 kind: "decide".into(),
                 request: request(prompt),
@@ -65,7 +69,7 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
         }
         2 => ProbeCase {
             kind: "plan_day".into(),
-            request: request(plan_prompt(state, &state.characters[&id], MAX_TOKENS)),
+            request: request(plan_prompt(state, &state.characters[&id], MAX_TOKENS, None)),
             usable: Box::new(|calls| interpret_plan(calls).is_none().then(|| "plan could not be read".into())),
         },
         3 => {
@@ -120,9 +124,14 @@ fn build_case(state: &mut SimState, people: &[String], index: usize) -> ProbeCas
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let usage = "usage: probe <base-url> <model> [runs] [api-key] [--embed <embed-model>]";
+    let Ok(embed_model) = take_embed(&mut args) else {
+        eprintln!("{usage}");
+        return ExitCode::FAILURE;
+    };
     let (Some(base_url), Some(model)) = (args.first(), args.get(1)) else {
-        eprintln!("usage: probe <base-url> <model> [runs] [api-key]");
+        eprintln!("{usage}");
         return ExitCode::FAILURE;
     };
     let runs: usize = args.get(2).and_then(|r| r.parse().ok()).unwrap_or(12);
@@ -149,6 +158,15 @@ async fn main() -> ExitCode {
         }
     };
 
+    let embeddings_ok = match &embed_model {
+        Some(model) => {
+            let base = std::env::var("EMBED_BASE_URL").unwrap_or_else(|_| base_url.clone());
+            let embed_key = std::env::var("EMBED_API_KEY").unwrap_or_else(|_| key.clone());
+            check_embeddings(&base, model, &embed_key, transport.clone()).await
+        }
+        None => true,
+    };
+
     let mut sim = Sim::new(create_state(2024));
     for _ in 0..WARM_UP_TICKS {
         sim.step();
@@ -160,5 +178,64 @@ async fn main() -> ExitCode {
     let client = LlmClient::new(settings, ApiKey::new(key), transport);
     let report = run_cases(&client, &cases).await;
     print!("{report}");
-    ExitCode::SUCCESS
+    if embeddings_ok { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// Takes `--embed <embed-model>` out of the arguments. `Err` when `--embed` has no model after it, which would
+/// otherwise skip the embedding check without a word.
+fn take_embed(args: &mut Vec<String>) -> Result<Option<String>, ()> {
+    let Some(at) = args.iter().position(|arg| arg == "--embed") else {
+        return Ok(None);
+    };
+    let model = args.get(at + 1).cloned().ok_or(())?;
+    args.drain(at..at + 2);
+    Ok(Some(model))
+}
+
+/// Embeds three sentences and checks that the two about a fire are closer to each other than to bread.
+async fn check_embeddings(base_url: &str, model: &str, key: &str, transport: Arc<dyn LlmTransport>) -> bool {
+    let settings = EmbedSettings { base_url: base_url.trim_end_matches('/').to_owned(), model: model.to_owned() };
+    let embedder = Embedder::new(settings, ApiKey::new(key), transport);
+    let texts = [
+        "The red cottage burned in the night.",
+        "Flames rose from the roof while we carried water.",
+        "I bought bread at the market.",
+    ]
+    .map(str::to_owned);
+    let started = std::time::Instant::now();
+    match embedder.embed(&texts).await {
+        Ok(embedded) => {
+            let near = cosine(&embedded.vectors[0], &embedded.vectors[1]);
+            let far = cosine(&embedded.vectors[0], &embedded.vectors[2]);
+            let verdict = if near > far { "" } else { " (this model does not tell them apart)" };
+            println!(
+                "embeddings: {} numbers, {} ms; fire~flames {near:.2}, fire~bread {far:.2}{verdict}",
+                embedded.vectors[0].len(),
+                started.elapsed().as_millis()
+            );
+            near > far
+        }
+        Err(error) => {
+            println!("embeddings failed: {error}");
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::take_embed;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| (*a).to_owned()).collect()
+    }
+
+    #[test]
+    fn takes_the_embedding_model_and_refuses_a_flag_without_one() {
+        let mut given = args(&["http://x/v1", "m", "--embed", "e", "20"]);
+        assert_eq!(take_embed(&mut given), Ok(Some("e".to_owned())));
+        assert_eq!(given, args(&["http://x/v1", "m", "20"]));
+        assert_eq!(take_embed(&mut args(&["http://x/v1", "m"])), Ok(None));
+        assert_eq!(take_embed(&mut args(&["http://x/v1", "m", "--embed"])), Err(()));
+    }
 }

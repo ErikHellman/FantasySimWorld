@@ -158,7 +158,7 @@ function LlmSection() {
 
   const test = async (): Promise<void> => {
     setBusy(true);
-    setMessage('Asking the model to make a decision…');
+    setMessage(view.enabled ? 'Asking the model to make a decision…' : 'Asking the embedding model for a vector…');
     try {
       setMessage((await api.admin.testLlm()).message);
     } catch (error) {
@@ -167,6 +167,12 @@ function LlmSection() {
       setBusy(false);
     }
   };
+
+  const embeddings = view.embedModel ? (
+    <li>Memory by meaning: {view.embedModel} at {view.embedBaseUrl} · API key: {view.embedApiKeySet ? 'set' : 'none'}</li>
+  ) : (
+    <li>Memory by meaning: off (memories are matched by shared words; set <code>EMBED_BASE_URL</code> and <code>EMBED_MODEL</code> to turn it on)</li>
+  );
 
   return (
     <>
@@ -182,12 +188,14 @@ function LlmSection() {
           <li>{view.concurrency} at once · per minute {cap(view.requestsPerMinute)} · per day {cap(view.maxRequestsPerDay)} requests, {cap(view.maxTokensPerDay)} tokens</li>
           <li>Tool calls {PROTOCOLS[view.protocol]} · conversations {CONVERSATIONS[view.conversations]} · reasoning {REASONING[view.reasoning]}</li>
           <li>Temperature {view.temperature} · up to {view.maxTokens} output tokens</li>
+          {embeddings}
         </ul>
       ) : (
         <p>Off: the villagers follow their built-in routines. Set <code>LLM_BASE_URL</code> and <code>LLM_MODEL</code> on the server and restart it to turn the model on.</p>
       )}
+      {!view.enabled && <ul class="slots">{embeddings}</ul>}
       <div class="row">
-        <button onClick={() => void test()} disabled={busy || !view.enabled}>Test connection</button>
+        <button onClick={() => void test()} disabled={busy || (!view.enabled && !view.embedModel)}>Test connection</button>
         <span class="test-result">{message}</span>
       </div>
     </>

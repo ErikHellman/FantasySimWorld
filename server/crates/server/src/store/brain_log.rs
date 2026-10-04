@@ -12,6 +12,9 @@ use crate::api::wire::{BrainLogRecord, LlmUsage, LogStatus, RequestKind};
 pub const KEEP_FULL: i64 = 5000;
 pub const LOG_TTL_MS: i64 = 30 * DAY_MS;
 
+/// The usage kind for embedding requests, which the language model's daily caps leave out.
+pub const EMBED_USAGE: &str = "embed";
+
 /// One answered (or failed) request.
 #[derive(Clone, Debug)]
 pub struct BrainLogWrite {
@@ -171,10 +174,12 @@ impl Store {
         .await
     }
 
-    /// Today's (UTC) totals over all kinds; what the daily caps compare against.
+    /// Today's (UTC) totals over the language model's kinds, leaving out [`EMBED_USAGE`]; what the daily caps and
+    /// the admin's 24-hour count compare against.
     pub async fn usage_today(&self) -> Result<LlmUsage> {
         let today = utc_day(now_ms());
         let rows = self.usage(today, today).await?;
+        let rows: Vec<UsageRow> = rows.into_iter().filter(|r| r.kind != EMBED_USAGE).collect();
         Ok(LlmUsage {
             requests_24h: rows.iter().map(|r| r.requests).sum::<u64>().min(u64::from(u32::MAX)) as u32,
             failures_24h: rows.iter().map(|r| r.failures).sum::<u64>().min(u64::from(u32::MAX)) as u32,
@@ -232,5 +237,14 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].kind, "decide");
         assert_eq!(rows[0].requests, 2);
+    }
+
+    #[tokio::test]
+    async fn embedding_usage_is_kept_apart_from_the_models() {
+        let (store, _dir) = testing::store().await;
+        store.add_usage("decide", 2, 0, 100).await.unwrap();
+        store.add_usage(EMBED_USAGE, 5, 1, 900).await.unwrap();
+        let today = store.usage_today().await.unwrap();
+        assert_eq!((today.requests_24h, today.failures_24h, today.tokens_24h), (2, 0, 100));
     }
 }

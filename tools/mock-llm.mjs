@@ -5,6 +5,7 @@
 //   node tools/mock-llm.mjs [port]          (default 8787; base URL http://localhost:8787/v1)
 //   MOCK_DELAY=1500 node tools/mock-llm.mjs  simulated latency in ms (default 700)
 //   MOCK_MODE=text node tools/mock-llm.mjs   answer with JSON in the text instead of native tool calls
+//   POST /v1/embeddings answers at once with vectors from hashed words (fire, flames, smoke… count as one word)
 import http from 'node:http';
 
 const port = Number(process.argv[2] ?? 8787);
@@ -79,6 +80,21 @@ function respond(body) {
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 
+// Words that should mean the same to the mock embedding model, so recall by meaning can be seen working.
+const SAME = { flames: 'fire', blaze: 'fire', burning: 'fire', burnt: 'fire', smoke: 'fire', skeleton: 'dead', skeletons: 'dead', undead: 'dead' };
+
+function embed(text) {
+  const vector = new Array(64).fill(0);
+  for (const raw of text.toLowerCase().match(/[a-z]{4,}/g) ?? []) {
+    const word = SAME[raw] ?? raw;
+    let hash = 2166136261;
+    for (const ch of word) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+    vector[hash % 64] += 1;
+  }
+  if (vector.every((x) => x === 0)) vector[0] = 1;
+  return vector;
+}
+
 http.createServer((request, response) => {
   if (request.method === 'OPTIONS') {
     response.writeHead(204, CORS).end();
@@ -96,6 +112,13 @@ http.createServer((request, response) => {
       body = JSON.parse(raw || '{}');
     } catch {
       response.writeHead(400, CORS).end('bad json');
+      return;
+    }
+    if (request.url?.endsWith('/embeddings')) {
+      const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ''];
+      const data = inputs.map((text, index) => ({ object: 'embedding', index, embedding: embed(String(text)) }));
+      const tokens = Math.round(raw.length / 4);
+      response.writeHead(200, { ...CORS, 'Content-Type': 'application/json' }).end(JSON.stringify({ object: 'list', data, model: body.model ?? 'mock-embed', usage: { prompt_tokens: tokens, total_tokens: tokens } }));
       return;
     }
     const calls = respond(body);

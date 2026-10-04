@@ -4,10 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fsw_brain::brain::{Brain, BrainStatus, LogRecord, LogStatus, RequestKind, WorldLink};
+use fsw_brain::llm::embed::Embedder;
 use fsw_brain::llm::transport::{FakeTransport, HttpResponse};
-use fsw_brain::settings::{ApiKey, ConversationMode, LlmSettings, WireProtocol};
+use fsw_brain::recall::MemoryIndex;
+use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, WireProtocol};
+use fsw_core::Vec2;
 use fsw_core::time::TICKS_PER_DAY;
-use fsw_sim::state::{Intent, IntentAction, IntentSource, SimState, Stimulus, StimulusKind, TalkTone};
+use fsw_sim::state::{
+    Intent, IntentAction, IntentSource, Memory, MemoryKind, SimState, Stimulus, StimulusKind, TalkTone,
+};
 use fsw_sim::util::{first_name, living};
 use fsw_sim::{Command, Sim, SimEvent, create_state};
 use parking_lot::Mutex;
@@ -552,4 +557,105 @@ async fn a_billboard_reaction_that_makes_no_sense_leaves_the_stock_one() {
     let (_, lines) = h.read_the_green_board("Rowan").await;
     assert_eq!(lines.len(), 1);
     assert_eq!(h.log("Rowan", RequestKind::Billboard).unwrap().status, LogStatus::Fallback);
+}
+
+const FLAMES: &str = "Carried buckets until the flames at the red cottage died down.";
+
+/// Gives Aldric twenty ordinary memories from yesterday and one old one about a fire.
+fn remember_a_fire(h: &Harness) -> (String, Vec<String>) {
+    let id = h.who("Aldric");
+    let mut sim = h.link.sim.lock();
+    let tick = sim.state.tick;
+    let memory = |days: i64, text: String, importance: i64| Memory {
+        tick: tick - days * TICKS_PER_DAY,
+        day: (tick - days * TICKS_PER_DAY) / TICKS_PER_DAY,
+        text,
+        importance,
+        kind: MemoryKind::Event,
+        subjects: vec![],
+    };
+    let ordinary: Vec<String> = (0..20).map(|i| format!("Mended fence post number {i} on the farm.")).collect();
+    let c = sim.state.characters.get_mut(&id).unwrap();
+    c.memories = vec![memory(3, FLAMES.into(), 2)];
+    c.memories.extend(ordinary.iter().map(|text| memory(1, text.clone(), 6)));
+    (id, ordinary)
+}
+
+fn memory_index(endpoint: Arc<FakeTransport>) -> Arc<MemoryIndex> {
+    let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e".into() };
+    Arc::new(MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint)))
+}
+
+#[tokio::test]
+async fn recalls_a_memory_by_meaning_when_embeddings_are_on() {
+    let mut h = harness(continue_otherwise(|_, _| None), ConversationMode::Batched);
+    h.settle().await;
+    let (id, ordinary) = remember_a_fire(&h);
+    // Every cue means "fire"; the fire memory does too, the fences do not.
+    let endpoint = FakeTransport::always(200, json!({ "data": [{ "index": 0, "embedding": [1.0, 0.0] }] }));
+    let index = memory_index(endpoint.clone());
+    index.cache().insert(index.cache().key(FLAMES), Arc::from(vec![1.0f32, 0.0]));
+    for text in &ordinary {
+        index.cache().insert(index.cache().key(text), Arc::from(vec![0.0f32, 1.0]));
+    }
+    h.brain.set_memory(Some(index));
+    h.stimulate(&id, "Smoke is rising from a house nearby.");
+    h.brain.update(true);
+    h.wait().await;
+    h.step(1);
+    let log = h.log("Aldric", RequestKind::Decide).unwrap();
+    assert!(log.prompt.contains(FLAMES), "{}", log.prompt);
+    assert!(endpoint.requests().iter().any(|r| r.url.ends_with("/embeddings")));
+}
+
+#[tokio::test]
+async fn recalls_by_words_when_embeddings_are_off() {
+    let mut h = harness(continue_otherwise(|_, _| None), ConversationMode::Batched);
+    h.settle().await;
+    let (id, _) = remember_a_fire(&h);
+    h.stimulate(&id, "Smoke is rising from a house nearby.");
+    h.brain.update(true);
+    h.wait().await;
+    h.step(1);
+    let log = h.log("Aldric", RequestKind::Decide).unwrap();
+    assert!(!log.prompt.contains(FLAMES));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hung_embedding_endpoint_does_not_hold_up_a_decision() {
+    let mut h = harness(continue_otherwise(|_, _| None), ConversationMode::Batched);
+    h.settle().await;
+    let (id, _) = remember_a_fire(&h);
+    let hung = FakeTransport::new(|_| std::future::pending::<Result<HttpResponse, String>>());
+    h.brain.set_memory(Some(memory_index(hung)));
+    h.stimulate(&id, "Smoke is rising from a house nearby.");
+    h.brain.update(true);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    h.wait().await;
+    h.step(1);
+    let log = h.log("Aldric", RequestKind::Decide).unwrap();
+    assert_eq!(log.status, LogStatus::Ok);
+    assert!(!log.prompt.contains(FLAMES));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_request_cancelled_while_its_cue_waits_is_never_built_or_sent() {
+    const SMOKE: &str = "Smoke is rising from a house nearby.";
+    let mut h = harness(continue_otherwise(|_, _| None), ConversationMode::Batched);
+    h.settle().await;
+    let id = h.who("Aldric");
+    let hung = FakeTransport::new(|_| std::future::pending::<Result<HttpResponse, String>>());
+    h.brain.set_memory(Some(memory_index(hung.clone())));
+    h.stimulate(&id, SMOKE);
+    h.brain.update(true);
+    h.wait().await;
+    assert_eq!(hung.requests().len(), 1, "the decision waits for its cue");
+
+    // A death cancels the villager's requests; this one is still waiting for its cue.
+    h.brain.handle(&[SimEvent::Death { id: id.clone(), name: "Aldric".into(), pos: Vec2::default(), monster: false }]);
+    h.wait().await;
+    h.step(1);
+    let stimuli = h.link.sim.lock().state.characters[&id].stimuli.clone();
+    assert!(stimuli.iter().any(|s| s.text == SMOKE), "the build's commands were not sent");
+    assert!(!h.transport.bodies().iter().any(|body| body.to_string().contains(SMOKE)), "no prompt was sent");
 }

@@ -590,7 +590,15 @@ maxRequestsPerDay: number,
 /**
  * spread through the day; 0 = no cap
  */
-maxTokensPerDay: number, };
+maxTokensPerDay: number, 
+/**
+ * the embedding model's endpoint (`EMBED_BASE_URL`), when memories are recalled by meaning
+ */
+embedBaseUrl: string | null, 
+/**
+ * `EMBED_MODEL`, or none when memories are recalled by shared words
+ */
+embedModel: string | null, embedApiKeySet: boolean, };
 
 /**
  * `POST /api/admin/llm/test`

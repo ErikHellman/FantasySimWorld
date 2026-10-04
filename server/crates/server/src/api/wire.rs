@@ -938,6 +938,11 @@ pub struct LlmSettingsView {
     pub max_requests_per_day: u32,
     /// spread through the day; 0 = no cap
     pub max_tokens_per_day: u32,
+    /// the embedding model's endpoint (`EMBED_BASE_URL`), when memories are recalled by meaning
+    pub embed_base_url: Option<String>,
+    /// `EMBED_MODEL`, or none when memories are recalled by shared words
+    pub embed_model: Option<String>,
+    pub embed_api_key_set: bool,
 }
 
 /// `POST /api/admin/llm/test`

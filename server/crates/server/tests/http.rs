@@ -335,8 +335,29 @@ async fn the_model_is_off_without_its_environment() {
     let (app, _, _data) = app("llm-off").await;
     let current = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
     assert!(current.contains(r#""enabled":false"#) && current.contains(r#""apiKeySet":false"#), "{current}");
+    assert!(current.contains(r#""embedModel":null"#) && current.contains(r#""embedApiKeySet":false"#), "{current}");
     let test = text(app.oneshot(json_request("POST", "/api/admin/llm/test", "")).await.unwrap()).await;
     assert!(test.contains(r#""ok":false"#) && test.contains("LLM_BASE_URL"), "{test}");
+}
+
+#[tokio::test]
+async fn embedding_settings_are_shown_without_their_key_and_tested() {
+    let env = [
+        ("AUTH_TOKEN", TOKEN),
+        ("EMBED_BASE_URL", "http://127.0.0.1:9/v1"),
+        ("EMBED_MODEL", "nomic-embed-text"),
+        ("EMBED_API_KEY", "sk-embed-secret"),
+    ];
+    let (app, _, _data) = app_with("embed", &env).await;
+    let current = text(app.clone().oneshot(authed("/api/admin/settings/llm")).await.unwrap()).await;
+    assert!(current.contains(r#""embedModel":"nomic-embed-text""#), "{current}");
+    assert!(current.contains(r#""embedBaseUrl":"http://127.0.0.1:9/v1""#), "{current}");
+    assert!(current.contains(r#""embedApiKeySet":true"#) && !current.contains("sk-embed-secret"), "{current}");
+
+    // Nothing listens there: the test says so, without the key.
+    let test = text(app.oneshot(json_request("POST", "/api/admin/llm/test", "")).await.unwrap()).await;
+    assert!(test.contains(r#""ok":false"#) && test.contains("Embeddings failed"), "{test}");
+    assert!(!test.contains("sk-embed-secret"), "{test}");
 }
 
 #[tokio::test]

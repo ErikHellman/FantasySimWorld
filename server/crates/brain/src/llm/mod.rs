@@ -1,6 +1,7 @@
 //! The language-model client (port of `src/brain/llm`). Nothing here knows about the sim.
 
 pub mod client;
+pub mod embed;
 pub mod parse;
 pub mod probe;
 pub mod queue;
