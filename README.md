@@ -96,6 +96,7 @@ All settings come from environment variables, read at start:
 | `TRUST_PROXY` | `false` | Take the client's address from `Fly-Client-IP` / `X-Forwarded-For`; only behind a proxy that sets them |
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
+| `EMBED_*` | off | Memory by meaning ([below](#memory-by-meaning)) |
 
 A value the server cannot use stops it at start with a message naming the variable. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
@@ -161,6 +162,18 @@ and start the server against it:
 ```bash
 cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 ```
+
+### Memory by meaning
+
+Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `EMBED_BASE_URL` | none | The embeddings endpoint, e.g. `http://localhost:1234/v1`. Set it together with `EMBED_MODEL`. |
+| `EMBED_MODEL` | none | The embedding model's name there, e.g. `text-embedding-nomic-embed-text-v1.5` |
+| `EMBED_API_KEY` | none | Its key, if it needs one |
+
+The server embeds each new memory in the background (a few hundred short texts a day for a village), keeps the vectors in the database, and embeds what a decision, a reply or a morning plan is about when it asks the model. If the endpoint is slow (over two seconds) or down, recall falls back to shared words, and nothing else changes. The vectors are a cache: changing the model starts a fresh set, and vectors unused for a week are deleted. Embedding requests do not count against `LLM_MAX_REQUESTS_PER_DAY` or `LLM_MAX_TOKENS_PER_DAY`; **🛠 Admin → Language model → Test connection** tests both models. To check an endpoint first: `cargo run --release -p fsw-brain --bin probe -- <base-url> <model> 4 --embed <embed-model>`.
 
 ## Chat
 
