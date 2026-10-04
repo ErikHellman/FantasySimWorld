@@ -1,6 +1,6 @@
 import type {
   AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BillboardRequest, BrainLogRecord, BuyRequest, CharacterDetail, ChatPost, ChatRename, ChatYou,
-  ChroniclePage, CreditsBalance, CreditsState, HealthReport,
+  ChroniclePage, CreditGrant, CreditViewer, CreditsBalance, CreditsState, HealthReport,
   LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
   PresenceRequest, WatchRequest,
 } from '../generated/api';
@@ -57,6 +57,10 @@ export const api = {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),
     /** puts text up on a billboard, or without text gives it back to the daily slogans; the change comes back on the stream */
     billboard: (body: BillboardRequest) => request<void>('POST', '/api/admin/billboards', body),
+    /** everyone with the world open, and their credits */
+    creditViewers: () => request<CreditViewer[]>('GET', '/api/admin/credits'),
+    /** gives credits to one of them by chat name, or to all with `name: null`; answers with the list as it is now */
+    grantCredits: (body: CreditGrant) => request<CreditViewer[]>('POST', '/api/admin/credits/grant', body),
     llmSettings: () => request<LlmSettingsView>('GET', '/api/admin/settings/llm'),
     /** asks the model the server was started with for one decision */
     testLlm: () => request<LlmTestResult>('POST', '/api/admin/llm/test'),

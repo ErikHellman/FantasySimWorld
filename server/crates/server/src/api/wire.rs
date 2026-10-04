@@ -803,6 +803,26 @@ pub struct BuyRequest {
     pub z: Option<f64>,
 }
 
+/// One row of `GET /api/admin/credits`: someone with the world open right now.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct CreditViewer {
+    /// their chat name, which is also what `POST /api/admin/credits/grant` takes
+    pub name: String,
+    pub balance: u32,
+    /// signed in with an account, so the balance is kept; false for a tab's balance held in memory
+    pub account: bool,
+    /// their tab is in front and reporting, so they are earning
+    pub watching: bool,
+}
+
+/// `POST /api/admin/credits/grant`: gives credits to someone with the world open, or to all of them.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct CreditGrant {
+    /// a [`CreditViewer::name`]; `null` for everyone with the world open
+    pub name: Option<String>,
+    pub amount: u32,
+}
+
 // ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
@@ -1076,6 +1096,8 @@ pub fn typescript() -> String {
         CreditsBalance,
         PresenceRequest,
         BuyRequest,
+        CreditViewer,
+        CreditGrant,
         WatchRequest,
         Me,
         ChroniclePage,

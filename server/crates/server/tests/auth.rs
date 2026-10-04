@@ -967,4 +967,15 @@ async fn a_signed_in_viewer_spends_credits_kept_with_their_account() {
     assert_eq!(text(report).await, r#"{"balance":5}"#);
     let purchases = app.store.purchases().await.unwrap();
     assert_eq!((purchases.len(), purchases[0].user_id), (1, Some(id)));
+
+    // Giving credits away is for admins; a gift to an account is kept with it.
+    let gift = json!({"name": name, "amount": 100});
+    let refused = app.mutate("POST", "/api/admin/credits/grant", &viewer, gift.clone()).await;
+    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+    assert_eq!(app.get("/api/admin/credits", &viewer).await.status(), StatusCode::FORBIDDEN);
+    let admin = app.session_for(SignIn::google("g-admin", ADMIN)).await;
+    let given = app.mutate("POST", "/api/admin/credits/grant", &admin, gift).await;
+    let given: Value = serde_json::from_str(&text(given).await).unwrap();
+    assert_eq!(given, json!([{"name": name, "balance": 105, "account": true, "watching": true}]));
+    assert_eq!(app.store.credits(id).await.unwrap(), 105);
 }

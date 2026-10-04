@@ -125,6 +125,10 @@ Where the code differs from the design above:
 - **The page reloads its credits** when the chat shows an event under its own name, which is how a prayer bonus shows up without waiting for the next report.
 - **A power's name is matched in speech as whole words, whatever the case.** A viewer who takes a common word, or a villager's name, as a chat name would be "prayed to" by ordinary talk; the once-a-day bonus bounds what that earns.
 
+## Gifts from an admin (added after review)
+
+`GET /api/admin/credits` lists everyone with a stream open (the chat's members) with their chat name, balance, whether they have an account and whether their tab is reporting. `POST /api/admin/credits/grant {name, amount}` gives 1 to 10,000 credits to the viewer of that name, or to everyone listed when `name` is null. A gift is not held to the cap. The chat announces it, under the viewer's name or as "Everyone watching", and pages reload their balance when they see either.
+
 ## Order of work (tests first in each step)
 
 1. Spec document.

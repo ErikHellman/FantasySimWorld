@@ -37,6 +37,9 @@ const PIXEL_RATIO_STEP = 0.25;
 /** monsters this close to where the camera looks make the music tense */
 const MONSTERS_NEAR = 60;
 
+/** The author of the chat line for an admin's gift to everyone (as the server writes it). */
+const EVERYONE = 'Everyone watching';
+
 const here = (): string => location.pathname + location.search;
 const toLogin = (): void => location.replace(`/login?return_to=${encodeURIComponent(here())}`);
 
@@ -215,8 +218,8 @@ async function start(): Promise<void> {
     },
     chat: (message) => {
       addChat(message);
-      // The village's prayers may just have paid this viewer.
-      if (message.kind === 'event' && message.author === ui.chatName.value) loadCredits();
+      // The village's prayers, or an admin, may just have given this viewer credits.
+      if (message.kind === 'event' && (message.author === ui.chatName.value || message.author === EVERYONE)) loadCredits();
     },
     chatYou: (you) => (ui.chatName.value = you.name),
     refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),

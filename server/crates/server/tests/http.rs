@@ -593,6 +593,7 @@ async fn credits_can_be_turned_off() {
     assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::NOT_FOUND);
     let buy = json_request("POST", "/api/credits/buy", r#"{"viewer":"tabA","offer":"raid"}"#);
     assert_eq!(app.clone().oneshot(buy).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap().status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -683,4 +684,49 @@ async fn credits_buy_things_that_happen_in_the_world() {
         (paused.status(), text(paused).await.as_str()),
         (StatusCode::CONFLICT, r#"{"error":"The world is paused."}"#)
     );
+}
+
+#[tokio::test]
+async fn admins_give_credits_to_those_with_the_world_open() {
+    let (app, _, _data) = app("grant").await;
+    let grant = |body: serde_json::Value| json_request("POST", "/api/admin/credits/grant", &body.to_string());
+    let nobody = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 10}))).await.unwrap();
+    assert_eq!(nobody.status(), StatusCode::NOT_FOUND);
+
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA&name=Ann")).await.unwrap().into_body();
+    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB&name=Bob")).await.unwrap().into_body();
+    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+    read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
+    let report = json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
+    assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::OK);
+
+    let list = text(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap()).await;
+    let list: serde_json::Value = serde_json::from_str(&list).unwrap();
+    assert_eq!(
+        list,
+        serde_json::json!([
+            {"name": "Ann", "balance": 0, "account": false, "watching": true},
+            {"name": "Bob", "balance": 0, "account": false, "watching": false},
+        ])
+    );
+
+    let one = app.clone().oneshot(grant(serde_json::json!({"name": "Bob", "amount": 50}))).await.unwrap();
+    assert_eq!(one.status(), StatusCode::OK);
+    // Past the cap is fine for a gift.
+    let all = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 400}))).await.unwrap();
+    let all: serde_json::Value = serde_json::from_str(&text(all).await).unwrap();
+    assert_eq!((&all[0]["balance"], &all[1]["balance"]), (&400.into(), &450.into()));
+    let own = text(app.clone().oneshot(authed("/api/credits?viewer=tabB")).await.unwrap()).await;
+    assert!(own.contains(r#""balance":450"#), "{own}");
+
+    // The chat says so, which is how their pages learn of it.
+    let seen = read_events(&mut b, |seen| seen.contains("Everyone watching")).await;
+    assert!(seen.contains(r#""kind":"event","author":"Bob","text":"was given 50 credits""#), "{seen}");
+    assert!(seen.contains(r#""author":"Everyone watching","text":"was given 400 credits""#), "{seen}");
+
+    for bad in [serde_json::json!({"name": "Bob", "amount": 0}), serde_json::json!({"name": "Bob", "amount": 10001})] {
+        assert_eq!(app.clone().oneshot(grant(bad)).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    }
+    let stranger = app.clone().oneshot(grant(serde_json::json!({"name": "Cyd", "amount": 5}))).await.unwrap();
+    assert_eq!(stranger.status(), StatusCode::NOT_FOUND);
 }

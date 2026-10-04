@@ -13,7 +13,7 @@ use fsw_sim::Command;
 use fsw_sim::systems::viewer_events::{check, describe};
 
 use crate::AppState;
-use crate::api::wire::{BuyRequest, CreditsBalance, CreditsState, PresenceRequest};
+use crate::api::wire::{BuyRequest, CreditGrant, CreditViewer, CreditsBalance, CreditsState, PresenceRequest};
 use crate::api::{ApiFailure, error};
 use crate::auth::Viewer;
 use crate::chat::ChatKey;
@@ -134,4 +134,57 @@ pub async fn buy(
     }
     app.chat.announce(name, done);
     Ok(Json(CreditsBalance { balance: shown(balance) }).into_response())
+}
+
+/// The most an admin gives one viewer at a time.
+const GRANT_MAX: u32 = 10_000;
+
+/// `GET /api/admin/credits`: everyone with the world open, by name, and what they have.
+pub async fn viewers(State(app): State<Arc<AppState>>) -> Result<Response, ApiFailure> {
+    let hub = &app.credits;
+    if !hub.enabled() {
+        return Ok(error(StatusCode::NOT_FOUND, "credits are off"));
+    }
+    let now = Instant::now();
+    let mut viewers = Vec::new();
+    for (key, name) in app.chat.present() {
+        viewers.push(CreditViewer {
+            name,
+            balance: shown(hub.balance(&app.store, &key, now).await?),
+            account: matches!(key, ChatKey::User(_)),
+            watching: hub.watching(&key, now),
+        });
+    }
+    Ok(Json(viewers).into_response())
+}
+
+/// `POST /api/admin/credits/grant`: an admin's gift to one viewer or to everyone with the world
+/// open. Unlike watching, it may take a balance past the cap. Answers with the list as it is now.
+pub async fn grant(State(app): State<Arc<AppState>>, Json(body): Json<CreditGrant>) -> Result<Response, ApiFailure> {
+    let hub = &app.credits;
+    if !hub.enabled() {
+        return Ok(error(StatusCode::NOT_FOUND, "credits are off"));
+    }
+    if !(1..=GRANT_MAX).contains(&body.amount) {
+        return Ok(error(StatusCode::BAD_REQUEST, &format!("the amount must be from 1 to {GRANT_MAX}")));
+    }
+    let present = app.chat.present();
+    let chosen: Vec<_> = match &body.name {
+        None => present,
+        Some(name) => present.into_iter().filter(|(_, present)| present == name).collect(),
+    };
+    if chosen.is_empty() {
+        return Ok(error(StatusCode::NOT_FOUND, "nobody by that name has the world open"));
+    }
+    let now = Instant::now();
+    for (key, _) in &chosen {
+        hub.grant(&app.store, key, body.amount, now).await?;
+    }
+    // The line in the chat is also what tells their pages to show the new balance.
+    let who = match body.name {
+        Some(name) => name,
+        None => "Everyone watching".into(),
+    };
+    app.chat.announce(who, format!("was given {} credits", body.amount));
+    viewers(State(app)).await
 }

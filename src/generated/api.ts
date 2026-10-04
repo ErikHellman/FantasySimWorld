@@ -494,6 +494,32 @@ characterId: string | null,
 x: number | null, z: number | null, };
 
 /**
+ * One row of `GET /api/admin/credits`: someone with the world open right now.
+ */
+export type CreditViewer = { 
+/**
+ * their chat name, which is also what `POST /api/admin/credits/grant` takes
+ */
+name: string, balance: number, 
+/**
+ * signed in with an account, so the balance is kept; false for a tab's balance held in memory
+ */
+account: boolean, 
+/**
+ * their tab is in front and reporting, so they are earning
+ */
+watching: boolean, };
+
+/**
+ * `POST /api/admin/credits/grant`: gives credits to someone with the world open, or to all of them.
+ */
+export type CreditGrant = { 
+/**
+ * a [`CreditViewer::name`]; `null` for everyone with the world open
+ */
+name: string | null, amount: number, };
+
+/**
  * `POST /api/watch`: which character's `detail` this viewer (one tab) receives.
  */
 export type WatchRequest = { 

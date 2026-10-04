@@ -316,6 +316,24 @@ impl CreditsHub {
         }
     }
 
+    /// Adds `amount` as a gift from an admin, past the cap if need be; returns the new balance.
+    pub async fn grant(&self, store: &Store, key: &ChatKey, amount: u32, now: Instant) -> Result<i64, StoreError> {
+        match key {
+            ChatKey::User(id) => store.grant_credits(*id, i64::from(amount)).await,
+            ChatKey::Tab(tab) => {
+                let mut inner = self.inner.lock();
+                let tab = inner.tab(tab, now);
+                tab.balance += i64::from(amount);
+                Ok(tab.balance)
+            }
+        }
+    }
+
+    /// Whether `key` has reported watching recently enough that its next report would count.
+    pub fn watching(&self, key: &ChatKey, now: Instant) -> bool {
+        self.inner.lock().watching.get(key).is_some_and(|w| now.saturating_duration_since(w.last) <= LATE)
+    }
+
     /// Takes `cost` if `key` has it (`None` if not), and makes `name` theirs for prayers.
     pub async fn spend(
         &self,
@@ -439,6 +457,9 @@ mod tests {
         assert_eq!(hub.beat(&key, at(230)), 1);
         // Someone else's run is their own.
         assert_eq!(hub.beat(&tab("b"), at(231)), 0);
+        // Watching lasts as long as the next report could still count.
+        assert!(hub.watching(&key, at(260)) && !hub.watching(&key, at(300)));
+        assert!(!hub.watching(&tab("c"), at(260)));
     }
 
     #[test]
@@ -467,6 +488,8 @@ mod tests {
         assert_eq!(hub.spend(&store, &key, 20, "Erik", now).await.unwrap(), Some(30));
         assert_eq!(hub.owner(&store, "ERIK").await.unwrap(), Some(key.clone()));
         assert_eq!(hub.refund(&store, &key, 20, now).await.unwrap(), 50);
+        // An admin's gift is not held to the cap.
+        assert_eq!(hub.grant(&store, &key, 100, now).await.unwrap(), 150);
     }
 
     #[tokio::test]

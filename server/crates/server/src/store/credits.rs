@@ -90,6 +90,23 @@ impl Store {
         .await
     }
 
+    /// Adds `amount` as a gift from an admin, which may take the balance past the cap. Returns the new balance.
+    pub async fn grant_credits(&self, user_id: i64, amount: i64) -> Result<i64> {
+        self.write(move |conn| {
+            let tx = conn.transaction()?;
+            ensure(&tx, user_id)?;
+            tx.execute(
+                "UPDATE credits SET balance = balance + ?1, earned_total = earned_total + ?1, updated_at = ?2
+                 WHERE user_id = ?3",
+                (amount.max(0), now_ms(), user_id),
+            )?;
+            let balance = balance_of(&tx, user_id)?;
+            tx.commit()?;
+            Ok(balance)
+        })
+        .await
+    }
+
     /// Gives back what [`Store::spend_credits`] took for something that then could not happen.
     pub async fn refund_credits(&self, user_id: i64, cost: i64) -> Result<i64> {
         self.write(move |conn| {
@@ -177,6 +194,10 @@ mod tests {
         // A refund may leave more than the cap; earning never takes it away.
         assert_eq!(store.refund_credits(id, 20).await.unwrap(), 420);
         assert_eq!(store.earn_credits(id, 5, 400).await.unwrap(), 420);
+        // So may an admin's gift, even to an account that has never earned or spent.
+        assert_eq!(store.grant_credits(id, 100).await.unwrap(), 520);
+        let new = testing::user(&store, "new@example.com").await;
+        assert_eq!(store.grant_credits(new, 50).await.unwrap(), STARTING_CREDITS + 50);
     }
 
     #[tokio::test]
