@@ -39,13 +39,47 @@ pub struct Recall<'a> {
 }
 
 impl Recall<'_> {
-    /// How close a memory is to the cue in meaning, as relevance from 0 to 1.5. `None`
+    /// How close a memory is to the cue in meaning: the cosine of their vectors. `None`
     /// without both vectors, or when their sizes differ (another model's), so the
     /// caller falls back to shared words for that memory.
-    pub fn meaning(&self, text: &str) -> Option<f64> {
+    pub fn closeness(&self, text: &str) -> Option<f64> {
         let cue = self.cue?;
         let vector = self.lookup.vector(text)?;
-        (vector.len() == cue.len()).then(|| ((cosine(cue, &vector) - 0.2) / 0.6).clamp(0.0, 1.0) * 1.5)
+        (vector.len() == cue.len()).then(|| cosine(cue, &vector))
+    }
+}
+
+/// The most relevance meaning can add to a memory.
+const MEANING_MAX: f64 = 1.5;
+/// Below this spread between the middle and the best closeness, the differences are noise.
+const MEANING_MIN_SPREAD: f64 = 0.01;
+
+/// Turns closeness into relevance against one cue's own spread. Embedding models differ
+/// in where unrelated texts land (around 0.2 for some, above 0.7 for multilingual-e5),
+/// so fixed thresholds favour some models and flatten others. Measured against the
+/// cue, the memories no closer than the middle one get nothing and the closest gets
+/// the most, whatever the model.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeaningScale {
+    floor: f64,
+    top: f64,
+}
+
+impl MeaningScale {
+    /// The scale for these closeness values (one per memory that has a vector). `None`
+    /// with fewer than two, or when they are too alike to tell anything apart.
+    pub fn of(closeness: &[f64]) -> Option<Self> {
+        let mut sorted = closeness.to_vec();
+        sorted.sort_by(|a, b| a.total_cmp(b));
+        // The lower median, so that with two memories the farther one is the floor.
+        let floor = *sorted.get(sorted.len().checked_sub(1)? / 2)?;
+        let top = *sorted.last()?;
+        (sorted.len() >= 2 && top - floor >= MEANING_MIN_SPREAD).then_some(Self { floor, top })
+    }
+
+    /// Relevance from 0 to [`MEANING_MAX`] for one memory's closeness.
+    pub fn score(&self, closeness: f64) -> f64 {
+        ((closeness - self.floor) / (self.top - self.floor)).clamp(0.0, 1.0) * MEANING_MAX
     }
 }
 
@@ -233,7 +267,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{EmbedUsage, MemoryIndex, Recall, VectorCache, VectorLookup, text_key};
+    use super::{EmbedUsage, MeaningScale, MemoryIndex, Recall, VectorCache, VectorLookup, text_key};
     use crate::llm::embed::{BATCH, Embedder};
     use crate::llm::transport::{FakeTransport, HttpRequest, HttpResponse};
     use crate::settings::{ApiKey, EmbedSettings};
@@ -265,18 +299,40 @@ mod tests {
     }
 
     #[test]
-    fn meaning_needs_both_vectors_of_the_same_size() {
+    fn closeness_needs_both_vectors_of_the_same_size() {
         let cache = VectorCache::new("m1");
         cache.insert(cache.key("fire"), Arc::from(vec![1.0f32, 0.0]));
         cache.insert(cache.key("bread"), Arc::from(vec![0.0f32, 1.0]));
         cache.insert(cache.key("odd"), Arc::from(vec![1.0f32, 0.0, 0.0]));
         let cue = [1.0f32, 0.0];
         let recall = Recall { lookup: &cache, cue: Some(&cue) };
-        assert_eq!(recall.meaning("fire"), Some(1.5));
-        assert_eq!(recall.meaning("bread"), Some(0.0));
-        assert_eq!(recall.meaning("odd"), None);
-        assert_eq!(recall.meaning("unknown"), None);
-        assert_eq!(Recall { lookup: &cache, cue: None }.meaning("fire"), None);
+        assert_eq!(recall.closeness("fire"), Some(1.0));
+        assert_eq!(recall.closeness("bread"), Some(0.0));
+        assert_eq!(recall.closeness("odd"), None);
+        assert_eq!(recall.closeness("unknown"), None);
+        assert_eq!(Recall { lookup: &cache, cue: None }.closeness("fire"), None);
+    }
+
+    /// Closeness as an embedding model like multilingual-e5 gives it: everything above 0.7.
+    const BUNCHED: [f64; 7] = [0.82, 0.76, 0.75, 0.73, 0.74, 0.73, 0.80];
+
+    #[test]
+    fn meaning_is_scored_against_the_cue_s_own_spread() {
+        let scale = MeaningScale::of(&BUNCHED).unwrap();
+        assert_eq!(scale.score(0.82), 1.5);
+        assert_eq!(scale.score(0.75), 0.0);
+        assert_eq!(scale.score(0.73), 0.0);
+        assert!((scale.score(0.80) - 0.05 / 0.07 * 1.5).abs() < 1e-9);
+        // A model with a low baseline gets the same treatment.
+        let spread = MeaningScale::of(&[0.1, 0.15, 0.2, 0.6]).unwrap();
+        assert_eq!((spread.score(0.6), spread.score(0.15)), (1.5, 0.0));
+    }
+
+    #[test]
+    fn a_flat_or_tiny_spread_means_nothing() {
+        assert!(MeaningScale::of(&[0.75, 0.752, 0.751]).is_none());
+        assert!(MeaningScale::of(&[0.9]).is_none());
+        assert!(MeaningScale::of(&[]).is_none());
     }
 
     #[tokio::test]

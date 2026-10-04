@@ -8,7 +8,7 @@ use fsw_core::jsmath::pow;
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{Character, Memory, MemoryKind};
 
-use crate::recall::Recall;
+use crate::recall::{MeaningScale, Recall};
 
 const STOP_WORDS: &[&str] = &[
     "the", "and", "for", "with", "that", "this", "was", "were", "have", "has", "had", "you", "your", "are", "not",
@@ -34,10 +34,14 @@ pub struct Cue<'a> {
 /// or things at hand. Returned in chronological order.
 pub fn retrieve<'c>(c: &'c Character, tick: i64, cue: Cue, count: usize, recall: Option<&Recall>) -> Vec<&'c Memory> {
     let cue_words = words(cue.text);
+    let closeness: Vec<Option<f64>> =
+        c.memories.iter().map(|memory| recall.and_then(|recall| recall.closeness(&memory.text))).collect();
+    let scale = MeaningScale::of(&closeness.iter().flatten().copied().collect::<Vec<_>>());
     let mut scored: Vec<(&Memory, f64)> = c
         .memories
         .iter()
-        .map(|memory| {
+        .zip(&closeness)
+        .map(|(memory, closeness)| {
             let age_days = (tick - memory.tick).max(0) as f64 / TICKS_PER_DAY as f64;
             let recency = pow(0.5, age_days / 1.5);
             let mut relevance = 0.0;
@@ -46,8 +50,8 @@ pub fn retrieve<'c>(c: &'c Character, tick: i64, cue: Cue, count: usize, recall:
                     relevance += 1.0;
                 }
             }
-            match recall.and_then(|recall| recall.meaning(&memory.text)) {
-                Some(meaning) => relevance += meaning,
+            match scale.zip(*closeness) {
+                Some((scale, closeness)) => relevance += scale.score(closeness),
                 None if !cue_words.is_empty() => {
                     let shared = words(&memory.text).iter().filter(|w| cue_words.contains(*w)).count();
                     relevance += (shared as f64 * 0.34).min(1.0);
@@ -123,6 +127,32 @@ mod tests {
             retrieve(&c, NOW, Cue { subjects: &[], text: "Smoke over the village" }, 1, Some(&recall))[0].text,
             FLAMES
         );
+    }
+
+    /// A unit vector whose cosine with [1, 0] is `closeness`.
+    fn at(closeness: f32) -> Arc<[f32]> {
+        Arc::from(vec![closeness, (1.0 - closeness * closeness).sqrt()])
+    }
+
+    #[test]
+    fn bunched_closeness_still_picks_the_memory_closest_in_meaning() {
+        // Closeness as multilingual-e5 gives it for a smoke cue: the fire memory is only a little ahead.
+        let memories = [
+            (FLAMES, 3, 3, 0.82),
+            (BREAD, 0, 5, 0.73),
+            ("Mended the fence posts on the farm.", 0, 5, 0.74),
+            ("Sigrid gave me a small gift.", 1, 4, 0.73),
+            ("Halvard was killed near the ruins.", 2, 6, 0.75),
+        ];
+        let c = villager(memories.iter().map(|(text, days, importance, _)| memory(*days, text, *importance)).collect());
+        let cache = VectorCache::new("m");
+        for (text, _, _, closeness) in memories {
+            cache.insert(cache.key(text), at(closeness));
+        }
+        let vector = [1.0f32, 0.0];
+        let recall = Recall { lookup: &cache, cue: Some(&vector) };
+        let cue = Cue { subjects: &[], text: "Smoke over the village" };
+        assert_eq!(retrieve(&c, NOW, cue, 1, Some(&recall))[0].text, FLAMES);
     }
 
     #[test]
