@@ -6,6 +6,7 @@ use crate::store::StoreError;
 use wire::ApiError;
 
 pub mod chat;
+pub mod credits;
 pub mod llm;
 pub mod router;
 pub mod stream;

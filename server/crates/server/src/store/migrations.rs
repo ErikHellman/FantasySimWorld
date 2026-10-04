@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use super::{Result, StoreError, now_ms};
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2)];
+const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2), (3, V3)];
 
 const V1: &str = "
 CREATE TABLE worlds (
@@ -141,6 +141,32 @@ CREATE INDEX auth_attempts_by_time ON auth_attempts (at);
 /// saved, so the API key no longer sits in the database (or in its backups).
 const V2: &str = "DELETE FROM settings WHERE key IN ('llm', 'llm.api_key');";
 
+/// Viewers' credits: a balance per account, and a record of what was bought. `power_name` is
+/// the (lower-cased) name an account last spent under, which is how the villagers know it.
+const V3: &str = "
+CREATE TABLE credits (
+    user_id INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    balance INTEGER NOT NULL,
+    earned_total INTEGER NOT NULL,
+    spent_total INTEGER NOT NULL,
+    power_name TEXT,
+    updated_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX credits_by_power ON credits (power_name);
+
+CREATE TABLE credit_purchases (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    name TEXT NOT NULL,
+    world_id INTEGER NOT NULL,
+    offer TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    tick INTEGER NOT NULL,
+    at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX credit_purchases_by_time ON credit_purchases (at);
+";
+
 /// Brings the schema up to date. Refuses a database written by a newer server.
 pub fn run(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
@@ -186,8 +212,8 @@ mod tests {
         for key in ["llm", "llm.api_key", "llm.capabilities"] {
             conn.execute("INSERT INTO settings (key, value, updated_at) VALUES (?1, '\"x\"', 0)", [key]).unwrap();
         }
-        conn.execute("DELETE FROM schema_migrations WHERE version = 2", []).unwrap();
-        run(&mut conn).unwrap();
+        // As it ran on a database from before it (later migrations cannot run twice).
+        conn.execute_batch(V2).unwrap();
         let mut keys = conn.prepare("SELECT key FROM settings ORDER BY key").unwrap();
         let keys: Vec<String> = keys.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
         assert_eq!(keys, ["llm.capabilities"]);

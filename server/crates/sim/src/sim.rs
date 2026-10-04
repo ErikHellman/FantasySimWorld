@@ -27,6 +27,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::viewer_events;
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -245,6 +246,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             let c = ctx.c(&id);
             c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));
         }
+        Command::ViewerEvent { by, event } => viewer_events::apply(ctx, &by, event),
     }
 }
 

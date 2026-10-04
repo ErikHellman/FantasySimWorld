@@ -15,7 +15,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
-use crate::api::{chat, llm, stream, world};
+use crate::api::{chat, credits, llm, stream, world};
 use crate::auth;
 
 /// A save is a few hundred KB; a long-lived world stays well under this.
@@ -29,6 +29,8 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/attempts", get(auth::allowlist::attempts))
         .route("/speed", post(world::speed))
         .route("/billboards", post(world::billboard))
+        .route("/credits", get(credits::viewers))
+        .route("/credits/grant", post(credits::grant))
         .route("/world/new", post(world::new_world))
         .route("/world/import", post(world::import).layer(DefaultBodyLimit::max(IMPORT_LIMIT)))
         .route("/world/export", get(world::export))
@@ -45,6 +47,9 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/watch", post(world::watch))
         .route("/chat", post(chat::post))
         .route("/chat/name", post(chat::rename))
+        .route("/credits", get(credits::state))
+        .route("/credits/buy", post(credits::buy))
+        .route("/presence", post(credits::presence))
         .route("/characters/{id}", get(world::character))
         .route("/chronicle", get(world::chronicle))
         .route("/logout", post(auth::logout))

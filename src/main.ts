@@ -8,6 +8,7 @@ import { gameTime } from './core/time';
 import type { AmbientCounts, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
 import { Playback } from './net/playback';
+import { Heartbeat, tabIsWatched } from './net/presence';
 import { Stream, viewerId } from './net/stream';
 import { ViewWorld } from './net/viewWorld';
 import { Assets } from './render/assets';
@@ -22,7 +23,7 @@ import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setClock, setHouse, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setClock, setHouse, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -35,6 +36,9 @@ const SLOW_FRAME_MS = 40;
 const PIXEL_RATIO_STEP = 0.25;
 /** monsters this close to where the camera looks make the music tense */
 const MONSTERS_NEAR = 60;
+
+/** The author of the chat line for an admin's gift to everyone (as the server writes it). */
+const EVERYONE = 'Everyone watching';
 
 const here = (): string => location.pathname + location.search;
 const toLogin = (): void => location.replace(`/login?return_to=${encodeURIComponent(here())}`);
@@ -157,6 +161,26 @@ async function start(): Promise<void> {
     speech.setRate(playback.speed);
   };
 
+  // Credits: the server counts them; this page reports that it is being watched and shows the balance.
+  let heartbeat: Heartbeat | null = null;
+  const loadCredits = (): void => {
+    api.credits(viewer).then(
+      (credits) => {
+        ui.credits.value = credits;
+        if (credits.perMinute > 0 && !heartbeat) {
+          heartbeat = new Heartbeat({
+            seconds: credits.beatSeconds,
+            watched: tabIsWatched,
+            report: () => api.presence({ viewer }).then((answer) => answer.balance),
+            balance: setBalance,
+          });
+          heartbeat.start();
+        }
+      },
+      (error) => console.warn('credits', error),
+    );
+  };
+
   const stream = new Stream(viewer, {
     hello: (hello) => {
       ui.viewers.value = hello.viewers;
@@ -187,8 +211,16 @@ async function start(): Promise<void> {
     },
     brainlog: (record) => addBrainLog([record]),
     worldReset: () => location.reload(),
-    chatWelcome: fromChatWelcome,
-    chat: addChat,
+    // The welcome means the server knows this tab, which the credits routes need.
+    chatWelcome: (welcome) => {
+      fromChatWelcome(welcome);
+      loadCredits();
+    },
+    chat: (message) => {
+      addChat(message);
+      // The village's prayers, or an admin, may just have given this viewer credits.
+      if (message.kind === 'event' && (message.author === ui.chatName.value || message.author === EVERYONE)) loadCredits();
+    },
     chatYou: (you) => (ui.chatName.value = you.name),
     refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),
     connection: (state) => (ui.connection.value = state),
@@ -222,6 +254,17 @@ async function start(): Promise<void> {
     ui.chatName.value = you.name;
     saveChatSettings({ ...loadChatSettings(), name: you.name });
     return you.name;
+  };
+
+  actions.buy = async (offer) => {
+    const answer = await api.buy({
+      viewer,
+      offer: offer.id,
+      characterId: offer.target === 'character' ? ui.selectedId.value : null,
+      x: offer.target === 'point' ? view.rig.target.x : null,
+      z: offer.target === 'point' ? view.rig.target.z : null,
+    });
+    setBalance(answer.balance);
   };
 
   const burning = (): boolean => ui.houses.value.some((house) => house.phase === 'burning');
@@ -286,7 +329,9 @@ async function start(): Promise<void> {
   stream.open();
 
   // For poking at the world from the browser console.
-  (window as unknown as { __debug: unknown }).__debug = { world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood, stats: () => stats.report() };
+  (window as unknown as { __debug: unknown }).__debug = {
+    world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood, stats: () => stats.report(), heartbeat: () => heartbeat,
+  };
   console.info(`Fantasy Sim World: ${backend} backend, ${quality.quality} quality, watching as ${ui.me.value.role}`);
 }
 

@@ -453,6 +453,26 @@ impl ChatHub {
         Ok(inner.record(&self.out, ChatKind::Say, author, text))
     }
 
+    /// The name `key` goes by, while they have a stream open.
+    pub fn name_of(&self, key: &ChatKey) -> Option<String> {
+        self.inner.lock().members.get(key).map(|member| member.name.clone())
+    }
+
+    /// Everyone with a stream open, by name.
+    pub fn present(&self) -> Vec<(ChatKey, String)> {
+        let inner = self.inner.lock();
+        let mut present: Vec<_> =
+            inner.members.iter().map(|(key, member)| (key.clone(), member.name.clone())).collect();
+        present.sort_by_key(|(_, name)| name.to_lowercase());
+        present
+    }
+
+    /// Tells the room that `author` made something happen ("{author} {text}"): a viewer's
+    /// purchase, or the village's prayers. The text is the server's own, so it is not filtered.
+    pub fn announce(&self, author: String, text: String) -> ChatMessage {
+        self.inner.lock().record(&self.out, ChatKind::Event, author, text)
+    }
+
     /// Announces everyone who has now been gone for [`AWAY`].
     pub fn sweep(&self, now: Instant) {
         self.inner.lock().sweep(&self.out, now);

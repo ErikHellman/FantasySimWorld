@@ -31,6 +31,12 @@ async fn app(name: &str) -> (axum::Router, CancellationToken, tempfile::TempDir)
 
 /// The router with these settings, plus a throwaway web build and database.
 async fn app_with(name: &str, settings: &[(&str, &str)]) -> (axum::Router, CancellationToken, tempfile::TempDir) {
+    let (state, shutdown, data) = state_with(name, settings).await;
+    (router(state), shutdown, data)
+}
+
+/// The shared state behind [`app_with`], for tests that reach past the routes.
+async fn state_with(name: &str, settings: &[(&str, &str)]) -> (Arc<AppState>, CancellationToken, tempfile::TempDir) {
     let data = tempfile::tempdir().unwrap();
     let mut vars: Vec<(String, String)> = settings.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     vars.push(("STATIC_DIR".to_string(), static_dir(name).display().to_string()));
@@ -40,7 +46,7 @@ async fn app_with(name: &str, settings: &[(&str, &str)]) -> (axum::Router, Cance
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
-    (router(AppState::new(config, world, store, brain, shutdown.clone()).unwrap()), shutdown, data)
+    (AppState::new(config, world, store, brain, shutdown.clone()).unwrap(), shutdown, data)
 }
 
 fn get(uri: &str) -> Request<Body> {
@@ -135,7 +141,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":3"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":4"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.
@@ -540,4 +546,187 @@ async fn admins_put_text_on_a_billboard_and_every_viewer_sees_it() {
     assert_eq!(app.clone().oneshot(back).await.unwrap().status(), StatusCode::NO_CONTENT);
     let seen = read_events(&mut body, |seen| seen.contains(r#""custom":false"#)).await;
     assert!(seen.contains(r#""id":"green_board""#), "{seen}");
+}
+
+#[tokio::test]
+async fn watching_is_reported_by_tabs_with_an_open_stream() {
+    let (app, _, _data) = app("presence").await;
+    let report = || json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
+    let early = app.clone().oneshot(report()).await.unwrap();
+    assert_eq!(early.status(), StatusCode::CONFLICT);
+
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
+    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+    // The first report starts the run; one right behind it is too soon to earn.
+    for _ in 0..2 {
+        let response = app.clone().oneshot(report()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(text(response).await, r#"{"balance":0}"#);
+    }
+    let anonymous = json_request("POST", "/api/presence", r#"{"viewer":""}"#);
+    assert_eq!(app.clone().oneshot(anonymous).await.unwrap().status(), StatusCode::BAD_REQUEST);
+
+    let state = text(app.clone().oneshot(authed("/api/credits?viewer=tabA")).await.unwrap()).await;
+    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
+    assert_eq!(
+        (&state["balance"], &state["cap"], &state["perMinute"], &state["beatSeconds"]),
+        (&0.into(), &400.into(), &2.into(), &30.into())
+    );
+    assert_eq!(state["offers"].as_array().unwrap().len(), 11);
+    assert_eq!(
+        state["offers"][0],
+        serde_json::json!({
+            "id": "food", "name": "Food", "description": "A meal in the villager's pack.",
+            "cost": 5, "target": "character", "group": "gift"
+        })
+    );
+}
+
+#[tokio::test]
+async fn credits_can_be_turned_off() {
+    let (app, _, _data) = app_with("credits-off", &[("AUTH_TOKEN", TOKEN), ("CREDITS_PER_MINUTE", "0")]).await;
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
+    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+    let state = text(app.clone().oneshot(authed("/api/credits?viewer=tabA")).await.unwrap()).await;
+    assert!(state.contains(r#""perMinute":0"#) && state.contains(r#""offers":[]"#), "{state}");
+    let report = json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
+    assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::NOT_FOUND);
+    let buy = json_request("POST", "/api/credits/buy", r#"{"viewer":"tabA","offer":"raid"}"#);
+    assert_eq!(app.clone().oneshot(buy).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap().status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn credits_buy_things_that_happen_in_the_world() {
+    use fsw_server::chat::ChatKey;
+
+    let (state, _, _data) = state_with("buy", &[("AUTH_TOKEN", TOKEN)]).await;
+    let app = router(state.clone());
+    let buy = |body: serde_json::Value| json_request("POST", "/api/credits/buy", &body.to_string());
+    let food = || serde_json::json!({"viewer": "tabA", "offer": "food", "characterId": "c1"});
+
+    // Nobody is known by a name before their stream is open.
+    assert_eq!(app.clone().oneshot(buy(food())).await.unwrap().status(), StatusCode::CONFLICT);
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
+    let seen = read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+    let name = last_event(&seen, "chat_welcome")["you"].as_str().unwrap().to_owned();
+
+    let poor = app.clone().oneshot(buy(food())).await.unwrap();
+    assert_eq!(poor.status(), StatusCode::PAYMENT_REQUIRED);
+    let key = ChatKey::Tab("tabA".into());
+    state.credits.earn(&state.store, &key, 300, std::time::Instant::now()).await.unwrap();
+
+    // What cannot happen costs nothing.
+    let gone = app
+        .clone()
+        .oneshot(buy(serde_json::json!({"viewer": "tabA", "offer": "food", "characterId": "c99"})))
+        .await
+        .unwrap();
+    assert_eq!(gone.status(), StatusCode::CONFLICT);
+    assert_eq!(text(gone).await, r#"{"error":"That villager is no longer here."}"#);
+    let nowhere = buy(serde_json::json!({"viewer": "tabA", "offer": "skeleton_minion", "x": 1.0e9, "z": 0.0}));
+    assert_eq!(app.clone().oneshot(nowhere).await.unwrap().status(), StatusCode::CONFLICT);
+    let untargeted = buy(serde_json::json!({"viewer": "tabA", "offer": "food"}));
+    assert_eq!(app.clone().oneshot(untargeted).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    let unknown = buy(serde_json::json!({"viewer": "tabA", "offer": "dragon"}));
+    assert_eq!(app.clone().oneshot(unknown).await.unwrap().status(), StatusCode::NOT_FOUND);
+
+    let bought = app.clone().oneshot(buy(food())).await.unwrap();
+    assert_eq!(bought.status(), StatusCode::OK);
+    assert_eq!(text(bought).await, r#"{"balance":295}"#);
+    // The chat says who did it, and so does the chronicle once the sim has applied it; either may come first.
+    let seen =
+        read_events(&mut a, |seen| seen.contains("sent Aldric some food.") && seen.contains("event: chat\n")).await;
+    let said = last_event(&seen, "chat");
+    assert_eq!(
+        (said["kind"].as_str(), said["author"].as_str(), said["text"].as_str()),
+        (Some("event"), Some(name.as_str()), Some("sent Aldric some food"))
+    );
+    assert!(seen.contains(&format!("{name} sent Aldric some food.")), "{seen}");
+
+    let green = fsw_world::places::get_place("green").door;
+    let skeleton = buy(serde_json::json!({"viewer": "tabA", "offer": "skeleton_warrior", "x": green.x, "z": green.z}));
+    assert_eq!(text(app.clone().oneshot(skeleton).await.unwrap()).await, r#"{"balance":255}"#);
+    read_events(&mut a, |seen| seen.contains("raised a skeleton warrior at the village green.")).await;
+    assert_eq!(state.world.core.read().sim.state.monsters.len(), 1);
+    assert_eq!(state.credits.owner(&state.store, &name).await.unwrap(), Some(key));
+
+    let potion = buy(serde_json::json!({"viewer": "tabA", "offer": "potion", "characterId": "c1"}));
+    assert_eq!(app.clone().oneshot(potion).await.unwrap().status(), StatusCode::OK);
+    // Three in a row is the most anyone may buy at once.
+    assert_eq!(app.clone().oneshot(buy(food())).await.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
+    let record: Vec<_> =
+        state.store.purchases().await.unwrap().into_iter().map(|p| (p.offer, p.cost, p.name)).collect();
+    assert_eq!(
+        record,
+        [
+            ("food".to_owned(), 5, name.clone()),
+            ("skeleton_warrior".to_owned(), 40, name.clone()),
+            ("potion".to_owned(), 8, name)
+        ]
+    );
+
+    // Nothing is sold while the world stands still.
+    let pause = json_request("POST", "/api/admin/speed", r#"{"speed":0}"#);
+    assert_eq!(app.clone().oneshot(pause).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB")).await.unwrap().into_body();
+    read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
+    // The world task takes the new speed at its next wake.
+    for _ in 0..100 {
+        if state.world.core.read().speed == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let paused = buy(serde_json::json!({"viewer": "tabB", "offer": "raid"}));
+    let paused = app.clone().oneshot(paused).await.unwrap();
+    assert_eq!(
+        (paused.status(), text(paused).await.as_str()),
+        (StatusCode::CONFLICT, r#"{"error":"The world is paused."}"#)
+    );
+}
+
+#[tokio::test]
+async fn admins_give_credits_to_those_with_the_world_open() {
+    let (app, _, _data) = app("grant").await;
+    let grant = |body: serde_json::Value| json_request("POST", "/api/admin/credits/grant", &body.to_string());
+    let nobody = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 10}))).await.unwrap();
+    assert_eq!(nobody.status(), StatusCode::NOT_FOUND);
+
+    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA&name=Ann")).await.unwrap().into_body();
+    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB&name=Bob")).await.unwrap().into_body();
+    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
+    read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
+    let report = json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
+    assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::OK);
+
+    let list = text(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap()).await;
+    let list: serde_json::Value = serde_json::from_str(&list).unwrap();
+    assert_eq!(
+        list,
+        serde_json::json!([
+            {"name": "Ann", "balance": 0, "account": false, "watching": true},
+            {"name": "Bob", "balance": 0, "account": false, "watching": false},
+        ])
+    );
+
+    let one = app.clone().oneshot(grant(serde_json::json!({"name": "Bob", "amount": 50}))).await.unwrap();
+    assert_eq!(one.status(), StatusCode::OK);
+    // Past the cap is fine for a gift.
+    let all = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 400}))).await.unwrap();
+    let all: serde_json::Value = serde_json::from_str(&text(all).await).unwrap();
+    assert_eq!((&all[0]["balance"], &all[1]["balance"]), (&400.into(), &450.into()));
+    let own = text(app.clone().oneshot(authed("/api/credits?viewer=tabB")).await.unwrap()).await;
+    assert!(own.contains(r#""balance":450"#), "{own}");
+
+    // The chat says so, which is how their pages learn of it.
+    let seen = read_events(&mut b, |seen| seen.contains("Everyone watching")).await;
+    assert!(seen.contains(r#""kind":"event","author":"Bob","text":"was given 50 credits""#), "{seen}");
+    assert!(seen.contains(r#""author":"Everyone watching","text":"was given 400 credits""#), "{seen}");
+
+    for bad in [serde_json::json!({"name": "Bob", "amount": 0}), serde_json::json!({"name": "Bob", "amount": 10001})] {
+        assert_eq!(app.clone().oneshot(grant(bad)).await.unwrap().status(), StatusCode::BAD_REQUEST);
+    }
+    let stranger = app.clone().oneshot(grant(serde_json::json!({"name": "Cyd", "amount": 5}))).await.unwrap();
+    assert_eq!(stranger.status(), StatusCode::NOT_FOUND);
 }
