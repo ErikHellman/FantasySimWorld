@@ -35,9 +35,10 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, billboard_prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt,
-    reflect_prompt, reply_prompt,
+    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, mercy_prompt, plan_cue, plan_prompt,
+    prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt,
 };
+use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
     feeling, interpret_conversation, interpret_decision, interpret_plan, reflection_relationships, spoken,
@@ -48,6 +49,8 @@ const SCAN_INTERVAL: Duration = Duration::from_millis(400);
 const MAX_TURN_LINES: usize = 6;
 /// Starting request budget; suits a model of unknown speed.
 const INITIAL_BUDGET: f64 = 3.0;
+/// How long a request waits for its cue's vector before recalling by shared words instead.
+const CUE_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestKind {
@@ -184,6 +187,8 @@ struct BrainInner {
     last_scan: Option<Instant>,
     tokens: u64,
     last_error: String,
+    /// the embedding model and its vectors, when memories are recalled by meaning
+    memory: Option<Arc<MemoryIndex>>,
 }
 
 /// What an answer amounted to.
@@ -219,6 +224,8 @@ fn built<T>(prompt: Prompt, context: T) -> Option<Built<T>> {
 }
 
 type OnFail = Arc<dyn Fn() + Send + Sync>;
+/// The text a request's memories should be close to, read from the world when the request is sent.
+type CueFn = Box<dyn FnOnce(&SimState) -> Option<String> + Send>;
 /// Runs after a successful answer has been applied.
 type After = Box<dyn FnOnce(&Brain) + Send>;
 
@@ -278,6 +285,7 @@ impl Brain {
                     last_scan: None,
                     tokens: 0,
                     last_error: String::new(),
+                    memory: None,
                 }),
             }),
         };
@@ -352,6 +360,11 @@ impl Brain {
     /// Starts the governor with a large budget so tests are not held back.
     pub fn set_initial_budget_for_tests(&self, budget: f64) {
         self.inner.state.lock().governor.reset(budget);
+    }
+
+    /// Recalls memories by meaning with this index from now on (`None`: by shared words).
+    pub fn set_memory(&self, memory: Option<Arc<MemoryIndex>>) {
+        self.inner.state.lock().memory = memory;
     }
 
     /// Prompt size in tokens: smaller when requests are served one at a time by a local model.
@@ -490,7 +503,8 @@ impl Brain {
         key: String,
         character: Option<Id>,
         ttl: Duration,
-        build: impl FnOnce(&SimState) -> Option<Built<T>> + Send + 'static,
+        cue: Option<CueFn>,
+        build: impl FnOnce(&SimState, Option<&Recall>) -> Option<Built<T>> + Send + 'static,
         apply: impl FnOnce(&SimState, &LlmResponse, T) -> Applied + Send + 'static,
         on_fail: Option<OnFail>,
         after: Option<After>,
@@ -521,7 +535,19 @@ impl Brain {
         let brain = self.clone();
         let job = Job::new(key, kind.priority(), Instant::now() + ttl, move |cancel| async move {
             let link = brain.inner.link.clone();
-            let Some(built) = read(&*link, build) else {
+            let memory = brain.inner.state.lock().memory.clone();
+            let cue_vector = match (cue, &memory) {
+                (Some(cue), Some(memory)) => match read(&*link, cue) {
+                    Some(text) => memory.cue(&text, CUE_WAIT).await,
+                    None => None,
+                },
+                _ => None,
+            };
+            let built = {
+                let recall = memory.as_deref().map(|m| Recall { lookup: m.cache(), cue: cue_vector.as_deref() });
+                read(&*link, |state| build(state, recall.as_ref()))
+            };
+            let Some(built) = built else {
                 fail();
                 return Ok(0);
             };
@@ -768,17 +794,19 @@ impl Brain {
         let budget = self.prompt_budget();
         let build_id = id.clone();
         let apply_id = id.clone();
+        let cue_id = id.clone();
         self.request(
             RequestKind::Decide,
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(30),
-            move |state| {
+            Some(Box::new(move |state: &SimState| state.characters.get(&cue_id).map(|me| decide_cue(state, me)))),
+            move |state, recall| {
                 let me = state.characters.get(&build_id)?;
                 if me.convo_id.is_some() || me.asleep || is_fighting(me) || me.combat.yielded {
                     return None;
                 }
-                let prompt = decide_prompt(state, me, budget, None);
+                let prompt = decide_prompt(state, me, budget, recall);
                 Some(Built {
                     prompt,
                     commands: vec![Command::ClearStimuli { id: build_id.clone(), through_tick: state.tick }],
@@ -823,7 +851,8 @@ impl Brain {
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(9),
-            move |state| {
+            None,
+            move |state, _| {
                 let me = state.characters.get(&build_id).filter(|c| is_fighting(c) && !c.combat.yielded)?;
                 Some(Built {
                     prompt: react_prompt(state, me),
@@ -859,14 +888,16 @@ impl Brain {
                 mind.retry_at = Some(Instant::now() + RETRY_AFTER);
             });
         });
+        let cue_id = id.clone();
         self.request(
             RequestKind::PlanDay,
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(90),
-            move |state| {
+            Some(Box::new(move |state: &SimState| state.characters.get(&cue_id).map(plan_cue))),
+            move |state, recall| {
                 let me = state.characters.get(&build_id).filter(|c| !c.asleep && !is_fighting(c))?;
-                built(plan_prompt(state, me, budget, None), ())
+                built(plan_prompt(state, me, budget, recall), ())
             },
             move |_, response, ()| {
                 let Some(plan) = interpret_plan(&response.calls) else {
@@ -905,7 +936,8 @@ impl Brain {
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(240),
-            move |state| {
+            None,
+            move |state, _| {
                 let me = state.characters.get(&build_id).filter(|c| c.asleep)?;
                 built(reflect_prompt(state, me, budget), ())
             },
@@ -984,7 +1016,8 @@ impl Brain {
             format!("v:{convo_id}"),
             initiator,
             Duration::from_secs(20),
-            move |state| {
+            None,
+            move |state, _| {
                 let convo = state.conversations.get(&build_id).filter(|c| !c.closed)?;
                 let (a, b) = (state.characters.get(&convo.a)?, state.characters.get(&convo.b)?);
                 built(conversation_prompt(state, convo, a, b, budget), ())
@@ -1037,18 +1070,22 @@ impl Brain {
         let next: Arc<Mutex<Option<Id>>> = Arc::new(Mutex::new(None));
         let next_for_apply = next.clone();
         let after_id = convo_id.clone();
+        let (turns_for_cue, cue_id) = (self.clone(), convo_id.clone());
         self.request(
             RequestKind::Reply,
             format!("v:{convo_id}"),
             Some(speaker),
             Duration::from_secs(20),
-            move |state| {
+            Some(Box::new(move |_: &SimState| {
+                turns_for_cue.inner.state.lock().turns.get(&cue_id).map(|lines| reply_cue(lines))
+            })),
+            move |state, recall| {
                 let convo = state.conversations.get(&build_id).filter(|c| !c.closed)?;
                 let lines = turns_for_build.inner.state.lock().turns.get(&build_id).cloned()?;
                 let me = state.characters.get(&build_speaker)?;
                 let other_id = if convo.a == build_speaker { &convo.b } else { &convo.a };
                 let other = state.characters.get(other_id)?;
-                built(reply_prompt(state, convo, &lines, me, other, budget, None), ())
+                built(reply_prompt(state, convo, &lines, me, other, budget, recall), ())
             },
             move |state, response, ()| {
                 let Some(convo) = state.conversations.get(&apply_id).filter(|c| !c.closed) else {
@@ -1107,7 +1144,8 @@ impl Brain {
             format!("c:{attacker}"),
             Some(attacker.to_owned()),
             Duration::from_secs(15),
-            move |state| {
+            None,
+            move |state, _| {
                 let a = state.characters.get(&build_attacker).filter(|a| a.combat.mercy_until_tick > 0)?;
                 let v = state.characters.get(&build_victim)?;
                 built(mercy_prompt(state, a, v), ())
@@ -1147,7 +1185,8 @@ impl Brain {
             format!("c:{id}:board"),
             Some(id.to_owned()),
             Duration::from_secs(10),
-            move |state| {
+            None,
+            move |state, _| {
                 let c = state.characters.get(&build_id)?;
                 let index = reading(c).filter(|&i| billboards()[i].id == board && !has_read(state, c, i))?;
                 let place = get_place(&billboards()[index].place_id).name;
