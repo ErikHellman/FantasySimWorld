@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, ReasoningMode, WireProtocol};
 
 use crate::api::wire::SignInProvider;
+use crate::guests::GuestLimits;
 
 /// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
 /// refuses to start anywhere but on this machine.
@@ -214,6 +215,9 @@ pub struct Config {
     pub credits_per_minute: u32,
     /// `CREDITS_CAP`: the most credits watching and prayer can build up; default 400
     pub credits_cap: u32,
+    /// How many guests may watch without signing in, and for how long. Not read from the
+    /// environment at start: the seats are `GUEST_STREAMS` when the server is built (see `guests`).
+    pub guests: GuestLimits,
 }
 
 impl Config {
@@ -316,12 +320,19 @@ impl Config {
             embed_api_key: ApiKey::new(get("EMBED_API_KEY").unwrap_or("")),
             credits_per_minute,
             credits_cap,
+            guests: GuestLimits::default(),
         })
     }
 
     /// Cookies get `Secure` (and the `__Host-` / `__Secure-` prefixes) only when served over https.
     pub fn secure_cookies(&self) -> bool {
         self.public_origin.starts_with("https://")
+    }
+
+    /// Whether people may watch as guests: there are seats, and sign-in is on (with it off,
+    /// everyone is an admin already).
+    pub fn guests_on(&self) -> bool {
+        self.guests.seats > 0 && self.auth != AuthMode::Off
     }
 }
 

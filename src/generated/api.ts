@@ -1,10 +1,10 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export type Vec2 = { x: number, z: number, };
 
-export type Role = "admin" | "viewer";
+export type Role = "admin" | "viewer" | "guest";
 
 /**
  * `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
@@ -21,12 +21,48 @@ token: boolean,
 /**
  * `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
  */
-providers: Array<SignInProvider>, };
+providers: Array<SignInProvider>, 
+/**
+ * `POST /auth/guest` works: people may watch for a while without signing in
+ */
+guests: boolean, };
 
 /**
  * A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
  */
 export type SignInProvider = "google" | "apple" | "microsoft" | "linkedin" | "github" | "discord";
+
+/**
+ * `POST /auth/guest`: asks for a guest seat.
+ */
+export type GuestRequest = { 
+/**
+ * the ticket from the last answer, when waiting in line
+ */
+ticket: string | null, };
+
+/**
+ * The answer to `POST /auth/guest`. Asking again sooner than `retryAfterSeconds` answers 429.
+ */
+export type GuestAnswer = { "kind": "admitted", secondsLeft: number, } | { "kind": "queued", ticket: string, 
+/**
+ * 1 is next
+ */
+position: number, 
+/**
+ * how many guests may watch at once
+ */
+seats: number, retryAfterSeconds: number, };
+
+/**
+ * Why a guest's stream ended.
+ */
+export type GuestEndReason = "time" | "elsewhere" | "left";
+
+/**
+ * `guest_end`: the last event on a guest's stream; the browser should not reconnect.
+ */
+export type GuestEnd = { reason: GuestEndReason, };
 
 /**
  * First event on every connection.
@@ -531,7 +567,11 @@ viewer: string, id: string | null, };
 /**
  * `GET /api/me`
  */
-export type Me = { email: string, displayName: string, role: Role, };
+export type Me = { email: string, displayName: string, role: Role, 
+/**
+ * for a guest, the seconds left before their pass ends; `null` for everyone else
+ */
+guestSecondsLeft: number | null, };
 
 /**
  * `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -673,4 +713,5 @@ export type StreamEvents = {
   chat_welcome: ChatWelcome;
   chat: ChatMessage;
   chat_you: ChatYou;
+  guest_end: GuestEnd;
 };

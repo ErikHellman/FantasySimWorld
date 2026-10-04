@@ -1,13 +1,13 @@
 import type {
   AllowlistAdd, AllowlistEntry, ApiError, AuthAttempt, BillboardRequest, BrainLogRecord, BuyRequest, CharacterDetail, ChatPost, ChatRename, ChatYou,
-  ChroniclePage, CreditGrant, CreditViewer, CreditsBalance, CreditsState, HealthReport,
+  ChroniclePage, CreditGrant, CreditViewer, CreditsBalance, CreditsState, GuestAnswer, GuestRequest, HealthReport,
   LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SignInOptions, SpeedRequest,
   PresenceRequest, WatchRequest,
 } from '../generated/api';
 
-/** A failed request: the HTTP status and the server's `ApiError` message. */
+/** A failed request: the HTTP status, the server's `ApiError` message, and its `Retry-After`, if it sent one. */
 export class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly retryAfterSeconds: number | null = null) {
     super(message);
   }
 }
@@ -27,7 +27,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       // not JSON
     }
-    throw new HttpError(response.status, message);
+    const retryAfter = Number(response.headers.get('Retry-After'));
+    throw new HttpError(response.status, message, retryAfter > 0 ? retryAfter : null);
   }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
@@ -38,6 +39,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   /** which sign-in buttons to offer; needs no session */
   providers: () => request<SignInOptions>('GET', '/auth/providers'),
+  /** a guest seat (setting the guest cookie), or a place in line; ask again no sooner than the answer says */
+  guest: (body: GuestRequest) => request<GuestAnswer>('POST', '/auth/guest', body),
   me: () => request<Me>('GET', '/api/me'),
   logout: () => request<void>('POST', '/api/logout'),
   watch: (body: WatchRequest) => request<void>('POST', '/api/watch', body),

@@ -7,7 +7,8 @@
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
 //! `roster` (a list of [`RosterEntry`]), `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
-//! `world_reset` [`WorldReset`], `chat_welcome` [`ChatWelcome`], `chat` [`ChatMessage`], `chat_you` [`ChatYou`].
+//! `world_reset` [`WorldReset`], `chat_welcome` [`ChatWelcome`], `chat` [`ChatMessage`], `chat_you` [`ChatYou`],
+//! `guest_end` [`GuestEnd`] (guests only, the last event on their stream).
 //! Event ids are `"<bootId>:<tick>"`.
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -31,6 +32,8 @@ pub struct Vec2 {
 pub enum Role {
     Admin,
     Viewer,
+    /// watching without signing in, for a while: no chat, no credits (never on the allowlist)
+    Guest,
 }
 
 // ---------------------------------------------------------------------------
@@ -842,6 +845,8 @@ pub struct Me {
     pub email: String,
     pub display_name: String,
     pub role: Role,
+    /// for a guest, the seconds left before their pass ends; `null` for everyone else
+    pub guest_seconds_left: Option<u32>,
 }
 
 /// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
@@ -853,6 +858,51 @@ pub struct SignInOptions {
     pub token: bool,
     /// `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
     pub providers: Vec<SignInProvider>,
+    /// `POST /auth/guest` works: people may watch for a while without signing in
+    pub guests: bool,
+}
+
+/// `POST /auth/guest`: asks for a guest seat.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct GuestRequest {
+    /// the ticket from the last answer, when waiting in line
+    #[serde(default)]
+    pub ticket: Option<String>,
+}
+
+/// The answer to `POST /auth/guest`. Asking again sooner than `retryAfterSeconds` answers 429.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
+pub enum GuestAnswer {
+    /// a seat: the guest cookie is set, and `/api/stream` works until the pass ends
+    Admitted { seconds_left: u32 },
+    /// every seat is taken: ask again with `ticket` after `retryAfterSeconds`
+    Queued {
+        ticket: String,
+        /// 1 is next
+        position: u32,
+        /// how many guests may watch at once
+        seats: u32,
+        retry_after_seconds: u32,
+    },
+}
+
+/// Why a guest's stream ended.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GuestEndReason {
+    /// the pass ran out
+    Time,
+    /// another tab of this browser took the stream over
+    Elsewhere,
+    /// the guest left (`POST /api/logout`)
+    Left,
+}
+
+/// `guest_end`: the last event on a guest's stream; the browser should not reconnect.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct GuestEnd {
+    pub reason: GuestEndReason,
 }
 
 /// A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
@@ -1048,6 +1098,10 @@ pub fn typescript() -> String {
         Role,
         SignInOptions,
         SignInProvider,
+        GuestRequest,
+        GuestAnswer,
+        GuestEndReason,
+        GuestEnd,
         Hello,
         EntityKind,
         Look,
@@ -1125,7 +1179,7 @@ pub fn typescript() -> String {
          export type StreamEvents = {\n  \
          hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
          detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
-         chat_welcome: ChatWelcome;\n  chat: ChatMessage;\n  chat_you: ChatYou;\n};\n",
+         chat_welcome: ChatWelcome;\n  chat: ChatMessage;\n  chat_you: ChatYou;\n  guest_end: GuestEnd;\n};\n",
     );
     out
 }

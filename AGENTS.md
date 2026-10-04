@@ -51,6 +51,7 @@ Fixtures from the TypeScript reference that cannot be regenerated on this branch
 - **The world exists twice.** `src/world` (TypeScript, for terrain, scenery and the camera) and `server/crates/world` (Rust, for the sim) must describe the same map. A layout change goes into both, then `bun tools/dump-world.ts` regenerates the golden fixtures and `cargo test` must pass. The client compares the server's `hello.worldHash` with its own and warns when they differ.
 - **Wire changes start in Rust.** Change `wire.rs`, run `export-api`, then update the client. Bump `PROTOCOL_VERSION` in `wire.rs` for a change older clients cannot read.
 - **The database schema only grows.** Add a new numbered migration in `server/crates/server/src/store/migrations.rs`; never edit one that has shipped.
+- **Guests only watch.** Anyone may watch as a guest for 15 minutes without signing in (`server/crates/server/src/guests.rs`). A new `/api` route goes into the `members` group in `api/router.rs`, which answers 403 to guests, unless watching needs it; guests never get a `ChatKey`, so they have no chat and no credits.
 - **Security defaults stay safe.** `AUTH_MODE=off` must keep refusing non-loopback addresses and origins; mutating routes keep the CSRF check (JSON bodies, `Origin` equal to `PUBLIC_ORIGIN`); `TRUST_PROXY` stays opt-in.
 - **Sound licences**: only CC0, public domain or CC BY (credited in `public/audio/CREDITS.md`). No share-alike or non-commercial sounds.
 - **3D models** come from the KayKit collection (CC0), processed by `pnpm assets` into `public/assets/`.

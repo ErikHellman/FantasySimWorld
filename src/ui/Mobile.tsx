@@ -1,9 +1,10 @@
 import type { RefObject } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ChatPanel } from './Chat';
+import { GuestNote } from './Guest';
 import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
-import { actions, creditsOn, isAdmin, togglePanel, toggleSheet, ui, type Sheet } from './store';
+import { actions, creditsOn, isAdmin, isGuest, togglePanel, toggleSheet, ui, type Sheet } from './store';
 
 // The phone layout: the world fills the screen, a slim bar at the top keeps the time, and a tab bar opens one pane
 // at a time over the world. Windows (settings, help and the like) are shared with the desktop and fill the screen.
@@ -93,7 +94,8 @@ function MenuSheet() {
         <button onClick={() => togglePanel('help')}>❓ Help</button>
         {admin && <button onClick={() => togglePanel('admin')}>🛠 Admin</button>}
       </nav>
-      {me && <p class="muted small-text">Signed in as {me.displayName || me.email}.</p>}
+      {me && !isGuest() && <p class="muted small-text">Signed in as {me.displayName || me.email}.</p>}
+      {isGuest() && <GuestNote />}
     </div>
   );
 }

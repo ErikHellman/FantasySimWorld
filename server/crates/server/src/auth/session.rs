@@ -83,13 +83,17 @@ pub async fn authenticate(app: &AppState, headers: &HeaderMap) -> Result<Option<
         display_name: user.display_name,
         role: user.role,
         session: Some(id),
+        guest: None,
     };
     Ok(Some((viewer, renewed)))
 }
 
-/// False once the viewer's session is gone (signed out, expired, removed from the allowlist).
-/// A database hiccup keeps the viewer in.
+/// False once the viewer's session is gone (signed out, expired, removed from the allowlist),
+/// or a guest's pass has. A database hiccup keeps the viewer in.
 pub async fn still_valid(app: &AppState, viewer: &Viewer) -> bool {
+    if let Some(pass) = viewer.guest {
+        return app.guests.holds(pass.id, std::time::Instant::now());
+    }
     let Some(id) = viewer.session else { return true };
     match app.store.session(id).await {
         Ok(found) => found.is_some(),

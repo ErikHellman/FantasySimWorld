@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use super::Viewer;
 use crate::AppState;
-use crate::api::wire::{AllowlistAdd, AllowlistEntry, AuthAttempt};
+use crate::api::wire::{AllowlistAdd, AllowlistEntry, AuthAttempt, Role};
 use crate::api::{ApiFailure, error};
 use crate::config::plausible_email;
 
@@ -28,6 +28,9 @@ pub async fn add(
     let email = body.email.trim();
     if !plausible_email(email) {
         return Ok(error(StatusCode::UNPROCESSABLE_ENTITY, "not an e-mail address"));
+    }
+    if body.role == Role::Guest {
+        return Ok(error(StatusCode::UNPROCESSABLE_ENTITY, "the allowlist has admins and viewers, not guests"));
     }
     let note: String = body.note.chars().take(200).collect();
     let added_by = if viewer.email.is_empty() { "token" } else { viewer.email.as_str() };

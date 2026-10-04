@@ -47,6 +47,8 @@ Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`
 
 The language model (`LLM_BASE_URL`, `LLM_MODEL` and the tuning variables `LLM_CONCURRENCY`, `LLM_REQUESTS_PER_MINUTE`, `LLM_MAX_REQUESTS_PER_DAY`, `LLM_MAX_TOKENS_PER_DAY`, `LLM_PROTOCOL`, `LLM_CONVERSATIONS`, `LLM_REASONING`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`) is configured only here, either under `[env]` or as secrets. The admin panel can show and test it but not change it. Without `LLM_BASE_URL` and `LLM_MODEL` the model is off. All the variables and their defaults are in the [README](../README.md#connecting-a-language-model). A change takes effect when the machine restarts, which `fly secrets set` does on its own. Memory by meaning is set the same way, with `EMBED_BASE_URL` and `EMBED_MODEL` (and `EMBED_API_KEY` as a secret); see the [README](../README.md#memory-by-meaning).
 
+Guest seats are not a runtime setting: how many people may watch as guests at once is fixed when the image is built, 25 unless you pass another number with `fly deploy --build-arg GUEST_STREAMS=10` (or `[build.args]` in `fly.toml`); `0` turns guests off. See the [README](../README.md#guests).
+
 Sessions need no secret: a session is 32 random bytes in an HttpOnly cookie, and the database keeps only its SHA-256.
 
 ## Data, backups and restarts

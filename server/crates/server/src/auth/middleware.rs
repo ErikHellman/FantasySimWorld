@@ -33,6 +33,15 @@ pub async fn require_viewer(State(app): State<Arc<AppState>>, mut request: Reque
     }
 }
 
+/// For the `/api` routes beyond watching (chat, credits, admin): 403 for guests. Runs inside
+/// [`require_viewer`].
+pub async fn members_only(request: Request, next: Next) -> Response {
+    match request.extensions().get::<Viewer>() {
+        Some(viewer) if viewer.role == Role::Guest => error(StatusCode::FORBIDDEN, "guests can only watch"),
+        _ => next.run(request).await,
+    }
+}
+
 /// For `/api/admin`: 403 unless the viewer is an admin. Runs inside [`require_viewer`].
 pub async fn require_admin(request: Request, next: Next) -> Response {
     match request.extensions().get::<Viewer>() {

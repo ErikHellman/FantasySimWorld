@@ -5,7 +5,8 @@
 //! (a `Last-Event-ID` from this boot within the replay ring) or a `snapshot`,
 //! then the current `status`, `roster`, the `detail` it watches and the chat
 //! (`chat_welcome`); after that, every `tick` and whatever changes. Event ids
-//! are `"<bootId>:<tick>"`.
+//! are `"<bootId>:<tick>"`. A guest's stream ends with `guest_end` when their pass runs out,
+//! they leave, or another tab of theirs takes the stream over.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -14,13 +15,14 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Extension, Query, State};
-use axum::http::{HeaderMap, HeaderName};
-use axum::response::IntoResponse;
+use axum::http::{HeaderMap, HeaderName, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::AppState;
-use crate::api::wire::{Hello, PROTOCOL_VERSION, Role, Snapshot};
+use crate::api::error;
+use crate::api::wire::{GuestEnd, GuestEndReason, Hello, PROTOCOL_VERSION, Role, Snapshot};
 use crate::auth::{Viewer, session};
 use crate::chat::{ChatKey, ChatOut};
 use crate::digest::{chronicle_tail, is_alarm, roster_of};
@@ -127,6 +129,7 @@ fn opening(app: &AppState, role: Role, last_event_id: Option<&str>) -> Opening {
 enum Next {
     World(Result<Outgoing, RecvError>),
     Chat(Result<ChatOut, RecvError>),
+    GuestEnd(GuestEndReason),
 }
 
 fn to_json(value: &impl serde::Serialize) -> String {
@@ -142,8 +145,16 @@ pub async fn stream(
     Extension(viewer): Extension<Viewer>,
     Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
     let viewer_id = query.get("viewer").cloned().unwrap_or_default();
+    // A guest's pass may have run out since the request was let in.
+    let guest = match viewer.guest {
+        Some(pass) => match app.guests.open_stream(pass.id, Instant::now()) {
+            Some(stream) => Some(stream),
+            None => return error(StatusCode::UNAUTHORIZED, "not signed in"),
+        },
+        None => None,
+    };
     // Subscribe before taking the opening, so no tick falls between the two.
     let mut outgoing = app.world.outgoing.subscribe();
     let mut chat = app.chat.out.subscribe();
@@ -156,6 +167,12 @@ pub async fn stream(
 
     let events = async_stream::stream! {
         let _guard = guard;
+        let is_guest = guest.is_some();
+        let superseded = guest.as_ref().map(|g| g.superseded.clone()).unwrap_or_default();
+        let pass_ends = guest.as_ref().map_or_else(tokio::time::Instant::now, |g| g.ends.into());
+        let time_up = tokio::time::sleep_until(pass_ends);
+        tokio::pin!(time_up);
+        let guest = guest;
         let chat_guard = chat_guard;
         let world = app.world.clone();
         let boot = opening.boot;
@@ -203,11 +220,26 @@ pub async fn stream(
                     tracing::info!(event = "stream_signed_out", "session ended; closing the stream");
                     break;
                 }
+                () = &mut time_up, if is_guest => Next::GuestEnd(GuestEndReason::Time),
+                () = superseded.cancelled(), if is_guest => {
+                    let held = guest.as_ref().is_some_and(|g| app.guests.holds(g.id, Instant::now()));
+                    Next::GuestEnd(if held { GuestEndReason::Elsewhere } else { GuestEndReason::Left })
+                }
                 item = outgoing.recv() => Next::World(item),
                 said = chat.recv() => Next::Chat(said),
             };
             let item = match item {
                 Next::World(item) => item,
+                Next::GuestEnd(reason) => {
+                    if let Some(guest) = &guest
+                        && reason == GuestEndReason::Time
+                    {
+                        app.guests.end(guest.id);
+                    }
+                    tracing::info!(event = "guest_stream_ended", ?reason);
+                    yield Ok(Event::default().event("guest_end").data(to_json(&GuestEnd { reason })));
+                    break;
+                }
                 Next::Chat(said) => {
                     match said {
                         Ok(ChatOut::Message { id, json }) => {
@@ -276,6 +308,7 @@ pub async fn stream(
         [(HeaderName::from_static("x-accel-buffering"), "no")],
         Sse::new(events).keep_alive(KeepAlive::new().interval(KEEP_ALIVE)),
     )
+        .into_response()
 }
 
 #[cfg(test)]

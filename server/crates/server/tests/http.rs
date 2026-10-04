@@ -7,6 +7,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use fsw_server::config::Config;
+use fsw_server::guests::GuestLimits;
 use fsw_server::store::Store;
 use fsw_server::{AppState, brain_task, router, world_task};
 use http_body_util::BodyExt;
@@ -37,11 +38,21 @@ async fn app_with(name: &str, settings: &[(&str, &str)]) -> (axum::Router, Cance
 
 /// The shared state behind [`app_with`], for tests that reach past the routes.
 async fn state_with(name: &str, settings: &[(&str, &str)]) -> (Arc<AppState>, CancellationToken, tempfile::TempDir) {
+    state_with_guests(name, settings, GuestLimits::default()).await
+}
+
+/// Like [`state_with`], with fewer guest seats or shorter passes than a real build has.
+async fn state_with_guests(
+    name: &str,
+    settings: &[(&str, &str)],
+    guests: GuestLimits,
+) -> (Arc<AppState>, CancellationToken, tempfile::TempDir) {
     let data = tempfile::tempdir().unwrap();
     let mut vars: Vec<(String, String)> = settings.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     vars.push(("STATIC_DIR".to_string(), static_dir(name).display().to_string()));
     vars.push(("DATA_DIR".to_string(), data.path().display().to_string()));
-    let config = Config::from_vars(vars).unwrap();
+    let mut config = Config::from_vars(vars).unwrap();
+    config.guests = guests;
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
@@ -84,7 +95,7 @@ async fn api_needs_the_token() {
     assert!(text(response).await.contains(r#""role":"admin""#));
 
     let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"providers":[]}"#);
+    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"providers":[],"guests":true}"#);
 
     let response = app.oneshot(authed("/api/nothing-here")).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -141,7 +152,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":4"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":5"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.
@@ -216,11 +227,14 @@ async fn with_sign_in_off_everyone_is_an_admin() {
     let (app, _, _data) = app_with("off", &[("AUTH_MODE", "off")]).await;
     let me = app.clone().oneshot(get("/api/me")).await.unwrap();
     assert_eq!(me.status(), StatusCode::OK);
-    assert_eq!(text(me).await, r#"{"email":"","displayName":"Local developer","role":"admin"}"#);
+    assert_eq!(
+        text(me).await,
+        r#"{"email":"","displayName":"Local developer","role":"admin","guestSecondsLeft":null}"#
+    );
     assert_eq!(app.clone().oneshot(get("/api/admin/attempts")).await.unwrap().status(), StatusCode::OK);
 
     let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"providers":[]}"#);
+    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"providers":[],"guests":false}"#);
     assert_eq!(app.clone().oneshot(get("/auth/token")).await.unwrap().status(), StatusCode::NOT_FOUND);
 
     // The CSRF rule still holds.
@@ -750,4 +764,182 @@ async fn admins_give_credits_to_those_with_the_world_open() {
     }
     let stranger = app.clone().oneshot(grant(serde_json::json!({"name": "Cyd", "amount": 5}))).await.unwrap();
     assert_eq!(stranger.status(), StatusCode::NOT_FOUND);
+}
+
+// ---------------------------------------------------------------------------
+// Guests
+// ---------------------------------------------------------------------------
+
+/// The router in token mode with these guest limits.
+async fn guest_app(name: &str, guests: GuestLimits) -> (axum::Router, CancellationToken, tempfile::TempDir) {
+    let (state, shutdown, data) = state_with_guests(name, &[("AUTH_TOKEN", TOKEN)], guests).await;
+    (router(state), shutdown, data)
+}
+
+/// A JSON request with only the guest cookie (if any): no token.
+fn as_guest(method: &str, uri: &str, cookie: &str, body: &str) -> Request<Body> {
+    let mut request = Request::builder().method(method).uri(uri);
+    if !cookie.is_empty() {
+        request = request.header(header::COOKIE, cookie);
+    }
+    if method != "GET" {
+        request = request.header(header::CONTENT_TYPE, "application/json");
+    }
+    request.body(Body::from(body.to_owned())).unwrap()
+}
+
+/// Asks for a guest seat; the answer, its JSON and the `name=value` cookie it set, if any.
+async fn ask_for_a_seat(app: &axum::Router, body: &str) -> (StatusCode, serde_json::Value, String) {
+    let response = app.clone().oneshot(as_guest("POST", "/auth/guest", "", body)).await.unwrap();
+    let status = response.status();
+    let cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_owned())
+        .unwrap_or_default();
+    let json = serde_json::from_str(&text(response).await).unwrap_or_default();
+    (status, json, cookie)
+}
+
+#[tokio::test]
+async fn guests_watch_without_signing_in_but_only_watch() {
+    let (app, _, _data) = app("guest").await;
+    assert_eq!(app.clone().oneshot(get("/api/stream")).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+
+    let response = app.clone().oneshot(as_guest("POST", "/auth/guest", "", "{}")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let set_cookie = response.headers()[header::SET_COOKIE].to_str().unwrap().to_owned();
+    assert!(set_cookie.starts_with("guest="), "{set_cookie}");
+    assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax") && set_cookie.contains("Max-Age=9"));
+    assert_eq!(text(response).await, r#"{"kind":"admitted","secondsLeft":900}"#);
+    let cookie = set_cookie.split(';').next().unwrap().to_owned();
+
+    let me = app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap();
+    let me: serde_json::Value = serde_json::from_str(&text(me).await).unwrap();
+    assert_eq!(me["role"], "guest");
+    assert!((890..=900).contains(&me["guestSecondsLeft"].as_u64().unwrap()), "{me}");
+
+    let stream = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=tabG", &cookie, "")).await.unwrap();
+    assert_eq!(stream.status(), StatusCode::OK);
+    let mut body = stream.into_body();
+    let seen = read_events(&mut body, |seen| seen.contains("event: chat_welcome")).await;
+    assert!(seen.starts_with("event: hello\n") && seen.contains(r#""role":"guest"}"#), "{seen}");
+    assert_eq!(last_event(&seen, "chat_welcome")["you"], serde_json::Value::Null);
+    let character = app.clone().oneshot(as_guest("GET", "/api/characters/c1", &cookie, "")).await.unwrap();
+    assert_eq!(character.status(), StatusCode::OK);
+    let watch = as_guest("POST", "/api/watch", &cookie, r#"{"viewer":"tabG","id":"c1"}"#);
+    assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
+
+    // No chat, no credits, no admin.
+    for (method, uri, body) in [
+        ("POST", "/api/chat", r#"{"viewer":"tabG","text":"hello"}"#),
+        ("POST", "/api/chat/name", r#"{"viewer":"tabG","name":"Sneaky"}"#),
+        ("GET", "/api/credits?viewer=tabG", ""),
+        ("POST", "/api/presence", r#"{"viewer":"tabG"}"#),
+        ("POST", "/api/credits/buy", r#"{"viewer":"tabG","offer":"rain"}"#),
+        ("GET", "/api/admin/health", ""),
+        ("POST", "/api/admin/speed", r#"{"speed":0}"#),
+    ] {
+        let response = app.clone().oneshot(as_guest(method, uri, &cookie, body)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
+        assert_eq!(text(response).await, r#"{"error":"guests can only watch"}"#);
+    }
+
+    // Leaving ends the stream and the pass, and clears the cookie.
+    let logout = app.clone().oneshot(as_guest("POST", "/api/logout", &cookie, "{}")).await.unwrap();
+    assert_eq!(logout.status(), StatusCode::NO_CONTENT);
+    assert!(logout.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("guest=; "));
+    let seen = read_events(&mut body, |seen| seen.contains("event: guest_end")).await;
+    assert_eq!(last_event(&seen, "guest_end")["reason"], "left");
+    let me = app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap();
+    assert_eq!(me.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn guests_wait_in_line_when_the_seats_are_full() {
+    let (app, _, _data) = guest_app("guest-line", GuestLimits { seats: 1, session: Duration::from_secs(900) }).await;
+    let (status, _, cookie) = ask_for_a_seat(&app, "{}").await;
+    assert_eq!(status, StatusCode::OK);
+    let _seated = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t1", &cookie, "")).await.unwrap();
+
+    let (status, answer, cookie) = ask_for_a_seat(&app, "{}").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(cookie.is_empty(), "no pass while in line");
+    assert_eq!((answer["kind"].as_str(), answer["position"].as_u64()), (Some("queued"), Some(1)));
+    assert_eq!((answer["seats"].as_u64(), answer["retryAfterSeconds"].as_u64()), (Some(1), Some(60)));
+    let ticket = answer["ticket"].as_str().unwrap().to_owned();
+
+    // Asking again straight away is refused, without losing the place.
+    let again = format!(r#"{{"ticket":"{ticket}"}}"#);
+    let response = app.clone().oneshot(as_guest("POST", "/auth/guest", "", &again)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    let wait: u64 = response.headers()[header::RETRY_AFTER].to_str().unwrap().parse().unwrap();
+    assert!((50..=60).contains(&wait), "{wait}");
+    let (_, answer, _) = ask_for_a_seat(&app, "{}").await;
+    assert_eq!(answer["position"], 2);
+
+    // The cross-site rule applies here too.
+    let foreign = Request::post("/auth/guest")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ORIGIN, "https://evil.example")
+        .body(Body::from("{}"))
+        .unwrap();
+    assert_eq!(app.clone().oneshot(foreign).await.unwrap().status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_guest_stream_ends_when_the_pass_runs_out() {
+    let (app, _, _data) = guest_app("guest-time", GuestLimits { seats: 1, session: Duration::from_secs(1) }).await;
+    let (_, _, cookie) = ask_for_a_seat(&app, "{}").await;
+    let stream = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t1", &cookie, "")).await.unwrap();
+    let mut body = stream.into_body();
+    let seen = read_events(&mut body, |seen| seen.contains("event: guest_end")).await;
+    assert_eq!(last_event(&seen, "guest_end")["reason"], "time");
+    let end = tokio::time::timeout(Duration::from_secs(2), body.collect()).await;
+    assert!(end.is_ok(), "the stream ends after guest_end");
+    assert_eq!(
+        app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    // The seat is free again.
+    let (_, answer, _) = ask_for_a_seat(&app, "{}").await;
+    assert_eq!(answer["kind"], "admitted");
+}
+
+#[tokio::test]
+async fn a_newer_tab_takes_the_guest_stream_over() {
+    let (app, _, _data) = app("guest-tabs").await;
+    let (_, _, cookie) = ask_for_a_seat(&app, "{}").await;
+    let mut first =
+        app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t1", &cookie, "")).await.unwrap().into_body();
+    read_events(&mut first, |seen| seen.contains("event: chat_welcome")).await;
+    let mut second =
+        app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t2", &cookie, "")).await.unwrap().into_body();
+    let seen = read_events(&mut first, |seen| seen.contains("event: guest_end")).await;
+    assert_eq!(last_event(&seen, "guest_end")["reason"], "elsewhere");
+    let seen = read_events(&mut second, |seen| seen.matches("event: tick").count() >= 2).await;
+    assert!(!seen.contains("guest_end"), "{seen}");
+}
+
+#[tokio::test]
+async fn signing_in_wins_over_a_guest_pass() {
+    let (app, _, _data) = app("guest-token").await;
+    let (_, _, cookie) = ask_for_a_seat(&app, "{}").await;
+    let me = Request::get("/api/me")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    assert!(text(app.oneshot(me).await.unwrap()).await.contains(r#""role":"admin""#));
+}
+
+#[tokio::test]
+async fn guests_are_off_without_seats_or_without_sign_in() {
+    let (app, _, _data) = guest_app("guest-none", GuestLimits { seats: 0, session: Duration::from_secs(900) }).await;
+    let providers = text(app.clone().oneshot(get("/auth/providers")).await.unwrap()).await;
+    assert!(providers.contains(r#""guests":false"#), "{providers}");
+    assert_eq!(ask_for_a_seat(&app, "{}").await.0, StatusCode::NOT_FOUND);
+
+    let (app, _, _data) = app_with("guest-off", &[("AUTH_MODE", "off")]).await;
+    assert_eq!(ask_for_a_seat(&app, "{}").await.0, StatusCode::NOT_FOUND);
 }

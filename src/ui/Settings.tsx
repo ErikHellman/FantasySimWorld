@@ -3,7 +3,8 @@ import { SOUND_CREDITS } from '../audio/credits';
 import type { AudioSettings } from '../audio/engine';
 import { api } from '../net/api';
 import { chatError } from './Chat';
-import { actions, ui } from './store';
+import { signInHref, useGuestTimeLeft } from './Guest';
+import { actions, isGuest, ui } from './store';
 
 type Toggle = 'ambientOn' | 'effectsOn' | 'musicOn';
 type Volume = 'ambient' | 'effects' | 'music';
@@ -53,12 +54,13 @@ export function SettingsPanel() {
   const audio = ui.audio.value;
   const setAudio = (patch: Partial<AudioSettings>): void => actions.applyAudio({ ...audio, ...patch });
   const me = ui.me.value;
+  const guestLeft = useGuestTimeLeft();
 
   const signOut = async (): Promise<void> => {
     try {
       await api.logout();
     } finally {
-      location.assign('/login');
+      location.assign(isGuest() ? '/login?ended=left' : '/login');
     }
   };
 
@@ -111,9 +113,18 @@ export function SettingsPanel() {
           </ul>
         </details>
 
-        <ChatName />
+        {!isGuest() && <ChatName />}
 
-        {me && (
+        {me && isGuest() && (
+          <>
+            <h3>Guest</h3>
+            <div class="row">
+              <span class="test-result">Watching as a guest, {guestLeft}. <a href={signInHref()}>Sign in</a> to stay longer.</span>
+              <button onClick={() => void signOut()} title="Give your seat to someone waiting">Leave</button>
+            </div>
+          </>
+        )}
+        {me && !isGuest() && (
           <>
             <h3>Account</h3>
             <div class="row">

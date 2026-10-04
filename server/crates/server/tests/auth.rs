@@ -535,7 +535,7 @@ async fn allowlisted_google_sign_in_creates_a_user_and_a_session() {
 
     let (status, me) = app.me(&pair(&session)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(me, json!({"email": ADMIN, "displayName": "admin", "role": "admin"}));
+    assert_eq!(me, json!({"email": ADMIN, "displayName": "admin", "role": "admin", "guestSecondsLeft": null}));
     let user = app.store.user_by_email(ADMIN).await.unwrap().unwrap();
     assert!(user.last_login_at.is_some());
 
@@ -571,6 +571,11 @@ async fn unknown_email_is_refused_recorded_and_can_be_allowed() {
     assert_eq!(allowed.status(), StatusCode::OK);
     let entry: Value = serde_json::from_str(&text(allowed).await).unwrap();
     assert_eq!(entry["addedBy"], ADMIN);
+    // Guests are not a role anyone can be given.
+    let guest = app
+        .mutate("POST", "/api/admin/allowlist", &admin, json!({"email": "drifter@example.com", "role": "guest"}))
+        .await;
+    assert_eq!(guest.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let viewer = app.session_for(SignIn::google("g-stranger", "stranger@example.com")).await;
     assert_eq!(app.me(&viewer).await.1["role"], "viewer");
@@ -601,7 +606,7 @@ async fn apple_posts_back_with_a_string_email_verified_and_the_name() {
 
     let cookie = app.session_for(SignIn::apple("apple-001", relay)).await;
     let (_, me) = app.me(&cookie).await;
-    assert_eq!(me, json!({"email": relay, "displayName": "Grace Hopper", "role": "viewer"}));
+    assert_eq!(me, json!({"email": relay, "displayName": "Grace Hopper", "role": "viewer", "guestSecondsLeft": null}));
 
     // The client secret: an ES256 JWT from the .p8 key, for the Services ID.
     let secret = app.fake.last_token_request()["client_secret"].clone();
@@ -778,13 +783,13 @@ async fn the_login_page_learns_which_providers_are_on() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         text(response).await,
-        r#"{"open":false,"token":false,"providers":["google","apple","microsoft","linkedin","github","discord"]}"#
+        r#"{"open":false,"token":false,"providers":["google","apple","microsoft","linkedin","github","discord"],"guests":true}"#
     );
 
     // In the order AUTH_PROVIDERS gives, and only those.
     let app = app_with("github, google").await;
     let response = app.get("/auth/providers", "").await;
-    assert_eq!(text(response).await, r#"{"open":false,"token":false,"providers":["github","google"]}"#);
+    assert_eq!(text(response).await, r#"{"open":false,"token":false,"providers":["github","google"],"guests":true}"#);
     let off = app.send(Request::get("/auth/discord/start").body(Body::empty()).unwrap()).await;
     assert_eq!(off.status(), StatusCode::NOT_FOUND);
 }
@@ -871,7 +876,10 @@ async fn github_signs_in_with_the_verified_primary_address() {
 
     let cookie = app.session_for(SignIn::github("583231", ADMIN)).await;
     // No name on the account: the login stands in.
-    assert_eq!(app.me(&cookie).await.1, json!({"email": ADMIN, "displayName": "octocat", "role": "admin"}));
+    assert_eq!(
+        app.me(&cookie).await.1,
+        json!({"email": ADMIN, "displayName": "octocat", "role": "admin", "guestSecondsLeft": null})
+    );
     let request = app.fake.last_token_request();
     assert_eq!(request["client_secret"], "github-secret");
     assert!(request.contains_key("code_verifier"));
@@ -889,7 +897,10 @@ async fn discord_needs_a_verified_address() {
     let guest = "dusk@example.com";
     app.store.allow(guest, fsw_server::api::wire::Role::Viewer, ADMIN, "").await.unwrap();
     let cookie = app.session_for(SignIn::discord("80351110224678912", guest)).await;
-    assert_eq!(app.me(&cookie).await.1, json!({"email": guest, "displayName": "Dusk Rider", "role": "viewer"}));
+    assert_eq!(
+        app.me(&cookie).await.1,
+        json!({"email": guest, "displayName": "Dusk Rider", "role": "viewer", "guestSecondsLeft": null})
+    );
     assert_eq!(app.fake.last_token_request()["client_secret"], "discord-secret");
 
     let unverified = app.sign_in(SignIn { email_verified: json!(false), ..SignIn::discord("999", guest) }).await;

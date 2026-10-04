@@ -46,6 +46,7 @@ pub fn viewer(config: &Config, headers: &HeaderMap) -> Option<Viewer> {
         email: String::new(),
         display_name: "Token holder".into(),
         role: Role::Admin,
+        guest: None,
         session: None,
     })
 }
