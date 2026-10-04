@@ -7,6 +7,7 @@ pub mod brain;
 pub mod governor;
 pub mod llm;
 pub mod prompts;
+pub mod recall;
 pub mod retrieval;
 pub mod settings;
 pub mod tools;
