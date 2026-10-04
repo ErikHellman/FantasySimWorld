@@ -20,7 +20,7 @@ The server migration is complete. The world, the language-model brain and every 
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
 - Guests: a few people at a time may watch for 15 minutes without signing in, with a line when the seats are full (see [Guests](#guests)).
 - Ambient sound, effects and adaptive music.
-- A container image with Litestream backups and Fly.io settings.
+- A container image with Litestream backups and Fly.io settings, and a GitHub Actions workflow that deploys it when started by hand.
 
 Not yet done or not yet tried:
 

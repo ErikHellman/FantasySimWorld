@@ -1,0 +1,57 @@
+# Deploys the chosen branch or tag to Fly.io. Started by hand only (Actions → Deploy to Fly.io → Run workflow);
+# nothing deploys on push. See docs/deploy.md for the token and the settings it reads.
+name: Deploy to Fly.io
+
+on:
+  workflow_dispatch:
+
+# One machine and one volume: a second deploy must wait for the first, never cancel it halfway.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The same checks as every push, so a red commit cannot reach the live world.
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-24.04
+    # Holds FLY_API_TOKEN. Required reviewers or a branch rule can be added to it in the repository settings.
+    environment:
+      name: production
+      url: ${{ steps.app.outputs.url }}
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@1.6
+      # Fail early without a token. The app is the one in fly.toml unless the FLY_APP repository variable names another.
+      - id: app
+        env:
+          FLY_APP: ${{ vars.FLY_APP }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then echo "::error::Add FLY_API_TOKEN to the production environment"; exit 1; fi
+          app="${FLY_APP:-$(sed -n 's/^app = "\(.*\)"$/\1/p' fly.toml)}"
+          if [ -z "$app" ]; then echo "::error::No app name in fly.toml or the FLY_APP variable"; exit 1; fi
+          echo "name=$app" >> "$GITHUB_OUTPUT"
+          echo "url=https://$app.fly.dev" >> "$GITHUB_OUTPUT"
+      # Fly's builder keeps the Docker layer cache between deploys. `--ha=false` keeps the app to the one
+      # machine its volume allows, and the health check in fly.toml decides when the new machine is up.
+      - env:
+          APP: ${{ steps.app.outputs.name }}
+        run: >-
+          flyctl deploy
+          --app "$APP"
+          --remote-only
+          --ha=false
+          --image-label "git-${GITHUB_SHA::12}"
+          --wait-timeout 5m
+      - name: Check /healthz
+        env:
+          URL: ${{ steps.app.outputs.url }}
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors "$URL/healthz"
