@@ -2,6 +2,7 @@
 //! queue moving, and gives it the world through a [`WorldLink`]. Its decision
 //! log goes to the store and to admins' streams; its status into `status`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -10,22 +11,31 @@ use fsw_brain::brain::{
     Brain, BrainState, BrainStatus, LogRecord, LogStatus as BrainLogStatus, RequestKind as Kind, WorldLink,
 };
 use fsw_brain::llm::client::LearnedCapabilities;
+use fsw_brain::llm::embed::Embedder;
 use fsw_brain::llm::queue::DailyUsage;
 use fsw_brain::llm::transport::{LlmTransport, ReqwestTransport};
-use fsw_brain::settings::{ApiKey, LlmSettings};
+use fsw_brain::recall::MemoryIndex;
+use fsw_brain::settings::{ApiKey, EmbedSettings, LlmSettings};
+use fsw_sim::util::living;
 use fsw_sim::{Command, SimState};
 use tokio::sync::broadcast::error::RecvError;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::wire::{BrainLogRecord, LlmState, LlmStatus, LogStatus, RequestKind};
 use crate::store::settings::LLM_CAPABILITIES;
-use crate::store::{BrainLogWrite, Store, now_ms, utc_day};
+use crate::store::{BrainLogWrite, EMBED_USAGE, Store, now_ms, utc_day};
 use crate::world_task::{Outgoing, World, WorldInput};
 
 /// How often the brain's queue is pumped (it scans for decisions every 400 ms).
 const UPDATE: Duration = Duration::from_millis(100);
 /// How often learned endpoint quirks are saved.
 const SAVE_LEARNED: Duration = Duration::from_secs(60);
+/// How often the indexer looks for memories without a vector.
+const INDEX_EVERY: Duration = Duration::from_secs(5);
+/// Requests per pass, so a fresh index fills over a few minutes instead of in one burst.
+const INDEX_BATCHES: usize = 4;
+/// How often kept vectors are marked as in use and the cache is trimmed to the memories of the living.
+const TOUCH_EVERY: Duration = Duration::from_secs(3600);
 
 struct Link {
     world: Arc<World>,
@@ -178,6 +188,79 @@ pub async fn start(world: Arc<World>, store: Store, settings: LlmSettings, key: 
     brain
 }
 
+/// The embedding model with the vectors kept for it, or `None` when `EMBED_*` is not set.
+pub async fn start_memory(store: &Store, settings: EmbedSettings, key: ApiKey) -> Option<Arc<MemoryIndex>> {
+    if !settings.enabled() {
+        return None;
+    }
+    let index = Arc::new(MemoryIndex::new(Embedder::new(settings, key, transport())));
+    match store.load_vectors(index.cache().model()).await {
+        Ok(rows) => {
+            for (key, vector) in rows {
+                index.cache().insert(key, Arc::from(vector));
+            }
+        }
+        Err(error) => tracing::error!(%error, "cannot load the memory vectors; they will be made again"),
+    }
+    tracing::info!(vectors = index.cache().len(), "memory index loaded");
+    Some(index)
+}
+
+/// The memory texts of the living: what the brain may recall.
+fn memory_texts(world: &World) -> Vec<String> {
+    let core = world.core.read();
+    living(&core.sim.state).flat_map(|c| c.memories.iter().map(|m| m.text.clone())).collect()
+}
+
+/// One indexer pass: embeds what has no vector yet, keeps it and counts the usage. Returns how many were added.
+pub async fn index_once(index: &MemoryIndex, world: &World, store: &Store) -> usize {
+    let texts = memory_texts(world);
+    let indexed = index.index(&texts, INDEX_BATCHES).await;
+    if let Some(error) = &indexed.error {
+        tracing::warn!(%error, "embedding memories failed; recall falls back to shared words meanwhile");
+    }
+    let added = indexed.added.len();
+    if let Err(error) = store.put_vectors(index.cache().model(), indexed.added).await {
+        tracing::error!(%error, "cannot keep memory vectors");
+    }
+    if indexed.requests + indexed.failures > 0
+        && let Err(error) = store.add_usage(EMBED_USAGE, indexed.requests, indexed.failures, indexed.tokens).await
+    {
+        tracing::error!(%error, "cannot count embedding usage");
+    }
+    added
+}
+
+/// Marks the vectors of the living as used and forgets the rest from memory.
+async fn touch(index: &MemoryIndex, world: &World, store: &Store) {
+    let keys: HashSet<i64> = memory_texts(world).iter().map(|text| index.cache().key(text)).collect();
+    index.cache().retain(&keys);
+    if let Err(error) = store.touch_vectors(keys.into_iter().collect(), now_ms()).await {
+        tracing::error!(%error, "cannot mark memory vectors as used");
+    }
+}
+
+/// Keeps the index filled until shutdown.
+pub fn spawn_indexer(
+    index: Arc<MemoryIndex>,
+    world: Arc<World>,
+    store: Store,
+    shutdown: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(INDEX_EVERY);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut touching = tokio::time::interval_at(tokio::time::Instant::now() + TOUCH_EVERY, TOUCH_EVERY);
+        loop {
+            tokio::select! {
+                () = shutdown.cancelled() => break,
+                _ = every.tick() => { index_once(&index, &world, &store).await; }
+                _ = touching.tick() => touch(&index, &world, &store).await,
+            }
+        }
+    })
+}
+
 /// Feeds the brain until shutdown: each tick's events, a queue pump every 100 ms,
 /// and the 1x hold while the model has a backlog.
 pub fn spawn(
@@ -219,4 +302,63 @@ pub fn spawn(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use fsw_brain::llm::transport::{FakeTransport, HttpRequest, HttpResponse};
+    use fsw_brain::recall::VectorLookup;
+    use fsw_sim::state::{Memory, MemoryKind};
+    use serde_json::json;
+
+    use super::*;
+    use crate::store::testing;
+
+    #[tokio::test]
+    async fn indexes_the_memories_of_the_living_once_and_keeps_them() {
+        let (store, _dir) = testing::store().await;
+        let shutdown = CancellationToken::new();
+        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        {
+            let mut core = world.core.write();
+            let c = core.sim.state.characters.values_mut().next().unwrap();
+            let memory = Memory {
+                tick: 0,
+                day: 0,
+                text: "Watched the bonfire on the green.".into(),
+                importance: 4,
+                kind: MemoryKind::Event,
+                subjects: vec![],
+            };
+            c.memories.push(memory);
+        }
+        let endpoint = FakeTransport::new(|request: HttpRequest| {
+            let count = request.json()["input"].as_array().map_or(0, Vec::len);
+            let data: Vec<_> = (0..count).map(|i| json!({ "index": i, "embedding": [1.0, i as f64 + 1.0] })).collect();
+            let response = HttpResponse::json(200, &json!({ "data": data, "usage": { "total_tokens": 7 } }));
+            async move { Ok(response) }
+        });
+        let settings = EmbedSettings { base_url: "http://embed.test/v1".into(), model: "e1".into() };
+        let index = MemoryIndex::new(Embedder::new(settings, ApiKey::default(), endpoint.clone()));
+
+        let mut passes = 0;
+        while index_once(&index, &world, &store).await > 0 {
+            passes += 1;
+            assert!(passes < 100, "the index never fills");
+        }
+        let requests = endpoint.requests().len();
+        assert!(requests > 0);
+        assert_eq!(index_once(&index, &world, &store).await, 0);
+        assert_eq!(endpoint.requests().len(), requests, "nothing is embedded twice");
+        assert!(index.cache().vector("Watched the bonfire on the green.").is_some());
+        assert_eq!(store.load_vectors("e1").await.unwrap().len(), index.cache().len());
+
+        let today = utc_day(now_ms());
+        let usage = store.usage(today, today).await.unwrap();
+        assert!(usage.iter().any(|row| row.kind == EMBED_USAGE && row.requests == requests as u64));
+        assert_eq!(store.usage_today().await.unwrap().requests_24h, 0, "embeddings do not count against the model");
+
+        shutdown.cancel();
+        let _ = task.await;
+    }
 }

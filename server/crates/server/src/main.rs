@@ -48,6 +48,10 @@ async fn main() -> ExitCode {
             "language model off (set LLM_BASE_URL and LLM_MODEL to turn it on); villagers follow their routines"
         );
     }
+    if config.embed.enabled() {
+        let embed = &config.embed;
+        tracing::info!(base_url = %embed.base_url, model = %embed.model, key = !config.embed_api_key.is_empty(), "memory by meaning on");
+    }
 
     let shutdown = CancellationToken::new();
     let (world, world_task) = match world_task::start(store.clone(), config.initial_speed, shutdown.clone()).await {
@@ -60,6 +64,9 @@ async fn main() -> ExitCode {
     };
     let maintenance = store::maintenance::spawn(store.clone(), shutdown.clone());
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
+    let memory = brain_task::start_memory(&store, config.embed.clone(), config.embed_api_key.clone()).await;
+    brain.set_memory(memory.clone());
+    let indexing = memory.map(|index| brain_task::spawn_indexer(index, world.clone(), store.clone(), shutdown.clone()));
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
     let app = match AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone()) {
         Ok(app) => app,
@@ -94,6 +101,9 @@ async fn main() -> ExitCode {
     let _ = chat_sweeper.await;
     let _ = prayers.await;
     let _ = thinking.await;
+    if let Some(indexing) = indexing {
+        let _ = indexing.await;
+    }
     let _ = maintenance.await;
     // Last: flush the chronicle, checkpoint the WAL, stop the store thread.
     store.close().await;
