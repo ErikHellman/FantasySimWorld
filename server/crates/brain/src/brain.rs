@@ -495,7 +495,9 @@ impl Brain {
 
     /// Runs one request through the queue. `build` is called when the request
     /// is sent, so the prompt describes the world at that moment (`None` skips
-    /// it); `apply` gets the reply and says what came of it.
+    /// it); `apply` gets the reply and says what came of it. `cue` is read from
+    /// the world when the request is sent and embedded, waiting at most
+    /// [`CUE_WAIT`], before `build`.
     #[allow(clippy::too_many_arguments)]
     fn request<T: Send + 'static>(
         &self,
@@ -536,9 +538,13 @@ impl Brain {
         let job = Job::new(key, kind.priority(), Instant::now() + ttl, move |cancel| async move {
             let link = brain.inner.link.clone();
             let memory = brain.inner.state.lock().memory.clone();
+            let cue_cancel = cancel.clone();
             let cue_vector = match (cue, &memory) {
                 (Some(cue), Some(memory)) => match read(&*link, cue) {
-                    Some(text) => memory.cue(&text, CUE_WAIT).await,
+                    Some(text) => tokio::select! {
+                        vector = memory.cue(&text, CUE_WAIT) => vector,
+                        () = cue_cancel.cancelled() => None,
+                    },
                     None => None,
                 },
                 _ => None,
@@ -800,7 +806,12 @@ impl Brain {
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(30),
-            Some(Box::new(move |state: &SimState| state.characters.get(&cue_id).map(|me| decide_cue(state, me)))),
+            Some(Box::new(move |state: &SimState| {
+                let me = state.characters.get(&cue_id)?;
+                // The same refusals as the build below: nothing is embedded for a prompt that will not be sent.
+                (me.convo_id.is_none() && !me.asleep && !is_fighting(me) && !me.combat.yielded)
+                    .then(|| decide_cue(state, me))
+            })),
             move |state, recall| {
                 let me = state.characters.get(&build_id)?;
                 if me.convo_id.is_some() || me.asleep || is_fighting(me) || me.combat.yielded {
@@ -894,7 +905,10 @@ impl Brain {
             format!("c:{id}"),
             Some(id),
             Duration::from_secs(90),
-            Some(Box::new(move |state: &SimState| state.characters.get(&cue_id).map(plan_cue))),
+            Some(Box::new(move |state: &SimState| {
+                let me = state.characters.get(&cue_id).filter(|c| !c.asleep && !is_fighting(c))?;
+                Some(plan_cue(me))
+            })),
             move |state, recall| {
                 let me = state.characters.get(&build_id).filter(|c| !c.asleep && !is_fighting(c))?;
                 built(plan_prompt(state, me, budget, recall), ())

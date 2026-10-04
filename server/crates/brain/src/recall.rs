@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
+use tokio::time::Instant;
 
 use crate::llm::embed::{BATCH, Embedder};
 
@@ -105,16 +106,22 @@ pub struct Indexed {
     pub error: Option<String>,
 }
 
+/// How long cues are skipped after one fails or times out. A cue that gives up at its wait never lets
+/// the embedder's own breaker count a failure, so without a rest every request would wait out a dead endpoint.
+const CUE_REST: Duration = Duration::from_secs(60);
+
 /// The embedder and the vectors it has made: what the brain recalls with.
 pub struct MemoryIndex {
     embedder: Embedder,
     cache: VectorCache,
+    /// until when cues are skipped because the last one failed
+    cue_resting_until: Mutex<Option<Instant>>,
 }
 
 impl MemoryIndex {
     pub fn new(embedder: Embedder) -> Self {
         let cache = VectorCache::new(embedder.model());
-        Self { embedder, cache }
+        Self { embedder, cache, cue_resting_until: Mutex::new(None) }
     }
 
     pub fn cache(&self) -> &VectorCache {
@@ -122,13 +129,20 @@ impl MemoryIndex {
     }
 
     /// The vector for a prompt's cue. `None` when the cue is blank, or the endpoint fails
-    /// or takes longer than `wait`; the prompt then recalls by shared words.
+    /// or takes longer than `wait`, and for [`CUE_REST`] after such a failure; the prompt then
+    /// recalls by shared words.
     pub async fn cue(&self, text: &str, wait: Duration) -> Option<Arc<[f32]>> {
         if text.trim().is_empty() {
             return None;
         }
-        let embedded = tokio::time::timeout(wait, self.embedder.embed(&[text.to_owned()])).await.ok()?.ok()?;
-        embedded.vectors.into_iter().next().map(Arc::from)
+        let resting = self.cue_resting_until.lock().is_some_and(|until| Instant::now() < until);
+        if resting {
+            return None;
+        }
+        let embedded = tokio::time::timeout(wait, self.embedder.embed(&[text.to_owned()])).await;
+        let vector = embedded.ok().and_then(Result::ok).and_then(|embedded| embedded.vectors.into_iter().next());
+        *self.cue_resting_until.lock() = if vector.is_some() { None } else { Some(Instant::now() + CUE_REST) };
+        vector.map(Arc::from)
     }
 
     /// Embeds the texts that have no vector yet, [`BATCH`] at a time and at most
@@ -253,6 +267,35 @@ mod tests {
         assert_eq!(index.cue("   ", Duration::from_secs(2)).await, None);
         let failing = self::index(endpoint(true));
         assert_eq!(failing.cue("smoke", Duration::from_secs(2)).await, None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hung_endpoint_is_asked_once_a_minute() {
+        let wait = Duration::from_secs(2);
+        let hung = FakeTransport::new(|_| std::future::pending::<Result<HttpResponse, String>>());
+        let index = self::index(hung.clone());
+        assert_eq!(index.cue("smoke", wait).await, None);
+        assert_eq!(hung.requests().len(), 1);
+
+        let before = tokio::time::Instant::now();
+        assert_eq!(index.cue("smoke", wait).await, None);
+        assert!(before.elapsed() < wait);
+        assert_eq!(hung.requests().len(), 1);
+
+        tokio::time::advance(Duration::from_secs(61)).await;
+        assert_eq!(index.cue("smoke", wait).await, None);
+        assert_eq!(hung.requests().len(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_cue_rests_the_next_one() {
+        let failing = endpoint(true);
+        let index = self::index(failing.clone());
+        let wait = Duration::from_secs(2);
+        assert_eq!(index.cue("smoke", wait).await, None);
+        let asked = failing.requests().len();
+        assert_eq!(index.cue("smoke", wait).await, None);
+        assert_eq!(failing.requests().len(), asked);
     }
 
     #[test]
