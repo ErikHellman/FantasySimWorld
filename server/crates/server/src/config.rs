@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use fsw_brain::settings::{ApiKey, ConversationMode, LlmSettings, ReasoningMode, WireProtocol};
+use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, ReasoningMode, WireProtocol};
 
 use crate::api::wire::SignInProvider;
 
@@ -205,6 +205,10 @@ pub struct Config {
     pub llm: LlmSettings,
     /// `LLM_API_KEY`: the model endpoint's key, if it needs one (masked in `Debug`)
     pub llm_api_key: ApiKey,
+    /// The embedding model, from `EMBED_BASE_URL` and `EMBED_MODEL` (see `embed_from`). Off unless both are set.
+    pub embed: EmbedSettings,
+    /// `EMBED_API_KEY`: the embedding endpoint's key, if it needs one (masked in `Debug`)
+    pub embed_api_key: ApiKey,
     /// `CREDITS_PER_MINUTE`: what a viewer earns for a minute of watching with the tab in front;
     /// default 2, and 0 turns credits off altogether
     pub credits_per_minute: u32,
@@ -285,6 +289,7 @@ impl Config {
         };
 
         let llm = llm_from(&get)?;
+        let embed = embed_from(&get)?;
         let whole = |name: &str, default: u32, range: std::ops::RangeInclusive<u32>| match get(name) {
             None => Ok(default),
             Some(text) => match text.parse::<u32>() {
@@ -307,6 +312,8 @@ impl Config {
             initial_speed,
             llm,
             llm_api_key: ApiKey::new(get("LLM_API_KEY").unwrap_or("")),
+            embed,
+            embed_api_key: ApiKey::new(get("EMBED_API_KEY").unwrap_or("")),
             credits_per_minute,
             credits_cap,
         })
@@ -462,6 +469,21 @@ fn llm_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<LlmSettings, S
         max_requests_per_day: number(get, "LLM_MAX_REQUESTS_PER_DAY", defaults.max_requests_per_day, 0..=u64::MAX)?,
         max_tokens_per_day: number(get, "LLM_MAX_TOKENS_PER_DAY", defaults.max_tokens_per_day, 0..=u64::MAX)?,
     })
+}
+
+/// The embedding model. Both variables or neither, like the language model's.
+fn embed_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<EmbedSettings, String> {
+    let base_url = get("EMBED_BASE_URL").unwrap_or("").trim_end_matches('/').to_owned();
+    let model = get("EMBED_MODEL").unwrap_or("").to_owned();
+    match (base_url.is_empty(), model.is_empty()) {
+        (false, true) => return Err("EMBED_BASE_URL is set but EMBED_MODEL is not; set both or neither".into()),
+        (true, false) => return Err("EMBED_MODEL is set but EMBED_BASE_URL is not; set both or neither".into()),
+        _ => {}
+    }
+    if !(base_url.is_empty() || base_url.starts_with("https://") || base_url.starts_with("http://")) {
+        return Err(format!("EMBED_BASE_URL must start with https:// or http://, got {base_url:?}"));
+    }
+    Ok(EmbedSettings { base_url, model })
 }
 
 #[cfg(test)]
@@ -715,5 +737,33 @@ mod tests {
         assert!(!plausible_email("@b"));
         assert!(!plausible_email("a@"));
         assert!(!plausible_email("a@b@c"));
+    }
+
+    #[test]
+    fn embeddings_are_off_unless_both_settings_are_given() {
+        let token = ("AUTH_TOKEN", "0123456789abcdef");
+        let config = Config::from_vars(vars(&[token])).unwrap();
+        assert!(!config.embed.enabled());
+        assert!(config.embed_api_key.is_empty());
+
+        let config = Config::from_vars(vars(&[
+            token,
+            ("EMBED_BASE_URL", "http://localhost:1234/v1/"),
+            ("EMBED_MODEL", "nomic-embed-text"),
+            ("EMBED_API_KEY", "sk-embed-1234"),
+        ]))
+        .unwrap();
+        assert!(config.embed.enabled());
+        assert_eq!(config.embed.base_url, "http://localhost:1234/v1");
+        assert_eq!(config.embed.model, "nomic-embed-text");
+        assert_eq!(config.embed_api_key.expose(), "sk-embed-1234");
+        assert!(!format!("{config:?}").contains("sk-embed-1234"));
+
+        let only_model = Config::from_vars(vars(&[token, ("EMBED_MODEL", "m")])).unwrap_err();
+        assert!(only_model.contains("EMBED_BASE_URL"), "{only_model}");
+        let only_url = Config::from_vars(vars(&[token, ("EMBED_BASE_URL", "http://x/v1")])).unwrap_err();
+        assert!(only_url.contains("EMBED_MODEL"), "{only_url}");
+        let bad = Config::from_vars(vars(&[token, ("EMBED_BASE_URL", "ftp://x"), ("EMBED_MODEL", "m")])).unwrap_err();
+        assert!(bad.contains("EMBED_BASE_URL"), "{bad}");
     }
 }

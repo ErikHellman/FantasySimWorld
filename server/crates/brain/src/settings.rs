@@ -108,6 +108,20 @@ impl fmt::Debug for ApiKey {
     }
 }
 
+/// The embedding model that lets villagers recall memories by meaning. Off unless both are set.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EmbedSettings {
+    /// OpenAI-compatible base URL, e.g. http://localhost:1234/v1
+    pub base_url: String,
+    pub model: String,
+}
+
+impl EmbedSettings {
+    pub fn enabled(&self) -> bool {
+        !self.base_url.is_empty() && !self.model.is_empty()
+    }
+}
+
 /// Reads "Name: value" lines. Lines without a name or value are skipped; a
 /// repeated name keeps its first position and its last value, like a JS object.
 pub fn parse_headers(text: &str) -> Vec<(String, String)> {
