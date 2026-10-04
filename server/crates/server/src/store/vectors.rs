@@ -14,8 +14,8 @@ fn to_blob(vector: &[f32]) -> Vec<u8> {
 }
 
 fn from_blob(blob: &[u8]) -> Option<Vec<f32>> {
-    (!blob.is_empty() && blob.len().is_multiple_of(4))
-        .then(|| blob.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect())
+    let (numbers, rest) = blob.as_chunks::<4>();
+    (!numbers.is_empty() && rest.is_empty()).then(|| numbers.iter().map(|b| f32::from_le_bytes(*b)).collect())
 }
 
 impl Store {
