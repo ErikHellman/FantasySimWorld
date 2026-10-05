@@ -1,4 +1,5 @@
 import { useEffect } from 'preact/hooks';
+import { AboutTechPanel } from './About';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
@@ -162,6 +163,7 @@ export function App() {
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
       {ui.panel.value === 'graves' && <Graves />}
       {ui.panel.value === 'help' && <HelpPanel />}
+      {ui.panel.value === 'tech' && <AboutTechPanel />}
       {ui.panel.value === 'shop' && creditsOn() && <ShopPanel />}
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>

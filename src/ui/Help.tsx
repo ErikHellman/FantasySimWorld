@@ -122,6 +122,7 @@ export function HelpPanel() {
         </ul>
 
         <footer>
+          <button onClick={() => (ui.panel.value = 'tech')}>About the tech</button>
           <button class="primary" onClick={close}>Got it</button>
         </footer>
       </section>
