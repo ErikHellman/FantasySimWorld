@@ -72,7 +72,7 @@ set -a; . ./.env; set +a
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)). A guest sees ⏳ and the time they have left instead.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, gifts of credits to the people watching, the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health. The 🧠 pill in the top bar opens the model's decision log.

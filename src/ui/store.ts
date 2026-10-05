@@ -41,7 +41,7 @@ const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
 export type Sheet = 'none' | 'villagers' | 'feed' | 'chat' | 'character' | 'menu';
 
 /** A window over the whole HUD: settings, help and the like. */
-export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'shop';
+export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech' | 'shop';
 
 /** What this browser remembers about the chat. */
 export interface ChatSettings {
