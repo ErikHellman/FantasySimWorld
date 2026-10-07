@@ -42,6 +42,19 @@ pub struct CastEntry {
     /// what the sim makes of them beyond the numbers in the profile
     #[serde(default)]
     pub quirks: Vec<Quirk>,
+    /// Set for a child; the class is the one they will grow into.
+    #[serde(default)]
+    pub child: Option<ChildEntry>,
+}
+
+/// A child as authored: how naughty they are and who raises them.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ChildEntry {
+    /// 0 never up to anything .. 1 trouble every day
+    pub mischief: f64,
+    /// cast keys of the people who raise them; empty for a child the village raises
+    #[serde(default)]
+    pub parents: Vec<String>,
 }
 
 /// A relationship that exists before the simulation starts. Applied one way.
@@ -121,6 +134,19 @@ mod tests {
             let character = manifest.characters.get(model).unwrap_or_else(|| panic!("{}: no model {model}", entry.key));
             assert!(manifest.rigs.contains_key(&character.rig), "{model}: no rig {}", character.rig);
         }
+    }
+
+    #[test]
+    fn a_cast_entry_may_be_a_child_raised_by_named_people() {
+        let json = r#"{"key":"pip","classId":"knight","model":"Child_Knight","child":{"mischief":0.5,"parents":["aldric"]},
+            "profile":{"name":"Pip Vane","pronouns":"he/him","age":11,"occupation":"child","backstory":"","traits":[],
+            "goals":[],"speechStyle":"","temper":0.5,"bravery":0.5,"sociability":0.5,
+            "voice":{"pitch":1.2,"rate":1.1,"timbre":"piping"}}}"#;
+        let entry: CastEntry = serde_json::from_str(json).unwrap();
+        let child = entry.child.expect("a child");
+        assert_eq!(child.mischief, 0.5);
+        assert_eq!(child.parents, vec!["aldric".to_owned()]);
+        assert!(cast()[0].child.is_none(), "the first founder is an adult");
     }
 
     #[test]

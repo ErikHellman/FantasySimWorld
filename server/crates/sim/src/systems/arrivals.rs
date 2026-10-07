@@ -17,7 +17,7 @@ use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
 use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
 
-const FIRST_NAMES: [&str; 15] = [
+pub(crate) const FIRST_NAMES: [&str; 15] = [
     "Edda", "Bram", "Wren", "Osric", "Tamsin", "Hale", "Ysolt", "Garnet", "Perrin", "Linnea", "Cade", "Marta", "Jory",
     "Senna", "Alder",
 ];
@@ -233,6 +233,7 @@ fn wanderer(ctx: &mut Ctx) -> CastEntry {
         },
         bonds: Vec::new(),
         quirks: Vec::new(),
+        child: None,
     }
 }
 

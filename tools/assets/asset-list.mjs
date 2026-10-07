@@ -158,6 +158,13 @@ export const characters = [
   { id: 'Farmer_A', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_A.glb` },
   { id: 'Farmer_B', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_B.glb` },
   { id: 'Barbarian_Large', file: `${ADV}/Characters/gltf/Barbarian_Large.glb`, rig: 'large', scale: 0.7 },
+  // Children: the adult meshes drawn small. The sim's `data/children.rs` names these.
+  ...['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue', 'Druid', 'Engineer'].map((name) => ({
+    id: `Child_${name}`,
+    file: `${ADV}/Characters/gltf/${name}.glb`,
+    scale: 0.6,
+  })),
+  { id: 'Child_Farmer', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_A.glb`, scale: 0.6 },
 ];
 
 /** Extra textures that are not referenced by any model (recolours). */
