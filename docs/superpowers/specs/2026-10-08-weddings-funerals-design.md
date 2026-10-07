@@ -27,7 +27,7 @@ Two moments that bring the whole village to one place. A couple who have lasted 
 
 - **State** (`server/crates/sim/src/state.rs`): `Character.spouse_id` and `Character.partner_since_tick`; `RelationLabel::Spouse`; `Director.awaiting_funeral`; `SimState.ceremony: Option<Ceremony>` (the rite, the place, the hour, the phase and step, the officiant, the held speeches, who was called, how often it was put off); `IntentAction::Attend`. All are left out of a save when empty or absent, so older saves and the fixtures load unchanged.
 - **The system** (`server/crates/sim/src/systems/ceremonies.rs`): betrothal at the midnight roll-over, scheduling from `kill_character` and `bury_the_fallen`, the muster (after `fire::muster`), the spots, the rite's steps, the conclusion and the feast. Its constants are at the top. `update_ceremonies` runs right after `update_fire`. Nothing here draws from the RNG until a rite is under way, so a world with no couple and no death runs exactly as before.
-- **Spouses** (`systems/relationships.rs`): `marry`, the spouse label and the harder parting; `kill_character` and `fall_to_necromancy` widow the living.
+- **Spouses** (`systems/relationships.rs`): `marry`, the spouse label and the harder parting; `kill_character` and `fall_to_necromancy` widow the living. A villager the model invents with a `spouse` bond to someone free arrives married (`systems/founding.rs`).
 - **Scripted lines** (`data/ceremonies.rs`): openings, vows, closings, cheers, eulogies and lines of grief, picked with the sim's dice.
 - **The brain** (`server/crates/brain`): `RequestKind::Ceremony`, the `speech` tool, `vows_prompt` and `eulogy_prompt`, asked when `SimEvent::CeremonyScheduled` arrives and answered with `Command::CeremonySpeech`, which the sim keeps only while the ceremony still stands and the speaker still speaks at it. The prompt header tells everyone about today's or tomorrow's ceremony, and a spouse is named as "your wife", "your husband" or "your spouse". These are deliberate changes to the prompt fixture.
 - **The wire** (`wire.rs`, protocol version 6): `Snapshot.ceremony` and the `ceremony` event, found by comparing state as houses are, with a final `over` phase; `RelationLabel::Spouse`; `CharacterDetail.spouse`; `RequestKind::Ceremony`.
@@ -35,7 +35,7 @@ Two moments that bring the whole village to one place. A couple who have lasted 
 
 ## Left out on purpose
 
-- No viewer shop offers, and no wedding gifts.
+- Viewers cannot arrange or sponsor a ceremony, and there are no wedding gifts.
 - No children, and no divorce ceremony: a parting is as quiet as it is today.
 - A second ceremony is never arranged while one is pending; the dead wait, and a couple are betrothed again later.
 - The model is asked once, when the ceremony is arranged; if the officiant dies before the day, the scripted lines are used.
