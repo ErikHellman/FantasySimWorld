@@ -47,6 +47,8 @@ pub fn create_state(seed: u32) -> SimState {
         billboards: Default::default(),
         powers: Default::default(),
         houses: Default::default(),
+        objects: Default::default(),
+        nav: Default::default(),
     };
 
     let mut by_key: HashMap<&str, Id> = HashMap::new();

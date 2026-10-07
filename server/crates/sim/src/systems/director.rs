@@ -3,7 +3,6 @@
 use fsw_core::jsmath::js_round;
 use fsw_core::time::{MINUTES_PER_DAY, START_MINUTE, TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks};
 use fsw_core::vec2;
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{ActivityId, get_place};
 
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind};
@@ -65,7 +64,7 @@ fn spawn_wave(ctx: &mut Ctx) {
         };
         let x = point.x + ctx.range(-0.6, 0.6);
         let z = point.z + ctx.range(-0.6, 0.6);
-        let Some(pos) = nearest_walkable(vec2(x, z), 5) else { continue };
+        let Some(pos) = ctx.state.nav.nearest_walkable(vec2(x, z), 5) else { continue };
         let kind = if with_necromancer && i == 0 { MonsterKind::Necromancer } else { random_monster_kind(ctx) };
         spawn_monster(ctx, kind, pos, place.facing);
     }

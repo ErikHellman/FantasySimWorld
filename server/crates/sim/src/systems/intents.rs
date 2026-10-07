@@ -3,13 +3,13 @@
 use fsw_core::math2d::{dist, facing_to};
 use fsw_core::time::{GAME_MINUTES_PER_TICK, TICKS_PER_GAME_MINUTE, minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get_slot, slots_for};
 
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
 use crate::events::{Emote, SimEvent};
+use crate::nav::NavOverlay;
 use crate::state::{
     Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, MemoryKind,
     MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
@@ -62,13 +62,13 @@ fn speed_of(c: &Character, tick: i64) -> f64 {
 }
 
 /// Steps out of a building back onto the street (or gets up off the grass).
-pub fn leave_building(c: &mut Character) {
+pub fn leave_building(nav: &NavOverlay, c: &mut Character) {
     let Some(inside) = c.inside.take() else {
         c.asleep = false;
         return;
     };
     if let Some(place) = find_place(&inside) {
-        c.pos = nearest_walkable(place.door, 4).unwrap_or(place.door);
+        c.pos = nav.nearest_walkable(place.door, 4).unwrap_or(place.door);
     }
     c.asleep = false;
 }
@@ -90,9 +90,9 @@ pub(crate) fn finish(ctx: &mut Ctx, id: &str, outcome: impl Into<String>) {
 }
 
 /// Sets a route; false when there is none.
-pub(crate) fn travel_to(tick: i64, c: &mut Character, dest: Vec2) -> bool {
-    leave_building(c);
-    let Some(route) = route_to(c.pos, dest) else { return false };
+pub(crate) fn travel_to(tick: i64, nav: &NavOverlay, c: &mut Character, dest: Vec2) -> bool {
+    leave_building(nav, c);
+    let Some(route) = route_to(nav, c.pos, dest) else { return false };
     c.act.path = route;
     c.act.dest = Some(dest);
     c.act.phase = ActPhase::Travel;
@@ -182,11 +182,12 @@ fn stroll_goal(ctx: &mut Ctx) -> Vec2 {
     let stop = get_place(STROLL_STOPS[ctx.pick_index(STROLL_STOPS.len())]);
     let x = stop.door.x + ctx.range(-5.0, 5.0);
     let z = stop.door.z + ctx.range(-5.0, 5.0);
-    nearest_walkable(vec2(x, z), 6).unwrap_or(stop.door)
+    ctx.state.nav.nearest_walkable(vec2(x, z), 6).unwrap_or(stop.door)
 }
 
 fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Option<String>, minutes: Option<f64>) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let def = activity(activity_id);
     let minutes = match minutes {
         Some(m) => m,
@@ -210,8 +211,8 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             // Those whose home is burning or in ruins sleep on the ground by the campfire.
             let usable = home_usable(ctx.state, ctx.cr(id));
             let c = ctx.c(id);
-            let bed = if usable { get_place(&c.home_id).door } else { rough_spot(c) };
-            if !travel_to(tick, c, bed) {
+            let bed = if usable { get_place(&c.home_id).door } else { rough_spot(&nav, c) };
+            if !travel_to(tick, &nav, c, bed) {
                 finish(ctx, id, if usable { "You could not find a way home." } else { "You found nowhere to sleep." });
             }
             return;
@@ -226,12 +227,12 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
                 finish(ctx, id, "There was nothing to rebuild.");
                 return;
             };
-            let spot = fire::build_spot(get_place(&ruin), id);
+            let spot = fire::build_spot(&nav, get_place(&ruin), id);
             let c = ctx.c(id);
             if let Some(Intent { action: IntentAction::Activity { place_id, .. }, .. }) = &mut c.intent {
                 *place_id = Some(ruin);
             }
-            if !travel_to(tick, c, spot) {
+            if !travel_to(tick, &nav, c, spot) {
                 finish(ctx, id, "You could not get to the ruin.");
             }
             return;
@@ -240,7 +241,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             let goal = stroll_goal(ctx);
             let c = ctx.c(id);
             c.act.until_tick = tick + minutes_to_ticks(minutes);
-            if !travel_to(tick, c, goal) {
+            if !travel_to(tick, &nav, c, goal) {
                 finish(ctx, id, "You wandered a little.");
             }
             return;
@@ -252,8 +253,8 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         ctx.state.slots.insert(slot.id.clone(), id.to_owned());
         let c = ctx.c(id);
         c.slot_id = Some(slot.id.clone());
-        let approach = nearest_walkable(slot.pos, 4).unwrap_or(slot.pos);
-        if !travel_to(tick, c, approach) {
+        let approach = nav.nearest_walkable(slot.pos, 4).unwrap_or(slot.pos);
+        if !travel_to(tick, &nav, c, approach) {
             finish(ctx, id, format!("You could not get to {}.", get_place(&slot.place_id).name));
         }
         return;
@@ -302,7 +303,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
                 ctx.c(id).act.repath_tick = tick + seconds_to_ticks(linger);
             } else if tick >= c.act.repath_tick {
                 let goal = stroll_goal(ctx);
-                if !travel_to(tick, ctx.c(id), goal) {
+                if !travel_to(tick, &nav, ctx.c(id), goal) {
                     finish(ctx, id, "You finished your stroll.");
                 }
             }
@@ -400,7 +401,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
     match activity_id {
         ActivityId::Sleep => {
             let rough = c.inside.is_none();
-            leave_building(c);
+            leave_building(&nav, c);
             set_anim(c, AnimId::Idle, false);
             if rough {
                 let text = "You have woken cold and stiff on the ground by the campfire: you have no home to sleep in.";
@@ -456,18 +457,19 @@ fn nap_spot(ctx: &mut Ctx, from: Vec2) -> Vec2 {
     let near = if ctx.chance(0.5) { get_place("green").door } else { from };
     let x = near.x + ctx.range(-7.0, 7.0);
     let z = near.z + ctx.range(-7.0, 7.0);
-    nearest_walkable(vec2(x, z), 6).unwrap_or(from)
+    ctx.state.nav.nearest_walkable(vec2(x, z), 6).unwrap_or(from)
 }
 
 /// Lies down on the grass and sleeps a while, in plain sight.
 fn run_nap(ctx: &mut Ctx, id: &str, minutes: f64) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     match ctx.cr(id).act.phase {
         ActPhase::Start => {
             let from = ctx.cr(id).pos;
             let spot = nap_spot(ctx, from);
             let c = ctx.c(id);
-            if !travel_to(tick, c, spot) {
+            if !travel_to(tick, &nav, c, spot) {
                 finish(ctx, id, "You could not find a quiet spot to lie down.");
             }
         }
@@ -511,6 +513,7 @@ fn run_nap(ctx: &mut Ctx, id: &str, minutes: f64) {
 /// Follows someone at a stroll, and strikes once nobody else is about.
 fn run_stalk(ctx: &mut Ctx, id: &str, target_id: &str) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let hour = ctx.time.hour;
     let Some(target) = ctx.state.characters.get(target_id) else {
         end_hunt(ctx, id);
@@ -520,7 +523,7 @@ fn run_stalk(ctx: &mut Ctx, id: &str, target_id: &str) {
     let (target_pos, gone) = (target.pos, target.inside.is_some() || target.convo_id.is_some());
     let c = ctx.c(id);
     if c.act.phase == ActPhase::Start {
-        leave_building(c);
+        leave_building(&nav, c);
         c.act.phase = ActPhase::Travel;
         c.act.since_tick = tick;
         c.act.until_tick = tick + minutes_to_ticks(90.0);
@@ -545,7 +548,7 @@ fn run_stalk(ctx: &mut Ctx, id: &str, target_id: &str) {
         return;
     }
     if c.act.path.is_empty() || tick >= c.act.repath_tick {
-        c.act.path = route_to(c.pos, target_pos).unwrap_or_default();
+        c.act.path = route_to(&nav, c.pos, target_pos).unwrap_or_default();
         c.act.repath_tick = tick + seconds_to_ticks(1.5);
     }
     travel(tick, c, None);
@@ -553,6 +556,7 @@ fn run_stalk(ctx: &mut Ctx, id: &str, target_id: &str) {
 
 fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &str) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let Some(target) = ctx.state.characters.get(target_id) else {
         finish(ctx, id, "The person you wanted to talk to is gone.");
         return;
@@ -561,7 +565,7 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
         (target.pos, target.inside.clone(), target.asleep, is_approachable(target), first_name(target).to_owned());
     let c = ctx.c(id);
     if c.act.phase == ActPhase::Start {
-        leave_building(c);
+        leave_building(&nav, c);
         c.act.phase = ActPhase::Travel;
         c.act.since_tick = tick;
         c.act.until_tick = tick + minutes_to_ticks(45.0);
@@ -590,7 +594,7 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
     }
     if c.act.path.is_empty() || tick >= c.act.repath_tick {
         let goal = target_inside.as_deref().map_or(target_pos, |inside| get_place(inside).door);
-        c.act.path = route_to(c.pos, goal).unwrap_or_default();
+        c.act.path = route_to(&nav, c.pos, goal).unwrap_or_default();
         c.act.repath_tick = tick + seconds_to_ticks(1.5);
         if c.act.path.is_empty() && d > TALK_REACH {
             finish(ctx, id, format!("You could not reach {target_name}."));
@@ -610,6 +614,7 @@ fn describe_item(item: ItemId) -> &'static str {
 
 fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let has_item = ctx.cr(id).inventory.get(item) > 0;
     let Some(target) = ctx.state.characters.get(target_id).filter(|_| has_item) else {
         let outcome = if ctx.alive(target_id) {
@@ -624,7 +629,7 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
         (target.pos, target.inside.is_some(), is_approachable(target), first_name(target).to_owned());
     let c = ctx.c(id);
     if c.act.phase == ActPhase::Start {
-        leave_building(c);
+        leave_building(&nav, c);
         c.act.phase = ActPhase::Travel;
         c.act.since_tick = tick;
         c.act.until_tick = tick + minutes_to_ticks(40.0);
@@ -678,7 +683,7 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
         return;
     }
     if c.act.path.is_empty() || tick >= c.act.repath_tick {
-        c.act.path = route_to(c.pos, target_pos).unwrap_or_default();
+        c.act.path = route_to(&nav, c.pos, target_pos).unwrap_or_default();
         c.act.repath_tick = tick + seconds_to_ticks(1.5);
     }
     if d > GIVE_REACH * 0.8 {
@@ -688,6 +693,7 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
 
 fn run_flee(ctx: &mut Ctx, id: &str) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let c = ctx.cr(id);
     // Home, or the tavern for those whose home is burning or gone.
     let home = shelter_of(ctx.state, c);
@@ -697,7 +703,7 @@ fn run_flee(ctx: &mut Ctx, id: &str) {
             if c.inside.is_some() {
                 c.act.phase = ActPhase::Perform;
                 c.act.since_tick = tick;
-            } else if !travel_to(tick, c, home.door) {
+            } else if !travel_to(tick, &nav, c, home.door) {
                 finish(ctx, id, "There was nowhere to run.");
             }
         }
@@ -720,7 +726,7 @@ fn run_flee(ctx: &mut Ctx, id: &str) {
             let hunted = living(ctx.state).any(|other| other.intent.as_ref().is_some_and(|i| i.fights(id)));
             if waited > minutes_to_ticks(patience) && !danger && !hunted {
                 let c = ctx.c(id);
-                leave_building(c);
+                leave_building(&nav, c);
                 set_anim(c, AnimId::Idle, false);
                 finish(ctx, id, "You hid until it was safe to come out.");
             }
@@ -757,6 +763,7 @@ fn complete_intent(ctx: &mut Ctx, id: &str, source: IntentSource) {
 /// Carries out each character's current intent, one tick at a time.
 pub fn update_intents(ctx: &mut Ctx) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     for id in living_ids(ctx.state) {
         // Characters killed earlier in this tick are skipped.
         if !ctx.alive(&id) {
@@ -793,7 +800,7 @@ pub fn update_intents(ctx: &mut Ctx) {
                 Some(place) => {
                     let c = ctx.c(&id);
                     if c.act.phase == ActPhase::Start {
-                        if !travel_to(tick, c, place.door) {
+                        if !travel_to(tick, &nav, c, place.door) {
                             finish(ctx, &id, format!("You could not find a way to {}.", place.name));
                         }
                     } else if travel(tick, c, None) {

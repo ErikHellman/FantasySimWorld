@@ -2,7 +2,6 @@
 
 use fsw_core::math2d::clamp;
 use fsw_core::vec2;
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
@@ -84,7 +83,7 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
     let rng = &mut state.rng;
     let x = home.door.x + fsw_core::rng::range(rng, -1.5, 1.5);
     let z = home.door.z + fsw_core::rng::range(rng, -0.5, 1.5);
-    let pos = nearest_walkable(vec2(x, z), 5).unwrap_or(home.door);
+    let pos = state.nav.nearest_walkable(vec2(x, z), 5).unwrap_or(home.door);
     let fighter = entry.profile.bravery >= 0.6;
     let id = state.new_id("c");
     let rng = &mut state.rng;
@@ -259,7 +258,7 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
     let mut c = make_character(ctx.state, &entry, &home);
     let road = get_place("west_road");
     let z = road.origin.z + ctx.range(-1.0, 1.0);
-    c.pos = nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
+    c.pos = ctx.state.nav.nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
     c.arrived_tick = tick;
     c.needs = Needs { hunger: 40.0, energy: 60.0, social: 30.0 };
     c.queue = vec![

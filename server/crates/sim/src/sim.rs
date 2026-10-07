@@ -28,6 +28,7 @@ use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
 use crate::systems::viewer_events;
+use crate::systems::world::update_world;
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -101,9 +102,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
     }
     detach(ctx, id);
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let c = ctx.c(id);
     if c.asleep {
-        leave_building(c);
+        leave_building(&nav, c);
     }
     c.tool = None;
     c.combat.target_id = None;
@@ -261,6 +263,7 @@ impl Sim {
     /// world are brought up to date with the cast as it is written now.
     pub fn new(mut state: SimState) -> Self {
         refresh_authored(&mut state);
+        crate::nav::refresh(&mut state);
         Self { state, pending: Vec::new() }
     }
 
@@ -302,6 +305,7 @@ impl Sim {
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
         update_fire(&mut ctx);
+        update_world(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

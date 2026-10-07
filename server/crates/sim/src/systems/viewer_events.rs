@@ -5,7 +5,6 @@
 use fsw_core::jsmath::utf16_len;
 use fsw_core::time::minutes_to_ticks;
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::get_place;
 
 use crate::commands::ViewerEvent;
@@ -74,8 +73,8 @@ fn room_for_the_dead(state: &SimState) -> usize {
 }
 
 /// Where a monster asked for at `pos` would rise.
-fn rise_spot(pos: Vec2) -> Option<Vec2> {
-    (pos.x.is_finite() && pos.z.is_finite()).then(|| nearest_walkable(pos, RISE_REACH)).flatten()
+fn rise_spot(state: &SimState, pos: Vec2) -> Option<Vec2> {
+    (pos.x.is_finite() && pos.z.is_finite()).then(|| state.nav.nearest_walkable(pos, RISE_REACH)).flatten()
 }
 
 /// Whether `event` can happen in this world right now. The server asks before it takes a
@@ -92,7 +91,7 @@ pub fn check(state: &SimState, event: &ViewerEvent) -> Result<(), Refusal> {
             if *monster == MonsterKind::Necromancer {
                 return Err(Refusal::NotOffered);
             }
-            if rise_spot(*pos).is_none() {
+            if rise_spot(state, *pos).is_none() {
                 return Err(Refusal::NowhereToRise);
             }
             if room_for_the_dead(state) == 0 {
@@ -137,7 +136,7 @@ pub fn describe(state: &SimState, event: &ViewerEvent) -> String {
             format!("sent {} {}", name_of(state, character_id), describe_item(*item))
         }
         ViewerEvent::Monster { monster, pos } => {
-            format!("raised a {} at {}", monster.def().label, place_name_at(rise_spot(*pos).unwrap_or(*pos)))
+            format!("raised a {} at {}", monster.def().label, place_name_at(rise_spot(state, *pos).unwrap_or(*pos)))
         }
         ViewerEvent::Raid => "called the dead up from the old graveyard".into(),
         ViewerEvent::Necromancer => "set a necromancer walking in the old graveyard".into(),
@@ -257,7 +256,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
             ctx.chronicle(ChronicleKind::World, format!("{who} {done}."), vec![character_id]);
         }
         ViewerEvent::Monster { monster, pos } => {
-            let Some(spot) = rise_spot(pos) else { return };
+            let Some(spot) = rise_spot(ctx.state, pos) else { return };
             note(ctx, name, StimulusKind::Wrath);
             raise(ctx, monster, spot, 0.0);
             let (label, place) = (monster.def().label, place_name_at(spot));
@@ -279,7 +278,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
                     if points.is_empty() { graveyard.origin } else { points.remove(ctx.pick_index(points.len())) };
                 let x = point.x + ctx.range(-0.6, 0.6);
                 let z = point.z + ctx.range(-0.6, 0.6);
-                let Some(spot) = nearest_walkable(vec2(x, z), 5) else { continue };
+                let Some(spot) = ctx.state.nav.nearest_walkable(vec2(x, z), 5) else { continue };
                 let kind = random_monster_kind(ctx);
                 raise(ctx, kind, spot, graveyard.facing);
             }
@@ -292,7 +291,7 @@ pub fn apply(ctx: &mut Ctx, by: &str, event: ViewerEvent) {
         }
         ViewerEvent::Necromancer => {
             let graveyard = get_place("graveyard");
-            let Some(spot) = nearest_walkable(graveyard.origin, 5) else { return };
+            let Some(spot) = ctx.state.nav.nearest_walkable(graveyard.origin, 5) else { return };
             note(ctx, name, StimulusKind::Wrath);
             raise(ctx, MonsterKind::Necromancer, spot, graveyard.facing);
             let memory = format!("{} set a necromancer walking in the old graveyard.", patron.introduced());

@@ -10,12 +10,12 @@ use fsw_core::math2d::{dist, facing_to};
 use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{Place, find_place, get_place, homes};
 
 use crate::data::anims::AnimId;
 use crate::data::classes::RUN_SPEED;
 use crate::events::{Emote, SimEvent};
+use crate::nav::NavOverlay;
 use crate::state::{
     ActPhase, Arson, Character, ChronicleKind, House, HousePhase, Id, Intent, IntentAction, IntentSource, MemoryKind,
     MonsterPhase, SimState, StimulusKind,
@@ -96,15 +96,15 @@ pub fn shelter_of(state: &SimState, c: &Character) -> &'static Place {
 }
 
 /// A spot on the ground near the campfire for someone with no bed, fixed for each person.
-pub fn rough_spot(c: &Character) -> Vec2 {
+pub fn rough_spot(nav: &NavOverlay, c: &Character) -> Vec2 {
     let place = get_place(ROUGH_PLACE);
-    ring(place.door, &c.id, 5.0).unwrap_or(place.door)
+    ring(nav, place.door, &c.id, 5.0).unwrap_or(place.door)
 }
 
 /// A walkable point `radius` out from `centre`, in a direction fixed for each person, so a crowd spreads out.
-fn ring(centre: Vec2, id: &str, radius: f64) -> Option<Vec2> {
+fn ring(nav: &NavOverlay, centre: Vec2, id: &str, radius: f64) -> Option<Vec2> {
     let angle = f64::from(hash_string(id) % 12) * std::f64::consts::TAU / 12.0;
-    nearest_walkable(vec2(centre.x + cos(angle) * radius, centre.z + sin(angle) * radius), 5)
+    nav.nearest_walkable(vec2(centre.x + cos(angle) * radius, centre.z + sin(angle) * radius), 5)
 }
 
 /// The water nearest a house.
@@ -188,13 +188,14 @@ pub fn arson(ctx: &mut Ctx, id: &str, check: bool) -> bool {
     }
 
     let house = get_place(&plan.place_id);
-    let door = nearest_walkable(house.door, 4).unwrap_or(house.door);
+    let nav = ctx.state.nav.clone();
+    let door = nav.nearest_walkable(house.door, 4).unwrap_or(house.door);
     let speed = ctx.state.monsters[id].kind.def().speed;
     let monster = ctx.m(id);
     if plan.light_tick == 0 {
         if dist(monster.pos, door) > 1.6 {
             if monster.path.is_empty() || tick >= monster.repath_tick {
-                monster.path = route_to(monster.pos, door).unwrap_or_default();
+                monster.path = route_to(&nav, monster.pos, door).unwrap_or_default();
                 monster.repath_tick = tick + seconds_to_ticks(2.0);
             }
             if monster.path.is_empty() {
@@ -251,9 +252,10 @@ pub fn ignite(ctx: &mut Ctx, place_id: &str) {
     let inside: Vec<Id> =
         living(ctx.state).filter(|c| c.inside.as_deref() == Some(place_id)).map(|c| c.id.clone()).collect();
     let mut crier = None;
+    let nav = ctx.state.nav.clone();
     for id in &inside {
         let c = ctx.c(id);
-        leave_building(c);
+        leave_building(&nav, c);
         // Whatever they were doing in there (sleeping, hiding) is over.
         c.intent = None;
         c.queue.clear();
@@ -295,6 +297,7 @@ fn muster(ctx: &mut Ctx, place_id: &str) {
     let tick = ctx.tick();
     let place = get_place(place_id);
     let water = water_for(place);
+    let nav = ctx.state.nav.clone();
     for (i, id) in living_ids(ctx.state).iter().enumerate() {
         let Some(c) = ctx.state.characters.get(id) else { continue };
         if (tick + i as i64 * 3) % 10 != 0
@@ -309,7 +312,7 @@ fn muster(ctx: &mut Ctx, place_id: &str) {
         let c = ctx.c(id);
         let was_asleep = c.asleep;
         if c.asleep || c.inside.is_some() {
-            leave_building(c);
+            leave_building(&nav, c);
         }
         c.tool = None;
         c.queue.clear();
@@ -342,13 +345,14 @@ pub fn run_fight_fire(ctx: &mut Ctx, id: &str, place_id: &str) {
     }
     let place = get_place(place_id);
     let water = water_for(place);
+    let nav = ctx.state.nav.clone();
     let c = ctx.c(id);
     let carrying = c.tool.is_some();
     match c.act.phase {
         ActPhase::Start => {
-            let goal = if carrying { ring(place.door, id, 2.5) } else { ring(water.origin, id, 3.2) };
+            let goal = if carrying { ring(&nav, place.door, id, 2.5) } else { ring(&nav, water.origin, id, 3.2) };
             let goal = goal.unwrap_or(if carrying { place.door } else { water.door });
-            if !travel_to(tick, c, goal) {
+            if !travel_to(tick, &nav, c, goal) {
                 finish(ctx, id, "You could not get to the fire.");
             }
         }
@@ -519,8 +523,8 @@ pub fn add_work(ctx: &mut Ctx, id: &str, place_id: &str) -> bool {
 }
 
 /// Where someone stands to work on a ruin.
-pub fn build_spot(place: &Place, id: &str) -> Vec2 {
-    ring(place.door, id, 2.8).unwrap_or(place.door)
+pub fn build_spot(nav: &NavOverlay, place: &Place, id: &str) -> Vec2 {
+    ring(nav, place.door, id, 2.8).unwrap_or(place.door)
 }
 
 /// How far a ruin has been rebuilt, 0..1.
