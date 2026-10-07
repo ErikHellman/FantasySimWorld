@@ -10,7 +10,7 @@ The village has a life of its own: lovers have children, children play, explore 
 4. **Protected, not safe.** Children never fight and never answer the alarm; threatened, they run. The dead chase an adult before a child while any adult is in sight. The murderer does not hunt them, the drunk does not pick fights with them, and nobody calls them to a bucket chain. Nobody's grievance toward a child climbs past 30 (below "rival", far below a brawl), so no adult ever brawls with or attacks a child, and no child with anyone. Attraction never grows toward or from a child. A hostile word at a child is a telling-off. Children can still be hurt and can still die, and the village, parents first, grieves as it does for kin.
 5. **Mischief.** Each child has a `mischief` number. At dawn they roll it, and on a hit one piece of trouble is planned for the day and carried out when the chance comes:
    - **Pinching food**: from an adult's pack nearby, or from the tavern. The victim notices and holds it against the child a little.
-   - **Throwing food**: a loaf flies at an adult, who is startled and annoyed, and the child runs home.
+   - **Throwing food**: an apple flies at an adult, who is startled and annoyed, and the child runs home.
    - **Hiding a tool**: an adult at work loses their tool for a while and the job runs long.
    - **Tall tales**: a made-up story about a villager, passed on in conversation, that sets adults a little against each other.
    - **Wandering off**: at dusk, toward the glade, the graveyard or the ruins instead of home. An adult who notices, or a parent, runs to fetch the child back; if nobody is awake outside, the dead may find them first.
@@ -30,7 +30,7 @@ Population: the director's target counts adults only, so the authored children d
 - **Protection** is spread thin on purpose: a cap in `relationships::adjust`, `open_to` in `util.rs`, and one-line exclusions in perception, combat, monsters, quirks and fire.
 - **The brain** (`server/crates/brain`): a child's persona says they are a child and who raises them; the plan prompt says their days are for playing; the decide prompt offers a child's tools and activities. No react prompt is ever built for a child. The adult prompts do not change, except through the state.
 - **The wire** (`wire.rs`): `RosterEntry.child`, `CharacterDetail.child`, and a `food` projectile. Additive, so the protocol version is unchanged.
-- **The client**: a child marker in the roster, the inspector's "child · 9 · she/her" line, and a loaf for the thrown food.
+- **The client**: a child marker in the roster, the inspector's "child · 9 · she/her" line, and an apple for the thrown food.
 
 ## Left out on purpose
 

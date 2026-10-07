@@ -27,6 +27,7 @@ The design below was written for a browser-only game. The world now runs on a Ru
 - **Access**: Google and Apple sign-in, limited to an allowlist that admins manage, or one shared token for local work ([sign-in.md](../../sign-in.md)).
 - **Billboards** (October 2026) stand in five places and show a slogan a day, or text an admin put up; villagers read them and react. See [the billboards design](2026-10-03-billboards-design.md).
 - **House fires** (October 2026): when nobody is awake the dead set a home on fire; the whole village carries water, and a house that is lost is rebuilt while its people sleep rough. See [the house fire design](2026-10-03-house-fire-design.md).
+- **Children** (October 2026): five children live in the village from the first day, lovers have children, children play, get into trouble and grow into adults after about a month. See [the children design](2026-10-08-children-design.md).
 - **Memory by meaning** (October 2026): with an embedding model (`EMBED_*`), memories are recalled by how close they are in meaning to the moment, not only by shared words. The vectors live in the server's database, never in the world. See [the memory design](2026-10-04-memory-embeddings-design.md).
 - **The browser is a viewer** (`src/net`, `src/render`, `src/ui`, `src/audio`, `src/speech`): it never loads the simulation, the brain or saves (an architecture test enforces this). It keeps `src/world` for terrain, scenery and camera bounds; the server's `hello` carries a hash of the navigation grid so a client with a different layout notices.
 

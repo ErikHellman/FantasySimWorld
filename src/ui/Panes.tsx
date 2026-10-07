@@ -66,7 +66,7 @@ export function Roster() {
           <li>
             <button class={`roster-row ${selected === entry.id ? 'on' : ''}`} onClick={() => pick(entry.id)}>
               <span class="roster-name">
-                {entry.name.split(' ')[0]} {entry.partner && <span class="love">♥</span>} <span class="mood">{MOOD_ICON[entry.mood]}</span>
+                {entry.name.split(' ')[0]} {entry.child && <span class="child" title="a child">🧒</span>} {entry.partner && <span class="love">♥</span>} <span class="mood">{MOOD_ICON[entry.mood]}</span>
               </span>
               <span class="roster-status">{entry.status}</span>
               <span class="hpbar"><span style={{ width: `${Math.round(Math.max(0, entry.hp) * 100)}%` }} class={entry.hp < 0.4 ? 'low' : ''} /></span>

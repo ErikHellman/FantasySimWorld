@@ -512,14 +512,14 @@ fn throw_food(ctx: &mut Ctx, id: &str) {
     ctx.stimulate(
         &victim,
         StimulusKind::Witness,
-        format!("{name} just threw a loaf at you, hit you square on, and ran off laughing."),
+        format!("{name} just threw an apple at you, hit you square on, and ran off laughing."),
         1,
         Some(id),
     );
     ctx.remember(&victim, format!("{name} threw food at me and ran."), 5.0, MemoryKind::Event, vec![id.into()]);
     ctx.remember(
         id,
-        format!("Got {victim_name} right on the ear with a loaf and ran for it."),
+        format!("Got {victim_name} right on the ear with an apple and ran for it."),
         4.0,
         MemoryKind::Event,
         vec![victim.clone()],

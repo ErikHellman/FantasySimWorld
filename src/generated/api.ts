@@ -330,7 +330,11 @@ status: string,
 /**
  * fraction of max hit points, 0..1
  */
-hp: number, mood: Mood, partner: boolean, };
+hp: number, mood: Mood, partner: boolean, 
+/**
+ * a child, not yet of age
+ */
+child: boolean, };
 
 export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family";
 
@@ -361,7 +365,11 @@ time: string, text: string, current: boolean, };
 /**
  * The inspector, with every label already rendered (the client has no sim helpers).
  */
-export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, home: string, 
+export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, 
+/**
+ * a child, not yet of age
+ */
+child: boolean, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, home: string, 
 /**
  * that home has burned down and is not yet rebuilt
  */

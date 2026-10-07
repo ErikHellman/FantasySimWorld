@@ -26,7 +26,7 @@ pub enum Projectile {
     Arrow,
     Bolt,
     Magic,
-    /// a loaf thrown by a child; it startles, and does no harm
+    /// an apple thrown by a child; it startles, and does no harm
     Food,
 }
 

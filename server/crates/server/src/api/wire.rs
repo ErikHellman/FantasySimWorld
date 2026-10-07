@@ -256,7 +256,7 @@ pub enum Ranged {
     Arrow,
     Bolt,
     Magic,
-    /// a loaf thrown by a child
+    /// an apple thrown by a child
     Food,
 }
 
@@ -497,6 +497,9 @@ pub struct RosterEntry {
     pub hp: f64,
     pub mood: Mood,
     pub partner: bool,
+    /// a child, not yet of age
+    #[serde(default)]
+    pub child: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,6 +589,9 @@ pub struct CharacterDetail {
     pub age: u32,
     pub occupation: String,
     pub class_name: String,
+    /// a child, not yet of age
+    #[serde(default)]
+    pub child: bool,
     pub backstory: String,
     pub traits: Vec<String>,
     pub goals: Vec<String>,

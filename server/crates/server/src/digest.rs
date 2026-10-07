@@ -51,6 +51,7 @@ pub fn roster_of(state: &SimState) -> Vec<RosterEntry> {
             hp: c.hp / max_hp(c),
             mood: mood_of(c),
             partner: c.partner_id.is_some(),
+            child: c.is_child(),
         })
         .collect()
 }
@@ -168,6 +169,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
         age: c.profile.age.max(0) as u32,
         occupation: c.profile.occupation.clone(),
         class_name: c.class_id.def().label.into(),
+        child: c.is_child(),
         backstory: c.profile.backstory.clone(),
         traits: c.profile.traits.clone(),
         goals: c.profile.goals.clone(),
@@ -237,8 +239,14 @@ mod tests {
         let row = roster_of(&state).into_iter().find(|row| row.id == pip.id).unwrap();
         assert_eq!(row.hp, 1.0);
         assert_eq!(row.role, "child");
+        assert!(row.child);
         assert_eq!(crate::encode::character_static(pip).max_hp, pip.class_id.def().max_hp * 0.5);
         assert_eq!(mood_of(pip), Mood::Ok);
+        let detail = detail_of(&state, &pip.id).unwrap();
+        assert!(detail.child);
+        let aldric = living(&state).find(|c| c.profile.name == "Aldric Vane").unwrap();
+        assert!(!roster_of(&state).into_iter().find(|row| row.id == aldric.id).unwrap().child);
+        assert!(!detail_of(&state, &aldric.id).unwrap().child);
     }
 
     #[test]
