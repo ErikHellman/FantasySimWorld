@@ -109,10 +109,10 @@ pub enum SimEvent {
         id: Id,
         board_id: String,
     },
-    /// A villager has spoken the name of one of the powers that watch the valley.
-    Prayer {
-        power: String,
-        character_id: Id,
+    /// An arrival is due and the sim would like the server to describe the newcomer; past
+    /// `deadline_tick` it invents one itself.
+    NewcomerWanted {
+        deadline_tick: i64,
     },
 }
 
@@ -137,7 +137,7 @@ impl SimEvent {
             Self::Woke { .. } => "woke",
             Self::SavePoint { .. } => "save_point",
             Self::BillboardRead { .. } => "billboard_read",
-            Self::Prayer { .. } => "prayer",
+            Self::NewcomerWanted { .. } => "newcomer_wanted",
         }
     }
 }

@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use fsw_server::config::{AuthMode, Config};
 use fsw_server::store::{self, Store};
-use fsw_server::{AppState, brain_task, chat, credits, digest, router, world_task};
+use fsw_server::{AppState, brain_task, casting_task, chat, digest, router, world_task};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -30,15 +30,8 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = store.seed_admins(&config.admin_emails).await {
-        tracing::error!(%error, "cannot seed ADMIN_EMAILS");
-        return ExitCode::FAILURE;
-    }
     if config.auth == AuthMode::Off {
         tracing::warn!(bind = %config.bind, "AUTH_MODE=off: anyone who can reach this server is an admin (local development only)");
-    }
-    if matches!(config.auth, AuthMode::Oidc(_)) && config.admin_emails.is_empty() {
-        tracing::warn!("AUTH_MODE=oidc without ADMIN_EMAILS: only people already on the allowlist can sign in");
     }
     if config.llm.enabled {
         let llm = &config.llm;
@@ -77,14 +70,9 @@ async fn main() -> ExitCode {
     brain.set_memory(memory.clone());
     let indexing = memory.map(|index| brain_task::spawn_indexer(index, world.clone(), store.clone(), shutdown.clone()));
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
-    let app = match AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone()) {
-        Ok(app) => app,
-        Err(message) => {
-            tracing::error!(message, "cannot set up sign-in");
-            store.close().await;
-            return ExitCode::FAILURE;
-        }
-    };
+    // Founds a new world (and describes later newcomers) with the model, by direct requests of its own.
+    let casting = casting_task::spawn(world.clone(), config.llm.clone(), config.llm_api_key.clone(), shutdown.clone());
+    let app = AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone());
 
     let listener = match tokio::net::TcpListener::bind(config.bind).await {
         Ok(listener) => listener,
@@ -98,7 +86,6 @@ async fn main() -> ExitCode {
     tracing::info!(bind = %config.bind, origin = %config.public_origin, static_dir = %config.static_dir.display(), db = %store.path().display(), boot, "listening");
     let digest = digest::task::spawn(app.clone(), shutdown.clone());
     let chat_sweeper = chat::spawn_sweeper(app.chat.clone(), shutdown.clone());
-    let prayers = credits::spawn_prayers(app.clone(), shutdown.clone());
 
     tokio::spawn(stop_on_signal(shutdown.clone()));
     // The peer address feeds the sign-in rate limit (unless TRUST_PROXY takes it from headers).
@@ -108,7 +95,7 @@ async fn main() -> ExitCode {
     let _ = world_task.await;
     let _ = digest.await;
     let _ = chat_sweeper.await;
-    let _ = prayers.await;
+    let _ = casting.await;
     let _ = thinking.await;
     if let Some(indexing) = indexing {
         let _ = indexing.await;

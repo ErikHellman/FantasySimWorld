@@ -231,6 +231,24 @@ pub static CLASSES: [ClassDef; 14] = [
 ];
 
 impl ClassId {
+    /// Every class, in the order of the table (and of `data::names::OCCUPATIONS`).
+    pub const ALL: [ClassId; 14] = [
+        ClassId::Knight,
+        ClassId::Barbarian,
+        ClassId::Mage,
+        ClassId::Ranger,
+        ClassId::Rogue,
+        ClassId::Scout,
+        ClassId::Druid,
+        ClassId::Engineer,
+        ClassId::Paladin,
+        ClassId::Cleric,
+        ClassId::Witch,
+        ClassId::Tiefling,
+        ClassId::Lorekeeper,
+        ClassId::Farmer,
+    ];
+
     pub fn def(self) -> &'static ClassDef {
         CLASSES.iter().find(|def| def.id == self).expect("every class has a definition")
     }

@@ -1,5 +1,7 @@
 # Newcomers written by the model
 
+> **Built on 2026-10-07, with these differences.** There is no authored cast any more: a new world founds itself the same way, one `Command::Settle` per villager the model invents (`fsw_brain::casting`, `server/crates/server/src/casting_task.rs`), and the authored people are in the prompt for flavour only. The casting task calls the model with its own client, outside the brain's queue, governor and decision log. The tool is `create_villager`; a `link` is a `bonds` list of up to two, and the model may not give `murderous` or `occultist`. The sim asks with `SimEvent::NewcomerWanted` and waits six game hours (`NEWCOMER_PATIENCE_MINUTES`) for a `NewcomerDraft`; `NewcomerLocal` tells it none is coming, and then or at the deadline it invents the newcomer itself from `data/names.rs` instead of a wanderer. The rest of this page is the design as first written.
+
 When the eleven authored newcomers have all arrived, the village today fills its empty beds with wanderers made from lists: a class, a name, three traits and the same backstory for every one of them. This lets the language model write each newcomer instead, with the village in mind: who died and how, who misses them, which work nobody does any more. Some come as the sister of the woman the dead killed last week, or the old comrade of the guard who fell at the gate. Without a model, wanderers come as before.
 
 ## What happens
@@ -19,7 +21,7 @@ When the eleven authored newcomers have all arrived, the village today fills its
    - `temper`, `bravery`, `sociability`: 0 to 1
    - `quirk`: optional, one of the quirks except `murderous`
    - `reason`: why they came, up to 200
-   - `link`: optional `{to, relation}`, where `to` names a living or dead villager and `relation` is sibling, child, parent, spouse, friend or comrade
+   - `link`: optional `{to, relation}`, where `to` names a living or dead villager and `relation` is sibling, child, parent, spouse, friend or comrade (a spouse arrives married, if the other is free; see [the weddings and funerals design](2026-10-08-weddings-funerals-design.md))
 5. **The brain checks it.** Every text is cleaned (`clean_text`, the same rules as billboards) and cut to its limit. The first name must be new: not among the living, the dead or the authored cast. The name must have a first and a last part. `link.to` must resolve to someone. An answer that fails is dropped and logged; the arrival then uses a wanderer. A good answer becomes a `NewcomerDraft` command.
 6. **The sim holds the draft.** The draft waits in `Director.newcomerDraft` until the arrival. A second draft is not asked for while one waits.
 7. **The newcomer arrives.** When the arrival comes, the sim checks the draft again (the name may have been taken since, the person it links to may have changed) and builds the villager from it. The look comes from the class, with the same random texture choice a wanderer gets. Jobs and hobbies come from the class. Spite, allure, shyness and looks start at 0, as for wanderers. Voice pitch and rate are drawn as for wanderers. The draft is cleared.

@@ -6,7 +6,6 @@ use fsw_core::time::game_time;
 use fsw_world::places::{find_billboard, find_place};
 
 use crate::commands::Command;
-use crate::create::refresh_authored;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
@@ -20,6 +19,7 @@ use crate::systems::conversation::{add_lines, force_local, update_conversations}
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
 use crate::systems::fire::{fighting_fire, update_fire};
+use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
@@ -28,7 +28,6 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
-use crate::systems::viewer_events;
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -252,7 +251,19 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             let c = ctx.c(&id);
             c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));
         }
-        Command::ViewerEvent { by, event } => viewer_events::apply(ctx, &by, event),
+        Command::Settle(villager) => settle_villager(ctx, &villager),
+        Command::FoundVillage => fill_village(ctx),
+        Command::NewcomerDraft(villager) => {
+            if !first_name_taken(ctx.state, &villager.name) {
+                ctx.state.director.newcomer_draft = Some(villager);
+            }
+        }
+        Command::NewcomerLocal => {
+            // Only once asked: an unasked-for refusal must not shorten a future wait.
+            if ctx.state.director.newcomer_deadline_tick != 0 {
+                ctx.state.director.newcomer_deadline_tick = ctx.tick();
+            }
+        }
         Command::CeremonySpeech { ceremony_id, speaker_id, text } => {
             ceremonies::hold_speech(ctx, &ceremony_id, &speaker_id, text);
         }
@@ -266,10 +277,8 @@ pub struct Sim {
 }
 
 impl Sim {
-    /// A running sim from a state, new or saved. Authored characters in a saved
-    /// world are brought up to date with the cast as it is written now.
-    pub fn new(mut state: SimState) -> Self {
-        refresh_authored(&mut state);
+    /// A running sim from a state, new or saved.
+    pub fn new(state: SimState) -> Self {
         Self { state, pending: Vec::new() }
     }
 

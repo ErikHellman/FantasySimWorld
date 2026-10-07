@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
-  AllowlistEntry, AuthAttempt, Billboard, BillboardTone, CreditViewer, HealthReport, LlmSettingsView, Role,
+  Billboard, BillboardTone, HealthReport, LlmSettingsView,
 } from '../generated/api';
 import { api } from '../net/api';
-import { actions, creditsOn, ui } from './store';
+import { actions, ui } from './store';
 
 const SPEEDS = [
   { value: 0, label: 'Paused' },
@@ -203,132 +203,6 @@ function LlmSection() {
 }
 
 /** Why a sign-in was refused, by the server's outcome code. */
-const REFUSALS: Record<string, string> = {
-  not_allowlisted: 'not on the list',
-  email_unverified: 'e-mail not verified by the provider',
-  no_email: 'the provider gave no e-mail',
-};
-
-/** Giving credits to the people who have the world open right now, one at a time or all at once. */
-function CreditsSection() {
-  const [viewers, setViewers] = useState<CreditViewer[]>([]);
-  const [amount, setAmount] = useState(50);
-  const [message, setMessage] = useState('');
-  const reload = (): void => {
-    api.admin.creditViewers().then(setViewers, (error) => setMessage(errorText(error)));
-  };
-  useEffect(reload, []);
-  const valid = Number.isInteger(amount) && amount >= 1 && amount <= 10_000;
-  const give = (name: string | null): void => {
-    api.admin.grantCredits({ name, amount }).then((now) => {
-      setViewers(now);
-      setMessage(`Gave ${amount} credits to ${name ?? 'everyone here'}.`);
-    }, (error) => setMessage(errorText(error)));
-  };
-
-  return (
-    <>
-      <h3>Credits</h3>
-      <p class="muted">
-        Everyone with the world open. A gift may take someone past the cap that watching stops at, and the chat says it
-        was given. People without an account lose their credits when they have been away for an hour.
-      </p>
-      <div class="row">
-        <label>
-          Amount{' '}
-          <input type="number" min={1} max={10000} value={amount} style={{ maxWidth: '90px' }} onInput={(event) => setAmount(Number(event.currentTarget.value))} />
-        </label>
-        <span class="test-result" />
-        <button onClick={() => give(null)} disabled={!valid || viewers.length === 0}>Give to everyone</button>
-        <button onClick={reload}>Refresh</button>
-      </div>
-      <ul class="graves">
-        {viewers.map((viewer) => (
-          <li key={viewer.name} class="row">
-            <strong>{viewer.name}</strong>
-            <span class={`badge ${viewer.watching ? 'good' : ''}`}>{viewer.watching ? 'watching' : 'away'}</span>
-            {!viewer.account && <span class="muted">no account</span>}
-            <span class="test-result">✦ {viewer.balance}</span>
-            <button onClick={() => give(viewer.name)} disabled={!valid}>Give</button>
-          </li>
-        ))}
-      </ul>
-      {viewers.length === 0 && <p class="muted">Nobody has the world open.</p>}
-      {message && <p class="test-result">{message}</p>}
-    </>
-  );
-}
-
-function AccessSection() {
-  const [list, setList] = useState<AllowlistEntry[]>([]);
-  const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('viewer');
-  const [message, setMessage] = useState('');
-  const reload = (): void => {
-    api.admin.allowlist().then(setList, (error) => setMessage(errorText(error)));
-    api.admin.attempts().then(setAttempts, (error) => setMessage(errorText(error)));
-  };
-  useEffect(reload, []);
-  const allow = (address: string, as: Role, note = ''): void => {
-    api.admin.allow({ email: address, role: as, note }).then(() => {
-      setEmail('');
-      setMessage(`${address} may now sign in.`);
-      reload();
-    }, (error) => setMessage(errorText(error)));
-  };
-  const remove = (address: string): void => {
-    if (!confirm(`Remove ${address}? Their sessions end at once.`)) return;
-    api.admin.disallow(address).then(reload, (error) => setMessage(errorText(error)));
-  };
-  const allowed = new Set(list.map((entry) => entry.email.toLowerCase()));
-
-  return (
-    <>
-      <h3>Who may watch</h3>
-      <ul class="graves">
-        {list.map((entry) => (
-          <li key={entry.email} class="row">
-            <strong>{entry.email}</strong>
-            <span class={`badge ${entry.role === 'admin' ? 'good' : ''}`}>{entry.role}</span>
-            {entry.note && <span class="muted">{entry.note}</span>}
-            <span class="test-result" />
-            <button onClick={() => remove(entry.email)}>Remove</button>
-          </li>
-        ))}
-      </ul>
-      <div class="row">
-        <input type="text" placeholder="e-mail address" value={email} onInput={(event) => setEmail(event.currentTarget.value.trim())} />
-        <select value={role} onChange={(event) => setRole(event.currentTarget.value as Role)} style={{ maxWidth: '110px' }}>
-          <option value="viewer">viewer</option>
-          <option value="admin">admin</option>
-        </select>
-        <button onClick={() => allow(email, role)} disabled={!email.includes('@')}>Add</button>
-      </div>
-      {message && <p class="test-result">{message}</p>}
-      <details>
-        <summary>Refused sign-ins ({attempts.length})</summary>
-        <ul class="graves">
-          {attempts.length === 0 && <li class="muted">None.</li>}
-          {attempts.map((attempt) => (
-            <li key={attempt.id} class="row">
-              <strong>{attempt.email || '(no e-mail)'}</strong>
-              <span class="muted">
-                {attempt.provider} · {REFUSALS[attempt.outcome] ?? attempt.outcome} · {new Date(attempt.at).toLocaleString()}
-              </span>
-              <span class="test-result" />
-              {attempt.email && (allowed.has(attempt.email.toLowerCase())
-                ? <span class="badge good">allowed</span>
-                : <button onClick={() => allow(attempt.email, 'viewer', `allowed after a ${attempt.provider} sign-in`)}>Allow</button>)}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </>
-  );
-}
-
-/** Running the shared world: speed, saves, billboards, the language model and who may watch. Admins only. */
 export function AdminPanel() {
   return (
     <div class="modal" onClick={() => (ui.panel.value = 'none')}>
@@ -337,9 +211,7 @@ export function AdminPanel() {
         <h2>Admin</h2>
         <WorldSection />
         <BillboardsSection />
-        {creditsOn() && <CreditsSection />}
         <LlmSection />
-        <AccessSection />
         <footer>
           <button class="primary" onClick={() => (ui.panel.value = 'none')}>Done</button>
         </footer>

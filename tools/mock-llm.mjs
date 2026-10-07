@@ -6,6 +6,7 @@
 //   MOCK_DELAY=1500 node tools/mock-llm.mjs  simulated latency in ms (default 700)
 //   MOCK_MODE=text node tools/mock-llm.mjs   answer with JSON in the text instead of native tool calls
 //   POST /v1/embeddings answers at once with vectors from hashed words (fire, flames, smoke… count as one word)
+//   create_villager (the casting of a new world and of newcomers) answers with a numbered, never-repeating person
 import http from 'node:http';
 
 const port = Number(process.argv[2] ?? 8787);
@@ -15,6 +16,31 @@ const textMode = process.env.MOCK_MODE === 'text';
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const OPENERS = ['Have you a moment? I have been meaning to ask you something.', 'You look troubled. What is it?', 'Strange days. Did you sleep at all last night?', 'I heard something at the market you will want to know.'];
 const REPLIES = ['I was thinking the very same thing.', 'Hm. I am not sure I agree, but go on.', 'Ha! You always say that.', 'That is kind of you. Truly.', 'Mind your own affairs, for once.', 'We should speak of this again, somewhere quieter.'];
+// People for `create_villager`: a first name is never given twice, and never one the prompt says is taken.
+const FIRSTS = ['Edda', 'Bram', 'Wren', 'Osric', 'Tamsin', 'Hale', 'Ysolt', 'Garnet', 'Perrin', 'Linnea', 'Cade', 'Marta', 'Jory', 'Senna', 'Alder', 'Hild', 'Maud', 'Anselm', 'Berrick', 'Thea', 'Ivo', 'Rook', 'Sorrel', 'Fen', 'Dagny', 'Godric', 'Ottilie', 'Dunstan', 'Cerys', 'Merrick'];
+const LASTS = ['Underhill', 'Blackwater', 'Fairweather', 'Stonebridge', 'Larkspur', 'Holt', 'Greenmantle', 'Ashby', 'Wolfe', 'Tanner', 'Thistlewood', 'Mossglen'];
+const TRAITS = ['cheerful', 'wary', 'stubborn', 'generous', 'sharp-tongued', 'patient', 'restless', 'superstitious', 'ambitious', 'soft-hearted', 'boastful', 'thoughtful'];
+const QUIRKS = ['coward', 'lazy', 'diligent', 'fighter', 'rumourmonger', 'drunkard'];
+let invented = 0;
+function invent(body, user) {
+  const tool = (body.tools ?? []).find((t) => t.function?.name === 'create_villager');
+  const classes = tool?.function?.parameters?.properties?.class?.enum ?? ['farmer', 'knight', 'ranger', 'druid', 'mage', 'rogue'];
+  const taken = between(user, 'First names already taken, which the new person must not have: ', '.').split(',').map((s) => s.trim().toLowerCase());
+  let first = FIRSTS[invented++ % FIRSTS.length];
+  for (let tries = 0; taken.includes(first.toLowerCase()) && tries < FIRSTS.length; tries++) first = FIRSTS[invented++ % FIRSTS.length];
+  const cls = pick(classes);
+  const traits = [...new Set([pick(TRAITS), pick(TRAITS), pick(TRAITS)])];
+  return {
+    firstName: first, lastName: pick(LASTS), pronouns: pick(['she/her', 'he/him', 'they/them']), age: 19 + Math.floor(Math.random() * 40),
+    class: cls, occupation: `travelling ${cls}`,
+    backstory: `${first} came up the road with little more than a trade and a grudge against the cold. Settled here because the tavern was warm and nobody asked questions.`,
+    speechStyle: pick(['Plain and direct.', 'Dry, with a joke in most sentences.', 'Slow, as if weighing every word.']), timbre: pick(['low and even', 'bright and quick', 'husky']),
+    traits, goals: ['find a place in the village', 'stay alive through the nights'],
+    temper: Math.round(Math.random() * 100) / 100, bravery: Math.round(Math.random() * 100) / 100, sociability: Math.round(Math.random() * 100) / 100,
+    ...(Math.random() < 0.2 ? { quirk: pick(QUIRKS) } : {}),
+    ...(user.includes('west road') ? { reason: pick(['looking for work', 'because the road ran out', 'hoping for a quieter life']) } : {}),
+  };
+}
 const THOUGHTS = ['I should make the most of the daylight.', 'Something about today feels off.', 'A little company would do me good.', 'Work first; the rest can wait.'];
 
 function between(text, start, end) {
@@ -81,6 +107,7 @@ function respond(body) {
     return [{ name: 'speech', args: { text } }];
   }
   if (names.includes('reflection')) return [{ name: 'reflection', args: { summary: 'I am holding together, though the nights wear on me. I have more friends here than I thought.', insights: ['I should say what I feel before it is too late.'], relationships: [] } }];
+  if (names.includes('create_villager')) return [{ name: 'create_villager', args: invent(body, user) }];
   if (names.includes('go_to') || names.includes('do_activity')) return decide(names, user);
   return [{ name: names[0] ?? 'continue', args: {} }];
 }

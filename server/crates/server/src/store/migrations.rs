@@ -7,7 +7,7 @@ use rusqlite::Connection;
 
 use super::{Result, StoreError, now_ms};
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4)];
+const MIGRATIONS: &[(i64, &str)] = &[(1, V1), (2, V2), (3, V3), (4, V4), (5, V5)];
 
 const V1: &str = "
 CREATE TABLE worlds (
@@ -181,6 +181,18 @@ CREATE INDEX memory_vectors_by_model ON memory_vectors (model);
 CREATE INDEX memory_vectors_by_use ON memory_vectors (used_ms);
 ";
 
+/// Sign-in with accounts and the viewers' credits are gone: everyone watches as a guest and only
+/// the token holder is an admin, so the tables behind them go (children before parents).
+const V5: &str = "
+DROP TABLE IF EXISTS credit_purchases;
+DROP TABLE IF EXISTS credits;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS identities;
+DROP TABLE IF EXISTS allowlist;
+DROP TABLE IF EXISTS auth_attempts;
+DROP TABLE IF EXISTS users;
+";
+
 /// Brings the schema up to date. Refuses a database written by a newer server.
 pub fn run(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
@@ -231,6 +243,18 @@ mod tests {
         let mut keys = conn.prepare("SELECT key FROM settings ORDER BY key").unwrap();
         let keys: Vec<String> = keys.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
         assert_eq!(keys, ["llm.capabilities"]);
+    }
+
+    #[test]
+    fn v5_drops_the_account_and_credit_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn).unwrap();
+        let mut names = conn.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").unwrap();
+        let tables: Vec<String> = names.query_map([], |row| row.get(0)).unwrap().map(Result::unwrap).collect();
+        for gone in ["credit_purchases", "credits", "sessions", "identities", "allowlist", "auth_attempts", "users"] {
+            assert!(!tables.iter().any(|t| t == gone), "{gone} should be dropped: {tables:?}");
+        }
+        assert!(tables.iter().any(|t| t == "worlds"));
     }
 
     #[test]

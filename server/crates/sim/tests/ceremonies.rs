@@ -4,13 +4,12 @@
 use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
-use fsw_sim::data::cast::newcomers;
 use fsw_sim::data::monsters::MonsterKind;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActivityId, CeremonyPhase, ChronicleKind, Intent, IntentAction, IntentSource, RelationLabel, Rite, SimState,
 };
-use fsw_sim::systems::arrivals::{arrive, free_home};
+use fsw_sim::systems::arrivals::free_home;
 use fsw_sim::systems::ceremonies::{BETROTHAL_DAYS, FUNERAL_HOUR, WEDDING_HOUR, attending};
 use fsw_sim::systems::combat::{damage_monster, max_hp};
 use fsw_sim::systems::death::kill_character;
@@ -20,7 +19,8 @@ use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::systems::quirks::fall_to_necromancy;
 use fsw_sim::systems::relationships::{daily_relationships, marry};
 use fsw_sim::util::{Ctx, first_name, living, living_ids, rel};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::{admit, create_test_state};
 use fsw_world::places::get_place;
 
 struct World {
@@ -31,7 +31,7 @@ struct World {
 impl World {
     /// A village with no small talk and no monsters, on the evening of day 4.
     fn quiet(seed: u32) -> Self {
-        let mut state = create_state(seed);
+        let mut state = create_test_state(seed);
         state.tick = tick_at(4, 20.0);
         state.director.next_wave_tick = i64::MAX;
         let mut sim = Sim::new(state);
@@ -100,9 +100,7 @@ impl World {
     }
 
     fn admit(&mut self, key: &str) -> String {
-        let index = newcomers().iter().position(|entry| entry.key == key).expect(key);
-        self.sim.state.director.arrivals = index as i64;
-        self.with(arrive)
+        self.with(|ctx| admit(ctx, key))
     }
 
     fn chronicle(&self, kind: ChronicleKind) -> Vec<&str> {
@@ -140,7 +138,7 @@ fn betrothed(seed: u32) -> (World, String, String) {
 
 #[test]
 fn a_world_that_never_had_a_ceremony_saves_without_the_new_keys() {
-    let mut sim = Sim::new(create_state(1));
+    let mut sim = Sim::new(create_test_state(1));
     for _ in 0..2000 {
         sim.step();
     }

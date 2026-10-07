@@ -3,8 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { ChatMessage } from '../generated/api';
 import { HttpError } from '../net/api';
 import { parseChat, plainText, type ChatNode } from './chatMarkdown';
-import { signInHref } from './Guest';
-import { actions, closeSheet, isGuest, setChatView, ui } from './store';
+import { actions, closeSheet, setChatView, ui } from './store';
 
 // ️ asks for the colour emoji form; without it some of these fall back to plain text glyphs.
 const EMOJI = [
@@ -77,7 +76,7 @@ function History({ messages, me }: { messages: readonly ChatMessage[]; me: strin
     if (element) pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
   };
 
-  if (messages.length === 0) return <p class="muted chat-empty">Nobody has said anything yet.{isGuest() ? '' : ' Say hello!'}</p>;
+  if (messages.length === 0) return <p class="muted chat-empty">Nobody has said anything yet. Say hello!</p>;
   return (
     <ol class="chat-history" ref={list} onScroll={onScroll}>
       {messages.map((message) =>
@@ -90,8 +89,8 @@ function History({ messages, me }: { messages: readonly ChatMessage[]; me: strin
         ) : (
           <li key={message.id} class="chat-line">
             <span class="chat-time">{timeOf(message.at)}</span>
-            <span class={message.kind === 'event' ? 'chat-notice chat-event' : 'chat-notice'}>
-              <b>{message.author}</b> {message.kind === 'event' ? message.text : message.kind === 'join' ? 'joined' : 'left'}
+            <span class="chat-notice">
+              <b>{message.author}</b> {message.kind === 'join' ? 'joined' : 'left'}
             </span>
           </li>
         ),
@@ -268,11 +267,7 @@ export function ChatPanel({ sheet = false }: { sheet?: boolean }) {
       {expanded && (
         <>
           <History messages={messages} me={ui.chatName.value} />
-          {isGuest() ? (
-            <p class="chat-guest muted">Guests can read the chat. <a href={signInHref()}>Sign in</a> to join in.</p>
-          ) : (
-            <Composer />
-          )}
+          <Composer />
         </>
       )}
     </section>

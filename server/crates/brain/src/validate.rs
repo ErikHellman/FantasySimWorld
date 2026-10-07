@@ -554,7 +554,7 @@ pub fn reflection_relationships(state: &SimState, args: &JsonMap<String, Value>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::create_state;
+    use fsw_testing::create_test_state;
     use serde_json::json;
 
     fn call(name: &str, args: Value) -> ToolCall {
@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn resolves_people_places_and_activities_loosely() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let me = &state.characters["c1"];
         assert_eq!(resolve_person(&state, Some(&json!("Brenna")), None).unwrap().profile.name, "Brenna Ashdown");
         assert_eq!(resolve_person(&state, Some(&json!("brena")), None).unwrap().profile.name, "Brenna Ashdown");
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(resolve_activity(Some(&json!("read the billboard"))), None);
         assert_eq!(resolve_activity(Some(&json!("rebuild"))), None);
         // Rebuilding is only there to choose while a house lies in ruins.
-        let mut state = fsw_sim::create_state(1);
+        let mut state = create_test_state(1);
         assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), None);
         assert_eq!(resolve_doable(&state, Some(&json!("farm"))), Some(ActivityId::Farm));
         let ruin = fsw_sim::state::House {
@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn interprets_decisions_plans_and_conversations() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let me = &state.characters["c1"];
         let decision = interpret_decision(
             &state,
