@@ -263,6 +263,7 @@ fn bury_the_fallen(ctx: &mut Ctx, was_id: &str) {
         day,
         cause: record.cause,
     });
+    crate::systems::ceremonies::on_buried(ctx, was_id);
 }
 
 /// Who struck the blow.

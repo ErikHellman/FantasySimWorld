@@ -101,4 +101,11 @@ pub enum Command {
     NewcomerDraft(Box<NewVillager>),
     /// No description is coming for the newcomer that was asked for: the sim invents one at the next chance.
     NewcomerLocal,
+    /// Words the model wrote for someone to say at a ceremony; ignored unless the ceremony still stands and
+    /// the speaker still speaks at it.
+    CeremonySpeech {
+        ceremony_id: Id,
+        speaker_id: Id,
+        text: String,
+    },
 }

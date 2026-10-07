@@ -13,23 +13,25 @@
 
 use fsw_core::jsmath::js_round;
 use fsw_core::time::TICK_SECONDS;
+use fsw_core::time::{format_clock, game_time};
 use fsw_sim::data::anims::AnimId;
 use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
-    ActPhase, Character, ChronicleEntry as SimChronicleEntry, ChronicleKind as SimChronicleKind, Corpse,
-    Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, Look as SimLook, Monster, SimState,
-    VoiceProfile as SimVoice,
+    ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
+    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
+    Look as SimLook, Monster, Rite, SimState, VoiceProfile as SimVoice,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::fire::built_fraction;
-use fsw_sim::util::first_name;
+use fsw_sim::util::{first_name, name_of};
 use fsw_world::places::{billboards, find_place, get_place};
 use indexmap::IndexMap;
 
 use crate::api::wire::{
-    Billboard, BillboardTone, ChronicleEntry, ChronicleKind, Dyn, DynDelta, Emote, Entity, EntityKind, EntityStatic,
-    Grave, House, HousePhase, Look, Ranged, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
+    Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
+    Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Ranged, TickFrame, Utterance, Vec2,
+    VoiceProfile, WireEvent,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -252,6 +254,32 @@ pub fn grave_of(grave: &SimGrave) -> Grave {
 }
 
 /// The homes that are burning or in ruins, as viewers are told of them.
+/// The ceremony the village has arranged, as viewers are told of it.
+pub fn ceremony_of(state: &SimState) -> Option<Ceremony> {
+    let ceremony = state.ceremony.as_ref()?;
+    let (kind, ids) = match &ceremony.rite {
+        Rite::Wedding { a, b } => (CeremonyKind::Wedding, vec![a.clone(), b.clone()]),
+        Rite::Funeral { dead } => (CeremonyKind::Funeral, dead.clone()),
+    };
+    let when = game_time(ceremony.start_tick);
+    Some(Ceremony {
+        id: ceremony.id.clone(),
+        kind,
+        phase: match ceremony.phase {
+            SimCeremonyPhase::Announced => CeremonyPhase::Announced,
+            SimCeremonyPhase::Gathering => CeremonyPhase::Gathering,
+            SimCeremonyPhase::Rite => CeremonyPhase::Rite,
+            SimCeremonyPhase::Feast => CeremonyPhase::Feast,
+        },
+        place_id: ceremony.place_id.clone(),
+        place_name: find_place(&ceremony.place_id).map_or(ceremony.place_id.clone(), |place| place.name.into()),
+        names: ids.iter().map(|id| name_of(state, id)).collect(),
+        ids,
+        day: when.day.max(0) as u32,
+        time: format_clock(when.minute_of_day),
+    })
+}
+
 pub fn houses_of(state: &SimState) -> Vec<House> {
     state
         .houses
@@ -402,6 +430,7 @@ pub struct Tracker {
     graves: Vec<String>,
     billboards: Vec<Billboard>,
     houses: Vec<House>,
+    ceremony: Option<Ceremony>,
 }
 
 impl Tracker {
@@ -416,6 +445,7 @@ impl Tracker {
         self.graves = state.graves.iter().map(grave_key).collect();
         self.billboards = billboards_of(state);
         self.houses = houses_of(state);
+        self.ceremony = ceremony_of(state);
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -431,6 +461,11 @@ impl Tracker {
     /// What viewers have been told of the homes that do not stand whole (for a snapshot).
     pub fn houses(&self) -> Vec<House> {
         self.houses.clone()
+    }
+
+    /// What viewers have been told of the ceremony the village has arranged (for a snapshot).
+    pub fn ceremony(&self) -> Option<Ceremony> {
+        self.ceremony.clone()
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -488,6 +523,19 @@ impl Tracker {
                 }
             }
             self.houses = now;
+        }
+        // Nor a wedding or funeral being arranged, gathering, spoken, feasted and done with.
+        if !(state.ceremony.is_none() && self.ceremony.is_none()) {
+            let now = ceremony_of(state);
+            if now != self.ceremony {
+                let told = match (&now, &self.ceremony) {
+                    (Some(now), _) => now.clone(),
+                    (None, Some(before)) => Ceremony { phase: CeremonyPhase::Over, ..before.clone() },
+                    (None, None) => unreachable!("one of them is Some"),
+                };
+                frame.ev.push(WireEvent::Ceremony { ceremony: told });
+                self.ceremony = now;
+            }
         }
         frame
     }
@@ -635,6 +683,57 @@ mod tests {
         assert_eq!((told[0].id.as_str(), told[0].phase), ("home_1", HousePhase::Intact));
         assert!(tracker.houses().is_empty());
         assert!(houses(&tracker.frame(&sim.state, &[])).is_empty());
+    }
+
+    #[test]
+    fn a_ceremony_is_announced_as_it_is_arranged_moves_on_and_ends() {
+        use fsw_sim::state::{Ceremony as SimCeremony, CeremonyPhase as SimPhase, Rite};
+        let mut sim = Sim::new(fsw_testing::create_test_state(3));
+        let mut tracker = Tracker::new(&sim.state);
+        let ceremonies = |frame: &TickFrame| -> Vec<Ceremony> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Ceremony { ceremony } = e { Some(ceremony.clone()) } else { None })
+                .collect()
+        };
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+        assert!(tracker.ceremony().is_none());
+
+        let (a, b) = (sim.state.order[0].clone(), sim.state.order[1].clone());
+        sim.state.ceremony = Some(SimCeremony {
+            id: "y1".into(),
+            rite: Rite::Wedding { a: a.clone(), b: b.clone() },
+            place_id: "green".into(),
+            start_tick: fsw_sim::systems::director::tick_at(2, 14.0),
+            phase: SimPhase::Announced,
+            step: 0,
+            until_tick: 0,
+            officiant: sim.state.order[2].clone(),
+            speeches: Vec::new(),
+            attendees: Vec::new(),
+            slips: 0,
+        });
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told.len(), 1);
+        assert_eq!((told[0].kind, told[0].phase, told[0].day), (CeremonyKind::Wedding, CeremonyPhase::Announced, 2));
+        assert_eq!(told[0].time, "14:00");
+        assert_eq!(told[0].place_name, "the village green");
+        assert_eq!(told[0].ids, vec![a, b]);
+        assert_eq!(told[0].names.len(), 2);
+        assert_eq!(tracker.ceremony(), Some(told[0].clone()));
+        // Nothing changed: nothing said.
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+
+        sim.state.ceremony.as_mut().unwrap().phase = SimPhase::Gathering;
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told[0].phase, CeremonyPhase::Gathering);
+
+        sim.state.ceremony = None;
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].id.as_str(), told[0].phase), ("y1", CeremonyPhase::Over));
+        assert!(tracker.ceremony().is_none());
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
     }
 
     #[test]

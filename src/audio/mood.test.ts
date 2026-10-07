@@ -3,7 +3,7 @@ import type { WireEvent } from '../generated/api';
 import { MOOD_TIMING, MoodTracker, timeOfDayMood, type MusicScene } from './mood';
 
 const camera = { x: 0, z: 0, distance: 40 };
-const calm: MusicScene = { hour: 12, alarm: false, monstersNear: 0, selectedMood: null };
+const calm: MusicScene = { hour: 12, alarm: false, monstersNear: 0, selectedMood: null, ceremony: null };
 
 const hit = (x: number, attackerId = 'm1', targetId = 'v1'): WireEvent => ({ type: 'hit', attackerId, targetId, damage: 3, pos: { x, z: 0 }, fatal: false });
 const death = (x: number, id: string, monster: boolean): WireEvent => ({ type: 'death', id, name: id, pos: { x, z: 0 }, monster });
@@ -33,6 +33,19 @@ describe('MoodTracker', () => {
     expect(tracker.update(calm, MOOD_TIMING.tensionAtLeast - 1)).toBe('tension');
     expect(tracker.update(calm, MOOD_TIMING.tensionAtLeast + 1)).toBe('day');
     expect(tracker.update({ ...calm, monstersNear: 2 }, 100)).toBe('tension');
+  });
+
+  it('mourns at a funeral and celebrates a wedding, but a fight comes first', () => {
+    const tracker = new MoodTracker();
+    expect(tracker.update({ ...calm, ceremony: { kind: 'funeral', phase: 'announced' } }, 0)).toBe('day');
+    expect(tracker.update({ ...calm, ceremony: { kind: 'funeral', phase: 'gathering' } }, 1)).toBe('grief');
+    expect(tracker.update({ ...calm, ceremony: { kind: 'funeral', phase: 'rite' } }, 2)).toBe('grief');
+    expect(tracker.update({ ...calm, hour: 19, ceremony: { kind: 'funeral', phase: 'feast' } }, 3)).toBe('evening');
+    expect(tracker.update({ ...calm, ceremony: { kind: 'wedding', phase: 'gathering' } }, 4)).toBe('day');
+    expect(tracker.update({ ...calm, ceremony: { kind: 'wedding', phase: 'rite' } }, 5)).toBe('celebration');
+    expect(tracker.update({ ...calm, alarm: true, ceremony: { kind: 'wedding', phase: 'feast' } }, 6)).toBe('celebration');
+    tracker.noteEvents([hit(10)], camera, null, 7);
+    expect(tracker.update({ ...calm, ceremony: { kind: 'wedding', phase: 'feast' } }, 7)).toBe('battle');
   });
 
   it('goes to battle on a blow in view, holds it, then lets go', () => {

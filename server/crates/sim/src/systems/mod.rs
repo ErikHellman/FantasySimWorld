@@ -2,6 +2,7 @@
 
 pub mod arrivals;
 pub mod billboards;
+pub mod ceremonies;
 pub mod charm;
 pub mod combat;
 pub mod conversation;

@@ -535,6 +535,7 @@ mod tests {
                 cause: "slain by a skeleton".into(),
                 killer_id: None,
                 hidden_killer_id: None,
+                spouse_id: None,
             },
         );
         for other in state.order.clone() {

@@ -14,7 +14,9 @@ use fsw_world::places::{ActivityId, get_place};
 use crate::data::classes::ClassId;
 use crate::data::names::*;
 use crate::events::SimEvent;
-use crate::state::{Bond, BondKind, ChronicleKind, Id, NewVillager, Profile, Pronouns, Quirk, SimState, VoiceProfile};
+use crate::state::{
+    Bond, BondKind, ChronicleKind, Id, NewVillager, Profile, Pronouns, Quirk, RelationLabel, SimState, VoiceProfile,
+};
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::director::tick_at;
 use crate::systems::relationships::{label_for, looks_welcome};
@@ -140,9 +142,16 @@ pub fn acquaint(state: &mut SimState, a: &Id, b: &Id) {
 }
 
 /// Labels every relationship `a` has, from its numbers.
+/// Labels everyone's record afresh; a spouse keeps that label whatever the numbers say.
 fn relabel(state: &mut SimState, a: &Id) {
-    for r in state.characters[a].relationships.values_mut() {
-        r.label = label_for(r, false);
+    let c = &mut state.characters[a];
+    let (partner, spouse) = (c.partner_id.clone(), c.spouse_id.clone());
+    for (other, r) in c.relationships.iter_mut() {
+        r.label = if spouse.as_deref() == Some(other.as_str()) {
+            RelationLabel::Spouse
+        } else {
+            label_for(r, partner.as_deref() == Some(other.as_str()))
+        };
     }
 }
 
@@ -220,6 +229,16 @@ pub fn apply_bonds(ctx: &mut Ctx, id: &Id, bonds: &[Bond]) {
             }
             r.summary = summary;
             r.label = label_for(r, false);
+        }
+        // Someone who comes as a spouse is married on arrival, if both are free to be.
+        if bond.relation == BondKind::Spouse && ctx.cr(id).partner_id.is_none() && ctx.cr(&other).partner_id.is_none() {
+            for (me, them) in [(id, &other), (&other, id)] {
+                let c = ctx.c(me);
+                c.partner_id = Some(them.clone());
+                c.spouse_id = Some(them.clone());
+                c.partner_since_tick = tick;
+                rel(c, them).label = RelationLabel::Spouse;
+            }
         }
     }
 }

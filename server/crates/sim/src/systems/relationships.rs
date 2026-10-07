@@ -8,6 +8,7 @@ use crate::events::{Emote, SimEvent};
 use crate::state::{
     Character, ChronicleKind, Feeling, Id, MemoryKind, Quirk, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
+use crate::systems::ceremonies::{SPOUSE_SPLIT_AFFINITY, SPOUSE_SPLIT_GRIEVANCE};
 use crate::systems::charm;
 use crate::util::{Ctx, can_fall_for, first_name, living_ids, open_to, rel, rel_or_default};
 
@@ -171,8 +172,9 @@ pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, mut delta: RelationDelta) 
 pub fn relabel(ctx: &mut Ctx, from: &str, to_id: &str) {
     let c = ctx.c(from);
     let is_partner = c.partner_id.as_deref() == Some(to_id);
+    let is_spouse = c.spouse_id.as_deref() == Some(to_id);
     let r = rel(c, to_id);
-    let next = label_for(r, is_partner);
+    let next = if is_spouse { RelationLabel::Spouse } else { label_for(r, is_partner) };
     if next == r.label {
         return;
     }
@@ -261,8 +263,11 @@ pub fn apply_conversation(
 }
 
 pub fn become_lovers(ctx: &mut Ctx, a: &str, b: &str) {
+    let tick = ctx.tick();
     ctx.c(a).partner_id = Some(b.to_owned());
+    ctx.c(a).partner_since_tick = tick;
     ctx.c(b).partner_id = Some(a.to_owned());
+    ctx.c(b).partner_since_tick = tick;
     let warm = RelationDelta { affinity: 15.0, trust: 10.0, attraction: 10.0, ..Default::default() };
     adjust(ctx, a, b, warm);
     adjust(ctx, b, a, warm);
@@ -319,17 +324,40 @@ pub fn become_lovers(ctx: &mut Ctx, a: &str, b: &str) {
 }
 
 pub fn break_up(ctx: &mut Ctx, a: &str, b: &str, reason: &str) {
-    ctx.c(a).partner_id = None;
-    ctx.c(b).partner_id = None;
+    let married = ctx.cr(a).spouse_id.as_deref() == Some(b);
+    for (me, other) in [(a, b), (b, a)] {
+        let c = ctx.c(me);
+        c.partner_id = None;
+        c.partner_since_tick = 0;
+        if c.spouse_id.as_deref() == Some(other) {
+            c.spouse_id = None;
+        }
+    }
     let sour = RelationDelta { affinity: -15.0, attraction: -30.0, grievance: 12.0, ..Default::default() };
     adjust(ctx, a, b, sour);
     adjust(ctx, b, a, sour);
     let (a_name, b_name) = (first_name(ctx.cr(a)).to_owned(), first_name(ctx.cr(b)).to_owned());
-    ctx.remember(a, format!("{b_name} and I have parted ({reason})."), 8.0, MemoryKind::Event, vec![b.into()]);
-    ctx.remember(b, format!("{a_name} and I have parted ({reason})."), 8.0, MemoryKind::Event, vec![a.into()]);
-    ctx.chronicle(ChronicleKind::Romance, format!("{a_name} and {b_name} have parted ways."), vec![a.into(), b.into()]);
+    let weight = if married { 9.0 } else { 8.0 };
+    ctx.remember(a, format!("{b_name} and I have parted ({reason})."), weight, MemoryKind::Event, vec![b.into()]);
+    ctx.remember(b, format!("{a_name} and I have parted ({reason})."), weight, MemoryKind::Event, vec![a.into()]);
+    let text = if married {
+        format!("{a_name} and {b_name} have parted; their marriage is over.")
+    } else {
+        format!("{a_name} and {b_name} have parted ways.")
+    };
+    ctx.chronicle(ChronicleKind::Romance, text, vec![a.into(), b.into()]);
     ctx.emit(SimEvent::Emote { id: a.into(), emote: Emote::BrokenHeart });
     ctx.emit(SimEvent::Emote { id: b.into(), emote: Emote::BrokenHeart });
+}
+
+/// Two partners become spouses. The ceremony that marries them writes the chronicle and the memories.
+pub fn marry(ctx: &mut Ctx, a: &str, b: &str) {
+    for (me, other) in [(a, b), (b, a)] {
+        let c = ctx.c(me);
+        c.partner_id = Some(other.to_owned());
+        c.spouse_id = Some(other.to_owned());
+        relabel(ctx, me, other);
+    }
 }
 
 /// Once a day: tempers cool, and couples who have turned on each other split.
@@ -358,7 +386,17 @@ pub fn daily_relationships(ctx: &mut Ctx) {
         if id < partner {
             let mine = rel(ctx.c(&id), &partner).clone();
             let theirs = rel(ctx.c(&partner), &id).clone();
-            if mine.affinity < 12.0 || theirs.affinity < 12.0 || mine.grievance >= 50.0 || theirs.grievance >= 50.0 {
+            // A marriage weathers what would end a courtship.
+            let (affinity, grievance) = if ctx.cr(&id).spouse_id.as_deref() == Some(partner.as_str()) {
+                (SPOUSE_SPLIT_AFFINITY, SPOUSE_SPLIT_GRIEVANCE)
+            } else {
+                (12.0, 50.0)
+            };
+            if mine.affinity < affinity
+                || theirs.affinity < affinity
+                || mine.grievance >= grievance
+                || theirs.grievance >= grievance
+            {
                 break_up(ctx, &id, &partner, "too many quarrels");
             }
         }

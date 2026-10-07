@@ -12,6 +12,7 @@ import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
 import type { GuestEndReason } from '../generated/api';
+import { ceremonyBanner } from './ceremony';
 import { actions, closeSheet, isAdmin, togglePanel, ui } from './store';
 
 function TopBar() {
@@ -160,6 +161,7 @@ export function App() {
 
   if (!ui.started.value) return <StartOverlay />;
   const burning = ui.houses.value.find((house) => house.phase === 'burning');
+  const ceremony = ui.ceremony.value;
   return (
     <>
       {ui.mobile.value ? (
@@ -185,7 +187,8 @@ export function App() {
       )}
       {burning && <div class="alarm">🔥 {burning.name.charAt(0).toUpperCase() + burning.name.slice(1)} is on fire</div>}
       {ui.alarm.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
-      {ui.throttled.value && !ui.alarm.value && !burning && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
+      {ceremony && !ui.alarm.value && !burning && <div class="alarm festive">{ceremonyBanner(ceremony)}</div>}
+      {ui.throttled.value && !ui.alarm.value && !burning && !ceremony && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>
   );
 }

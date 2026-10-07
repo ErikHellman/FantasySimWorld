@@ -6,6 +6,7 @@ import { GROUND_COVER, scatter } from '../world/scatter';
 import type { Assets } from './assets';
 import { Billboards } from './billboards';
 import { CameraRig } from './camera';
+import { CeremonyDressing } from './ceremony';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
@@ -42,6 +43,8 @@ export class WorldView {
   private billboardsVersion = -1;
   private readonly houses: Houses;
   private housesVersion = -1;
+  private readonly dressing: CeremonyDressing;
+  private ceremonyVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -73,7 +76,8 @@ export class WorldView {
     }
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.houses = new Houses(assets, places, this.heightAt, quality);
-    this.scene.add(builder.build(), this.houses.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.dressing = new CeremonyDressing(assets, this.heightAt);
+    this.scene.add(builder.build(), this.houses.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -119,6 +123,10 @@ export class WorldView {
     if (this.housesVersion !== world.housesVersion) {
       this.housesVersion = world.housesVersion;
       this.houses.show(world.houses);
+    }
+    if (this.ceremonyVersion !== world.ceremonyVersion) {
+      this.ceremonyVersion = world.ceremonyVersion;
+      this.dressing.show(world.ceremony, world.graves);
     }
 
     for (const event of events) {

@@ -15,6 +15,7 @@ use crate::state::{
     MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
+use crate::systems::ceremonies::run_attend;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
@@ -810,6 +811,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
+            IntentAction::Attend { place_id } => run_attend(ctx, &id, place_id),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);
                 if c.act.phase == ActPhase::Start {

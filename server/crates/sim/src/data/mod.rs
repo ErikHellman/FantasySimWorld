@@ -4,6 +4,7 @@
 pub mod activities;
 pub mod anims;
 pub mod billboards;
+pub mod ceremonies;
 pub mod classes;
 pub mod monsters;
 pub mod names;

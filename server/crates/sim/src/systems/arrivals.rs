@@ -89,6 +89,8 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         tool: None,
         convo_id: None,
         partner_id: None,
+        spouse_id: None,
+        partner_since_tick: 0,
         combat: CombatState {
             target_id: None,
             mode: FightMode::Monster,

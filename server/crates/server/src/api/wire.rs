@@ -223,6 +223,8 @@ pub struct Snapshot {
     pub billboards: Vec<Billboard>,
     /// the homes that are burning or in ruins; every other home stands whole
     pub houses: Vec<House>,
+    /// the wedding or funeral the village has arranged, if any
+    pub ceremony: Option<Ceremony>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -326,6 +328,10 @@ pub enum WireEvent {
     House {
         house: House,
     },
+    /// a wedding or funeral was arranged, moved on to its next phase, or is over
+    Ceremony {
+        ceremony: Ceremony,
+    },
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -349,6 +355,47 @@ pub struct House {
     pub fire: u8,
     /// how far a ruin has been rebuilt, in percent
     pub built: u8,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CeremonyKind {
+    Wedding,
+    Funeral,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CeremonyPhase {
+    /// arranged; the village goes about its day
+    Announced,
+    /// the village is being called to the place
+    Gathering,
+    /// the rite is being spoken
+    Rite,
+    /// the feast or the wake at the tavern
+    Feast,
+    /// sent once when it has ended or been called off
+    Over,
+}
+
+/// A wedding or funeral the village has arranged, as viewers are told of it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Ceremony {
+    pub id: Id,
+    pub kind: CeremonyKind,
+    pub phase: CeremonyPhase,
+    /// where the rite is held
+    pub place_id: String,
+    pub place_name: String,
+    /// the couple, or the dead
+    pub ids: Vec<Id>,
+    /// their first names, in the same order
+    pub names: Vec<String>,
+    /// the game day and clock ("14:00") the rite begins
+    pub day: u32,
+    pub time: String,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -524,6 +571,8 @@ pub enum RelationLabel {
     Enemy,
     #[serde(rename = "family")]
     Family,
+    #[serde(rename = "spouse")]
+    Spouse,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -606,6 +655,8 @@ pub struct CharacterDetail {
     pub home: String,
     /// that home has burned down and is not yet rebuilt
     pub homeless: bool,
+    /// the first name of the one they are married to
+    pub spouse: Option<String>,
     pub kills: u32,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
@@ -628,6 +679,7 @@ pub enum RequestKind {
     Decide,
     PlanDay,
     Billboard,
+    Ceremony,
     Reflect,
 }
 
@@ -960,6 +1012,9 @@ pub fn typescript() -> String {
         BillboardRequest,
         HousePhase,
         House,
+        CeremonyKind,
+        CeremonyPhase,
+        Ceremony,
         LlmState,
         LlmStatus,
         AmbientCounts,

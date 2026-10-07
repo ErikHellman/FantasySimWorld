@@ -42,10 +42,12 @@ pub fn create_state(seed: u32) -> SimState {
             founding: true,
             newcomer_draft: None,
             newcomer_deadline_tick: 0,
+            awaiting_funeral: Vec::new(),
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
         houses: Default::default(),
+        ceremony: None,
     };
     state.chronicle.push(ChronicleEntry {
         tick: 0,

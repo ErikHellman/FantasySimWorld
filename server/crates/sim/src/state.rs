@@ -298,6 +298,8 @@ pub enum RelationLabel {
     Enemy,
     #[serde(rename = "family")]
     Family,
+    #[serde(rename = "spouse")]
+    Spouse,
 }
 
 impl RelationLabel {
@@ -311,6 +313,7 @@ impl RelationLabel {
             Self::Rival => "rival",
             Self::Enemy => "enemy",
             Self::Family => "family",
+            Self::Spouse => "spouse",
         }
     }
 }
@@ -439,6 +442,10 @@ pub enum IntentAction {
     FightFire {
         place_id: String,
     },
+    /// stands with the village at a wedding or a funeral
+    Attend {
+        place_id: String,
+    },
 }
 
 impl IntentAction {
@@ -454,6 +461,7 @@ impl IntentAction {
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
             Self::FightFire { .. } => "fight_fire",
+            Self::Attend { .. } => "attend",
         }
     }
 
@@ -641,6 +649,12 @@ pub struct Character {
 
     pub convo_id: Option<Id>,
     pub partner_id: Option<Id>,
+    /// the partner this character is married to; a spouse is always a partner as well
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spouse_id: Option<Id>,
+    /// tick the current courtship began; 0 for couples from before this was recorded, who count as long together
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub partner_since_tick: i64,
     pub combat: CombatState,
     /// bumped whenever the situation changes enough to invalidate a pending decision
     pub epoch: i64,
@@ -675,6 +689,10 @@ impl Character {
     /// Drunk at this tick.
     pub fn drunk(&self, tick: i64) -> bool {
         tick < self.quirk_state.drunk_until_tick
+    }
+
+    pub fn married(&self) -> bool {
+        self.spouse_id.is_some()
     }
 }
 
@@ -893,6 +911,9 @@ pub struct DeadRecord {
     /// who really did it, when nobody saw
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden_killer_id: Option<Id>,
+    /// who they were married to when they died
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spouse_id: Option<Id>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -958,6 +979,9 @@ pub struct Director {
     /// an arrival is due and the server has been asked for a newcomer; past this tick the sim invents one (0: not asked)
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub newcomer_deadline_tick: i64,
+    /// the dead who have a grave but have not yet been buried before the village
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub awaiting_funeral: Vec<Id>,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -1010,6 +1034,66 @@ pub struct SimState {
     /// home id -> its condition, for homes that are burning or in ruins; a home not listed stands whole
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub houses: IndexMap<String, House>,
+    /// the wedding or funeral the village has arranged, if any; one at a time
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ceremony: Option<Ceremony>,
+}
+
+/// What a ceremony is for: a couple to be wed, or the dead to be buried.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum Rite {
+    Wedding { a: Id, b: Id },
+    Funeral { dead: Vec<Id> },
+}
+
+/// Where a ceremony has got to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CeremonyPhase {
+    /// arranged; the village goes about its day
+    Announced,
+    /// the village is being called to the place
+    Gathering,
+    /// the rite is being spoken
+    Rite,
+    /// the feast or the wake at the tavern
+    Feast,
+}
+
+/// Words the model wrote for someone to say at a ceremony.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Speech {
+    pub speaker_id: Id,
+    pub text: String,
+}
+
+/// A wedding or a funeral, from the moment it is arranged to the end of the feast.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ceremony {
+    /// so a speech written for it can be matched to it
+    pub id: Id,
+    pub rite: Rite,
+    pub place_id: String,
+    /// when the rite is due to begin
+    pub start_tick: i64,
+    pub phase: CeremonyPhase,
+    /// the step within the rite (opening, vows, pronouncement, ...)
+    pub step: i64,
+    /// when the current step or phase ends
+    pub until_tick: i64,
+    pub officiant: Id,
+    /// speeches written by the model and held until the rite; scripted lines fill the gaps
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speeches: Vec<Speech>,
+    /// who was called, in the order they were called, which fixes each one's spot
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attendees: Vec<Id>,
+    /// times it was put off to the next day
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub slips: i64,
 }
 
 impl SimState {

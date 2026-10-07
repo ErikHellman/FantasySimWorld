@@ -185,7 +185,11 @@ billboards: Array<Billboard>,
 /**
  * the homes that are burning or in ruins; every other home stands whole
  */
-houses: Array<House>, };
+houses: Array<House>, 
+/**
+ * the wedding or funeral the village has arranged, if any
+ */
+ceremony: Ceremony | null, };
 
 export type WorldReset = { 
 /**
@@ -217,7 +221,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire";
 
@@ -272,6 +276,31 @@ fire: number,
  */
 built: number, };
 
+export type CeremonyKind = "wedding" | "funeral";
+
+export type CeremonyPhase = "announced" | "gathering" | "rite" | "feast" | "over";
+
+/**
+ * A wedding or funeral the village has arranged, as viewers are told of it.
+ */
+export type Ceremony = { id: string, kind: CeremonyKind, phase: CeremonyPhase, 
+/**
+ * where the rite is held
+ */
+placeId: string, placeName: string, 
+/**
+ * the couple, or the dead
+ */
+ids: Array<string>, 
+/**
+ * their first names, in the same order
+ */
+names: Array<string>, 
+/**
+ * the game day and clock ("14:00") the rite begins
+ */
+day: number, time: string, };
+
 export type LlmState = "off" | "ready" | "busy" | "error";
 
 export type LlmStatus = { state: LlmState, inFlight: number, queued: number, requests: number, failures: number, tokens: number, latencyMs: number, protocol: string, message: string, };
@@ -315,7 +344,7 @@ status: string,
  */
 hp: number, mood: Mood, partner: boolean, };
 
-export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family";
+export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family" | "spouse";
 
 export type RelationRow = { id: string, name: string, label: RelationLabel, affinity: number, attraction: number, grievance: number, 
 /**
@@ -348,13 +377,17 @@ export type CharacterDetail = { id: string, name: string, pronouns: string, age:
 /**
  * that home has burned down and is not yet rebuilt
  */
-homeless: boolean, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+homeless: boolean, 
+/**
+ * the first name of the one they are married to
+ */
+spouse: string | null, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */
 memories: Array<Memory>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 

@@ -7,6 +7,7 @@ use fsw_world::places::get_place;
 use crate::data::anims::AnimId;
 use crate::events::{Emote, SimEvent};
 use crate::state::{ChronicleKind, Corpse, DeadRecord, Grave, MemoryKind, Quirk, StimulusKind};
+use crate::systems::ceremonies;
 use crate::systems::combat::witnesses;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::relationships::{RelationDelta, adjust};
@@ -90,6 +91,7 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
             cause: cause.to_owned(),
             killer_id: killer.map(str::to_owned),
             hidden_killer_id: hidden.map(str::to_owned),
+            spouse_id: victim.spouse_id.clone(),
         },
     );
     ctx.state.order.retain(|id| id != victim_id);
@@ -110,6 +112,10 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
         let was_partner = c.partner_id.as_deref() == Some(victim_id);
         if was_partner {
             c.partner_id = None;
+            c.partner_since_tick = 0;
+        }
+        if c.spouse_id.as_deref() == Some(victim_id) {
+            c.spouse_id = None;
         }
         let r = rel(c, victim_id).clone();
         let close = was_partner || r.kin || r.affinity >= 25.0;
@@ -211,6 +217,8 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
     ctx.emit(SimEvent::SavePoint { reason: "death".into() });
 
     ctx.state.director.death_ticks.push(tick);
+    // The funeral is arranged before the arrival is rolled, so the dice fall as they always did.
+    ceremonies::on_death(ctx, victim_id);
     schedule_arrival_after_loss(ctx);
 }
 

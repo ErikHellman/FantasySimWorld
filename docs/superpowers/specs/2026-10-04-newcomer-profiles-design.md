@@ -21,7 +21,7 @@ When the eleven authored newcomers have all arrived, the village today fills its
    - `temper`, `bravery`, `sociability`: 0 to 1
    - `quirk`: optional, one of the quirks except `murderous`
    - `reason`: why they came, up to 200
-   - `link`: optional `{to, relation}`, where `to` names a living or dead villager and `relation` is sibling, child, parent, spouse, friend or comrade
+   - `link`: optional `{to, relation}`, where `to` names a living or dead villager and `relation` is sibling, child, parent, spouse, friend or comrade (a spouse arrives married, if the other is free; see [the weddings and funerals design](2026-10-08-weddings-funerals-design.md))
 5. **The brain checks it.** Every text is cleaned (`clean_text`, the same rules as billboards) and cut to its limit. The first name must be new: not among the living, the dead or the authored cast. The name must have a first and a last part. `link.to` must resolve to someone. An answer that fails is dropped and logged; the arrival then uses a wanderer. A good answer becomes a `NewcomerDraft` command.
 6. **The sim holds the draft.** The draft waits in `Director.newcomerDraft` until the arrival. A second draft is not asked for while one waits.
 7. **The newcomer arrives.** When the arrival comes, the sim checks the draft again (the name may have been taken since, the person it links to may have changed) and builds the villager from it. The look comes from the class, with the same random texture choice a wanderer gets. Jobs and hobbies come from the class. Spite, allure, shyness and looks start at 0, as for wanderers. Voice pitch and rate are drawn as for wanderers. The draft is cleared.

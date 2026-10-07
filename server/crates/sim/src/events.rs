@@ -72,6 +72,10 @@ pub enum SimEvent {
     Arrival {
         id: Id,
     },
+    /// A wedding or a funeral has been arranged; the brain may ask for its speeches.
+    CeremonyScheduled {
+        ceremony_id: Id,
+    },
     NewDay {
         day: i64,
     },
@@ -124,6 +128,7 @@ impl SimEvent {
             Self::MonsterSpawn { .. } => "monster_spawn",
             Self::Chronicle { .. } => "chronicle",
             Self::Arrival { .. } => "arrival",
+            Self::CeremonyScheduled { .. } => "ceremony_scheduled",
             Self::NewDay { .. } => "new_day",
             Self::ConversationStarted { .. } => "conversation_started",
             Self::ConversationWaiting { .. } => "conversation_waiting",

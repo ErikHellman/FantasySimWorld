@@ -10,7 +10,8 @@ use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Relationship, SimState, TalkTone,
+    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Pronouns,
+    Relationship, Rite, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
 use fsw_sim::systems::fire;
@@ -231,7 +232,17 @@ fn capital(text: &str) -> String {
 
 fn person_line(state: &SimState, c: &Character, other: &Character, with_activity: bool) -> String {
     let r = rel_or_default(c, &other.id);
-    let partner = if c.partner_id.as_deref() == Some(other.id.as_str()) { " (your partner)" } else { "" };
+    let partner = if c.spouse_id.as_deref() == Some(other.id.as_str()) {
+        match other.profile.pronouns {
+            Pronouns::SheHer => " (your wife)",
+            Pronouns::HeHim => " (your husband)",
+            Pronouns::TheyThem => " (your spouse)",
+        }
+    } else if c.partner_id.as_deref() == Some(other.id.as_str()) {
+        " (your partner)"
+    } else {
+        ""
+    };
     let doing = if with_activity {
         if other.inside.is_some() {
             format!(" — indoors at {}", place_name_at(other.pos))
@@ -382,7 +393,59 @@ fn header(state: &SimState, c: &Character) -> String {
         danger,
     ];
     lines.extend(fire_lines(state, c));
+    lines.extend(ceremony_line(state, c));
     lines.join("\n")
+}
+
+/// "today" or "tomorrow", and the clock, for the hour a ceremony is held.
+fn when_held(state: &SimState, ceremony: &Ceremony) -> (&'static str, String) {
+    let now = game_time(state.tick);
+    let then = game_time(ceremony.start_tick);
+    let day = if then.day == now.day { "today" } else { "tomorrow" };
+    (day, format_clock(then.minute_of_day))
+}
+
+/// The wedding or funeral the village has arranged, as this character sees it. Empty when there is none.
+fn ceremony_line(state: &SimState, c: &Character) -> Option<String> {
+    let ceremony = state.ceremony.as_ref()?;
+    let tavern = find_place("tavern").map_or("the tavern", |place| place.name);
+    let (day, clock) = when_held(state, ceremony);
+    Some(match &ceremony.rite {
+        Rite::Wedding { a, b } => {
+            let mine = *a == c.id || *b == c.id;
+            let other = name_of(state, if *a == c.id { b } else { a });
+            let (a, b) = (name_of(state, a), name_of(state, b));
+            match ceremony.phase {
+                CeremonyPhase::Announced if mine => format!(
+                    "You are to be married to {other} on the village green {day} at {clock}; the whole village will be there."
+                ),
+                CeremonyPhase::Announced => {
+                    format!(
+                        "{a} and {b} are to be married on the village green {day} at {clock}; everyone will be there."
+                    )
+                }
+                CeremonyPhase::Gathering | CeremonyPhase::Rite if mine => {
+                    format!("You are being married to {other} on the green, before the whole village.")
+                }
+                CeremonyPhase::Gathering | CeremonyPhase::Rite => {
+                    format!("The village is gathered on the green for the wedding of {a} and {b}.")
+                }
+                CeremonyPhase::Feast if mine => format!("Your wedding feast is on at {tavern}."),
+                CeremonyPhase::Feast => format!("The wedding feast for {a} and {b} is on at {tavern}."),
+            }
+        }
+        Rite::Funeral { dead } => {
+            let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
+            let names = join_names(&names);
+            match ceremony.phase {
+                CeremonyPhase::Announced => format!("The village buries {names} in the graveyard {day} at {clock}."),
+                CeremonyPhase::Gathering | CeremonyPhase::Rite => {
+                    format!("The village is gathered at the graveyard to bury {names}.")
+                }
+                CeremonyPhase::Feast => format!("The wake for {names} is at {tavern}."),
+            }
+        }
+    })
 }
 
 /// Everyone else: those within sight, and those elsewhere who matter most first.
@@ -792,10 +855,12 @@ pub fn conversation_prompt(
             .collect();
         let r = rel_or_default(me, &other.id);
         let thinks = if r.summary.is_empty() { String::new() } else { format!(" Thinks: \"{}\"", r.summary) };
-        let couple = match &me.partner_id {
-            Some(p) if *p == other.id => " They are a couple.".to_owned(),
-            Some(p) => format!(" Already has a partner ({}).", name_of(state, p)),
-            None => String::new(),
+        let couple = match (&me.partner_id, &me.spouse_id) {
+            (_, Some(s)) if *s == other.id => " They are married.".to_owned(),
+            (Some(p), _) if *p == other.id => " They are a couple.".to_owned(),
+            (_, Some(s)) => format!(" Married ({}).", name_of(state, s)),
+            (Some(p), None) => format!(" Already has a partner ({}).", name_of(state, p)),
+            (None, None) => String::new(),
         };
         let mut lines = vec![brief(me)];
         if me.profile.allure >= charm::CHARMER {
@@ -975,6 +1040,95 @@ pub fn billboard_prompt(state: &SimState, c: &Character, place: &str, text: &str
     ];
     let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
     Prompt { messages: as_character(c, user), tools: vec![TOOLS.billboard.clone()], max_calls: 1 }
+}
+
+/// The day of the wedding: what one half of the couple will say to the other at the rite.
+pub fn vows_prompt(state: &SimState, me: &Character, partner: &Character, ceremony: &Ceremony) -> Prompt {
+    let time = game_time(state.tick);
+    let (day, clock) = when_held(state, ceremony);
+    let name = first_name(partner);
+    let officiant = name_of(state, &ceremony.officiant);
+    let subjects = [partner.id.clone()];
+    let memories: Vec<&Memory> = retrieve(me, state.tick, Cue { subjects: &subjects, text: "" }, 6, None)
+        .into_iter()
+        .filter(|m| m.subjects.contains(&partner.id) || m.importance >= 7)
+        .collect();
+    let parts = [
+        header(state, me),
+        format!(
+            "You are to marry {name} on the village green {day} at {clock}, before the whole village. \
+             {officiant} will speak the rite."
+        ),
+        format!("About {name}:\n{}", person_line(state, me, partner, false)),
+        if memories.is_empty() {
+            String::new()
+        } else {
+            format!("What you remember of {name}:\n{}", memory_lines(&memories, time.day))
+        },
+        format!(
+            "Write the vow you will speak to {name} at the rite: two or three short sentences, in your own voice, \
+             said aloud to {name} and to those gathered. No stage directions. One tool call."
+        ),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(me, user), tools: vec![TOOLS.speech.clone()], max_calls: 1 }
+}
+
+/// Before the funeral: what the officiant will say over the grave.
+pub fn eulogy_prompt(state: &SimState, me: &Character, ceremony: &Ceremony) -> Prompt {
+    let time = game_time(state.tick);
+    let (day, clock) = when_held(state, ceremony);
+    let dead: &[String] = match &ceremony.rite {
+        Rite::Funeral { dead } => dead,
+        Rite::Wedding { .. } => &[],
+    };
+    let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
+    let names = join_names(&names);
+    let lines: Vec<String> = dead
+        .iter()
+        .filter_map(|id| {
+            let record = state.dead.get(id)?;
+            let mut grieving: Vec<String> = Vec::new();
+            for other in living(state) {
+                let r = rel_or_default(other, id);
+                let how = if record.spouse_id.as_deref() == Some(other.id.as_str()) {
+                    "spouse"
+                } else if r.kin {
+                    "kin"
+                } else if r.affinity >= 25.0 {
+                    "friend"
+                } else {
+                    continue;
+                };
+                grieving.push(format!("{} ({how})", first_name(other)));
+            }
+            let grief = if grieving.is_empty() {
+                "Nobody in the village was close to them.".to_owned()
+            } else {
+                format!("Grieving most: {}.", grieving.join(", "))
+            };
+            Some(format!("- {} died on day {}, {}. {grief}", record.name, record.day, record.cause))
+        })
+        .collect();
+    let memories: Vec<&Memory> = retrieve(me, state.tick, Cue { subjects: dead, text: "" }, 6, None)
+        .into_iter()
+        .filter(|m| m.subjects.iter().any(|s| dead.contains(s)))
+        .collect();
+    let parts = [
+        header(state, me),
+        format!("The village buries {names} in the graveyard {day} at {clock}, and you will speak over the grave."),
+        format!("The dead:\n{}", lines.join("\n")),
+        if memories.is_empty() {
+            String::new()
+        } else {
+            format!("What you remember of them:\n{}", memory_lines(&memories, time.day))
+        },
+        "Write the eulogy you will speak: three or four short sentences, in your own voice, to those gathered at \
+         the graveside. Name the dead. No stage directions. One tool call."
+            .to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(me, user), tools: vec![TOOLS.speech.clone()], max_calls: 1 }
 }
 
 /// End-of-day reflection: what does this character take from today?

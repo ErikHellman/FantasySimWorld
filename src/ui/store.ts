@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Utterance,
 } from '../generated/api';
@@ -84,6 +84,8 @@ export const ui = {
   billboards: signal<Billboard[]>([]),
   /** the homes that are burning or in ruins */
   houses: signal<House[]>([]),
+  /** the wedding or funeral the village has arranged, if any */
+  ceremony: signal<Ceremony | null>(null),
   panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -150,6 +152,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.graves.value = snapshot.graves;
   ui.billboards.value = snapshot.billboards;
   ui.houses.value = snapshot.houses;
+  ui.ceremony.value = snapshot.ceremony;
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -180,6 +183,11 @@ export function addGrave(grave: Grave): void {
 export function setHouse(house: House): void {
   const others = ui.houses.value.filter((entry) => entry.id !== house.id);
   ui.houses.value = house.phase === 'intact' ? others : [...others, house];
+}
+
+/** A wedding or funeral was arranged, moved on, or is over. */
+export function setCeremony(ceremony: Ceremony): void {
+  ui.ceremony.value = ceremony.phase === 'over' ? null : ceremony;
 }
 
 export function setBillboard(board: Billboard): void {

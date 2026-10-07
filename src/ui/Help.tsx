@@ -108,6 +108,7 @@ export function HelpPanel() {
           <li>Villagers keep to a plan for the day: work, meals, rest and time with others. They grow hungry, tired and lonely, and see to it.</li>
           <li>Five big billboards stand around the village, each with a new slogan every morning. Now and then a villager stops to read one and says what they think: some laugh, some scoff, and the gloomier notices unsettle the timid.</li>
           <li>They talk, and every conversation shifts how they feel about each other. Friendships, rivalries and love grow from it; grudges can end in a fight.</li>
+          <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often.</li>
           <li>Some villagers have ways of their own: a drunk who picks fights, a gossip who makes up stories, a bully, a coward, someone who naps on the grass when there is work to do, and worse. Not everyone is what they seem.</li>
           <li>Death is for good: the fallen get a grave, and now and then a newcomer arrives in the valley.</li>

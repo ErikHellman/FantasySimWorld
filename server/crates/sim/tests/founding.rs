@@ -2,7 +2,7 @@
 
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::data::classes::ClassId;
-use fsw_sim::state::{Bond, BondKind, NewVillager, Pronouns, Quirk, SaveFile};
+use fsw_sim::state::{Bond, BondKind, NewVillager, Pronouns, Quirk, RelationLabel, SaveFile};
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::founding::ALLOWED_QUIRKS;
 use fsw_sim::util::living;
@@ -175,4 +175,28 @@ fn every_class_model_and_recolour_is_in_the_asset_manifest() {
         }
     }
     assert!(ALLOWED_QUIRKS.iter().all(|q| !matches!(q, Quirk::Murderous | Quirk::Occultist)));
+}
+
+#[test]
+fn a_settler_who_comes_as_a_spouse_is_married_on_arrival_unless_the_other_is_taken() {
+    let mut sim = Sim::new(create_state(3));
+    settle(&mut sim, villager("Agnes Vane", ClassId::Knight));
+    let mut bram = villager("Bram Holt", ClassId::Farmer);
+    bram.bonds.push(Bond { to: "Agnes Vane".into(), relation: BondKind::Spouse, summary: String::new() });
+    settle(&mut sim, bram);
+    let (agnes, bram) = (&sim.state.characters["c1"], &sim.state.characters["c2"]);
+    assert_eq!(agnes.spouse_id.as_deref(), Some("c2"));
+    assert_eq!(bram.spouse_id.as_deref(), Some("c1"));
+    assert_eq!(agnes.partner_id.as_deref(), Some("c2"));
+    assert_eq!(agnes.relationships["c2"].label, RelationLabel::Spouse);
+    assert_eq!(bram.relationships["c1"].label, RelationLabel::Spouse);
+    assert_eq!(bram.relationships["c1"].summary, "Agnes is my spouse.");
+
+    // Agnes is spoken for, so a second claim on her gives warmth but no marriage.
+    let mut cora = villager("Cora Lind", ClassId::Mage);
+    cora.bonds.push(Bond { to: "Agnes Vane".into(), relation: BondKind::Spouse, summary: String::new() });
+    settle(&mut sim, cora);
+    let cora = &sim.state.characters["c3"];
+    assert!(cora.spouse_id.is_none() && cora.partner_id.is_none());
+    assert_eq!(sim.state.characters["c1"].spouse_id.as_deref(), Some("c2"));
 }
