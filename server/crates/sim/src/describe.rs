@@ -7,7 +7,7 @@ use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState};
 use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
-use crate::util::name_of;
+use crate::util::{name_of, place_name_at};
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
     let doing = doing(state, c);
@@ -47,6 +47,13 @@ fn doing(state: &SimState, c: &Character) -> String {
             }
             if *id == ActivityId::Stroll {
                 return "strolling around the village".into();
+            }
+            if *id == ActivityId::Play {
+                return if c.act.phase == ActPhase::Perform || c.act.dest.is_none() {
+                    format!("playing at {}", place_name_at(c.pos))
+                } else {
+                    "playing".into()
+                };
             }
             if *id == ActivityId::Rebuild {
                 let name = place_id.as_deref().and_then(find_place).map_or("the ruin", |place| place.name);

@@ -52,7 +52,7 @@ fn chats_with_women(seed: u32, shyness: f64) -> usize {
         for event in sim.step() {
             if let SimEvent::ConversationStarted { a, b, .. } = event
                 && a == torvald
-                && sim.state.characters.get(&b).is_some_and(|c| c.profile.pronouns == Pronouns::SheHer)
+                && sim.state.characters.get(&b).is_some_and(|c| c.profile.pronouns == Pronouns::SheHer && !c.is_child())
             {
                 started += 1;
             }
@@ -63,7 +63,8 @@ fn chats_with_women(seed: u32, shyness: f64) -> usize {
 
 #[test]
 fn a_shy_villager_seldom_starts_a_conversation_with_a_woman() {
-    let total = |shyness: f64| (1..=4).map(|seed| chats_with_women(seed, shyness)).sum::<usize>();
+    // Eight seeds: a few chats a seed is too few to tell shy from unlucky over four.
+    let total = |shyness: f64| (1..=8).map(|seed| chats_with_women(seed, shyness)).sum::<usize>();
     let (shy, at_ease) = (total(0.85), total(0.0));
     assert!(shy * 2 <= at_ease, "shy {shy}, at ease {at_ease}");
 }

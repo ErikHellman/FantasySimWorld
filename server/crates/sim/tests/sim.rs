@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::state::{ActPhase, Character};
-use fsw_sim::util::living;
+use fsw_sim::util::{adult_count, living};
 use fsw_sim::{Sim, SimEvent, SimState, create_state};
 use fsw_world::navgrid::{is_walkable, nearest_walkable};
 use fsw_world::places::ActivityId;
@@ -26,7 +26,8 @@ fn round_trip(state: &SimState) -> SimState {
 #[test]
 fn starts_with_the_authored_cast_all_housed() {
     let state = create_state(1);
-    assert_eq!(state.order.len(), 13);
+    assert_eq!(state.order.len(), 18);
+    assert_eq!(adult_count(&state), 13);
     assert_eq!(state.director.population_target, 13);
     for c in living(&state) {
         assert!(c.home_id.starts_with("home_"));

@@ -5,6 +5,8 @@
 
 use fsw_core::time::TICKS_PER_DAY;
 
+use fsw_world::places::ActivityId;
+
 use super::classes::ClassId;
 
 /// The scale `tools/assets/asset-list.mjs` draws a `Child_*` model at.
@@ -34,6 +36,9 @@ pub static CHILD_LOOKS: [ChildLook; 8] = [
 pub fn child_look(class: ClassId) -> &'static ChildLook {
     CHILD_LOOKS.iter().find(|look| look.class == class).unwrap_or(&CHILD_LOOKS[7])
 }
+
+/// What a child does with a free hour.
+pub const CHILD_HOBBIES: [ActivityId; 3] = [ActivityId::Play, ActivityId::Stroll, ActivityId::Rest];
 
 /// A child ages one year every this many sim days.
 pub const BIRTHDAY_DAYS: i64 = 3;

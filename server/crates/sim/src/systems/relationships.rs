@@ -9,7 +9,7 @@ use crate::state::{
     Character, ChronicleKind, Feeling, Id, MemoryKind, Quirk, RelationLabel, Relationship, StimulusKind, TalkTone,
 };
 use crate::systems::charm;
-use crate::util::{Ctx, can_fall_for, first_name, living_ids, open_to, rel, rel_or_default};
+use crate::util::{Ctx, adult_count, can_fall_for, first_name, living_ids, open_to, rel, rel_or_default};
 
 /// The warmest a bully ever feels about anyone: short of friendship.
 const BULLY_AFFINITY_CAP: f64 = 20.0;
@@ -45,6 +45,10 @@ impl Rung {
     }
 }
 
+/// Anger at a child, or a child's at anyone, never passes this: below the rival label, far below a brawl.
+pub const CHILD_GRIEVANCE_CAP: f64 = crate::data::children::CHILD_GRIEVANCE_CAP;
+/// Nor does dislike of a child sink to where the label turns to rival.
+pub const CHILD_AFFINITY_FLOOR: f64 = -20.0;
 pub const RUNG_TENSION: f64 = 20.0;
 pub const RUNG_GRUDGE: f64 = 40.0;
 pub const RUNG_FEUD: f64 = 65.0;
@@ -143,11 +147,16 @@ pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, mut delta: RelationDelta) 
     }
     let delta = shaped(ctx, from, to_id, delta);
     let bully = ctx.cr(from).has(Quirk::Bully);
+    // Nobody makes an enemy of a child, and no child of anyone: anger at a child stops short of the ladder.
+    let with_child = ctx.cr(from).is_child() || ctx.state.characters.get(to_id).is_some_and(|c| c.is_child());
     let r = rel(ctx.c(from), to_id);
     if delta.affinity != 0.0 {
         r.affinity = clamp(r.affinity + delta.affinity, -100.0, 100.0);
         if bully {
             r.affinity = r.affinity.min(BULLY_AFFINITY_CAP);
+        }
+        if with_child {
+            r.affinity = r.affinity.max(CHILD_AFFINITY_FLOOR);
         }
     }
     if delta.trust != 0.0 {
@@ -161,6 +170,9 @@ pub fn adjust(ctx: &mut Ctx, from: &str, to_id: &str, mut delta: RelationDelta) 
     }
     if delta.grievance != 0.0 {
         r.grievance = clamp(r.grievance + delta.grievance, 0.0, 100.0);
+        if with_child {
+            r.grievance = r.grievance.min(CHILD_GRIEVANCE_CAP);
+        }
         if delta.grievance > 0.0 {
             r.last_offence_tick = tick;
         }
@@ -378,7 +390,7 @@ pub fn lethal_unlocked(ctx: &mut Ctx, from: &str, to_id: &str) -> bool {
     if tick - ctx.state.director.last_lethal_tick < TICKS_PER_DAY * 3 {
         return false;
     }
-    ctx.state.order.len() >= 8
+    adult_count(ctx.state) >= 8
 }
 
 /// The same check for a character the caller only reads (prompts, validation); never creates a record.
@@ -387,5 +399,5 @@ pub fn lethal_unlocked_read(state: &crate::state::SimState, from: &Character, to
     r.grievance >= RUNG_BLOOD
         && state.tick - r.last_offence_tick <= TICKS_PER_DAY * 2
         && state.tick - state.director.last_lethal_tick >= TICKS_PER_DAY * 3
-        && state.order.len() >= 8
+        && adult_count(state) >= 8
 }

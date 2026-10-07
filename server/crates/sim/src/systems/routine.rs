@@ -26,6 +26,9 @@ const SOCIAL_RADIUS: f64 = 15.0;
 
 /// A plausible day for this character, from their jobs and hobbies.
 pub fn routine_plan(ctx: &mut Ctx, id: &str) -> Vec<PlanBlock> {
+    if ctx.cr(id).is_child() {
+        return child_plan(ctx, id);
+    }
     let c = ctx.cr(id);
     let jobs = if c.jobs.is_empty() { vec![ActivityId::Stroll] } else { c.jobs.clone() };
     let hobbies = if c.hobbies.is_empty() { vec![ActivityId::Stroll] } else { c.hobbies.clone() };
@@ -95,6 +98,33 @@ pub fn routine_plan(ctx: &mut Ctx, id: &str) -> Vec<PlanBlock> {
     plan
 }
 
+/// A child's day: meals, play, and home before the dead rise. Drawn from the RNG
+/// only for children, so the adults' plans fall as they always did.
+fn child_plan(ctx: &mut Ctx, id: &str) -> Vec<PlanBlock> {
+    let c = ctx.cr(id);
+    let home = c.home_id.clone();
+    let hobbies = if c.hobbies.is_empty() { vec![ActivityId::Play] } else { c.hobbies.clone() };
+    let block = |hour: f64, activity: ActivityId, place_id: Option<String>, note: Option<&str>| PlanBlock {
+        hour,
+        activity,
+        place_id,
+        note: note.map(str::to_owned),
+    };
+    let wake = 6.2 + ctx.next_float() * 1.2;
+    let afternoon = ctx.pick(&hobbies);
+    let midday = 12.0 + ctx.next_float() * 0.6;
+    vec![
+        block(wake, ActivityId::Eat, None, Some("breakfast")),
+        block(wake + 0.8, ActivityId::Play, None, None),
+        block(midday, ActivityId::Eat, None, Some("midday meal")),
+        block(midday + 1.0, afternoon, None, None),
+        block(15.4 + ctx.next_float() * 0.6, ActivityId::Play, None, Some("with the other children")),
+        block(17.6, ActivityId::Eat, None, Some("supper")),
+        block(18.6, ActivityId::Rest, Some(home), Some("at home before bed")),
+        block(19.4 + ctx.next_float() * 0.5, ActivityId::Sleep, None, None),
+    ]
+}
+
 /// Index of the plan block in force at `hour` (-1 before the first one).
 pub fn block_at(plan: &[PlanBlock], hour: f64) -> i64 {
     let mut index = -1;
@@ -141,12 +171,26 @@ fn social_intent(ctx: &mut Ctx, id: &str) -> Option<Intent> {
             let open = openness(ctx.cr(id), ctx.cr(o));
             // A bully goes looking for the timid.
             let timid = if bully { (1.0 - ctx.cr(o).profile.bravery) * 3.0 } else { 0.0 };
+            let (me_child, o_child) = (ctx.cr(id).is_child(), ctx.cr(o).is_child());
             let c = ctx.c(id);
             let spite = c.profile.spite;
             let r = rel(c, o);
+            // Children seek out other children and their own people; grown-ups look in on their own children
+            // and seldom go out of their way for someone else's.
+            let (family, aloof) = match (me_child, o_child, r.kin) {
+                (true, true, _) => (4.0, 1.0),
+                (true, false, true) | (false, true, true) => (2.0, 1.0),
+                (false, true, false) => (0.0, 0.3),
+                _ => (0.0, 1.0),
+            };
             // The spiteful are drawn twice as hard to the people they resent.
-            let weight =
-                1.0 + r.affinity.abs() / 25.0 + r.attraction / 30.0 + r.grievance * (1.0 + spite) / 12.0 + timid;
+            let weight = (1.0
+                + r.affinity.abs() / 25.0
+                + r.attraction / 30.0
+                + r.grievance * (1.0 + spite) / 12.0
+                + timid
+                + family)
+                * aloof;
             // A charmer seeks out whoever wants her. Added only for one, so nobody else's weights change.
             let weight =
                 if allure > 0.0 { weight + allure * rel_or_default(ctx.cr(o), id).attraction / 20.0 } else { weight };
@@ -256,6 +300,7 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
 
     let has_watch_tonight = tick < c.watch_until_tick;
     let on_watch = has_watch_tonight && !(5.2..20.5).contains(&hour);
+    let child = c.is_child();
 
     // Starving comes before anything, even duty. A guard with food in the pack eats before the next
     // stretch of watch rather than after: one stretch can burn more than the last 12 points of hunger.
@@ -291,7 +336,7 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         }
     }
 
-    if hostile_intent(ctx, id) {
+    if !child && hostile_intent(ctx, id) {
         return None;
     }
     if let Some(social) = social_intent(ctx, id) {

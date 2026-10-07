@@ -9,6 +9,7 @@ use fsw_sim::state::{
     ActPhase, Character, IntentAction, MemoryKind as SimMemoryKind, MonsterPhase, PlanSource,
     RelationLabel as SimLabel, SimState,
 };
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
@@ -25,10 +26,6 @@ use crate::encode::chronicle_entry;
 pub const CHRONICLE_TAIL: usize = 120;
 /// How many memories the inspector shows, newest first.
 pub const DETAIL_MEMORIES: usize = 40;
-
-fn max_hp(c: &Character) -> f64 {
-    c.class_id.def().max_hp
-}
 
 pub fn mood_of(c: &Character) -> Mood {
     if matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Fight { .. } | IntentAction::Flee)) {
@@ -234,13 +231,24 @@ mod tests {
     use fsw_sim::{Sim, create_state};
 
     #[test]
+    fn a_child_is_whole_at_half_the_class_hit_points() {
+        let state = create_state(1);
+        let pip = living(&state).find(|c| c.profile.name == "Pip Vane").unwrap();
+        let row = roster_of(&state).into_iter().find(|row| row.id == pip.id).unwrap();
+        assert_eq!(row.hp, 1.0);
+        assert_eq!(row.role, "child");
+        assert_eq!(crate::encode::character_static(pip).max_hp, pip.class_id.def().max_hp * 0.5);
+        assert_eq!(mood_of(pip), Mood::Ok);
+    }
+
+    #[test]
     fn renders_the_inspector_and_roster() {
         let mut sim = Sim::new(create_state(4));
         for _ in 0..2000 {
             sim.step();
         }
         let roster = roster_of(&sim.state);
-        assert_eq!(roster.len(), 13);
+        assert_eq!(roster.len(), 18);
         assert!(roster.iter().all(|row| !row.status.is_empty()));
         let id = sim.state.order[0].clone();
         let detail = detail_of(&sim.state, &id).unwrap();

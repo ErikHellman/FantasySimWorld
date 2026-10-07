@@ -31,20 +31,25 @@ pub enum ActivityId {
     Stroll,
     ReadBoard,
     Rebuild,
+    /// a child's game on the green, at the docks or by the farm; no slot, like strolling
+    Play,
 }
 
 impl ActivityId {
-    pub const ALL: [ActivityId; 21] = [
+    pub const ALL: [ActivityId; 22] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
-        Brew, Mourn, Stroll, ReadBoard, Rebuild,
+        Brew, Mourn, Stroll, ReadBoard, Rebuild, Play,
     ];
 
     /// What a mind may always choose: everything but reading a billboard, which only the routine sends people
     /// to, and rebuilding, which is only there to choose while a house lies in ruins.
-    pub const OFFERED: [ActivityId; 19] = [
+    pub const OFFERED: [ActivityId; 20] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
-        Brew, Mourn, Stroll,
+        Brew, Mourn, Stroll, Play,
     ];
+
+    /// What a child may choose: meals, rest, play and the few things that need no trade or weapon.
+    pub const CHILD_OFFERED: [ActivityId; 7] = [Eat, Sleep, Rest, Play, Pray, Shop, Stroll];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -69,6 +74,7 @@ impl ActivityId {
             Stroll => "stroll",
             ReadBoard => "read_board",
             Rebuild => "rebuild",
+            Play => "play",
         }
     }
 

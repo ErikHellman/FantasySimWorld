@@ -298,6 +298,7 @@ fn muster(ctx: &mut Ctx, place_id: &str) {
     for (i, id) in living_ids(ctx.state).iter().enumerate() {
         let Some(c) = ctx.state.characters.get(id) else { continue };
         if (tick + i as i64 * 3) % 10 != 0
+            || c.is_child()
             || c.combat.yielded
             || is_fighting(c)
             || fighting_fire(c)

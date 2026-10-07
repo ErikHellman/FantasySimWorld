@@ -211,18 +211,31 @@ pub fn abort_conversation(ctx: &mut Ctx, convo_id: &str) {
     ctx.emit(SimEvent::ConversationEnded { convo_id: convo_id.into(), a: convo.a, b: convo.b, feelings: Map::new() });
 }
 
-fn summary_of(convo: &Conversation, self_id: &str, other_name: &str) -> String {
+/// How a hard word between a grown-up and a child reads: as a telling-off, not a quarrel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scolding {
+    None,
+    Gave,
+    Got,
+}
+
+fn summary_of(convo: &Conversation, self_id: &str, other_name: &str, scolding: Scolding) -> String {
     let said: Vec<&str> =
         convo.lines.iter().filter(|line| line.speaker_id != self_id).map(|line| line.text.as_str()).collect();
     let heard =
         said.last().map_or(String::new(), |last| format!(" {other_name} said: \"{}\"", utf16_truncate(last, 110)));
+    let topic = if convo.topic.is_empty() { "this and that" } else { &convo.topic };
+    match scolding {
+        Scolding::Gave => return format!("Told {other_name} off about {topic}.{heard}"),
+        Scolding::Got => return format!("{other_name} told me off about {topic}.{heard}"),
+        Scolding::None => {}
+    }
     let how = match convo.tone {
         TalkTone::Hostile => "Had words with",
         TalkTone::Romantic => "Had a tender talk with",
         TalkTone::Apology => "Talked about making amends with",
         TalkTone::Friendly => "Talked with",
     };
-    let topic = if convo.topic.is_empty() { "this and that" } else { &convo.topic };
     format!("{how} {other_name} about {topic}.{heard}")
 }
 
@@ -254,13 +267,21 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
     }
 
     let (a_name, b_name) = (first_name(ctx.cr(&a)).to_owned(), first_name(ctx.cr(&b)).to_owned());
+    // A grown-up's hard word at a child is a telling-off, whichever of them started it.
+    let (a_child, b_child) = (ctx.cr(&a).is_child(), ctx.cr(&b).is_child());
+    let told_off = convo.tone == TalkTone::Hostile && a_child != b_child;
+    let scolding = |me_child: bool| match (told_off, me_child) {
+        (false, _) => Scolding::None,
+        (true, true) => Scolding::Got,
+        (true, false) => Scolding::Gave,
+    };
     let weight = if convo.tone == TalkTone::Friendly { 3.0 } else { 6.0 };
     let strong = |f: Feeling| if matches!(f, Feeling::MuchWorse | Feeling::MuchBetter) { 2.0 } else { 0.0 };
-    let memory = |self_id: &str, other: &str, f: Feeling| {
-        format!("{} {}", summary_of(&convo, self_id, other), feeling_note(f)).trim().to_owned()
+    let memory = |self_id: &str, other: &str, f: Feeling, me_child: bool| {
+        format!("{} {}", summary_of(&convo, self_id, other, scolding(me_child)), feeling_note(f)).trim().to_owned()
     };
-    ctx.remember(&a, memory(&a, &b_name, feel_a), weight + strong(feel_a), MemoryKind::Talk, vec![b.clone()]);
-    ctx.remember(&b, memory(&b, &a_name, feel_b), weight + strong(feel_b), MemoryKind::Talk, vec![a.clone()]);
+    ctx.remember(&a, memory(&a, &b_name, feel_a, a_child), weight + strong(feel_a), MemoryKind::Talk, vec![b.clone()]);
+    ctx.remember(&b, memory(&b, &a_name, feel_b, b_child), weight + strong(feel_b), MemoryKind::Talk, vec![a.clone()]);
 
     let both = vec![a.clone(), b.clone()];
     match convo.tone {
@@ -271,7 +292,10 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
                 ctx.emit(SimEvent::Emote { id: b.clone(), emote: Emote::Anger });
             }
             let a_pos = ctx.cr(&a).pos;
-            let text = if heated {
+            let text = if told_off {
+                let (grown, child) = if a_child { (&b_name, &a_name) } else { (&a_name, &b_name) };
+                format!("{grown} told {child} off near {}.", place_name_at(a_pos))
+            } else if heated {
                 format!("{a_name} and {b_name} had a furious row near {}.", place_name_at(a_pos))
             } else if feel_a == Feeling::Better && feel_b == Feeling::Better {
                 format!("{a_name} confronted {b_name}, and they cleared the air.")

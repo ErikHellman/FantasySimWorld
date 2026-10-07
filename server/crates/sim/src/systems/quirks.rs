@@ -22,7 +22,9 @@ use crate::systems::death::{detach, schedule_arrival_after_loss};
 use crate::systems::intents::fresh_act;
 use crate::systems::monsters::spawn_monster;
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::util::{Ctx, bump_epoch, first_name, is_fighting, is_present, living, living_ids, place_name_at, rel};
+use crate::util::{
+    Ctx, adult_count, bump_epoch, first_name, is_fighting, is_present, living, living_ids, place_name_at, rel,
+};
 
 /// A plan block with this note is a nap on the grass rather than the activity it names.
 pub const NAP_NOTE: &str = "a nap on the grass";
@@ -147,7 +149,7 @@ fn killing_allowed(ctx: &Ctx, id: &str) -> bool {
     let c = ctx.cr(id);
     tick - c.arrived_tick >= TICKS_PER_DAY * 2
         && tick - ctx.state.director.last_lethal_tick >= TICKS_PER_DAY * 3
-        && ctx.state.order.len() >= HUNT_MIN_POPULATION
+        && adult_count(ctx.state) >= HUNT_MIN_POPULATION
         && c.hp >= max_hp(c) * 0.7
 }
 
@@ -181,6 +183,7 @@ fn pick_prey(ctx: &mut Ctx, id: &str) -> Option<Id> {
     let candidates: Vec<(Id, f64)> = living(ctx.state)
         .filter(|o| {
             o.id != id
+                && !o.is_child()
                 && o.inside.is_none()
                 && o.convo_id.is_none()
                 && !is_fighting(o)
@@ -245,7 +248,7 @@ fn drunken_trouble(ctx: &mut Ctx, id: &str) {
     let (pos, steady) = (c.pos, c.hp >= max_hp(c) * 0.5);
     if steady && ctx.chance(0.012) {
         let near = living(ctx.state)
-            .filter(|o| o.id != id && is_present(o) && !is_fighting(o) && !o.combat.yielded)
+            .filter(|o| o.id != id && !o.is_child() && is_present(o) && !is_fighting(o) && !o.combat.yielded)
             .map(|o| (o.id.clone(), dist(o.pos, pos)))
             .filter(|(_, d)| *d <= 8.0)
             .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));

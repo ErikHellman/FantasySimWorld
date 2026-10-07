@@ -142,6 +142,47 @@ impl QuirkState {
     }
 }
 
+/// What a child is until they come of age; `None` for adults, and left out of a
+/// save, so worlds saved before children existed load unchanged.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Childhood {
+    /// the sim day they next turn a year older
+    pub next_birthday_day: i64,
+    /// 0 never up to anything .. 1 trouble every day
+    pub mischief: f64,
+    /// ids of the people who raise them; empty for a child the village raises
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parents: Vec<Id>,
+    /// today's piece of trouble, decided at dawn and carried out when the chance comes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<MischiefPlan>,
+}
+
+/// The kinds of trouble a child gets into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mischief {
+    PinchFood,
+    WanderOff,
+    PlayWithFire,
+    HideTool,
+    TallTale,
+    ThrowFood,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MischiefPlan {
+    pub kind: Mischief,
+    /// where it happens, for the kinds that need a place
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place_id: Option<String>,
+    /// the tick it was carried out, or 0 while it is still to come
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub done_tick: i64,
+}
+
 fn is_zero_tick(value: &i64) -> bool {
     *value == 0
 }
@@ -492,6 +533,8 @@ pub enum StimulusKind {
     Favour,
     /// one of the powers that watch the valley sent harm
     Wrath,
+    /// a birth, a child coming of age, or a child's mischief reported to those who raise them
+    Family,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -602,11 +645,21 @@ pub struct Character {
     pub quirks: Vec<Quirk>,
     #[serde(default, skip_serializing_if = "QuirkState::is_default")]
     pub quirk_state: QuirkState,
+    /// set while this character is a child
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child: Option<Childhood>,
+    /// tick this character and their partner became lovers (0 for couples from before it was recorded)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub partner_since_tick: i64,
 }
 
 impl Character {
     pub fn has(&self, quirk: Quirk) -> bool {
         self.quirks.contains(&quirk)
+    }
+
+    pub fn is_child(&self) -> bool {
+        self.child.is_some()
     }
 
     /// Drunk at this tick.
@@ -889,6 +942,9 @@ pub struct Director {
     /// tick the last house fire was lit; the dead leave the houses alone for a while after one
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub last_fire_tick: i64,
+    /// tick the last child was born; births are spaced out
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_birth_tick: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.

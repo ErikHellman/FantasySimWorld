@@ -22,6 +22,7 @@ use fsw_sim::state::{
     VoiceProfile as SimVoice,
 };
 use fsw_sim::systems::billboards::shown;
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::built_fraction;
 use fsw_sim::util::first_name;
 use fsw_world::places::{billboards, find_place, get_place};
@@ -65,7 +66,7 @@ pub fn character_static(c: &Character) -> EntityStatic {
         kind: EntityKind::Villager,
         name: first_name(c).to_owned(),
         look: look(&c.look),
-        max_hp: c.class_id.def().max_hp,
+        max_hp: max_hp(c),
         hostile: false,
         voice: Some(voice(&c.profile.voice)),
     }

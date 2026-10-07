@@ -8,7 +8,7 @@ use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, panic_cha
 use fsw_sim::systems::death::kill_character;
 use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, RUNG_GRUDGE, Rung, label_for, lethal_unlocked, rung_of};
-use fsw_sim::util::{Ctx, first_name, living, new_relationship, rel};
+use fsw_sim::util::{Ctx, adult_count, first_name, living, new_relationship, rel};
 use fsw_sim::{Sim, SimEvent, create_state};
 
 struct World {
@@ -185,7 +185,7 @@ fn a_brawl_ends_with_a_winner_a_loser_and_nobody_dead() {
     let blows = |w: &World| w.sim.state.chronicle.iter().any(|entry| entry.text.contains("came to blows"));
     w.run_until(6000, blows);
     assert!(blows(&w));
-    assert_eq!(w.sim.state.order.len(), 13);
+    assert_eq!(adult_count(&w.sim.state), 13);
     let state = &w.sim.state;
     let (g, d) = (&state.characters[&garrick], &state.characters[&dorn]);
     assert!(g.hp.min(d.hp) > 0.0);
@@ -236,7 +236,7 @@ fn a_killing_is_permanent_with_a_grave_and_a_village_that_does_not_forgive() {
     w.run(5);
     let state = &w.sim.state;
     assert!(!state.characters.contains_key(&aldric));
-    assert_eq!(state.order.len(), 12);
+    assert_eq!(adult_count(state), 12);
     assert_eq!(state.dead[&aldric].killer_id.as_deref(), Some(garrick.as_str()));
     assert!(state.graves.iter().any(|grave| grave.character_id == aldric));
     assert!(state.characters[&garrick].killer);
@@ -323,7 +323,7 @@ fn a_newcomer_arrives_after_a_death() {
         let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
         kill_character(&mut ctx, &victim, "lost to a fever", None);
     }
-    assert_eq!(w.sim.state.order.len(), 12);
+    assert_eq!(adult_count(&w.sim.state), 12);
     w.run_until(TICKS_PER_DAY * 4, |w| w.sim.state.director.arrivals > 0);
     assert_eq!(w.sim.state.director.arrivals, 1);
     let newcomer = living(&w.sim.state).find(|c| c.arrived_tick > 0).unwrap();

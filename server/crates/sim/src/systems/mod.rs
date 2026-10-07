@@ -3,6 +3,7 @@
 pub mod arrivals;
 pub mod billboards;
 pub mod charm;
+pub mod children;
 pub mod combat;
 pub mod conversation;
 pub mod death;

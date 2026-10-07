@@ -11,6 +11,7 @@ use fsw_sim::state::{
 use fsw_sim::systems::arrivals::arrive;
 use fsw_sim::systems::combat::{SNEAK_ATTACK_MULTIPLIER, damage_monster, panic_chance, sneak_attack};
 use fsw_sim::systems::director::tick_at;
+use fsw_sim::systems::intents::fresh_act;
 use fsw_sim::systems::quirks::{NAP_HOURS, NAP_NOTE, after_drink, fall_to_necromancy, pass_on_rumour, raise_the_dead};
 use fsw_sim::systems::relationships::{RelationDelta, adjust};
 use fsw_sim::util::{Ctx, can_fall_for, drawn_to, first_name, living, rel};
@@ -280,7 +281,8 @@ fn ulfa_falls_only_for_women_and_most_people_fall_for_her() {
     let state = &w.sim.state;
     let u = &state.characters[&ulfa];
     let mut drawn = 0;
-    let others: Vec<_> = living(state).filter(|c| c.id != ulfa).collect();
+    // Grown-ups only: nobody falls for a child, nor a child for anyone.
+    let others: Vec<_> = living(state).filter(|c| c.id != ulfa && !c.is_child()).collect();
     for c in &others {
         let expected = c.profile.pronouns == Pronouns::SheHer && drawn_to(u, c);
         assert_eq!(can_fall_for(u, c), expected, "Ulfa and {}", c.profile.name);
@@ -416,6 +418,8 @@ fn the_drunk_gets_drunk_and_starts_fights() {
     // A long bender, so the fight is a matter of when.
     w.sim.state.characters.get_mut(&dorn).unwrap().quirk_state.drunk_until_tick = tick + TICKS_PER_DAY / 3;
     w.clear_the_streets(&[&dorn, &kael]);
+    // No raid tonight: an alarm would send the drunk home to bed before he picks his fight.
+    w.sim.state.director.next_wave_tick = tick + TICKS_PER_DAY;
     let spot = get_place("green").door;
     for (id, dx) in [(&dorn, 0.0), (&kael, 1.5)] {
         let c = w.sim.state.characters.get_mut(id).unwrap();
@@ -423,6 +427,8 @@ fn the_drunk_gets_drunk_and_starts_fights() {
         c.inside = None;
         c.asleep = false;
         c.intent = Some(Intent::new(IntentAction::Wait { minutes: 600.0 }, IntentSource::Routine));
+        // A fresh clock, or the wait is measured from whatever they were doing before and ends at once.
+        c.act = fresh_act(tick);
     }
     w.run_until(TICKS_PER_DAY / 3, |w| {
         w.sim.state.characters[&dorn]

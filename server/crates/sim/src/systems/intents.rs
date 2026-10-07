@@ -22,7 +22,7 @@ use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::viewer_events::pray;
-use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, set_anim};
+use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
 /// Close enough to strike from behind.
@@ -32,6 +32,8 @@ const GIVE_REACH: f64 = 2.3;
 const ROUGH_SLEEP_PENALTY: f64 = 0.1;
 const STROLL_STOPS: [&str; 8] =
     ["green", "tavern", "market", "smithy", "chapel", "training_yard", "docks", "west_road"];
+/// Where the children play.
+const PLAY_SPOTS: [&str; 3] = ["green", "docks", "farm"];
 
 pub fn fresh_act(tick: i64) -> Act {
     Act {
@@ -185,6 +187,22 @@ fn stroll_goal(ctx: &mut Ctx) -> Vec2 {
     nearest_walkable(vec2(x, z), 6).unwrap_or(stop.door)
 }
 
+/// A spot to play at: near one of the play spots, close to the other children if any are out.
+fn play_goal(ctx: &mut Ctx, id: &str) -> Vec2 {
+    let playmate = children(ctx.state)
+        .find(|o| {
+            o.id != id && o.inside.is_none() && o.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Play))
+        })
+        .map(|o| o.pos);
+    let centre = match playmate {
+        Some(pos) if ctx.chance(0.6) => pos,
+        _ => get_place(PLAY_SPOTS[ctx.pick_index(PLAY_SPOTS.len())]).door,
+    };
+    let x = centre.x + ctx.range(-4.0, 4.0);
+    let z = centre.z + ctx.range(-4.0, 4.0);
+    nearest_walkable(vec2(x, z), 6).unwrap_or(centre)
+}
+
 fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Option<String>, minutes: Option<f64>) {
     let tick = ctx.tick();
     let def = activity(activity_id);
@@ -236,8 +254,8 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             }
             return;
         }
-        if activity_id == ActivityId::Stroll {
-            let goal = stroll_goal(ctx);
+        if activity_id == ActivityId::Stroll || activity_id == ActivityId::Play {
+            let goal = if activity_id == ActivityId::Play { play_goal(ctx, id) } else { stroll_goal(ctx) };
             let c = ctx.c(id);
             c.act.until_tick = tick + minutes_to_ticks(minutes);
             if !travel_to(tick, c, goal) {
@@ -290,18 +308,23 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             set_anim(c, def.anim, true);
             return;
         }
-        if activity_id == ActivityId::Stroll {
+        if activity_id == ActivityId::Stroll || activity_id == ActivityId::Play {
+            let playing = activity_id == ActivityId::Play;
             let c = ctx.c(id);
-            set_anim(c, AnimId::Idle, false);
-            if tick >= c.act.until_tick {
-                finish(ctx, id, "You finished your stroll.");
-            } else if c.act.dest.is_some() {
-                // Arrived at a stop: linger a moment before wandering on.
+            if c.act.dest.is_some() {
+                // Arrived at a stop: linger a moment before wandering on (a child cheers and runs about).
+                set_anim(c, if playing { def.anim } else { AnimId::Idle }, true);
                 c.act.dest = None;
-                let linger = ctx.range(3.0, 8.0);
+                let linger = if playing { ctx.range(6.0, 14.0) } else { ctx.range(3.0, 8.0) };
                 ctx.c(id).act.repath_tick = tick + seconds_to_ticks(linger);
-            } else if tick >= c.act.repath_tick {
-                let goal = stroll_goal(ctx);
+            } else if !playing {
+                set_anim(c, AnimId::Idle, false);
+            }
+            let c = ctx.c(id);
+            if tick >= c.act.until_tick {
+                finish(ctx, id, if playing { "You finished playing." } else { "You finished your stroll." });
+            } else if c.act.dest.is_none() && tick >= c.act.repath_tick {
+                let goal = if playing { play_goal(ctx, id) } else { stroll_goal(ctx) };
                 if !travel_to(tick, ctx.c(id), goal) {
                     finish(ctx, id, "You finished your stroll.");
                 }
@@ -328,6 +351,8 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         c.act.until_tick = tick + minutes_to_ticks(minutes);
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
+        // A child drawn small would sit below the seat, so they sit on the ground beside it.
+        let anim = if c.is_child() && anim == AnimId::SitChair { AnimId::SitFloor } else { anim };
         set_anim(c, anim, true);
         if activity_id == ActivityId::Pray {
             pray(ctx, id);

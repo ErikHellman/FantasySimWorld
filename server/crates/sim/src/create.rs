@@ -40,8 +40,9 @@ pub fn create_state(seed: u32) -> SimState {
             watch_day: 0,
             death_ticks: Vec::new(),
             arrivals: 0,
-            population_target: founders.len(),
+            population_target: founders.iter().filter(|entry| entry.child.is_none()).count(),
             last_fire_tick: 0,
+            last_birth_tick: 0,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
@@ -59,6 +60,21 @@ pub fn create_state(seed: u32) -> SimState {
         state.order.push(id.clone());
         by_key.insert(&entry.key, id.clone());
         cast_ids.push(id);
+    }
+
+    // A child knows who raises them; the authored keys become ids now that everyone has one.
+    for entry in founders {
+        let Some(child) = &entry.child else { continue };
+        let parents: Vec<Id> = child
+            .parents
+            .iter()
+            .map(|key| {
+                by_key.get(key.as_str()).unwrap_or_else(|| panic!("{}: unknown parent {key}", entry.key)).clone()
+            })
+            .collect();
+        if let Some(childhood) = &mut state.characters[&by_key[entry.key.as_str()]].child {
+            childhood.parents = parents;
+        }
     }
 
     // Everyone in a village this small knows everyone, at least a little.
@@ -101,6 +117,10 @@ pub fn create_state(seed: u32) -> SimState {
 pub fn refresh_authored(state: &mut SimState) {
     for c in state.characters.values_mut() {
         let Some(entry) = authored(&c.profile.name) else { continue };
+        // A child who has grown up is no longer the person the cast describes.
+        if entry.child.is_some() && !c.is_child() {
+            continue;
+        }
         let written = &entry.profile;
         c.quirks = entry.quirks.clone();
         c.profile.secret = written.secret.clone();

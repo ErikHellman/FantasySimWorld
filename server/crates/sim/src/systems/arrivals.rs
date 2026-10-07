@@ -7,15 +7,16 @@ use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
 use crate::data::cast::{CastEntry, by_key, newcomers};
+use crate::data::children::{BIRTHDAY_DAYS, CHILD_HOBBIES, CHILD_HP_FRACTION, child_look};
 use crate::data::classes::ClassId;
 use crate::events::SimEvent;
 use crate::state::{
-    Character, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource, Inventory, Look,
-    MemoryKind, Needs, PlanSource, Profile, Pronouns, Quirk, QuirkState, SimState, StimulusKind, VoiceProfile,
+    Character, Childhood, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource, Inventory,
+    Look, MemoryKind, Needs, PlanSource, Profile, Pronouns, Quirk, QuirkState, SimState, StimulusKind, VoiceProfile,
 };
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
-use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
+use crate::util::{Ctx, adults, first_name, living, living_ids, new_relationship, rel};
 
 pub(crate) const FIRST_NAMES: [&str; 15] = [
     "Edda", "Bram", "Wren", "Osric", "Tamsin", "Hale", "Ysolt", "Garnet", "Perrin", "Linnea", "Cade", "Marta", "Jory",
@@ -67,7 +68,8 @@ pub fn free_home(state: &SimState) -> String {
         if state.houses.contains_key(&home.id) {
             continue;
         }
-        let residents = living(state).filter(|c| c.home_id == home.id).count();
+        // Children share their parents' home and take no bed of their own.
+        let residents = adults(state).filter(|c| c.home_id == home.id).count();
         let free = home.beds as f64 - residents as f64;
         if free > best_free {
             best_free = free;
@@ -81,6 +83,7 @@ pub fn free_home(state: &SimState) -> String {
 pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) -> Character {
     let def = entry.class_id.def();
     let home = get_place(home_id);
+    let look = entry.child.as_ref().map(|_| child_look(entry.class_id));
     let rng = &mut state.rng;
     let x = home.door.x + fsw_core::rng::range(rng, -1.5, 1.5);
     let z = home.door.z + fsw_core::rng::range(rng, -0.5, 1.5);
@@ -97,21 +100,34 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         id,
         profile: entry.profile.clone(),
         class_id: entry.class_id,
-        look: Look {
-            model: entry.model.clone().unwrap_or_else(|| def.model.into()),
-            texture: entry.texture.clone(),
-            hide: entry.hide.clone().unwrap_or_default(),
-            main_hand: entry.main_hand.clone().unwrap_or_else(|| def.main_hand.map(str::to_owned)),
-            off_hand: entry.off_hand.clone().unwrap_or_else(|| def.off_hand.map(str::to_owned)),
+        // A child is drawn small, bare-headed and empty-handed, and has no job.
+        look: match look {
+            Some(look) => Look {
+                model: entry.model.clone().unwrap_or_else(|| look.model.into()),
+                texture: entry.texture.clone(),
+                hide: entry.hide.clone().unwrap_or_else(|| look.hide.iter().map(|&part| part.to_owned()).collect()),
+                main_hand: None,
+                off_hand: None,
+            },
+            None => Look {
+                model: entry.model.clone().unwrap_or_else(|| def.model.into()),
+                texture: entry.texture.clone(),
+                hide: entry.hide.clone().unwrap_or_default(),
+                main_hand: entry.main_hand.clone().unwrap_or_else(|| def.main_hand.map(str::to_owned)),
+                off_hand: entry.off_hand.clone().unwrap_or_else(|| def.off_hand.map(str::to_owned)),
+            },
         },
         home_id: home_id.to_owned(),
-        jobs: entry.jobs.clone().unwrap_or_else(|| def.jobs.to_vec()),
-        hobbies: entry.hobbies.clone().unwrap_or_else(|| def.hobbies.to_vec()),
+        jobs: if look.is_some() { Vec::new() } else { entry.jobs.clone().unwrap_or_else(|| def.jobs.to_vec()) },
+        hobbies: match look {
+            Some(_) => entry.hobbies.clone().unwrap_or_else(|| CHILD_HOBBIES.to_vec()),
+            None => entry.hobbies.clone().unwrap_or_else(|| def.hobbies.to_vec()),
+        },
         arrived_tick: 0,
         pos,
         facing: home.facing,
         moving: false,
-        hp: def.max_hp,
+        hp: if look.is_some() { def.max_hp * CHILD_HP_FRACTION } else { def.max_hp },
         needs,
         inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0 },
         plan: Vec::new(),
@@ -158,6 +174,13 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         boards_read: Default::default(),
         quirks: entry.quirks.clone(),
         quirk_state: QuirkState::default(),
+        child: entry.child.as_ref().map(|child| Childhood {
+            next_birthday_day: 1 + BIRTHDAY_DAYS,
+            mischief: child.mischief,
+            parents: Vec::new(), // the caller knows the ids
+            plan: None,
+        }),
+        partner_since_tick: 0,
     }
 }
 

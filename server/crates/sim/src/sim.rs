@@ -14,6 +14,7 @@ use crate::state::{
     SimState,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::children::daily_children;
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
@@ -45,6 +46,10 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
                 return get_monster(ctx.state, Some(target_id)).is_some();
             }
             if target_id == id || !ctx.alive(target_id) {
+                return false;
+            }
+            // Nobody raises a hand to a child, and no child to anyone.
+            if ctx.cr(id).is_child() || ctx.cr(target_id).is_child() {
                 return false;
             }
             // Being attacked always allows fighting back; starting it needs the ladder.
@@ -130,6 +135,15 @@ fn apply_plan(ctx: &mut Ctx, id: &str, blocks: Vec<PlanBlock>, thought: Option<S
     valid.sort_by(|a, b| a.hour.partial_cmp(&b.hour).unwrap_or(std::cmp::Ordering::Equal));
     if valid.len() < 2 {
         return;
+    }
+    // A child has no trade: a block that names one becomes play.
+    if ctx.cr(id).is_child() {
+        for block in &mut valid {
+            if !ActivityId::CHILD_OFFERED.contains(&block.activity) {
+                block.activity = ActivityId::Play;
+                block.place_id = None;
+            }
+        }
     }
     // Everyone sleeps: a plan that forgets to is given a bedtime.
     if !valid.iter().any(|block| block.activity == ActivityId::Sleep) {
@@ -286,6 +300,7 @@ impl Sim {
 
         if ctx.time.day != previous_day {
             daily_relationships(&mut ctx);
+            daily_children(&mut ctx);
             let day = ctx.time.day;
             ctx.emit(SimEvent::NewDay { day });
             ctx.emit(SimEvent::SavePoint { reason: "new day".into() });

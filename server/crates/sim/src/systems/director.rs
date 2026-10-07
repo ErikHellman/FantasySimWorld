@@ -9,7 +9,7 @@ use fsw_world::places::{ActivityId, get_place};
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind};
 use crate::systems::arrivals::arrive;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
-use crate::util::{Ctx, first_name, join_names, living};
+use crate::util::{Ctx, adult_count, first_name, join_names, living};
 
 const MAX_WAVE: i64 = 7;
 
@@ -27,7 +27,7 @@ fn recent_deaths(ctx: &Ctx, days: i64) -> usize {
 
 fn spawn_wave(ctx: &mut Ctx) {
     let (day, hour) = (ctx.time.day, ctx.time.hour);
-    let alive = ctx.state.order.len() as i64;
+    let alive = adult_count(ctx.state) as i64;
     let night = if hour < 12.0 { day - 1 } else { day };
     let mut size = 2 + alive / 5 + (night / 4).min(2);
     if night == 1 {
@@ -152,7 +152,7 @@ pub fn update_director(ctx: &mut Ctx) {
         schedule_next_wave(ctx, dark);
     }
 
-    if ctx.state.order.len() < ctx.state.director.population_target
+    if adult_count(ctx.state) < ctx.state.director.population_target
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
     {

@@ -154,7 +154,7 @@ pub fn update_perception(ctx: &mut Ctx) {
                 .filter(|o| o.id != c.id && o.inside.is_none() && o.intent.as_ref().is_some_and(|i| i.is_fight()))
                 .filter(|o| dist(o.pos, c.pos) < 20.0)
                 .count();
-            if on_watch || stands_ground(c, monsters_near, allies_near, house_burning) {
+            if !c.is_child() && (on_watch || stands_ground(c, monsters_near, allies_near, house_burning)) {
                 start_fight(ctx, id, &seen.id, FightMode::Monster, IntentSource::Reflex, None);
             } else {
                 start_flee(ctx, id, IntentSource::Reflex);
@@ -165,7 +165,7 @@ pub fn update_perception(ctx: &mut Ctx) {
         if !alarm || is_fighting(c) {
             continue;
         }
-        let responder = c.profile.bravery >= RESPONDER_BRAVERY && c.hp > max_hp(c) * 0.4;
+        let responder = !c.is_child() && c.profile.bravery >= RESPONDER_BRAVERY && c.hp > max_hp(c) * 0.4;
         if responder {
             let Some(target) = nearest_monster(&monsters, c, ALARM_RANGE).cloned() else { continue };
             let c = ctx.c(id);
