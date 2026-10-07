@@ -356,18 +356,8 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 code { background: rgba(0, 0, 0, 0.3); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .graves li { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .billboard-row .row + .row { margin-top: 6px; }
-.dialog.shop { width: min(520px, 100%); }
-.shop-status { margin: 8px 0; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); }
-.shop-group h3 { margin: 14px 0 0; }
-.shop-group > p { margin: 2px 0 6px; }
-.shop-offers { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.shop-offers li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.shop-what { display: grid; min-width: 0; }
-.shop-offers button { flex: none; min-width: 72px; font-weight: 700; }
-.pill.credits { border-color: var(--accent); }
 .pill.guest { color: inherit; text-decoration: none; border-color: var(--accent); }
 .chat-guest { margin: 6px 0 0; font-size: 12.5px; }
-.chat-event { font-style: normal; color: var(--accent); }
 .dialog.help { width: min(640px, 100%); line-height: 1.45; }
 .dialog.help > p { margin: 6px 0 8px; }
 .controls { display: grid; grid-template-columns: 200px 1fr; gap: 6px 14px; margin: 0; align-items: baseline; }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
-  AllowlistEntry, AuthAttempt, Billboard, BillboardTone, CreditViewer, HealthReport, LlmSettingsView, Role,
+  AllowlistEntry, AuthAttempt, Billboard, BillboardTone, HealthReport, LlmSettingsView, Role,
 } from '../generated/api';
 import { api } from '../net/api';
-import { actions, creditsOn, ui } from './store';
+import { actions, ui } from './store';
 
 const SPEEDS = [
   { value: 0, label: 'Paused' },
@@ -209,56 +209,6 @@ const REFUSALS: Record<string, string> = {
   no_email: 'the provider gave no e-mail',
 };
 
-/** Giving credits to the people who have the world open right now, one at a time or all at once. */
-function CreditsSection() {
-  const [viewers, setViewers] = useState<CreditViewer[]>([]);
-  const [amount, setAmount] = useState(50);
-  const [message, setMessage] = useState('');
-  const reload = (): void => {
-    api.admin.creditViewers().then(setViewers, (error) => setMessage(errorText(error)));
-  };
-  useEffect(reload, []);
-  const valid = Number.isInteger(amount) && amount >= 1 && amount <= 10_000;
-  const give = (name: string | null): void => {
-    api.admin.grantCredits({ name, amount }).then((now) => {
-      setViewers(now);
-      setMessage(`Gave ${amount} credits to ${name ?? 'everyone here'}.`);
-    }, (error) => setMessage(errorText(error)));
-  };
-
-  return (
-    <>
-      <h3>Credits</h3>
-      <p class="muted">
-        Everyone with the world open. A gift may take someone past the cap that watching stops at, and the chat says it
-        was given. People without an account lose their credits when they have been away for an hour.
-      </p>
-      <div class="row">
-        <label>
-          Amount{' '}
-          <input type="number" min={1} max={10000} value={amount} style={{ maxWidth: '90px' }} onInput={(event) => setAmount(Number(event.currentTarget.value))} />
-        </label>
-        <span class="test-result" />
-        <button onClick={() => give(null)} disabled={!valid || viewers.length === 0}>Give to everyone</button>
-        <button onClick={reload}>Refresh</button>
-      </div>
-      <ul class="graves">
-        {viewers.map((viewer) => (
-          <li key={viewer.name} class="row">
-            <strong>{viewer.name}</strong>
-            <span class={`badge ${viewer.watching ? 'good' : ''}`}>{viewer.watching ? 'watching' : 'away'}</span>
-            {!viewer.account && <span class="muted">no account</span>}
-            <span class="test-result">✦ {viewer.balance}</span>
-            <button onClick={() => give(viewer.name)} disabled={!valid}>Give</button>
-          </li>
-        ))}
-      </ul>
-      {viewers.length === 0 && <p class="muted">Nobody has the world open.</p>}
-      {message && <p class="test-result">{message}</p>}
-    </>
-  );
-}
-
 function AccessSection() {
   const [list, setList] = useState<AllowlistEntry[]>([]);
   const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
@@ -337,7 +287,6 @@ export function AdminPanel() {
         <h2>Admin</h2>
         <WorldSection />
         <BillboardsSection />
-        {creditsOn() && <CreditsSection />}
         <LlmSection />
         <AccessSection />
         <footer>

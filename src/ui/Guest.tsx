@@ -20,7 +20,7 @@ export function useGuestTimeLeft(): string | null {
 export function GuestPill() {
   const left = useGuestTimeLeft();
   return (
-    <a class="pill guest" href={signInHref()} title="Watching as a guest. Sign in to stay longer, chat and earn credits.">
+    <a class="pill guest" href={signInHref()} title="Watching as a guest. Sign in to stay longer and chat.">
       ⏳ Guest, {left}
     </a>
   );
@@ -31,7 +31,7 @@ export function GuestNote() {
   const left = useGuestTimeLeft();
   return (
     <p class="muted small-text">
-      Watching as a guest, {left}. <a href={signInHref()}>Sign in</a> to stay longer, chat and earn credits.
+      Watching as a guest, {left}. <a href={signInHref()}>Sign in</a> to stay longer and chat.
     </p>
   );
 }

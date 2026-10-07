@@ -7,7 +7,7 @@ Guidance for coding agents (and people) working in this repository. [README.md](
 One shared village runs on a Rust server; browsers only watch it.
 
 - `server/` is a Cargo workspace and owns everything that changes: the simulation (`fsw-sim`), the language-model brain (`fsw-brain`), the SQLite store, sign-in and the event stream (`fsw-server`). `fsw-core` and `fsw-world` hold the maths and the static world.
-- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves. Viewers reach the world only by spending credits (`POST /api/credits/buy`), which the server checks and turns into a `Command`.
+- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves. Nothing a viewer does changes the world.
 - Every type that crosses the wire is a Rust struct in `server/crates/server/src/api/wire.rs`, exported to `src/generated/api.ts`.
 - The TypeScript simulation and brain the Rust port was checked against live only at the `ts-sim-reference` tag. Comments in the crates that name `src/sim/…`, `src/brain/…` or `tools/…` files that no longer exist refer to that tag. Do not bring those folders back to `src/`.
 
@@ -51,7 +51,7 @@ Fixtures from the TypeScript reference that cannot be regenerated on this branch
 - **The world exists twice.** `src/world` (TypeScript, for terrain, scenery and the camera) and `server/crates/world` (Rust, for the sim) must describe the same map. A layout change goes into both, then `bun tools/dump-world.ts` regenerates the golden fixtures and `cargo test` must pass. The client compares the server's `hello.worldHash` with its own and warns when they differ.
 - **Wire changes start in Rust.** Change `wire.rs`, run `export-api`, then update the client. Bump `PROTOCOL_VERSION` in `wire.rs` for a change older clients cannot read.
 - **The database schema only grows.** Add a new numbered migration in `server/crates/server/src/store/migrations.rs`; never edit one that has shipped.
-- **Guests only watch.** Anyone may watch as a guest for 15 minutes without signing in (`server/crates/server/src/guests.rs`). A new `/api` route goes into the `members` group in `api/router.rs`, which answers 403 to guests, unless watching needs it; guests never get a `ChatKey`, so they have no chat and no credits.
+- **Guests only watch.** Anyone may watch as a guest for 15 minutes without signing in (`server/crates/server/src/guests.rs`). A new `/api` route goes into the `members` group in `api/router.rs`, which answers 403 to guests, unless watching needs it; guests never get a `ChatKey`, so they have no chat.
 - **Security defaults stay safe.** `AUTH_MODE=off` must keep refusing non-loopback addresses and origins; mutating routes keep the CSRF check (JSON bodies, `Origin` equal to `PUBLIC_ORIGIN`); `TRUST_PROXY` stays opt-in.
 - **Sound licences**: only CC0, public domain or CC BY (credited in `public/audio/CREDITS.md`). No share-alike or non-commercial sounds.
 - **3D models** come from the KayKit collection (CC0), processed by `pnpm assets` into `public/assets/`.

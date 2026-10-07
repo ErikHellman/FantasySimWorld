@@ -6,7 +6,7 @@ The server has three modes:
 - `AUTH_MODE=token` (the default): one shared secret in `AUTH_TOKEN` (16+ characters). Whoever opens `/auth/token` and types it gets a cookie and is an admin. Good for local work and a first deployment.
 - `AUTH_MODE=oidc`: people sign in with an account they already have (Google, Apple, Microsoft, LinkedIn, GitHub or Discord), and only e-mail addresses on the allowlist get in.
 
-With `token` and `oidc`, people who do not sign in may also watch as guests: a few at a time, for 15 minutes, without chat or credits (see [Guests](#guests) below).
+With `token` and `oidc`, people who do not sign in may also watch as guests: a few at a time, for 15 minutes, without chat (see [Guests](#guests) below).
 
 This page is about the last one. Set `PUBLIC_ORIGIN` to the address people type (for example `https://village.example.com`). Every provider sends people back to a redirect URI built from it, and the URI you register with the provider must match it exactly: same scheme, host, port and path, and no trailing slash.
 
@@ -67,7 +67,7 @@ The sign-in pages are rate-limited per address. Behind a proxy that sets `Fly-Cl
 
 ## Guests
 
-`POST /auth/guest` hands out a guest seat: a pass in an HttpOnly cookie (`__Host-guest` over https, `guest` over http) that lasts 15 minutes and lets its holder into the routes that only watch (`/api/stream`, `/api/me`, `/api/watch`, `/api/characters/…`, `/api/chronicle` and `/api/logout`). Everything else under `/api` answers `403` to a guest, and the chat and credits treat them as having no identity at all.
+`POST /auth/guest` hands out a guest seat: a pass in an HttpOnly cookie (`__Host-guest` over https, `guest` over http) that lasts 15 minutes and lets its holder into the routes that only watch (`/api/stream`, `/api/me`, `/api/watch`, `/api/characters/…`, `/api/chronicle` and `/api/logout`). Everything else under `/api` answers `403` to a guest, and the chat treats them as having no identity at all.
 
 - How many guests may watch at once is `GUEST_STREAMS`, fixed when the server is built (25 by default, `0` turns guests off). See the [README](../README.md#guests).
 - When the seats are full, the answer is a ticket and a place in line instead of a cookie. The page asks again with the ticket once a minute; an earlier ask gets `429` with `Retry-After`, and the place is kept.

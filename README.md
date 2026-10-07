@@ -27,7 +27,7 @@ Not yet done or not yet tried:
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
 - **Sign-in with real accounts**: every provider is tested against fakes only ([docs/sign-in.md](docs/sign-in.md) links a guide per provider, with the console steps and the check).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
-- **Later**: spoken lines (text to speech; the seam is in place), viewers acting on the world, orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
+- **Later**: spoken lines (text to speech; the seam is in place), orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
 
 ## What you need
 
@@ -70,12 +70,12 @@ set -a; . ./.env; set +a
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
-- The ✦ pill in the top bar shows your credits and opens what they buy (see [Credits](#credits)). A guest sees ⏳ and the time they have left instead.
+- A guest sees ⏳ and the time they have left in the top bar.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
-The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, gifts of credits to the people watching, the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
+The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
 
 ### Server settings
 
@@ -92,8 +92,6 @@ All settings come from environment variables, read at start:
 | `STATIC_DIR` | `dist` | The web build the server serves |
 | `DATA_DIR` | `data` | Where `world.db` and its backups live |
 | `INITIAL_SPEED` | `1` | Speed of a new world: `0` (paused), `1`, `2` or `4` |
-| `CREDITS_PER_MINUTE` | `2` | Credits a viewer earns for a minute of watching with the tab in front; `0` turns credits off |
-| `CREDITS_CAP` | `400` | The most credits watching and prayer can build up |
 | `TRUST_PROXY` | `false` | Take the client's address from `Fly-Client-IP` / `X-Forwarded-For`; only behind a proxy that sets them |
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
@@ -185,7 +183,7 @@ People who have not signed in can still look in on the village for a while. The 
 - **Seats.** At most `GUEST_STREAMS` guests (25 unless the server was built with another number) watch at once. A guest's seat is a cookie that the browser's tabs share; it holds one stream, and a newer tab takes it over from an older one.
 - **Fifteen minutes.** A visit lasts 15 minutes from the moment the seat is given, however often the page reconnects. Then the page goes back to the login page, which says the time is up. Watching again means asking for a new seat.
 - **The line.** When every seat is taken, the login page shows the guest's place in line and asks again once a minute; the server refuses asks that come sooner. A seat that comes free goes to whoever is first in line. Closing the page gives up the place after three minutes, and closing the world gives up the seat after one.
-- **Only watching.** Guests are anonymous. They can look around, follow villagers and read the chat, but cannot write in it, and have no credits: they neither earn nor spend them, and gifts and prayers never reach them. The server enforces all of this; the routes for chat, credits and admin answer `403` to a guest.
+- **Only watching.** Guests are anonymous. They can look around, follow villagers and read the chat, but cannot write in it. The server enforces this; the routes for chat and admin answer `403` to a guest.
 - **Leaving.** Settings has a **Leave** button, which gives the seat to the next person straight away.
 - The seats and the line live in memory; a restart empties them.
 
@@ -200,19 +198,6 @@ Everyone watching shares a chat along the bottom of the screen. It can be expand
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
 - Each person may send about one message a second, in bursts of up to five.
 - Every message passes through `filter` in [server/crates/server/src/chat.rs](server/crates/server/src/chat.rs) before anyone sees it. It allows everything for now; it is where moderation goes.
-
-## Credits
-
-People watching earn credits and spend them on things that happen in the village.
-
-- **Earning.** A browser tab that is on screen and has the focus tells the server so every 30 seconds, and each report that arrives on time earns half a minute's worth (`CREDITS_PER_MINUTE`, 2 by default, up to `CREDITS_CAP`). A hidden or unfocused tab earns nothing, and neither do extra tabs or reports sent faster: the server counts at most one every 25 seconds per person. A new account starts with 10.
-- **Spending.** The ✦ pill opens the list. Gifts (food 5, a healing potion 8, a small gift 10) go into the pack of the villager you have selected. One of the dead (20 to 50) rises where your view is centred, whatever the hour, and crumbles after three hours of the village's day. A feast (80) and a healing (100) are for everyone. A raid (150) and a necromancer (250) come from the graveyard. The server refuses, and takes nothing for, what cannot happen: a full pack, a spot nothing can stand on, too many of the dead abroad already, a paused world. One person may buy three things in a row, then one every five seconds.
-- **The villagers know who did it.** To them you are one of the powers that watch the valley, known by your chat name. The chat and the chronicle say what you did; villagers remember it, thank you or plead with you on the spot, pray to you at the chapel and the shrine, and with a language model connected they speak of you in their own words. A new chat name is a new power to them. Names end up in saves and exports with the rest of the chronicle.
-- **Prayer pays.** When three different villagers have spoken your name in one day of the village, you earn 15 credits, once that day, whether or not you are watching.
-- **Gifts from an admin.** The admin panel lists everyone with the world open, with their balance and whether their tab is in front, and gives credits to one of them or to all. A gift may go past the cap, and the chat says it was given.
-- **Guests** have no credits (see [Guests](#guests)).
-- **Where it is kept.** With provider sign-in the balance belongs to the account and lives in the database, with a record of each purchase kept for 90 days. With token sign-in or sign-in off there are no accounts, so each tab has its own balance, in memory, gone after an hour away or a server restart.
-- The offers and their prices are the `OFFERS` table in [server/crates/server/src/credits.rs](server/crates/server/src/credits.rs); what each does in the village is in [server/crates/sim/src/systems/viewer_events.rs](server/crates/sim/src/systems/viewer_events.rs).
 
 ## Sound
 

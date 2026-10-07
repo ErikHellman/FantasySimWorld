@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, CreditOffer, CreditsState, Grave, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Utterance,
 } from '../generated/api';
@@ -41,7 +41,7 @@ const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
 export type Sheet = 'none' | 'villagers' | 'feed' | 'chat' | 'character' | 'menu';
 
 /** A window over the whole HUD: settings, help and the like. */
-export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech' | 'shop';
+export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech';
 
 /** What this browser remembers about the chat. */
 export interface ChatSettings {
@@ -98,8 +98,6 @@ export const ui = {
   chatView: signal<ChatView>('collapsed'),
   /** messages that arrived while the chat was not open */
   chatUnread: signal(0),
-  /** this viewer's credits and what they buy; null until the server says, and `perMinute` 0 when credits are off */
-  credits: signal<CreditsState | null>(null),
   /** the screen is phone-sized and gets the phone layout (see layout.ts) */
   mobile: signal(false),
   sheet: signal<Sheet>('none'),
@@ -108,7 +106,7 @@ export const ui = {
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
-/** Watching without signing in: no chat, no credits, and only for a while. */
+/** Watching without signing in: no chat, and only for a while. */
 export const isGuest = (): boolean => ui.me.value?.role === 'guest';
 
 /** How long a guest has left, in words: whole minutes rounded up, so the last minute reads as such. */
@@ -127,8 +125,6 @@ export interface UiActions {
   sendChat(text: string): Promise<void>;
   /** resolves to the name as the server stored it */
   renameChat(name: string): Promise<string>;
-  /** spends credits on `offer`, aimed at the selected villager or where the camera looks; rejects with an `HttpError` the shop shows */
-  buy(offer: CreditOffer): Promise<void>;
 }
 
 export const actions: UiActions = {
@@ -138,7 +134,6 @@ export const actions: UiActions = {
   applyAudio: () => {},
   sendChat: () => Promise.resolve(),
   renameChat: (name) => Promise.resolve(name),
-  buy: () => Promise.resolve(),
 };
 
 let voiceId = 0;
@@ -213,21 +208,6 @@ export function addChat(message: ChatMessage): void {
   ui.chat.value = [...ui.chat.value, message].slice(-CHAT_KEPT);
   // Comings and goings are there to read, not to call anyone back to the chat.
   if (message.kind === 'say' && !chatIsOpen()) ui.chatUnread.value++;
-}
-
-/** Whether credits are on and known, so the pill and the shop have something to show. */
-export const creditsOn = (): boolean => !isGuest() && (ui.credits.value?.perMinute ?? 0) > 0;
-
-export function setBalance(balance: number): void {
-  const credits = ui.credits.value;
-  if (credits && credits.balance !== balance) ui.credits.value = { ...credits, balance };
-}
-
-/** Why `offer` cannot be bought right now, or null when it can. */
-export function offerBlocked(offer: CreditOffer, balance: number, selectedId: string | null): string | null {
-  if (offer.target === 'character' && !selectedId) return 'Select a villager first.';
-  if (balance < offer.cost) return `You need ${offer.cost - balance} more.`;
-  return null;
 }
 
 /** Whether the chat's history is on screen: the chat sheet on a phone, the expanded strip on a wider screen. */

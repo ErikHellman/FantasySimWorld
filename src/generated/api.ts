@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -388,7 +388,7 @@ commands: Array<string>, };
 /**
  * What a line in the chat is.
  */
-export type ChatKind = "say" | "join" | "leave" | "event";
+export type ChatKind = "say" | "join" | "leave";
 
 /**
  * One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
@@ -452,108 +452,6 @@ export type ChatRename = {
  * random per tab, as in `?viewer=` on the stream
  */
 viewer: string, name: string, };
-
-/**
- * What an offer needs from the viewer who buys it.
- */
-export type CreditTarget = "none" | "character" | "point";
-
-/**
- * How the shop groups its offers.
- */
-export type CreditGroup = "gift" | "monster" | "blessing" | "threat";
-
-/**
- * One thing credits can buy.
- */
-export type CreditOffer = { 
-/**
- * what `POST /api/credits/buy` takes as `offer`
- */
-id: string, name: string, description: string, cost: number, target: CreditTarget, group: CreditGroup, };
-
-/**
- * `GET /api/credits?viewer=<tab>`: this viewer's credits and what they buy.
- */
-export type CreditsState = { balance: number, 
-/**
- * watching and prayer earn nothing past this
- */
-cap: number, 
-/**
- * credits for a minute of watching with the tab in front; 0 when credits are off
- */
-perMinute: number, 
-/**
- * seconds between the reports of watching the server expects (`POST /api/presence`)
- */
-beatSeconds: number, 
-/**
- * cheapest first within each group; empty when credits are off
- */
-offers: Array<CreditOffer>, };
-
-/**
- * The answer to `POST /api/presence` and `POST /api/credits/buy`: what the viewer has now.
- */
-export type CreditsBalance = { balance: number, };
-
-/**
- * `POST /api/presence`: this tab is in front and being watched. Sent every
- * [`CreditsState::beat_seconds`] while that is true; each one that arrives on time earns credits.
- */
-export type PresenceRequest = { 
-/**
- * random per tab, as in `?viewer=` on the stream
- */
-viewer: string, };
-
-/**
- * `POST /api/credits/buy`
- */
-export type BuyRequest = { 
-/**
- * random per tab, as in `?viewer=` on the stream
- */
-viewer: string, 
-/**
- * a [`CreditOffer::id`]
- */
-offer: string, 
-/**
- * for a [`CreditTarget::Character`] offer
- */
-characterId: string | null, 
-/**
- * for a [`CreditTarget::Point`] offer: world units
- */
-x: number | null, z: number | null, };
-
-/**
- * One row of `GET /api/admin/credits`: someone with the world open right now.
- */
-export type CreditViewer = { 
-/**
- * their chat name, which is also what `POST /api/admin/credits/grant` takes
- */
-name: string, balance: number, 
-/**
- * signed in with an account, so the balance is kept; false for a tab's balance held in memory
- */
-account: boolean, 
-/**
- * their tab is in front and reporting, so they are earning
- */
-watching: boolean, };
-
-/**
- * `POST /api/admin/credits/grant`: gives credits to someone with the world open, or to all of them.
- */
-export type CreditGrant = { 
-/**
- * a [`CreditViewer::name`]; `null` for everyone with the world open
- */
-name: string | null, amount: number, };
 
 /**
  * `POST /api/watch`: which character's `detail` this viewer (one tab) receives.

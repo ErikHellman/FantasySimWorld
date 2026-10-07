@@ -6,5 +6,4 @@ pub mod billboards;
 pub mod cast;
 pub mod classes;
 pub mod monsters;
-pub mod prayers;
 pub mod smalltalk;

@@ -90,8 +90,8 @@ function History({ messages, me }: { messages: readonly ChatMessage[]; me: strin
         ) : (
           <li key={message.id} class="chat-line">
             <span class="chat-time">{timeOf(message.at)}</span>
-            <span class={message.kind === 'event' ? 'chat-notice chat-event' : 'chat-notice'}>
-              <b>{message.author}</b> {message.kind === 'event' ? message.text : message.kind === 'join' ? 'joined' : 'left'}
+            <span class="chat-notice">
+              <b>{message.author}</b> {message.kind === 'join' ? 'joined' : 'left'}
             </span>
           </li>
         ),

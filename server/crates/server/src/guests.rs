@@ -7,8 +7,8 @@
 //! front of the line, not to whoever happens to ask first. Everything here lives in memory: guests
 //! are anonymous, and a restart simply empties the seats and the line.
 //!
-//! Guests may only watch. They have no chat key (so no chat and no credits, which also keeps them
-//! out of gifts and prayer payouts), and the routes for those answer 403.
+//! Guests may only watch. They have no chat key (so no chat), and the routes for taking part
+//! answer 403.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

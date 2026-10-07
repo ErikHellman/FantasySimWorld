@@ -33,7 +33,7 @@ pub async fn require_viewer(State(app): State<Arc<AppState>>, mut request: Reque
     }
 }
 
-/// For the `/api` routes beyond watching (chat, credits, admin): 403 for guests. Runs inside
+/// For the `/api` routes beyond watching (chat, admin): 403 for guests. Runs inside
 /// [`require_viewer`].
 pub async fn members_only(request: Request, next: Next) -> Response {
     match request.extensions().get::<Viewer>() {

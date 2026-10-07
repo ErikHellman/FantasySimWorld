@@ -210,11 +210,6 @@ pub struct Config {
     pub embed: EmbedSettings,
     /// `EMBED_API_KEY`: the embedding endpoint's key, if it needs one (masked in `Debug`)
     pub embed_api_key: ApiKey,
-    /// `CREDITS_PER_MINUTE`: what a viewer earns for a minute of watching with the tab in front;
-    /// default 2, and 0 turns credits off altogether
-    pub credits_per_minute: u32,
-    /// `CREDITS_CAP`: the most credits watching and prayer can build up; default 400
-    pub credits_cap: u32,
     /// How many guests may watch without signing in, and for how long. Not read from the
     /// environment at start: the seats are `GUEST_STREAMS` when the server is built (see `guests`).
     pub guests: GuestLimits,
@@ -294,15 +289,6 @@ impl Config {
 
         let llm = llm_from(&get)?;
         let embed = embed_from(&get)?;
-        let whole = |name: &str, default: u32, range: std::ops::RangeInclusive<u32>| match get(name) {
-            None => Ok(default),
-            Some(text) => match text.parse::<u32>() {
-                Ok(value) if range.contains(&value) => Ok(value),
-                _ => Err(format!("{name} must be a number from {} to {}, got {text:?}", range.start(), range.end())),
-            },
-        };
-        let credits_per_minute = whole("CREDITS_PER_MINUTE", 2, 0..=600)?;
-        let credits_cap = whole("CREDITS_CAP", 400, 1..=1_000_000)?;
 
         Ok(Self {
             bind,
@@ -318,8 +304,6 @@ impl Config {
             llm_api_key: ApiKey::new(get("LLM_API_KEY").unwrap_or("")),
             embed,
             embed_api_key: ApiKey::new(get("EMBED_API_KEY").unwrap_or("")),
-            credits_per_minute,
-            credits_cap,
             guests: GuestLimits::default(),
         })
     }
@@ -515,18 +499,6 @@ mod tests {
         assert_eq!(config.initial_speed, 1);
         assert!(config.admin_emails.is_empty());
         assert!(!config.trust_proxy);
-    }
-
-    #[test]
-    fn credits_have_a_rate_and_a_cap() {
-        let with =
-            |name: &str, value: &str| Config::from_vars(vars(&[("AUTH_TOKEN", "0123456789abcdef"), (name, value)]));
-        let config = Config::from_vars(vars(&[("AUTH_TOKEN", "0123456789abcdef")])).unwrap();
-        assert_eq!((config.credits_per_minute, config.credits_cap), (2, 400));
-        assert_eq!(with("CREDITS_PER_MINUTE", "0").unwrap().credits_per_minute, 0);
-        assert_eq!(with("CREDITS_CAP", "50").unwrap().credits_cap, 50);
-        assert!(with("CREDITS_PER_MINUTE", "lots").unwrap_err().contains("CREDITS_PER_MINUTE"));
-        assert!(with("CREDITS_CAP", "0").unwrap_err().contains("CREDITS_CAP"));
     }
 
     #[test]

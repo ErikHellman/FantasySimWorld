@@ -4,11 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use fsw_core::Vec2;
-
-use crate::state::{
-    BoardNotice, BoardReaction, ConversationLine, Feeling, Id, Intent, ItemId, Map, MonsterKind, PlanBlock,
-};
+use crate::state::{BoardNotice, BoardReaction, ConversationLine, Feeling, Id, Intent, Map, PlanBlock};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,24 +21,6 @@ pub struct TuningPatch {
 pub struct RelationshipNote {
     pub id: Id,
     pub summary: String,
-}
-
-/// Something a viewer has paid for; see `systems::viewer_events`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
-pub enum ViewerEvent {
-    /// Puts one item in a villager's pack.
-    Gift { character_id: Id, item: ItemId },
-    /// Raises one of the dead (never a necromancer) at the walkable spot nearest `pos`.
-    Monster { monster: MonsterKind, pos: Vec2 },
-    /// A wave of the dead from the graveyard.
-    Raid,
-    /// A necromancer in the graveyard.
-    Necromancer,
-    /// Closes every villager's wounds.
-    Heal,
-    /// Fills every villager's belly.
-    Feast,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -112,10 +90,5 @@ pub enum Command {
         say: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thought: Option<String>,
-    },
-    /// A viewer's doing, by the name the villagers will know them by; ignored if it can no longer happen.
-    ViewerEvent {
-        by: String,
-        event: ViewerEvent,
     },
 }

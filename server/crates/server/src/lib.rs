@@ -10,7 +10,6 @@ pub mod auth;
 pub mod brain_task;
 pub mod chat;
 pub mod config;
-pub mod credits;
 pub mod digest;
 pub mod encode;
 pub mod guests;
@@ -37,8 +36,6 @@ pub struct AppState {
     pub brain: Brain,
     /// the viewers' chat (in memory: survives a new world, not a restart)
     pub chat: Arc<chat::ChatHub>,
-    /// the viewers' credits (accounts' balances are in the store; the rest is in memory)
-    pub credits: credits::CreditsHub,
     /// the guests' seats and the line for them (in memory)
     pub guests: Arc<guests::GuestHub>,
     /// cancelled on SIGTERM: streams end so the server can stop
@@ -55,7 +52,6 @@ impl AppState {
         shutdown: CancellationToken,
     ) -> Result<Arc<Self>, String> {
         let auth = Auth::new(&config)?;
-        let credits = credits::CreditsHub::new(config.credits_per_minute, config.credits_cap);
         let guests = Arc::new(guests::GuestHub::new(config.guests));
         Ok(Arc::new(Self {
             config,
@@ -67,7 +63,6 @@ impl AppState {
             auth,
             brain,
             chat: Arc::default(),
-            credits,
             guests,
             shutdown,
         }))

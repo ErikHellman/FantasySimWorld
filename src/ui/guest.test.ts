@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CreditsState, Me } from '../generated/api';
-import { creditsOn, guestTimeLeft, isGuest, ui } from './store';
+import type { Me } from '../generated/api';
+import { guestTimeLeft, isGuest, ui } from './store';
 
 const me = (role: Me['role']): Me => ({ email: '', displayName: 'Guest', role, guestSecondsLeft: role === 'guest' ? 900 : null });
-const credits: CreditsState = { balance: 10, cap: 400, perMinute: 2, beatSeconds: 30, offers: [] };
 
 afterEach(() => {
   ui.me.value = null;
-  ui.credits.value = null;
 });
 
 describe('guests', () => {
@@ -17,14 +15,6 @@ describe('guests', () => {
     expect(isGuest()).toBe(false);
     ui.me.value = me('guest');
     expect(isGuest()).toBe(true);
-  });
-
-  it('never see credits', () => {
-    ui.credits.value = credits;
-    ui.me.value = me('viewer');
-    expect(creditsOn()).toBe(true);
-    ui.me.value = me('guest');
-    expect(creditsOn()).toBe(false);
   });
 
   it('see how long they have left in whole minutes, rounded up', () => {

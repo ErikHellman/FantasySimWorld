@@ -8,7 +8,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::brain_log::{KEEP_FULL, LOG_TTL_MS};
 use super::commands::COMMANDS_TTL_MS;
-use super::credits::PURCHASES_TTL_MS;
 use super::snapshots::{expired, metas};
 use super::vectors::VECTORS_TTL_MS;
 use super::{DAY_MS, Result, Store, StoreError, db, now_ms};
@@ -34,8 +33,6 @@ pub struct PruneReport {
     pub brain_log_trimmed: usize,
     pub sessions: usize,
     pub attempts: usize,
-    /// viewers' purchases older than 90 days
-    pub purchases: usize,
     /// memory vectors unused for a week
     pub vectors: usize,
 }
@@ -64,7 +61,6 @@ impl Store {
             )?;
             report.sessions = tx.execute("DELETE FROM sessions WHERE expires_at <= ?1", [now_ms])?;
             report.attempts = tx.execute("DELETE FROM auth_attempts WHERE at < ?1", [now_ms - ATTEMPTS_TTL_MS])?;
-            report.purchases = tx.execute("DELETE FROM credit_purchases WHERE at < ?1", [now_ms - PURCHASES_TTL_MS])?;
             report.vectors = tx.execute("DELETE FROM memory_vectors WHERE used_ms < ?1", [now_ms - VECTORS_TTL_MS])?;
             tx.commit()?;
             conn.execute_batch("PRAGMA incremental_vacuum")?;
