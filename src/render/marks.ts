@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { WorldObject } from '../generated/api';
+import type { Placed, WorldObject } from '../generated/api';
 import { hashString } from '../core/rng';
 import { hexAt } from '../world/hex';
 import { cellAt } from '../world/map';
@@ -31,6 +31,10 @@ export class Marks {
   private readonly grass = new Map<string, SceneryHandle[]>();
   /** what is drawn for each object id right now */
   private readonly drawn = new Map<string, THREE.Object3D>();
+  /** things the village built, standing, by object id */
+  private readonly built = new Map<string, THREE.Object3D>();
+  /** where each built thing is, for its marks once it is pieces or ash */
+  private readonly placed = new Map<string, Placed>();
   private readonly ash: THREE.Mesh;
   private readonly pit: THREE.Object3D;
   private readonly mown: THREE.Mesh;
@@ -92,14 +96,35 @@ export class Marks {
   show(objects: ReadonlyMap<string, WorldObject>): void {
     const seen = new Set<string>();
     for (const object of objects.values()) {
-      if (object.kind !== 'prop' && object.kind !== 'ground') continue;
+      if (object.kind !== 'prop' && object.kind !== 'ground' && object.kind !== 'built') continue;
       seen.add(object.id);
       const whole = object.stage === 'whole' || object.stage === 'burning';
       if (object.kind === 'prop') {
         const handle = this.props.get(object.id);
         if (handle !== undefined) this.builder.setVisible(handle, whole);
-      } else {
+      } else if (object.kind === 'ground') {
         for (const handle of this.grass.get(object.id) ?? []) this.builder.setVisible(handle, object.stage !== 'mown');
+      } else if (object.placed) {
+        // Something the village built stands (or stood) where the server says.
+        this.placed.set(object.id, object.placed);
+        const standing = this.built.get(object.id);
+        if (whole && !standing) {
+          const model = this.assets.hasModel(object.placed.bundle, object.placed.model) ? this.assets.model(object.placed.bundle, object.placed.model).clone() : null;
+          if (model) {
+            model.position.set(object.placed.x, this.heightAt(object.placed.x, object.placed.z), object.placed.z);
+            model.rotation.y = object.placed.rotation;
+            model.scale.setScalar(object.placed.scale);
+            model.traverse((child) => {
+              const mesh = child as THREE.Mesh;
+              if (mesh.isMesh) mesh.castShadow = true;
+            });
+            this.group.add(model);
+            this.built.set(object.id, model);
+          }
+        } else if (!whole && standing) {
+          standing.removeFromParent();
+          this.built.delete(object.id);
+        }
       }
       const want = this.markFor(object);
       const have = this.drawn.get(object.id);
@@ -117,6 +142,12 @@ export class Marks {
       if (seen.has(id)) continue;
       mark.removeFromParent();
       this.drawn.delete(id);
+    }
+    for (const [id, model] of this.built) {
+      if (seen.has(id)) continue;
+      model.removeFromParent();
+      this.built.delete(id);
+      this.placed.delete(id);
     }
     for (const [id, handle] of this.props) if (!seen.has(id)) this.builder.setVisible(handle, true);
     for (const [id, handles] of this.grass) if (!seen.has(id)) for (const handle of handles) this.builder.setVisible(handle, true);
@@ -156,7 +187,8 @@ export class Marks {
       const model = scatter.models[Number(id.slice(2))];
       return model ? { x: model.x, z: model.z, rotation: model.rotation } : null;
     }
-    return null;
+    const placed = this.placed.get(id);
+    return placed ? { x: placed.x, z: placed.z, rotation: placed.rotation } : null;
   }
 
   private make(kind: string, id: string): THREE.Object3D | null {

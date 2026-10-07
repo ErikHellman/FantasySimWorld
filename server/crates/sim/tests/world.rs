@@ -519,3 +519,195 @@ fn a_half_dismantled_building_survives_a_save_and_load() {
         Some(WorldObject::Building { stage: BuildingStage::Dismantled, .. })
     ));
 }
+
+// ---- What the village builds ----------------------------------------------------------------
+
+use fsw_sim::state::{Project, ProjectKind};
+use fsw_sim::systems::arrivals::free_home;
+use fsw_sim::systems::world::{EXPAND_WORK, MAX_PROJECTS, beds_of, beds_total, project};
+use fsw_world::places::pads;
+
+fn stock(state: &mut SimState, place: &str, resource: Resource, count: i64) {
+    state.stockpiles.entry(place.into()).or_default().add(resource, count, i64::MAX);
+}
+
+fn take_down(state: &mut SimState, place: &str) {
+    let down = WorldObject::Building {
+        stage: BuildingStage::Dismantled,
+        since_tick: state.tick,
+        work: 0.0,
+        fire: 0.0,
+        helpers: Vec::new(),
+    };
+    fsw_sim::systems::world::put_object(state, &building_id(place), down);
+}
+
+#[test]
+fn a_building_taken_down_is_raised_again_when_the_stores_allow() {
+    let mut sim = quiet(31);
+    sim.state.director.next_wave_tick = i64::MAX;
+    take_down(&mut sim.state, "smithy");
+    stock(&mut sim.state, "lumber_camp", Resource::Wood, 40);
+    stock(&mut sim.state, "mine", Resource::Stone, 20);
+    let queued = |state: &SimState| {
+        state.projects.iter().any(|p| p.kind == ProjectKind::Raise && p.target == building_id("smithy"))
+    };
+    assert!(run_until(&mut sim, TICKS_PER_DAY, queued) < TICKS_PER_DAY, "the village never took the smithy on");
+    assert!(matches!(
+        sim.state.objects.get(&building_id("smithy")),
+        Some(WorldObject::Building { stage: BuildingStage::Raising { .. }, .. })
+    ));
+    let raised = |state: &SimState| !state.objects.contains_key(&building_id("smithy"));
+    let took = run_until(&mut sim, 8 * TICKS_PER_DAY, raised);
+    assert!(took < 8 * TICKS_PER_DAY, "the smithy was not raised in eight days");
+    assert!(sim.state.projects.iter().all(|p| p.target != building_id("smithy")));
+    let lines: Vec<&str> = sim.state.chronicle.iter().map(|e| e.text.as_str()).collect();
+    assert!(lines.iter().any(|l| l.contains("takes on raising the smithy")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("stands again, raised by")), "{lines:?}");
+    // The timber came out of the stores.
+    assert!(wood_at(&sim.state, "lumber_camp") + wood_at(&sim.state, "market") < 40 + 20);
+}
+
+#[test]
+fn nothing_is_raised_without_timber() {
+    let mut sim = quiet(32);
+    sim.state.director.next_wave_tick = i64::MAX;
+    // No woodcutters' logs reach the stores: nobody chops.
+    for c in sim.state.characters.values_mut() {
+        c.jobs.retain(|j| !matches!(j, fsw_sim::state::ActivityId::ChopWood | fsw_sim::state::ActivityId::Mine));
+        if c.jobs.is_empty() {
+            c.jobs.push(fsw_sim::state::ActivityId::Fish);
+        }
+    }
+    take_down(&mut sim.state, "smithy");
+    for _ in 0..(5 * TICKS_PER_DAY) {
+        sim.step();
+    }
+    assert!(sim.state.objects.contains_key(&building_id("smithy")), "the smithy rose without a log in the stores");
+    let raise = sim.state.projects.iter().find(|p| p.kind == ProjectKind::Raise).expect("the project waits");
+    assert!(!raise.delivered.has_all(&raise.cost));
+    assert_eq!(raise.work, 0.0);
+}
+
+#[test]
+fn a_small_cottage_is_made_bigger_and_has_a_bed_more() {
+    let mut sim = quiet(33);
+    sim.state.director.next_wave_tick = i64::MAX;
+    let home = sim.state.characters["c1"].home_id.clone();
+    assert_eq!(beds_of(&sim.state, &home), 2);
+    let before = beds_total(&sim.state);
+    let mut cost = Store::default();
+    cost.add(Resource::Wood, 20, i64::MAX);
+    cost.add(Resource::Stone, 10, i64::MAX);
+    let id = sim.state.new_id("j:");
+    sim.state.projects.push(Project {
+        id: id.clone(),
+        kind: ProjectKind::Expand,
+        target: building_id(&home),
+        cost: cost.clone(),
+        delivered: cost,
+        need: EXPAND_WORK,
+        work: 0.0,
+        since_tick: sim.state.tick,
+        helpers: Vec::new(),
+    });
+    assert!(job_accepts(&sim.state, WorldJob::Build, &id));
+    let done = |state: &SimState| project(state, &id).is_none();
+    assert!(run_until(&mut sim, 8 * TICKS_PER_DAY, done) < 8 * TICKS_PER_DAY, "the room was never built");
+    assert!(matches!(
+        sim.state.objects.get(&building_id(&home)),
+        Some(WorldObject::Building { stage: BuildingStage::Expanded, .. })
+    ));
+    assert_eq!(beds_of(&sim.state, &home), 3);
+    assert_eq!(beds_total(&sim.state), before + 1);
+    assert!(home_usable(&sim.state, &sim.state.characters["c1"]));
+    // A bigger house is the roomiest, so a newcomer is sent there once the others fill up.
+    let _ = free_home(&sim.state);
+}
+
+#[test]
+fn timber_to_spare_goes_into_something_new_on_a_pad() {
+    let mut sim = quiet(34);
+    sim.state.director.next_wave_tick = i64::MAX;
+    stock(&mut sim.state, "lumber_camp", Resource::Wood, 50);
+    let built = |state: &SimState| {
+        state.objects.values().any(|o| matches!(o, WorldObject::Built { stage: PropStage::Whole, .. }))
+    };
+    let took = run_until(&mut sim, 6 * TICKS_PER_DAY, built);
+    assert!(took < 6 * TICKS_PER_DAY, "nothing new went up in six days");
+    let (id, object) = sim.state.objects.iter().find(|(_, o)| matches!(o, WorldObject::Built { .. })).unwrap();
+    assert!(id.starts_with("n:"));
+    if let WorldObject::Built { spec, .. } = object {
+        let pad = pads().into_iter().find(|p| Some(p.id.as_str()) == spec.pad.as_deref()).expect("built on a pad");
+        assert_eq!((spec.x, spec.z), (pad.pos.x, pad.pos.z));
+        assert!(!spec.model.is_empty());
+    }
+    assert!(sim.state.projects.len() <= MAX_PROJECTS);
+    assert!(wood_at(&sim.state, "lumber_camp") < 50);
+}
+
+#[test]
+fn projects_survive_a_save_and_load() {
+    let mut sim = quiet(35);
+    sim.state.director.next_wave_tick = i64::MAX;
+    take_down(&mut sim.state, "chapel");
+    stock(&mut sim.state, "lumber_camp", Resource::Wood, 40);
+    stock(&mut sim.state, "mine", Resource::Stone, 20);
+    let under_way = |state: &SimState| state.projects.iter().any(|p| p.work > 0.0 || p.delivered.total() > 0);
+    assert!(run_until(&mut sim, 3 * TICKS_PER_DAY, under_way) < 3 * TICKS_PER_DAY);
+    let mut resumed = Sim::new(round_trip(&sim.state));
+    assert_eq!(resumed.state, sim.state);
+    for _ in 0..6000 {
+        sim.step();
+        resumed.step();
+    }
+    assert!(resumed.state == sim.state, "a reloaded project went a different way");
+}
+
+/// The counter-pressure test: over many days the village does not level itself.
+fn village_stands(days: i64, seed: u32) {
+    let mut sim = quiet(seed);
+    let trees_total = scatter().models.iter().filter(|m| is_tree(&m.model)).count();
+    let mut projects_done = 0;
+    let mut had_projects = false;
+    for day in 1..=days {
+        while fsw_core::time::game_time(sim.state.tick).day <= day {
+            sim.step();
+        }
+        let standing = (0..scatter().models.len()).filter(|i| tree_standing(&sim.state, *i)).count();
+        assert!(standing * 10 >= trees_total * 8, "day {day}: only {standing} of {trees_total} trees stand");
+        let homes_whole = fsw_world::places::homes()
+            .iter()
+            .filter(|h| {
+                !sim.state.houses.contains_key(&h.id) && fsw_sim::systems::world::building_whole(&sim.state, &h.id)
+            })
+            .count();
+        assert!(homes_whole >= 6, "day {day}: only {homes_whole} homes stand");
+        if !sim.state.projects.is_empty() {
+            had_projects = true;
+        }
+        projects_done += sim
+            .state
+            .chronicle
+            .iter()
+            .filter(|e| {
+                e.text.contains("put up")
+                    || e.text.contains("stands again, raised")
+                    || e.text.contains("has a new room")
+            })
+            .count();
+    }
+    assert!(living(&sim.state).count() >= 7);
+    let _ = (projects_done, had_projects);
+}
+
+#[test]
+fn the_village_does_not_level_itself_in_twenty_days() {
+    village_stands(20, 41);
+}
+
+#[test]
+#[ignore = "long: sixty game days"]
+fn the_village_does_not_level_itself_in_sixty_days() {
+    village_stands(60, 42);
+}

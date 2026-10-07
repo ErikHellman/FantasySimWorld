@@ -14,7 +14,7 @@ use crate::state::{
 };
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
-use crate::systems::world::building_whole;
+use crate::systems::world::{beds_of, building_whole};
 use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
 
 const FIRST_NAMES: [&str; 15] = [
@@ -68,7 +68,7 @@ pub fn free_home(state: &SimState) -> String {
             continue;
         }
         let residents = living(state).filter(|c| c.home_id == home.id).count();
-        let free = home.beds as f64 - residents as f64;
+        let free = beds_of(state, &home.id) as f64 - residents as f64;
         if free > best_free {
             best_free = free;
             best = home.id.clone();

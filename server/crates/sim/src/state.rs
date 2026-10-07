@@ -934,6 +934,40 @@ pub struct BuiltSpec {
     pub scale: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footprint: Option<Obstacle>,
+    /// the pad it stands on (`"{place}/{index}"`), for things built on one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad: Option<String>,
+}
+
+/// What the village is building: a building raised again, a prop put back, a home made bigger, or
+/// something new on a pad. Materials are carried to it, then hands are put to it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    /// `j:<n>`
+    pub id: String,
+    pub kind: ProjectKind,
+    /// the object worked on (`b:<place>`, `p:<place>:<index>`), or for `Construct` the pad id
+    pub target: String,
+    pub cost: Store,
+    #[serde(default, skip_serializing_if = "Store::is_empty")]
+    pub delivered: Store,
+    /// villager-minutes of work it takes, and how many have been put in
+    pub need: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub work: f64,
+    pub since_tick: i64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub helpers: Vec<Id>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectKind {
+    Raise,
+    Restore,
+    Expand,
+    Construct,
 }
 
 /// Something in the world that differs from the static map: a tree someone felled, a rock mined
@@ -1262,6 +1296,9 @@ pub struct Director {
     /// tick the last house fire was lit; the dead leave the houses alone for a while after one
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub last_fire_tick: i64,
+    /// when the village next looks over what wants building
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_project_tick: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -1323,6 +1360,9 @@ pub struct SimState {
     /// place id -> the materials kept there; see `systems::world::STOCKPILES`
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub stockpiles: IndexMap<String, Store>,
+    /// what the village is building; see [`Project`]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<Project>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,

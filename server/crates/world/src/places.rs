@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::assets::model_bounds;
 use crate::hex::{HEX_SCALE, hex, hex_center};
 pub use crate::place_defs::{
-    ActivityId, BILLBOARD_DEPTH, BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_READ_AT, BILLBOARD_WIDTH, PlaceKind,
+    ActivityId, BILLBOARD_DEPTH, BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_READ_AT, BILLBOARD_WIDTH, PadKind,
+    PlaceKind,
 };
 use crate::place_defs::{PlaceDef, place_defs};
 
@@ -47,6 +48,17 @@ pub struct Slot {
     pub facing: f64,
     pub anim: Option<&'static str>,
     pub ranged: bool,
+}
+
+/// A spot where the village may build something small, in world space.
+#[derive(Clone, Debug)]
+pub struct Pad {
+    /// `"{place}/{index}"`
+    pub id: String,
+    pub pos: Vec2,
+    /// radians, as a placed model's rotation
+    pub rotation: f64,
+    pub kinds: Vec<PadKind>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -94,6 +106,9 @@ pub struct Place {
     /// Whether `models[0]` is the place's building (the rest are props). Not part of the golden dump.
     #[serde(skip)]
     pub has_building: bool,
+    /// where the village may build small things. Not part of the golden dump.
+    #[serde(skip)]
+    pub pads: Vec<Pad>,
 }
 
 impl Place {
@@ -247,7 +262,27 @@ fn resolve(def: &PlaceDef) -> Place {
         billboards,
         obstacle_of,
         has_building: def.building.is_some(),
+        pads: def
+            .pads
+            .iter()
+            .enumerate()
+            .map(|(index, pad)| Pad {
+                id: format!("{}/{index}", def.id),
+                pos: to_world(pad.at),
+                rotation: facing + pad.rot * DEG,
+                kinds: pad.kinds.to_vec(),
+            })
+            .collect(),
     }
+}
+
+/// Every pad in the village, in place order.
+pub fn pads() -> Vec<&'static Pad> {
+    places().iter().flat_map(|place| place.pads.iter()).collect()
+}
+
+pub fn find_pad(id: &str) -> Option<&'static Pad> {
+    pads().into_iter().find(|pad| pad.id == id)
 }
 
 struct Index {

@@ -369,9 +369,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     WorldJob::parse(&job).or_else(|| JOB_ALIASES.iter().find(|(a, _)| *a == job).map(|(_, j)| *j));
                 match job {
                     None => decision.problems.push(format!("unknown job \"{}\"", shown(args.get("job")))),
-                    Some(WorldJob::Deliver | WorldJob::Build) => {
-                        decision.problems.push("that work is the village's to give".into())
-                    }
+                    Some(WorldJob::Deliver) => decision.problems.push("carrying is not chosen; it follows".into()),
                     Some(job) => match resolve_target(state, c, job, args.get("target")) {
                         Some(target) => {
                             decision.intents.push(intent(IntentAction::WorldWork { job, target, minutes: None }))
@@ -499,7 +497,18 @@ pub fn resolve_target(state: &SimState, c: &Character, job: WorldJob, value: Opt
             let id = format!("b:{}", place.id);
             targets.iter().any(|t| fits(t) && t.id == id).then_some(id)
         }
-        WorldJob::Deliver | WorldJob::Build => None,
+        WorldJob::Build => {
+            let targets = world::nearby_targets(state, c.pos, 24);
+            let builds: Vec<&world::WorkTarget> =
+                targets.iter().filter(|t| t.jobs.contains(&WorldJob::Build)).collect();
+            let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+            builds
+                .iter()
+                .find(|t| words.iter().any(|w| norm_str(&t.label).contains(w)))
+                .or(builds.first())
+                .map(|t| t.id.clone())
+        }
+        WorldJob::Deliver => None,
     }
 }
 

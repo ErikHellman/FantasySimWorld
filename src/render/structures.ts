@@ -33,6 +33,40 @@ interface Structure {
   plot: THREE.Object3D;
   rubble: THREE.Object3D;
   stacks: THREE.Object3D[];
+  /** posts and planks round the footprint while it is raised again */
+  scaffold: THREE.Object3D;
+  /** the bigger cottage a small one becomes, for homes that can grow */
+  bigger: THREE.Object3D | null;
+}
+
+/** Scaffolding: the posts and planks of a building site, from the footprint's half extents. */
+function scaffold(halfX: number, halfZ: number, height: number): THREE.Object3D {
+  const group = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x8a6239 });
+  const pale = new THREE.MeshLambertMaterial({ color: 0xb08a5a });
+  const post = new THREE.BoxGeometry(0.22, height, 0.22).translate(0, height / 2, 0);
+  const corners: [number, number][] = [[-halfX, -halfZ], [halfX, -halfZ], [-halfX, halfZ], [halfX, halfZ]];
+  for (const [x, z] of corners) {
+    const mesh = new THREE.Mesh(post, wood);
+    mesh.position.set(x, 0, z);
+    mesh.castShadow = true;
+    group.add(mesh);
+  }
+  for (const level of [height * 0.45, height * 0.9]) {
+    const alongX = new THREE.Mesh(new THREE.BoxGeometry(halfX * 2 + 0.3, 0.12, 0.5), pale);
+    alongX.position.set(0, level, -halfZ);
+    const alongX2 = alongX.clone();
+    alongX2.position.z = halfZ;
+    const alongZ = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, halfZ * 2 + 0.3), pale);
+    alongZ.position.set(-halfX, level, 0);
+    const alongZ2 = alongZ.clone();
+    alongZ2.position.x = halfX;
+    for (const mesh of [alongX, alongX2, alongZ, alongZ2]) {
+      mesh.castShadow = true;
+      group.add(mesh);
+    }
+  }
+  return group;
 }
 
 interface Flame {
@@ -110,6 +144,13 @@ export class Structures {
       plot.visible = false;
       const rubble = put(assets.model('dungeon', RUBBLE_MODEL), model.x, y, model.z, model.rotation + 0.6, 0.7);
       rubble.visible = false;
+      const box = place.obstacles[0];
+      const [halfX, halfZ] = box?.kind === 'box' ? [box.halfX, box.halfZ] : [3, 3];
+      const frame = put(scaffold(halfX, halfZ, 4.5), box?.kind === 'box' ? box.x : model.x, y, box?.kind === 'box' ? box.z : model.z, model.rotation, 1);
+      frame.visible = false;
+      const grown = model.model.replace('home_A', 'home_B');
+      const bigger = grown !== model.model && assets.hasModel('hex', grown) ? put(assets.model('hex', grown), model.x, y, model.z, model.rotation, model.scale) : null;
+      if (bigger) bigger.visible = false;
       const [sin, cos] = [Math.sin(place.facing), Math.cos(place.facing)];
       const stacks = STACKS.filter(([name]) => assets.hasModel('resource', name)).map(([name, right, forward, turn]) => {
         const x = place.origin.x + right * cos + forward * sin;
@@ -118,7 +159,7 @@ export class Structures {
         stack.visible = false;
         return stack;
       });
-      this.structures.set(place.id, { placeId: place.id, x: model.x, y, z: model.z, building, ruin, plot, rubble, stacks });
+      this.structures.set(place.id, { placeId: place.id, x: model.x, y, z: model.z, building, ruin, plot, rubble, stacks, scaffold: frame, bigger });
     }
 
     const flameGeometry = new THREE.ConeGeometry(0.5, 1.6, 6).translate(0, 0.8, 0);
@@ -160,10 +201,13 @@ export class Structures {
       const stage = object?.stage ?? 'whole';
       const ruined = house?.phase === 'ruin' || stage === 'ruin';
       const down = stage === 'dismantled' || stage === 'raising';
-      structure.building.visible = !ruined && !down;
+      const expanded = stage === 'expanded' && structure.bigger !== null;
+      structure.building.visible = !ruined && !down && !expanded;
+      if (structure.bigger) structure.bigger.visible = expanded;
       structure.ruin.visible = ruined;
       structure.plot.visible = down;
       structure.rubble.visible = stage === 'dismantled';
+      structure.scaffold.visible = stage === 'raising';
       // The timber arrives stack by stack, the last of it when the work is nearly done.
       const built = house?.phase === 'ruin' ? house.built : stage === 'raising' ? object?.progress ?? 0 : -1;
       structure.stacks.forEach((stack, index) => (stack.visible = built >= 0 && built >= (index * 100) / structure.stacks.length + 5));

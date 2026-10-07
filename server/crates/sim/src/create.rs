@@ -42,6 +42,7 @@ pub fn create_state(seed: u32) -> SimState {
             arrivals: 0,
             population_target: founders.len(),
             last_fire_tick: 0,
+            next_project_tick: 0,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
@@ -49,6 +50,7 @@ pub fn create_state(seed: u32) -> SimState {
         houses: Default::default(),
         objects: Default::default(),
         stockpiles: Default::default(),
+        projects: Vec::new(),
         nav: Default::default(),
     };
 

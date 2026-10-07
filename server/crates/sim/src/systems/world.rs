@@ -15,7 +15,7 @@ use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks, sec
 use fsw_core::{Vec2, vec2};
 use fsw_world::hex::{Hex, hex_at};
 use fsw_world::map::{HexCell, Terrain, cell_at};
-use fsw_world::places::{Obstacle, PlaceKind, find_place, get_place};
+use fsw_world::places::{Obstacle, Pad, PadKind, PlaceKind, find_pad, find_place, get_place, pads};
 use fsw_world::scatter::{is_rock, is_tree, scatter};
 
 use crate::data::activities::{ActivityKind, activity};
@@ -23,9 +23,9 @@ use crate::data::anims::AnimId;
 use crate::data::jobs::job as job_def;
 use crate::nav;
 use crate::state::{
-    ActPhase, ActivityId, BuildingStage, CARRY_CAP, Character, ChronicleKind, GroundStage, Intent, IntentAction,
-    IntentSource, MemoryKind, PropStage, Quirk, Resource, RockStage, SimState, StimulusKind, Store, TreeStage,
-    WorldJob, WorldObject,
+    ActPhase, ActivityId, BuildTarget, BuildingStage, BuiltSpec, CARRY_CAP, Character, ChronicleKind, GroundStage,
+    Intent, IntentAction, IntentSource, MemoryKind, Project, ProjectKind, PropStage, Quirk, Resource, RockStage,
+    SimState, StimulusKind, Store, TreeStage, WorldJob, WorldObject,
 };
 use crate::systems::fire;
 use crate::systems::intents::{finish, leave_building, travel, travel_to};
@@ -71,6 +71,17 @@ pub const BUILDING_WORK: f64 = 600.0;
 const BUILDING_WOOD: i64 = 5;
 const BUILDING_STONE: i64 = 2;
 pub const FARMING_REACH: f64 = 30.0;
+/// How many things the village builds at once, and what each kind of work takes.
+pub const MAX_PROJECTS: usize = 2;
+pub const RAISE_WORK: f64 = 1500.0;
+pub const RESTORE_WORK: f64 = 60.0;
+pub const EXPAND_WORK: f64 = 2400.0;
+pub const CONSTRUCT_WORK: f64 = 180.0;
+/// Something new is put up when the camp holds at least this much wood.
+const CONSTRUCT_WHEN_WOOD: i64 = 30;
+/// The village looks over what wants building at this hour each day.
+const PROJECT_HOUR: f64 = 6.5;
+
 /// Places whose things are left alone: the dead's, the ruins', and the signpost at the road's end.
 const UNTOUCHABLE_PLACES: [&str; 3] = ["graveyard", "ruins", "west_road"];
 /// Props nobody takes apart: what gives light, the well, the campfire, and what grows.
@@ -371,7 +382,7 @@ pub fn fell_tree(ctx: &mut Ctx, index: usize) -> bool {
 
 /// The stage clock: once a game minute, whatever has stood long enough moves on.
 pub fn update_world(ctx: &mut Ctx) {
-    if ctx.state.objects.is_empty() {
+    if ctx.state.objects.is_empty() && ctx.state.projects.is_empty() && ctx.state.stockpiles.is_empty() {
         return;
     }
     let tick = ctx.tick();
@@ -389,6 +400,10 @@ pub fn update_world(ctx: &mut Ctx) {
         .collect();
     for key in stale {
         ctx.state.slots.shift_remove(&key);
+    }
+    if tick >= ctx.state.director.next_project_tick && ctx.time.hour >= PROJECT_HOUR {
+        queue_projects(ctx);
+        ctx.state.director.next_project_tick = crate::systems::director::tick_at(ctx.time.day + 1, PROJECT_HOUR);
     }
     let ids: Vec<String> = ctx.state.objects.keys().cloned().collect();
     for id in ids {
@@ -445,7 +460,10 @@ pub fn job_accepts(state: &SimState, job: WorldJob, target: &str) -> bool {
     match job {
         WorldJob::Fell => scatter_index(target).is_some_and(|i| tree_standing(state, i)),
         WorldJob::Mine => scatter_index(target).is_some_and(|i| rock_whole(state, i)),
-        WorldJob::Deliver => is_stockpile(target),
+        WorldJob::Deliver => {
+            is_stockpile(target) || project(state, target).is_some_and(|p| !p.delivered.has_all(&p.cost))
+        }
+        WorldJob::Build => project(state, target).is_some_and(|p| p.delivered.has_all(&p.cost)),
         WorldJob::Dismantle => {
             destroyable(target)
                 && match place_model(target) {
@@ -472,9 +490,275 @@ pub fn job_accepts(state: &SimState, job: WorldJob, target: &str) -> bool {
                     None => target.starts_with("n:") && prop_whole(state, target),
                 }
         }
-        // Building comes later; nothing accepts it yet.
-        WorldJob::Build => false,
     }
+}
+
+/// The project an id names.
+pub fn project<'a>(state: &'a SimState, id: &str) -> Option<&'a Project> {
+    state.projects.iter().find(|p| p.id == id)
+}
+
+fn project_mut<'a>(state: &'a mut SimState, id: &str) -> Option<&'a mut Project> {
+    state.projects.iter_mut().find(|p| p.id == id)
+}
+
+/// How many beds a home has: the map's, and one more once it has been made bigger.
+pub fn beds_of(state: &SimState, place_id: &str) -> u32 {
+    let base = find_place(place_id).map_or(0, |p| p.beds);
+    match state.objects.get(&building_id(place_id)) {
+        Some(WorldObject::Building { stage: BuildingStage::Expanded, .. }) => base + 1,
+        _ => base,
+    }
+}
+
+/// Every bed in the village.
+pub fn beds_total(state: &SimState) -> u32 {
+    fsw_world::places::homes().iter().map(|home| beds_of(state, &home.id)).sum()
+}
+
+/// "raising the smithy", "putting the bench at the village green back", "making the red cottage bigger",
+/// "a fence by the red cottage": what a project is.
+pub fn project_label(project: &Project) -> String {
+    match project.kind {
+        ProjectKind::Raise => format!("raising {}", fire::site_name(&project.target)),
+        ProjectKind::Restore => format!("putting {} back", fire::site_name(&project.target)),
+        ProjectKind::Expand => format!("making {} bigger", fire::site_name(&project.target)),
+        ProjectKind::Construct => match find_pad(&project.target) {
+            Some(pad) => format!("{} by {}", pad_kind_name(pad_kind_for(project, pad)), place_name_at(pad.pos)),
+            None => "something new".to_owned(),
+        },
+    }
+}
+
+/// Which of a pad's kinds a project puts up: fixed by the project's id, so every machine agrees.
+fn pad_kind_for(project: &Project, pad: &Pad) -> PadKind {
+    pad.kinds[hash_string(&project.id) as usize % pad.kinds.len()]
+}
+
+fn pad_kind_name(kind: PadKind) -> &'static str {
+    match kind {
+        PadKind::Fence => "a fence",
+        PadKind::LogStack => "a stack of logs",
+        PadKind::Bench => "a bench",
+        PadKind::Crate => "a crate of goods",
+        PadKind::Planter => "a bed of flowers",
+    }
+}
+
+/// What a pad kind is built from and looks like: "bundle/model", scale, footprint radius (0 = walk-through).
+fn pad_kind_model(kind: PadKind, salt: u32) -> (&'static str, &'static str, f64, f64) {
+    match kind {
+        PadKind::Fence => ("custom", "fence_wood", 1.0, 0.0),
+        PadKind::LogStack => ("resource", "Wood_Log_Stack", 1.0, 0.7),
+        PadKind::Bench => ("halloween", "bench", 1.0, 0.0),
+        PadKind::Crate => {
+            const CRATES: [&str; 4] = ["crate_carrots", "crate_tomatoes", "crate_cheese", "crate_buns"];
+            ("props", CRATES[salt as usize % CRATES.len()], 1.0, 0.5)
+        }
+        PadKind::Planter => ("custom", "flowers_mixed", 1.5, 0.0),
+    }
+}
+
+fn pad_kind_cost(kind: PadKind) -> Store {
+    let mut cost = Store::default();
+    let wood = match kind {
+        PadKind::Fence => 4,
+        PadKind::LogStack => 6,
+        PadKind::Bench => 5,
+        PadKind::Crate => 4,
+        PadKind::Planter => 2,
+    };
+    cost.add(Resource::Wood, wood, i64::MAX);
+    cost
+}
+
+fn cost_of(wood: i64, stone: i64) -> Store {
+    let mut cost = Store::default();
+    cost.add(Resource::Wood, wood, i64::MAX);
+    cost.add(Resource::Stone, stone, i64::MAX);
+    cost
+}
+
+/// Whether a pad has something standing on it, or going up.
+fn pad_taken(state: &SimState, pad_id: &str) -> bool {
+    state.objects.values().any(|o| matches!(o, WorldObject::Built { spec, .. } if spec.pad.as_deref() == Some(pad_id)))
+        || state.projects.iter().any(|p| p.kind == ProjectKind::Construct && p.target == pad_id)
+}
+
+fn new_project(state: &mut SimState, kind: ProjectKind, target: String, cost: Store, need: f64) -> Project {
+    let id = state.new_id("j:");
+    Project {
+        id,
+        kind,
+        target,
+        cost,
+        delivered: Store::default(),
+        need,
+        work: 0.0,
+        since_tick: state.tick,
+        helpers: Vec::new(),
+    }
+}
+
+/// Once a day the village looks over what wants building and takes on what it can: a building to
+/// raise again first, then a prop to put back, a home to make bigger when beds are short, and
+/// something new when the camp is full of timber.
+fn queue_projects(ctx: &mut Ctx) {
+    let mut wanted: Vec<Project> = Vec::new();
+    let taken = |state: &SimState, target: &str| state.projects.iter().any(|p| p.target == target);
+    let room = |state: &SimState, wanted: &[Project]| state.projects.len() + wanted.len() < MAX_PROJECTS;
+    let ids: Vec<String> = ctx.state.objects.keys().cloned().collect();
+    for id in &ids {
+        if !room(ctx.state, &wanted) {
+            break;
+        }
+        if taken(ctx.state, id) {
+            continue;
+        }
+        if let Some(WorldObject::Building { stage: BuildingStage::Ruin | BuildingStage::Dismantled, .. }) =
+            ctx.state.objects.get(id)
+        {
+            let project = new_project(ctx.state, ProjectKind::Raise, id.clone(), cost_of(12, 6), RAISE_WORK);
+            wanted.push(project);
+        }
+    }
+    for id in &ids {
+        if !room(ctx.state, &wanted) {
+            break;
+        }
+        if taken(ctx.state, id) {
+            continue;
+        }
+        if let Some(WorldObject::Prop { stage: PropStage::Gone, .. }) = ctx.state.objects.get(id) {
+            let (place, index) = place_model(id).expect("a prop id");
+            let stone = is_stone_model(&get_place(place).models[index].model);
+            let cost = if stone { cost_of(0, 2) } else { cost_of(2, 0) };
+            let project = new_project(ctx.state, ProjectKind::Restore, id.clone(), cost, RESTORE_WORK);
+            wanted.push(project);
+        }
+    }
+    // Beds are short: the fullest small cottage is made bigger.
+    if room(ctx.state, &wanted)
+        && ctx.state.order.len() as u32 + 1 > beds_total(ctx.state)
+        && !ctx.state.projects.iter().any(|p| p.kind == ProjectKind::Expand)
+    {
+        let mut best: Option<(usize, String)> = None;
+        for home in fsw_world::places::homes() {
+            let small = home.models[0].model.contains("home_A");
+            if !small
+                || ctx.state.objects.contains_key(&building_id(&home.id))
+                || ctx.state.houses.contains_key(&home.id)
+            {
+                continue;
+            }
+            let residents = living(ctx.state).filter(|c| c.home_id == home.id).count();
+            if best.as_ref().is_none_or(|(n, _)| residents > *n) {
+                best = Some((residents, home.id.clone()));
+            }
+        }
+        if let Some((_, home)) = best {
+            let project = new_project(ctx.state, ProjectKind::Expand, building_id(&home), cost_of(20, 10), EXPAND_WORK);
+            wanted.push(project);
+        }
+    }
+    // Timber to spare: something new goes up on the first free pad.
+    if room(ctx.state, &wanted)
+        && village_store(ctx.state).get(Resource::Wood) >= CONSTRUCT_WHEN_WOOD
+        && !ctx.state.projects.iter().any(|p| p.kind == ProjectKind::Construct)
+        && let Some(pad) = pads().into_iter().find(|pad| !pad_taken(ctx.state, &pad.id))
+    {
+        let mut project =
+            new_project(ctx.state, ProjectKind::Construct, pad.id.clone(), Store::default(), CONSTRUCT_WORK);
+        project.cost = pad_kind_cost(pad_kind_for(&project, pad));
+        wanted.push(project);
+    }
+    for project in wanted {
+        // A building being raised is shown as such from the first day.
+        if project.kind == ProjectKind::Raise
+            && let Some(WorldObject::Building { since_tick, fire, helpers, .. }) =
+                ctx.state.objects.get(&project.target).cloned()
+        {
+            let raising = WorldObject::Building {
+                stage: BuildingStage::Raising { target: BuildTarget::Same },
+                since_tick,
+                work: 0.0,
+                fire,
+                helpers,
+            };
+            put_object(ctx.state, &project.target, raising);
+        }
+        ctx.chronicle(ChronicleKind::World, format!("The village takes on {}.", project_label(&project)), Vec::new());
+        ctx.state.projects.push(project);
+    }
+}
+
+/// A project is done: the building stands, the prop is back, the home is bigger, the new thing is up.
+fn complete_project(ctx: &mut Ctx, id: &str) {
+    let tick = ctx.tick();
+    let Some(index) = ctx.state.projects.iter().position(|p| p.id == id) else { return };
+    let project = ctx.state.projects.remove(index);
+    let label = project_label(&project);
+    match project.kind {
+        ProjectKind::Raise | ProjectKind::Restore => drop_object(ctx.state, &project.target),
+        ProjectKind::Expand => {
+            let bigger = WorldObject::Building {
+                stage: BuildingStage::Expanded,
+                since_tick: tick,
+                work: 0.0,
+                fire: 0.0,
+                helpers: project.helpers.clone(),
+            };
+            put_object(ctx.state, &project.target, bigger);
+        }
+        ProjectKind::Construct => {
+            if let Some(pad) = find_pad(&project.target) {
+                let kind = pad_kind_for(&project, pad);
+                let (bundle, model, scale, radius) = pad_kind_model(kind, hash_string(&project.id));
+                let footprint = (radius > 0.0).then_some(Obstacle::Circle { x: pad.pos.x, z: pad.pos.z, radius });
+                let spec = BuiltSpec {
+                    bundle: bundle.to_owned(),
+                    model: model.to_owned(),
+                    x: pad.pos.x,
+                    z: pad.pos.z,
+                    rotation: pad.rotation,
+                    scale,
+                    footprint,
+                    pad: Some(pad.id.clone()),
+                };
+                let id_new = ctx.state.new_id("n:");
+                let built =
+                    WorldObject::Built { stage: PropStage::Whole, since_tick: tick, work: 0.0, fire: 0.0, spec };
+                put_object(ctx.state, &id_new, built);
+            }
+        }
+    }
+    let helpers: Vec<String> = project.helpers.iter().filter(|h| ctx.alive(h)).cloned().collect();
+    let names = join_names(&helpers.iter().map(|h| first_name(ctx.cr(h)).to_owned()).collect::<Vec<_>>());
+    let names = if names.is_empty() { "the village".to_owned() } else { names };
+    let site = capitalised(&fire::site_name(&project.target));
+    let line = match project.kind {
+        ProjectKind::Raise => format!("{site} stands again, raised by {names}."),
+        ProjectKind::Restore => format!("{site} is back where it was, thanks to {names}."),
+        ProjectKind::Expand => format!("{site} has a new room; {names} built it."),
+        ProjectKind::Construct => format!("{} put up {label}.", capitalised(&names)),
+    };
+    ctx.chronicle(ChronicleKind::World, line, helpers.clone());
+    for h in &helpers {
+        ctx.remember(h, format!("Helped with {label}."), 5.0, MemoryKind::Event, Vec::new());
+    }
+    if matches!(project.kind, ProjectKind::Raise | ProjectKind::Expand) {
+        for id in living_ids(ctx.state) {
+            if !helpers.contains(&id) {
+                ctx.stimulate(&id, StimulusKind::Victory, format!("The village finished {label}."), 1, None);
+            }
+        }
+    }
+    ctx.emit(crate::events::SimEvent::SavePoint { reason: "built".into() });
+}
+
+fn capitalised(name: &str) -> String {
+    let mut chars = name.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
 }
 
 /// A fire site id for a `Burn` target: a home is known to the fire system by its place id.
@@ -518,6 +802,15 @@ pub fn nearby_targets(state: &SimState, pos: Vec2, limit: usize) -> Vec<WorkTarg
             let label =
                 if within.len() > 1 { format!("{what} ({} within reach)", within.len()) } else { what.to_owned() };
             targets.push(WorkTarget { id: scatter_id(*nearest), jobs: vec![job], label });
+        }
+    }
+    for project in &state.projects {
+        if job_accepts(state, WorldJob::Build, &project.id) {
+            targets.push(WorkTarget {
+                id: project.id.clone(),
+                jobs: vec![WorldJob::Build],
+                label: project_label(project),
+            });
         }
     }
     let here = ground_id(hex_at(pos.x, pos.z));
@@ -591,8 +884,17 @@ pub fn ground_near(state: &SimState, pos: Vec2, job: WorldJob) -> Option<String>
 
 /// Where a job's target stands, and how far its footprint reaches.
 fn target_spot(state: &SimState, job: WorldJob, target: &str) -> Option<(Vec2, f64)> {
-    if job == WorldJob::Deliver {
+    if job == WorldJob::Deliver && is_stockpile(target) {
         return find_place(target).map(|place| (place.door, 0.0));
+    }
+    if let Some(project) = project(state, target) {
+        return match project.kind {
+            ProjectKind::Construct => find_pad(&project.target).map(|pad| (pad.pos, 0.6)),
+            _ => match place_model(&project.target) {
+                Some((place, 0)) if get_place(place).has_building => Some((get_place(place).door, 0.0)),
+                _ => target_spot(state, WorldJob::Dismantle, &project.target),
+            },
+        };
     }
     if let Some(index) = scatter_index(target) {
         let model = scatter().models.get(index)?;
@@ -701,6 +1003,23 @@ pub fn job_for_block(state: &SimState, c: &Character, block: ActivityId, minutes
     let work = |job: WorldJob, target: String, minutes: Option<f64>| {
         Some(Intent::new(IntentAction::WorldWork { job, target, minutes }, IntentSource::Routine))
     };
+    // Every other working day a villager's hours go to what the village is building, if it can be worked:
+    // materials carried to it from the stores, or hands put to it once they are there.
+    if (i64::from(hash_string(&c.id)) + day).rem_euclid(2) == 0 {
+        for project in &state.projects {
+            if job_accepts(state, WorldJob::Build, &project.id)
+                && claims_on(state, &project.id) < job_def(WorldJob::Build).helpers
+            {
+                return work(WorldJob::Build, project.id.clone(), Some(minutes));
+            }
+            if job_accepts(state, WorldJob::Deliver, &project.id)
+                && (carries_for(&c.carried, project) || stockpile_with(state, project).is_some())
+                && claims_on(state, &project.id) < job_def(WorldJob::Deliver).helpers
+            {
+                return work(WorldJob::Deliver, project.id.clone(), None);
+            }
+        }
+    }
     if let Some((resource, _)) = c.carried.iter().next() {
         return work(WorldJob::Deliver, stockpile_for(resource).to_owned(), None);
     }
@@ -768,6 +1087,28 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
                 format!("You broke up a rock for {}.", Resource::Stone.label(stone))
             }
         }
+        WorldJob::Deliver if project(ctx.state, target).is_some() => {
+            let mut carried = std::mem::take(&mut ctx.c(id).carried);
+            let mut put = Store::default();
+            if let Some(project) = project_mut(ctx.state, target) {
+                for (resource, have) in carried.clone().iter() {
+                    let lacking = project.cost.get(resource) - project.delivered.get(resource);
+                    let moved = carried.take(resource, have.min(lacking.max(0)));
+                    project.delivered.add(resource, moved, i64::MAX);
+                    put.add(resource, moved, i64::MAX);
+                }
+                if !project.helpers.iter().any(|h| h == id) {
+                    project.helpers.push(id.to_owned());
+                }
+            }
+            ctx.c(id).carried = carried;
+            let label = project(ctx.state, target).map(project_label).unwrap_or_default();
+            if put.is_empty() {
+                format!("The work on {label} needed nothing you carried.")
+            } else {
+                format!("You brought {} for {label}.", put.describe())
+            }
+        }
         WorldJob::Deliver => {
             let mut carried = std::mem::take(&mut ctx.c(id).carried);
             let put = deposit(ctx.state, target, &mut carried);
@@ -778,6 +1119,11 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
             } else {
                 format!("You put {} down at {place}.", put.describe())
             }
+        }
+        WorldJob::Build => {
+            let label = project(ctx.state, target).map(project_label).unwrap_or_default();
+            complete_project(ctx, target);
+            format!("You finished {label}.")
         }
         WorldJob::Dismantle => dismantle(ctx, id, target),
         WorldJob::Dig => {
@@ -798,7 +1144,6 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
             fire::ignite_site(ctx, &site, Some(id));
             format!("You set fire to {}.", fire::site_name(&site))
         }
-        WorldJob::Build => "Nothing came of it.".into(),
     }
 }
 
@@ -930,12 +1275,31 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
                 finish(ctx, id, "There was nothing to be done there.");
                 return;
             }
-            if job == WorldJob::Deliver && ctx.cr(id).carried.is_empty() {
+            if job == WorldJob::Deliver && is_stockpile(target) && ctx.cr(id).carried.is_empty() {
                 finish(ctx, id, "You had nothing to carry.");
                 return;
             }
             if !claim(ctx.state, id, target, def.helpers) {
                 finish(ctx, id, "Someone was already at it.");
+                return;
+            }
+            // Carrying to a building site starts at the stockpile that has what it lacks, arms empty.
+            if job == WorldJob::Deliver
+                && let Some(project) = project(ctx.state, target).cloned()
+                && !carries_for(&ctx.cr(id).carried, &project)
+            {
+                let Some(from) = stockpile_with(ctx.state, &project) else {
+                    finish(ctx, id, "The stores have nothing the work needs.");
+                    return;
+                };
+                let Some(spot) = work_spot(ctx.state, id, WorldJob::Deliver, from) else {
+                    finish(ctx, id, "You could not get at the stores.");
+                    return;
+                };
+                let nav = ctx.state.nav.clone();
+                if !travel_to(tick, &nav, ctx.c(id), spot) {
+                    finish(ctx, id, "You could not find a way to the stores.");
+                }
                 return;
             }
             let Some(spot) = work_spot(ctx.state, id, job, target) else {
@@ -982,6 +1346,23 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
             let elapsed = tick - c.act.since_tick;
             if job == WorldJob::Deliver || job == WorldJob::Burn {
                 if tick >= c.act.until_tick {
+                    // At the stores on the way to a building site: fill the arms and set off again.
+                    if job == WorldJob::Deliver
+                        && let Some(project) = project(ctx.state, target).cloned()
+                        && !carries_for(&ctx.cr(id).carried, &project)
+                    {
+                        take_for(ctx.state, id, &project);
+                        let c = ctx.c(id);
+                        set_anim(c, AnimId::Idle, false);
+                        c.tool = None;
+                        if c.carried.is_empty() {
+                            finish(ctx, id, "The stores had nothing the work needs.");
+                            return;
+                        }
+                        // The claim is kept; the walk starts over, towards the site this time.
+                        c.act = crate::systems::intents::fresh_act(tick);
+                        return;
+                    }
                     let outcome = complete_job(ctx, id, job, target);
                     set_anim(ctx.c(id), AnimId::Idle, false);
                     finish(ctx, id, outcome);
@@ -1009,7 +1390,7 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
                 Some(total) => total,
                 None => (elapsed / TICKS_PER_GAME_MINUTE) as f64 * effort,
             };
-            let done = total >= work_needed(job, target);
+            let done = total >= work_needed(ctx.state, job, target);
             if done {
                 let outcome = complete_job(ctx, id, job, target);
                 set_anim(ctx.c(id), AnimId::Idle, false);
@@ -1022,10 +1403,50 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
 }
 
 /// Villager-minutes a job takes on this target: a building takes far more taking apart than a stool.
-pub fn work_needed(job: WorldJob, target: &str) -> f64 {
+pub fn work_needed(state: &SimState, job: WorldJob, target: &str) -> f64 {
+    if job == WorldJob::Build {
+        return project(state, target).map_or(f64::INFINITY, |p| p.need);
+    }
     match (job, place_model(target)) {
         (WorldJob::Dismantle, Some((place, 0))) if get_place(place).has_building => BUILDING_WORK,
         _ => job_def(job).work,
+    }
+}
+
+/// Whether someone's arms hold anything a project still lacks.
+fn carries_for(carried: &Store, project: &Project) -> bool {
+    carried.iter().any(|(r, _)| project.delivered.get(r) < project.cost.get(r))
+}
+
+/// The stockpile holding something a project still lacks, if any.
+fn stockpile_with(state: &SimState, project: &Project) -> Option<&'static str> {
+    for (place, _, _) in STOCKPILES.iter() {
+        let Some(store) = state.stockpiles.get(*place) else { continue };
+        if project.cost.iter().any(|(r, n)| project.delivered.get(r) < n && store.get(r) > 0) {
+            return Some(place);
+        }
+    }
+    None
+}
+
+/// Fills someone's arms from the stockpile they stand at with what a project lacks.
+fn take_for(state: &mut SimState, id: &str, project: &Project) {
+    let Some(from) = stockpile_with(state, project) else { return };
+    for (resource, need) in project.cost.iter() {
+        let lacking = need - project.delivered.get(resource);
+        if lacking <= 0 {
+            continue;
+        }
+        let room = CARRY_CAP - state.characters[id].carried.total();
+        if room <= 0 {
+            break;
+        }
+        let Some(store) = state.stockpiles.get_mut(from) else { break };
+        let taken = store.take(resource, lacking.min(room));
+        state.characters.get_mut(id).expect("the carrier").carried.add(resource, taken, i64::MAX);
+    }
+    if state.stockpiles.get(from).is_some_and(Store::is_empty) {
+        state.stockpiles.shift_remove(from);
     }
 }
 
@@ -1033,6 +1454,19 @@ pub fn work_needed(job: WorldJob, target: &str) -> f64 {
 /// `None` for a target that keeps no record (the ground).
 fn add_work(state: &mut SimState, id: &str, target: &str, effort: f64) -> Option<f64> {
     let tick = state.tick;
+    if let Some(project) = project_mut(state, target) {
+        project.work += effort;
+        if !project.helpers.iter().any(|h| h == id) {
+            project.helpers.push(id.to_owned());
+        }
+        let total = project.work;
+        // A building being raised shows the work on it.
+        let site = project.target.clone();
+        if let Some(WorldObject::Building { work, .. }) = state.objects.get_mut(&site) {
+            *work = total;
+        }
+        return Some(total);
+    }
     if let Some(object) = state.objects.get_mut(target) {
         if let Some(work) = object.work_mut() {
             *work += effort;
@@ -1093,6 +1527,10 @@ pub fn progress_of(object: &WorldObject) -> f64 {
             job_def(WorldJob::Dismantle).work
         }
         WorldObject::Building { stage: BuildingStage::Whole | BuildingStage::Expanded, .. } => BUILDING_WORK,
+        WorldObject::Building { stage: BuildingStage::Raising { target }, .. } => match target {
+            BuildTarget::Same => RAISE_WORK,
+            BuildTarget::Expand => EXPAND_WORK,
+        },
         _ => return 0.0,
     };
     (object.work() / whole).clamp(0.0, 1.0)
@@ -1135,6 +1573,9 @@ pub fn describe_target(state: &SimState, job: WorldJob, target: &str) -> String 
             }
             None => "something",
         },
+        WorldJob::Build | WorldJob::Deliver if project(state, target).is_some() => {
+            return project(state, target).map(project_label).unwrap_or_default();
+        }
         WorldJob::Build => "something",
         WorldJob::Deliver => return find_place(target).map_or("the stockpile", |p| p.name).to_owned(),
     };

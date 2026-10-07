@@ -235,8 +235,8 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
         json!({
             "job": {
                 "type": "string",
-                "enum": ["fell", "mine", "dig", "mow", "dismantle", "burn"],
-                "description": "fell: cut a tree down for wood. mine: break a rock up for stone. dig: a pit in the ground. mow: cut the grass. dismantle: take a thing or building apart for its materials. burn: set it on fire.",
+                "enum": ["fell", "mine", "dig", "mow", "dismantle", "burn", "build"],
+                "description": "fell: cut a tree down for wood. mine: break a rock up for stone. dig: a pit in the ground. mow: cut the grass. dismantle: take a thing or building apart for its materials. burn: set it on fire. build: put hands to what the village is building, once the materials are there.",
             },
             "target": { "type": "string", "description": "What to work on, as the message names it: a tree, a rock, the ground, a thing at a place, or a building." },
             "say": say(),
