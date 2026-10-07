@@ -421,3 +421,94 @@ mod growing_up {
         assert!(plan.iter().any(|b| matches!(b.activity, ActivityId::Watch | ActivityId::Train)), "{plan:?}");
     }
 }
+
+// --- Births ----------------------------------------------------------------------
+
+mod births {
+    use fsw_core::time::TICKS_PER_DAY;
+    use fsw_sim::state::RelationLabel;
+    use fsw_sim::systems::relationships::{become_lovers, break_up};
+    use fsw_sim::util::{Ctx, children, rel, rel_or_default};
+    use fsw_sim::{Sim, create_state};
+
+    use super::by_first_name;
+
+    fn run_days(sim: &mut Sim, days: i64) {
+        for _ in 0..TICKS_PER_DAY * days {
+            sim.step();
+        }
+    }
+
+    #[test]
+    fn falling_in_love_records_when_and_parting_forgets_it() {
+        let mut state = create_state(1);
+        let (mira, theron) = (by_first_name(&state, "Mira").id.clone(), by_first_name(&state, "Theron").id.clone());
+        state.tick = 500;
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut state, &mut events);
+        become_lovers(&mut ctx, &mira, &theron);
+        assert_eq!(ctx.cr(&mira).partner_since_tick, 500);
+        assert_eq!(ctx.cr(&theron).partner_since_tick, 500);
+        break_up(&mut ctx, &mira, &theron, "a test");
+        assert_eq!(ctx.cr(&mira).partner_since_tick, 0);
+        assert_eq!(ctx.cr(&theron).partner_since_tick, 0);
+    }
+
+    #[test]
+    fn lovers_long_together_have_a_child_who_knows_them_both() {
+        let mut sim = Sim::new(create_state(5));
+        // The world is nine days old and the two have been together since its first morning.
+        sim.state.tick = 9 * TICKS_PER_DAY;
+        let (mira, theron) =
+            (by_first_name(&sim.state, "Mira").id.clone(), by_first_name(&sim.state, "Theron").id.clone());
+        for (me, them) in [(&mira, &theron), (&theron, &mira)] {
+            let c = sim.state.characters.get_mut(me).unwrap();
+            c.partner_id = Some(them.clone());
+            c.partner_since_tick = 1;
+            // Fond enough that the daily reckoning does not part them.
+            let r = rel(c, them);
+            (r.affinity, r.attraction) = (70.0, 70.0);
+        }
+        let before = children(&sim.state).count();
+        let mut born_on = None;
+        for day in 1..=12 {
+            run_days(&mut sim, 1);
+            if children(&sim.state).count() > before {
+                born_on = Some(day);
+                break;
+            }
+        }
+        let day = born_on.expect("no child was born in twelve days");
+        let child = children(&sim.state).find(|c| c.arrived_tick > 0).expect("the newborn");
+        let parents = &child.child.as_ref().unwrap().parents;
+        assert!(parents.contains(&mira) && parents.contains(&theron), "{parents:?}");
+        assert_eq!(child.profile.age, 5);
+        assert!(child.look.model.starts_with("Child_"), "{}", child.look.model);
+        assert!(child.jobs.is_empty());
+        assert!(
+            child.home_id == sim.state.characters[&mira].home_id
+                || child.home_id == sim.state.characters[&theron].home_id
+        );
+        for parent in [&mira, &theron] {
+            assert_eq!(rel_or_default(child, parent).label, RelationLabel::Family);
+            assert_eq!(rel_or_default(&sim.state.characters[parent], &child.id).label, RelationLabel::Family);
+            assert!(sim.state.characters[parent].memories.iter().any(|m| m.text.contains(&child.profile.name)));
+        }
+        assert!(sim.state.chronicle.iter().any(|e| e.text.contains(&child.profile.name) && e.text.contains("child")));
+        let first_birth = sim.state.director.last_birth_tick;
+        assert!(first_birth > 0);
+        // One is enough for now: the village is full of children and births are spaced out.
+        run_days(&mut sim, 12 - day);
+        assert_eq!(sim.state.director.last_birth_tick, first_birth, "a second child was born");
+    }
+
+    #[test]
+    fn a_village_without_lovers_has_no_births() {
+        let mut sim = Sim::new(create_state(6));
+        let authored = children(&sim.state).count();
+        run_days(&mut sim, 10);
+        assert_eq!(sim.state.director.last_birth_tick, 0);
+        assert!(children(&sim.state).count() <= authored);
+        assert!(children(&sim.state).all(|c| c.arrived_tick == 0));
+    }
+}

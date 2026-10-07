@@ -110,6 +110,7 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
         let was_partner = c.partner_id.as_deref() == Some(victim_id);
         if was_partner {
             c.partner_id = None;
+            c.partner_since_tick = 0;
         }
         let r = rel(c, victim_id).clone();
         let close = was_partner || r.kin || r.affinity >= 25.0;

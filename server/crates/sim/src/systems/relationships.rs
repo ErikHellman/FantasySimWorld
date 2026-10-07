@@ -273,8 +273,12 @@ pub fn apply_conversation(
 }
 
 pub fn become_lovers(ctx: &mut Ctx, a: &str, b: &str) {
-    ctx.c(a).partner_id = Some(b.to_owned());
-    ctx.c(b).partner_id = Some(a.to_owned());
+    let tick = ctx.tick();
+    for (me, them) in [(a, b), (b, a)] {
+        let c = ctx.c(me);
+        c.partner_id = Some(them.to_owned());
+        c.partner_since_tick = tick;
+    }
     let warm = RelationDelta { affinity: 15.0, trust: 10.0, attraction: 10.0, ..Default::default() };
     adjust(ctx, a, b, warm);
     adjust(ctx, b, a, warm);
@@ -331,8 +335,11 @@ pub fn become_lovers(ctx: &mut Ctx, a: &str, b: &str) {
 }
 
 pub fn break_up(ctx: &mut Ctx, a: &str, b: &str, reason: &str) {
-    ctx.c(a).partner_id = None;
-    ctx.c(b).partner_id = None;
+    for id in [a, b] {
+        let c = ctx.c(id);
+        c.partner_id = None;
+        c.partner_since_tick = 0;
+    }
     let sour = RelationDelta { affinity: -15.0, attraction: -30.0, grievance: 12.0, ..Default::default() };
     adjust(ctx, a, b, sour);
     adjust(ctx, b, a, sour);
