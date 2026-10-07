@@ -80,6 +80,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
     let act = match &c.intent {
         Some(intent) if c.act.phase == ActPhase::Perform => match intent.action {
             IntentAction::Activity { activity, .. } => Some(activity.as_str().to_owned()),
+            IntentAction::WorldWork { job, .. } => Some(job.as_str().to_owned()),
             _ => None,
         },
         _ => None,

@@ -10,6 +10,7 @@ use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
 use crate::events::{Emote, SimEvent};
 use crate::nav::NavOverlay;
+use crate::state::CARRY_CAP;
 use crate::state::{
     Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, MemoryKind,
     MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
@@ -22,6 +23,7 @@ use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::viewer_events::pray;
+use crate::systems::world::{deliver_next, run_world_work};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
@@ -168,6 +170,13 @@ fn activity_minute(c: &mut Character, activity_id: ActivityId, minutes_done: i64
         && minutes_done % every == 0
     {
         give(c, item);
+    }
+    if let Some((resource, every)) = def.materials
+        && minutes_done > 0
+        && minutes_done % every == 0
+    {
+        let room = CARRY_CAP - c.carried.total();
+        c.carried.add(resource, 1, room);
     }
     if matches!(activity_id, ActivityId::Pray | ActivityId::Mourn) {
         for r in c.relationships.values_mut() {
@@ -448,6 +457,8 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         _ => {
             set_anim(c, AnimId::Idle, false);
             finish(ctx, id, format!("You finished {}.", def.verb));
+            // Logs and stone from a shift at the camp or the mine go to the stockpile.
+            deliver_next(ctx.c(id));
         }
     }
 }
@@ -821,6 +832,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
+            IntentAction::WorldWork { job, target, minutes } => run_world_work(ctx, &id, *job, target, *minutes),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);
                 if c.act.phase == ActPhase::Start {

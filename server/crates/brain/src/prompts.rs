@@ -382,8 +382,30 @@ fn header(state: &SimState, c: &Character) -> String {
         danger,
     ];
     lines.extend(fire_lines(state, c));
+    lines.extend(materials_lines(state, c));
     lines.extend(Some(powers_line(state)).filter(|line| !line.is_empty()));
     lines.join("\n")
+}
+
+/// What this character carries in their arms and what the village has put by, when there is any of
+/// either. Empty for a village that has gathered nothing, so older prompts read as they did.
+fn materials_lines(state: &SimState, c: &Character) -> Vec<String> {
+    let mut lines = Vec::new();
+    if !c.carried.is_empty() {
+        lines.push(format!("You are carrying {}.", c.carried.describe()));
+    }
+    let piles: Vec<String> = state
+        .stockpiles
+        .iter()
+        .filter(|(_, store)| !store.is_empty())
+        .filter_map(|(place_id, store)| {
+            find_place(place_id).map(|place| format!("{} holds {}", place.name, store.describe()))
+        })
+        .collect();
+    if !piles.is_empty() {
+        lines.push(format!("The village's stores: {}.", piles.join("; ")));
+    }
+    lines
 }
 
 /// The most powers a prompt names.

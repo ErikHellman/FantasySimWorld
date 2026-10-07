@@ -11,7 +11,7 @@ use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
     ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
-    SimState,
+    SimState, WorldJob,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
@@ -28,7 +28,7 @@ use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
 use crate::systems::viewer_events;
-use crate::systems::world::update_world;
+use crate::systems::world::{job_accepts, update_world};
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -63,6 +63,10 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Stalk { .. } => false,
         // Nor is the bucket chain: the fire itself calls people to it.
         IntentAction::FightFire { .. } => false,
+        // Carrying materials follows from gathering them; the rest needs a target that takes the job.
+        IntentAction::WorldWork { job, target, .. } => {
+            *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
+        }
     }
 }
 

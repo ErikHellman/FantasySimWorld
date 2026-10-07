@@ -20,6 +20,7 @@ use crate::systems::fire::ruin_to_rebuild;
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::quirks::{NAP_HOURS, NAP_NOTE, STUDY_NOTE};
 use crate::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, brawl_unlocked, lethal_unlocked};
+use crate::systems::world::job_for_block;
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, openness, rel, rel_or_default};
 
 const SOCIAL_RADIUS: f64 = 15.0;
@@ -335,6 +336,10 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     {
         return Some(act(ActivityId::Rebuild, Some(minutes), Some(ruin)));
     }
+    // Woodcutters fell real trees and miners break real rocks when there are any within reach.
+    if let Some(work) = job_for_block(ctx.state, ctx.cr(id), block.activity, minutes) {
+        return Some(work);
+    }
     Some(act(block.activity, Some(minutes), block.place_id))
 }
 
@@ -389,6 +394,15 @@ pub fn update_routine(ctx: &mut Ctx) {
                 if !sleeping_on && !on_duty && Some(current) != next {
                     c.act.until_tick = c.act.until_tick.min(tick);
                 }
+            }
+            // So does work in the woods or at the rocks; what is carried is still put down first.
+            if let Some(Intent { action: IntentAction::WorldWork { job, .. }, source: IntentSource::Routine, .. }) =
+                &c.intent
+                && *job != crate::state::WorldJob::Deliver
+                && c.act.phase == crate::state::ActPhase::Perform
+                && c.convo_id.is_none()
+            {
+                c.act.until_tick = c.act.until_tick.min(tick);
             }
         }
 

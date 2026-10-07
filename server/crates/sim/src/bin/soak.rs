@@ -108,6 +108,8 @@ fn main() {
             "arrivals": state.director.arrivals,
             "deaths": state.dead.iter().map(|(id, r)| json!({"id": id, "name": r.name, "day": r.day, "cause": r.cause})).collect::<Vec<Value>>(),
             "chronicleKinds": kinds,
+            "stockpiles": state.stockpiles,
+            "objects": state.objects.len(),
             "characters": living(state).map(|c| json!({
                 "id": c.id,
                 "name": c.profile.name,
@@ -118,6 +120,7 @@ fn main() {
                 "kills": c.kills,
                 "memories": c.memories.len(),
                 "inventory": c.inventory,
+                "carried": c.carried,
                 "partner": c.partner_id,
                 "labels": labels_of(&c.id),
             })).collect::<Vec<Value>>(),

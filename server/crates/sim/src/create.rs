@@ -48,6 +48,7 @@ pub fn create_state(seed: u32) -> SimState {
         powers: Default::default(),
         houses: Default::default(),
         objects: Default::default(),
+        stockpiles: Default::default(),
         nav: Default::default(),
     };
 

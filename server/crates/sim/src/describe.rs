@@ -4,9 +4,10 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
-use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState};
+use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState, WorldJob};
 use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
+use crate::systems::world::describe_target;
 use crate::util::name_of;
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
@@ -92,6 +93,14 @@ fn doing(state: &SimState, c: &Character) -> String {
             } else {
                 format!("fetching water for the fire at {name}")
             }
+        }
+        IntentAction::WorldWork { job, target, .. } => {
+            let what = describe_target(state, *job, target);
+            if *job == WorldJob::Deliver {
+                return format!("carrying {} to {what}", c.carried.describe());
+            }
+            let verb = crate::data::jobs::job(*job).verb;
+            if c.act.phase == ActPhase::Perform { format!("{verb} {what}") } else { format!("on the way to {what}") }
         }
     }
 }

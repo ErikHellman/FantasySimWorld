@@ -4,10 +4,11 @@
 use fsw_core::jsmath::{js_hypot, utf16_len, utf16_truncate};
 use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
-    PlanBlock, SimState, TalkTone,
+    PlanBlock, SimState, TalkTone, WorldJob,
 };
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
+use fsw_sim::systems::world::gather_target;
 use fsw_sim::util::{first_name, living};
 use fsw_world::places::{ActivityId, Place, places};
 use serde_json::{Map as JsonMap, Value};
@@ -333,9 +334,15 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                 None => decision.problems.push(format!("unknown place \"{}\"", shown(args.get("place")))),
             },
             "do_activity" => match resolve_doable(state, args.get("activity")) {
-                Some(activity) => {
-                    decision.intents.push(intent(IntentAction::Activity { activity, place_id: None, minutes: None }))
-                }
+                // Chopping wood and mining mean a real tree or rock when there is one within reach.
+                Some(activity) => match real_work(state, c, activity) {
+                    Some(action) => decision.intents.push(intent(action)),
+                    None => decision.intents.push(intent(IntentAction::Activity {
+                        activity,
+                        place_id: None,
+                        minutes: None,
+                    })),
+                },
                 None => decision.problems.push(format!("unknown activity \"{}\"", shown(args.get("activity")))),
             },
             "talk_to" => {
@@ -421,6 +428,18 @@ pub struct Plan {
 }
 
 /// A plan hour: a number, a numeric string, or "13:30".
+/// The world work a chosen activity stands for, when the world offers it: felling the nearest standing tree
+/// for `chop_wood`, mining the nearest whole rock for `mine`. `None` leaves the slot activity as it is.
+fn real_work(state: &SimState, c: &Character, activity: ActivityId) -> Option<IntentAction> {
+    let job = match activity {
+        ActivityId::ChopWood => WorldJob::Fell,
+        ActivityId::Mine => WorldJob::Mine,
+        _ => return None,
+    };
+    let target = gather_target(state, c.pos, job)?;
+    Some(IntentAction::WorldWork { job, target, minutes: None })
+}
+
 fn plan_hour(value: Option<&Value>) -> Option<f64> {
     match value? {
         Value::Number(n) => n.as_f64(),
@@ -579,6 +598,22 @@ mod tests {
         };
         state.houses.insert("home_1".into(), ruin);
         assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), Some(ActivityId::Rebuild));
+    }
+
+    #[test]
+    fn chopping_wood_means_a_real_tree_when_one_stands_within_reach() {
+        let state = create_state(1);
+        let me = &state.characters["c3"];
+        let decision = interpret_decision(&state, me, &[call("do_activity", json!({"activity": "chop wood"}))]);
+        match &decision.intents[0].action {
+            IntentAction::WorldWork { job: WorldJob::Fell, target, .. } => {
+                assert!(target.starts_with("s:"), "{target}");
+                assert!(fsw_sim::systems::world::job_accepts(&state, WorldJob::Fell, target));
+            }
+            other => panic!("expected felling, got {other:?}"),
+        }
+        let decision = interpret_decision(&state, me, &[call("do_activity", json!({"activity": "farm"}))]);
+        assert!(matches!(decision.intents[0].action, IntentAction::Activity { activity: ActivityId::Farm, .. }));
     }
 
     #[test]

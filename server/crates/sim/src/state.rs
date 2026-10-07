@@ -219,6 +219,111 @@ impl Inventory {
     }
 }
 
+/// Raw materials: what felling, mining and taking things apart yield, and what building costs. They
+/// are counted, not carried as items, and move between villagers' arms and the village's stockpiles.
+/// Coin, when it comes, is one more variant here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Resource {
+    Wood,
+    Stone,
+    Ore,
+}
+
+impl Resource {
+    pub const ALL: [Resource; 3] = [Self::Wood, Self::Stone, Self::Ore];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wood => "wood",
+            Self::Stone => "stone",
+            Self::Ore => "ore",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.as_str() == text)
+    }
+
+    /// "3 logs of wood", "1 block of stone", "2 lumps of ore".
+    pub fn label(self, count: i64) -> String {
+        let unit = match (self, count) {
+            (Self::Wood, 1) => "log",
+            (Self::Wood, _) => "logs",
+            (Self::Stone, 1) => "block",
+            (Self::Stone, _) => "blocks",
+            (Self::Ore, 1) => "lump",
+            (Self::Ore, _) => "lumps",
+        };
+        format!("{count} {unit} of {}", self.as_str())
+    }
+}
+
+/// A count of each material, in a villager's arms or a stockpile. Zero counts are not kept, so an
+/// empty store serialises to nothing and is left out of saves.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Store(IndexMap<Resource, i64>);
+
+impl Store {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, resource: Resource) -> i64 {
+        self.0.get(&resource).copied().unwrap_or(0)
+    }
+
+    /// Everything in it, in a fixed order.
+    pub fn iter(&self) -> impl Iterator<Item = (Resource, i64)> + '_ {
+        Resource::ALL.into_iter().filter(|&r| self.get(r) > 0).map(|r| (r, self.get(r)))
+    }
+
+    pub fn total(&self) -> i64 {
+        self.0.values().sum()
+    }
+
+    /// Adds up to `count`, no more than `room` in all; returns how many went in.
+    pub fn add(&mut self, resource: Resource, count: i64, room: i64) -> i64 {
+        let added = count.min(room).max(0);
+        if added > 0 {
+            *self.0.entry(resource).or_insert(0) += added;
+        }
+        added
+    }
+
+    /// Takes up to `count`; returns how many came out.
+    pub fn take(&mut self, resource: Resource, count: i64) -> i64 {
+        let have = self.get(resource);
+        let taken = count.min(have).max(0);
+        if taken > 0 {
+            if taken == have {
+                self.0.shift_remove(&resource);
+            } else {
+                self.0[&resource] -= taken;
+            }
+        }
+        taken
+    }
+
+    /// Whether it holds at least everything in `cost`.
+    pub fn has_all(&self, cost: &Store) -> bool {
+        cost.iter().all(|(r, n)| self.get(r) >= n)
+    }
+
+    /// "3 logs of wood and 1 block of stone".
+    pub fn describe(&self) -> String {
+        let parts: Vec<String> = self.iter().map(|(r, n)| r.label(n)).collect();
+        match parts.len() {
+            0 => "nothing".into(),
+            1 => parts[0].clone(),
+            n => format!("{} and {}", parts[..n - 1].join(", "), parts[n - 1]),
+        }
+    }
+}
+
+/// How much a villager carries in all.
+pub const CARRY_CAP: i64 = 6;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RelationLabel {
     #[serde(rename = "stranger")]
@@ -378,6 +483,51 @@ pub enum IntentAction {
     FightFire {
         place_id: String,
     },
+    /// changes the world: fells a tree, mines a rock, digs, mows, takes something apart, sets it alight,
+    /// builds, or carries materials to where they are kept. `target` is an object id, a hex id, a project
+    /// id or a stockpile's place id, as the job needs
+    WorldWork {
+        job: WorldJob,
+        target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<f64>,
+    },
+}
+
+/// Work that changes the world; see `systems::world` and `data::jobs`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldJob {
+    Fell,
+    Mine,
+    Dig,
+    Mow,
+    Dismantle,
+    Burn,
+    Build,
+    Deliver,
+}
+
+impl WorldJob {
+    pub const ALL: [WorldJob; 8] =
+        [Self::Fell, Self::Mine, Self::Dig, Self::Mow, Self::Dismantle, Self::Burn, Self::Build, Self::Deliver];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fell => "fell",
+            Self::Mine => "mine",
+            Self::Dig => "dig",
+            Self::Mow => "mow",
+            Self::Dismantle => "dismantle",
+            Self::Burn => "burn",
+            Self::Build => "build",
+            Self::Deliver => "deliver",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
 }
 
 impl IntentAction {
@@ -393,6 +543,7 @@ impl IntentAction {
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
             Self::FightFire { .. } => "fight_fire",
+            Self::WorldWork { .. } => "world_work",
         }
     }
 
@@ -555,6 +706,9 @@ pub struct Character {
     pub hp: f64,
     pub needs: Needs,
     pub inventory: Inventory,
+    /// raw materials in their arms, on the way to a stockpile or a building site
+    #[serde(default, skip_serializing_if = "Store::is_empty")]
+    pub carried: Store,
 
     pub plan: Vec<PlanBlock>,
     pub plan_day: i64,
@@ -1163,6 +1317,9 @@ pub struct SimState {
     /// what differs from the static map, by object id; see [`WorldObject`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub objects: IndexMap<String, WorldObject>,
+    /// place id -> the materials kept there; see `systems::world::STOCKPILES`
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub stockpiles: IndexMap<String, Store>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,

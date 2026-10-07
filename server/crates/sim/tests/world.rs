@@ -44,8 +44,9 @@ fn walkable_cells(state: &SimState) -> usize {
 
 #[test]
 fn an_untouched_world_keeps_the_static_grid() {
+    // The first hour of a new world: breakfast, before anyone has gone out to the woods.
     let mut sim = Sim::new(create_state(3));
-    for _ in 0..TICKS_PER_DAY {
+    for _ in 0..600 {
         sim.step();
     }
     assert!(sim.state.objects.is_empty());
@@ -139,7 +140,8 @@ fn a_stump_grows_back_into_a_tree_on_the_clock() {
     run_to(&mut sim, young_at + YOUNG_DAYS * TICKS_PER_DAY + 20);
     assert_eq!(stage(&sim.state), None, "a grown tree is the map's own again");
     assert!(tree_standing(&sim.state, tree));
-    assert!(!sim.state.nav.is_live(), "with nothing changed the static grid is back");
+    // The woodcutters have been at other trees meanwhile; only this one is checked to be whole again.
+    assert!(!sim.state.objects.contains_key(&id));
 }
 
 #[test]
@@ -194,4 +196,158 @@ fn felled_trees_survive_a_save_and_load() {
         resumed.step();
     }
     assert!(resumed.state == sim.state, "a reloaded sapling went a different way");
+}
+
+// ---- Work that changes the world: felling, mining, carrying -------------------------------------
+
+use fsw_sim::Command;
+use fsw_sim::commands::TuningPatch;
+use fsw_sim::state::{Intent, IntentAction, IntentSource, Resource, RockStage, Store, WorldJob};
+use fsw_sim::systems::world::{STOCKPILES, deposit, job_accepts, rock_whole, stockpile_for};
+use fsw_sim::util::living;
+
+fn quiet(seed: u32) -> Sim {
+    let mut sim = Sim::new(create_state(seed));
+    sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
+    sim
+}
+
+fn run_until(sim: &mut Sim, ticks: i64, until: impl Fn(&SimState) -> bool) -> i64 {
+    for i in 0..ticks {
+        if until(&sim.state) {
+            return i;
+        }
+        sim.step();
+    }
+    ticks
+}
+
+fn set_work(sim: &mut Sim, id: &str, job: WorldJob, target: &str) {
+    let epoch = sim.state.characters[id].epoch;
+    let intent = Intent::new(IntentAction::WorldWork { job, target: target.into(), minutes: None }, IntentSource::Llm);
+    sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents: vec![intent] });
+}
+
+fn wood_at(state: &SimState, place: &str) -> i64 {
+    state.stockpiles.get(place).map_or(0, |store| store.get(Resource::Wood))
+}
+
+#[test]
+fn woodcutters_fell_real_trees_and_stack_the_logs_at_the_camp() {
+    let mut sim = quiet(1);
+    let woodcutters: Vec<String> = living(&sim.state)
+        .filter(|c| c.jobs.contains(&fsw_sim::state::ActivityId::ChopWood))
+        .map(|c| c.id.clone())
+        .collect();
+    assert!(!woodcutters.is_empty());
+    let felled = |state: &SimState| state.objects.values().any(|o| matches!(o, WorldObject::Tree { .. }));
+    let took = run_until(&mut sim, TICKS_PER_DAY, felled);
+    assert!(took < TICKS_PER_DAY, "no tree came down in a day");
+    let logs_home = |state: &SimState| wood_at(state, "lumber_camp") > 0;
+    let took = run_until(&mut sim, TICKS_PER_DAY, logs_home);
+    assert!(took < TICKS_PER_DAY, "no logs reached the camp in a day");
+    // A woodcutter was at it, with an axe, on the way or at work: the status line says so.
+    let lines: Vec<String> = sim.state.chronicle.iter().map(|e| e.text.clone()).collect();
+    assert!(!lines.iter().any(|l| l.contains("felled")), "felling a tree is not chronicle news: {lines:?}");
+    for id in &woodcutters {
+        if let Some(c) = sim.state.characters.get(id) {
+            assert!(c.carried.total() <= fsw_sim::state::CARRY_CAP);
+        }
+    }
+    // Felled trees are only ever those within reach of the camp.
+    let camp = get_place("lumber_camp").origin;
+    for (id, object) in &sim.state.objects {
+        if let WorldObject::Tree { .. } = object {
+            let index = fsw_sim::systems::world::scatter_index(id).unwrap();
+            let model = &scatter().models[index];
+            assert!(dist(camp, vec2(model.x, model.z)) <= fsw_sim::systems::world::FELLING_REACH + 0.01);
+        }
+    }
+}
+
+#[test]
+fn two_at_one_tree_bring_it_down_sooner() {
+    let tree = scatter_id(trees_near("green", 30.0)[0]);
+    let time_to_fell = |workers: &[&str]| {
+        let mut sim = quiet(4);
+        sim.state.director.next_wave_tick = i64::MAX;
+        for id in workers {
+            set_work(&mut sim, id, WorldJob::Fell, &tree);
+        }
+        let down = |state: &SimState| {
+            matches!(
+                state.objects.get(&tree),
+                Some(WorldObject::Tree { stage: TreeStage::Falling | TreeStage::Stump, .. })
+            )
+        };
+        run_until(&mut sim, 6000, down)
+    };
+    let alone = time_to_fell(&["c1"]);
+    let together = time_to_fell(&["c1", "c2"]);
+    assert!(alone < 6000 && together < 6000, "{alone} {together}");
+    assert!(together < alone - 300, "two should be well ahead of one: {together} vs {alone}");
+}
+
+#[test]
+fn mining_a_rock_leaves_it_mined_out_and_the_stone_goes_to_the_mine() {
+    let mut sim = quiet(2);
+    sim.state.director.next_wave_tick = i64::MAX;
+    let mine = get_place("mine").origin;
+    let rock = scatter()
+        .models
+        .iter()
+        .enumerate()
+        .find(|(_, m)| m.model.starts_with("Rock") && dist(mine, vec2(m.x, m.z)) < 45.0)
+        .map(|(i, _)| scatter_id(i))
+        .expect("a rock near the mine");
+    assert!(rock_whole(&sim.state, fsw_sim::systems::world::scatter_index(&rock).unwrap()));
+    set_work(&mut sim, "c1", WorldJob::Mine, &rock);
+    let mined = |state: &SimState| {
+        matches!(state.objects.get(&rock), Some(WorldObject::Rock { stage: RockStage::MinedOut, .. }))
+    };
+    assert!(run_until(&mut sim, 8000, mined) < 8000);
+    assert!(!job_accepts(&sim.state, WorldJob::Mine, &rock));
+    let stone_home = |state: &SimState| state.stockpiles.get("mine").is_some_and(|s| s.get(Resource::Stone) > 0);
+    assert!(run_until(&mut sim, 4000, stone_home) < 4000, "the stone never reached the mine");
+}
+
+#[test]
+fn carrying_is_the_sims_own_doing_and_the_arms_hold_only_so_much() {
+    let mut sim = quiet(3);
+    set_work(&mut sim, "c1", WorldJob::Deliver, "lumber_camp");
+    sim.step();
+    assert!(
+        !sim.state.characters["c1"].intent.as_ref().is_some_and(|i| matches!(i.action, IntentAction::WorldWork { .. }))
+    );
+
+    let mut arms = Store::default();
+    assert_eq!(arms.add(Resource::Wood, 4, fsw_sim::state::CARRY_CAP), 4);
+    assert_eq!(arms.add(Resource::Stone, 5, fsw_sim::state::CARRY_CAP - arms.total()), 2);
+    assert_eq!(arms.total(), 6);
+    assert_eq!(arms.describe(), "4 logs of wood and 2 blocks of stone");
+    assert_eq!(arms.take(Resource::Wood, 10), 4);
+    assert_eq!(arms.get(Resource::Wood), 0);
+    assert_eq!(serde_json::to_string(&arms).unwrap(), r#"{"stone":2}"#);
+    assert_eq!(serde_json::to_string(&Store::default()).unwrap(), "{}");
+}
+
+#[test]
+fn a_full_stockpile_overflows_to_the_market() {
+    let mut state = create_state(1);
+    let (camp, _, cap) = STOCKPILES[0];
+    assert_eq!(stockpile_for(Resource::Wood), camp);
+    assert_eq!(stockpile_for(Resource::Ore), "mine");
+    let mut arms = Store::default();
+    arms.add(Resource::Wood, cap + 5, i64::MAX);
+    let put = deposit(&mut state, camp, &mut arms);
+    assert_eq!(put.get(Resource::Wood), cap + 5);
+    assert_eq!(state.stockpiles[camp].get(Resource::Wood), cap);
+    assert_eq!(state.stockpiles["market"].get(Resource::Wood), 5);
+    assert!(arms.is_empty());
+    // Stone has no place at the camp: it goes straight to the market.
+    arms.add(Resource::Stone, 2, i64::MAX);
+    deposit(&mut state, camp, &mut arms);
+    assert_eq!(state.stockpiles["market"].get(Resource::Stone), 2);
+    let json = serde_json::to_string(&state).unwrap();
+    assert!(json.contains(r#""stockpiles":{"lumber_camp":{"wood":60},"market":{"wood":5,"stone":2}}"#), "{json}");
 }

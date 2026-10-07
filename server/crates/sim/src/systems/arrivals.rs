@@ -113,6 +113,7 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         hp: def.max_hp,
         needs,
         inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0 },
+        carried: Default::default(),
         plan: Vec::new(),
         plan_day: 0,
         plan_source: PlanSource::Routine,
