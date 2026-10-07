@@ -1,0 +1,17 @@
+[package]
+name = "fsw-testing"
+description = "The hand-authored cast of the TypeScript game, for tests that need people they know by name"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+fsw-sim.workspace = true
+fsw-world.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

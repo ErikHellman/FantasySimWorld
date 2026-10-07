@@ -6,8 +6,10 @@ use fsw_core::vec2;
 use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{ActivityId, get_place};
 
+use crate::events::SimEvent;
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind};
 use crate::systems::arrivals::arrive;
+use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
 use crate::util::{Ctx, first_name, join_names, living};
 
@@ -144,6 +146,11 @@ pub fn update_director(ctx: &mut Ctx) {
         assign_watch(ctx);
     }
 
+    // A village still being settled is left in peace: no dead, no strangers on the road.
+    if ctx.state.director.founding {
+        return;
+    }
+
     if tick >= ctx.state.director.next_wave_tick {
         let dark = !(4.0..19.5).contains(&hour);
         if dark {
@@ -156,9 +163,18 @@ pub fn update_director(ctx: &mut Ctx) {
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
     {
-        arrive(ctx);
-        let wait = ctx.range(0.8, 1.6);
-        ctx.state.director.next_arrival_tick = tick + js_round(wait * TICKS_PER_DAY as f64) as i64;
+        let director = &ctx.state.director;
+        let deadline = director.newcomer_deadline_tick;
+        if director.newcomer_draft.is_some() || (deadline != 0 && tick >= deadline) {
+            arrive(ctx);
+            let wait = ctx.range(0.8, 1.6);
+            ctx.state.director.next_arrival_tick = tick + js_round(wait * TICKS_PER_DAY as f64) as i64;
+        } else if deadline == 0 {
+            // Ask the server to describe who comes; the road waits a few hours for the answer.
+            let deadline_tick = tick + minutes_to_ticks(NEWCOMER_PATIENCE_MINUTES);
+            ctx.state.director.newcomer_deadline_tick = deadline_tick;
+            ctx.emit(SimEvent::NewcomerWanted { deadline_tick });
+        }
     }
 
     if tick % 200 == 0 {

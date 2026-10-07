@@ -431,6 +431,7 @@ version = "0.1.0"
 dependencies = [
  "fsw-core",
  "fsw-sim",
+ "fsw-testing",
  "fsw-world",
  "parking_lot",
  "proptest",
@@ -460,6 +461,7 @@ dependencies = [
  "fsw-brain",
  "fsw-core",
  "fsw-sim",
+ "fsw-testing",
  "fsw-world",
  "futures-util",
  "getrandom 0.4.3",
@@ -486,8 +488,19 @@ name = "fsw-sim"
 version = "0.1.0"
 dependencies = [
  "fsw-core",
+ "fsw-testing",
  "fsw-world",
  "indexmap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fsw-testing"
+version = "0.1.0"
+dependencies = [
+ "fsw-sim",
+ "fsw-world",
  "serde",
  "serde_json",
 ]

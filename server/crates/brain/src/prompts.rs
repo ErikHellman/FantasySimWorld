@@ -1036,10 +1036,11 @@ pub fn prompt_text(prompt: &Prompt) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::{Sim, create_state};
+    use fsw_sim::Sim;
+    use fsw_testing::create_test_state;
 
     fn world() -> SimState {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         for _ in 0..600 {
             sim.step();
         }

@@ -1,6 +1,6 @@
 # Fantasy Sim World
 
-A 3D world in the KayKit style. A dozen fantasy villagers follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
+A 3D world in the KayKit style. A dozen fantasy villagers, each invented by a language model when the world begins, follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
 
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated by the server and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
@@ -14,6 +14,7 @@ The move of the simulation, the language model and all state to a Rust server wi
 The server migration is complete. The world, the language-model brain and every piece of state live in the Rust server (`server/`); the browser is a viewer that draws the server's event stream (`src/`). What works today:
 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
+- A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
@@ -25,7 +26,7 @@ Not yet done or not yet tried:
 
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
-- **Later**: spoken lines (text to speech; the seam is in place), orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
+- **Later**: spoken lines (text to speech; the seam is in place), orc raiders and large bosses, block and dodge.
 
 ## What you need
 
@@ -158,6 +159,12 @@ and start the server against it:
 cd server && LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock EMBED_BASE_URL=http://localhost:8787/v1 EMBED_MODEL=mock-embed AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 ```
 
+### Founding and newcomers
+
+A brand-new world has nobody in it. The server asks the model for one villager at a time (`create_villager`: a name nobody here has, pronouns, age, class, trade, a backstory, how they talk, traits, goals, a temper, and perhaps a secret, a quirk and a tie to someone already settled), a few requests at once, each told who has settled so far, until thirteen are here; then the first night comes. The people of the original hand-written cast are in the prompt for flavour only, and their names are refused. Viewers who join meanwhile see a dialog counting the arrivals and may look around the empty valley. When a bed is empty later, the sim asks for a newcomer the same way, with the recent dead and who misses them in the prompt, so a newcomer may come as kin or an old friend; the road waits six hours of the village's day for the answer. These requests go straight to the model, outside the brain's queue, governor, caps and decision log.
+
+Without `LLM_BASE_URL` and `LLM_MODEL`, or when the model fails three times running, the server invents the villagers itself from the lists in `server/crates/sim/src/data/names.rs`. Either way, a villager is built inside the simulation from a command, so a world replays the same from its command record. The murderous and occultist leanings of the old cast are never given to an invented villager.
+
 ### Memory by meaning
 
 Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
@@ -211,7 +218,7 @@ cd server && cargo fmt --check && cargo clippy --all-targets --locked -- -D warn
 ```
 
 - `pnpm test` covers the client's stream playback, the view of the world it builds from the stream, the world layer, the audio mood and settings, and the architecture rules (the browser never reaches the simulation, the brain or saves; three.js stays in `src/render`).
-- `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the prompts byte for byte, the brain against a fake model, the store, and the HTTP routes (the admin's token, guest seats and the line, the chat, the world's routes).
+- `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the founding of a village and its newcomers, the prompts byte for byte, the brain against a fake model, the casting against a fake model, the store, and the HTTP routes (the admin's token, guest seats and the line, the chat, the world's routes). The tests that know villagers by name use the original hand-written cast, kept in `server/crates/testing` for them.
 - `cargo test -- --ignored` adds the 200-day soak and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
 - Two committed files are written by the server and checked by its tests. In `server/`, after changing a type in `server/crates/server/src/api/wire.rs`, run `cargo run --bin export-api` (rewrites `src/generated/api.ts`); after changing the stream encoder, run `cargo run --bin export-frames` (rewrites `tests/fixtures/server-frames.json`, which the client's tests replay).
 
@@ -235,7 +242,7 @@ Other tools:
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
 | `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
-| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store) |
+| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, casting, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store), `testing` (the original cast, for tests) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
 On the server the sim depends only on `core` and `world`; the brain reads the world and talks to the sim through commands applied at tick boundaries, so a run is reproducible for a given command stream. The browser depends on `core`, `world`, `net` and `generated`, never on the sim.

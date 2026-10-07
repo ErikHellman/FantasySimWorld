@@ -14,7 +14,8 @@ use fsw_sim::state::{
     Intent, IntentAction, IntentSource, Memory, MemoryKind, SimState, Stimulus, StimulusKind, TalkTone,
 };
 use fsw_sim::util::{first_name, living};
-use fsw_sim::{Command, Sim, SimEvent, create_state};
+use fsw_sim::{Command, Sim, SimEvent};
+use fsw_testing::create_test_state;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 
@@ -77,7 +78,7 @@ fn reply(calls: Value) -> Value {
 }
 
 fn harness(responder: Responder, conversations: ConversationMode) -> Harness {
-    let mut state = create_state(30);
+    let mut state = create_test_state(30);
     // Nobody falls into talk on their own: the tests start the conversations they need, and who
     // happens to be chatting at dawn otherwise depends on the dice.
     for c in state.characters.values_mut() {

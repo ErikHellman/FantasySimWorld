@@ -8,6 +8,7 @@ pub mod conversation;
 pub mod death;
 pub mod director;
 pub mod fire;
+pub mod founding;
 pub mod intents;
 pub mod monsters;
 pub mod movement;

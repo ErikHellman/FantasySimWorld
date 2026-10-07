@@ -4,6 +4,7 @@
 use fsw_core::math2d::dist;
 use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::Command;
+use fsw_sim::Sim;
 use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::monsters::MonsterKind;
 use fsw_sim::describe::describe_activity;
@@ -17,7 +18,7 @@ use fsw_sim::systems::fire::{ignite, is_homeless};
 use fsw_sim::systems::intents::fresh_act;
 use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::util::{Ctx, living, living_ids};
-use fsw_sim::{Sim, create_state};
+use fsw_testing::create_test_state;
 use fsw_world::places::get_place;
 
 fn quiet(state: SimState) -> Sim {
@@ -29,7 +30,7 @@ fn quiet(state: SimState) -> Sim {
 
 /// One in the morning on the second night, everyone in their own bed, no watch set and no dead about.
 fn asleep_at_night(seed: u32) -> Sim {
-    let mut state = create_state(seed);
+    let mut state = create_test_state(seed);
     state.tick = tick_at(2, 1.0);
     state.director.watch_day = game_time(state.tick).day;
     state.director.next_wave_tick = i64::MAX;
@@ -232,7 +233,7 @@ fn two_villagers_cannot_save_a_house_and_its_owner_sleeps_rough() {
 
 #[test]
 fn the_village_rebuilds_a_ruin_and_its_owner_sleeps_indoors_again() {
-    let mut sim = quiet(create_state(4));
+    let mut sim = quiet(create_test_state(4));
     sim.state.director.next_wave_tick = i64::MAX;
     let resident = sim.state.order[0].clone();
     let home = sim.state.characters[&resident].home_id.clone();

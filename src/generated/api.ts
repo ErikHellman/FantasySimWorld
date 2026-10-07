@@ -282,6 +282,11 @@ export type LlmStatus = { state: LlmState, inFlight: number, queued: number, req
 export type AmbientCounts = { awake: number, eating: number, drinking: number, smithing: number, relaxing: number, };
 
 /**
+ * How far a new world's founding has come.
+ */
+export type Founding = { settled: number, total: number, };
+
+/**
  * Sent when it changes, at most once a second.
  */
 export type Status = { llm: LlmStatus, viewers: number, speed: number, 
@@ -292,7 +297,11 @@ throttled: boolean, population: number, monsters: number, alarm: boolean,
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
-part: string, ambient: AmbientCounts, };
+part: string, ambient: AmbientCounts, 
+/**
+ * the village is still being founded: how many of its founders have settled; `null` once it is
+ */
+founding: Founding | null, };
 
 export type Mood = "ok" | "fight" | "sleep" | "talk" | "hurt";
 

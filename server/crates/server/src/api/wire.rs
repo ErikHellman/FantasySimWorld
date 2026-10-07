@@ -472,6 +472,15 @@ pub struct Status {
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
     pub ambient: AmbientCounts,
+    /// the village is still being founded: how many of its founders have settled; `null` once it is
+    pub founding: Option<Founding>,
+}
+
+/// How far a new world's founding has come.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Founding {
+    pub settled: u32,
+    pub total: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -954,6 +963,7 @@ pub fn typescript() -> String {
         LlmState,
         LlmStatus,
         AmbientCounts,
+        Founding,
         Status,
         Mood,
         RosterEntry,

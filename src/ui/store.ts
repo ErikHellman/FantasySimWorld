@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, GuestEndReason, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Utterance,
 } from '../generated/api';
@@ -71,6 +71,8 @@ export const ui = {
   population: signal(0),
   monsters: signal(0),
   alarm: signal(false),
+  /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
+  founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
   selectedId: signal<string | null>(null),
   detail: signal<CharacterDetail | null>(null),
@@ -162,6 +164,7 @@ export function fromStatus(status: Status): void {
   ui.population.value = status.population;
   ui.monsters.value = status.monsters;
   ui.alarm.value = status.alarm;
+  ui.founding.value = status.founding;
 }
 
 export function addChronicle(entry: ChronicleEntry): void {

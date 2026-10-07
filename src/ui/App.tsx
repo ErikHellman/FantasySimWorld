@@ -3,6 +3,7 @@ import { AboutTechPanel } from './About';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
+import { FoundingDialog } from './Founding';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
 import { isTouchScreen } from './layout';
@@ -125,6 +126,9 @@ function StartOverlay() {
             The villagers are running on their built-in routines{isAdmin() ? '. Set LLM_BASE_URL and LLM_MODEL on the server to give them minds of their own.' : '.'}
           </p>
         )}
+        {!loading && ui.founding.value && (
+          <p class="muted small-text">The valley is being settled: {ui.founding.value.settled} of {ui.founding.value.total} villagers have arrived.</p>
+        )}
         {!loading && isAdmin() && <p class="muted small-text">You are an admin.</p>}
       </div>
     </div>
@@ -172,6 +176,7 @@ export function App() {
       {ui.panel.value === 'settings' && <SettingsPanel />}
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
+      <FoundingDialog />
       {ui.panel.value === 'graves' && <Graves />}
       {ui.panel.value === 'help' && <HelpPanel />}
       {ui.panel.value === 'tech' && <AboutTechPanel />}

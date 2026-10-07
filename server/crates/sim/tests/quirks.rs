@@ -4,17 +4,14 @@ use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::activities::{ActivityKind, activity};
-use fsw_sim::data::cast::newcomers;
-use fsw_sim::state::{
-    FightMode, Intent, IntentAction, IntentSource, Pronouns, Quirk, RelationLabel, Rumour, SaveFile, TalkTone,
-};
-use fsw_sim::systems::arrivals::arrive;
+use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, Pronouns, Quirk, RelationLabel, Rumour, TalkTone};
 use fsw_sim::systems::combat::{SNEAK_ATTACK_MULTIPLIER, damage_monster, panic_chance, sneak_attack};
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::quirks::{NAP_HOURS, NAP_NOTE, after_drink, fall_to_necromancy, pass_on_rumour, raise_the_dead};
 use fsw_sim::systems::relationships::{RelationDelta, adjust};
 use fsw_sim::util::{Ctx, can_fall_for, drawn_to, first_name, living, rel};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::{admit, create_test_state};
 use fsw_world::places::get_place;
 
 struct World {
@@ -24,7 +21,7 @@ struct World {
 
 impl World {
     fn new(seed: u32) -> Self {
-        Self { sim: Sim::new(create_state(seed)), events: Vec::new() }
+        Self { sim: Sim::new(create_test_state(seed)), events: Vec::new() }
     }
 
     fn quiet(seed: u32) -> Self {
@@ -59,11 +56,9 @@ impl World {
         result
     }
 
-    /// Brings one of the authored newcomers into the village now, out of their usual turn.
+    /// Brings one of the authored newcomers into the village now.
     fn admit(&mut self, key: &str) -> String {
-        let index = newcomers().iter().position(|entry| entry.key == key).expect(key);
-        self.sim.state.director.arrivals = index as i64;
-        self.with(arrive)
+        self.with(|ctx| admit(ctx, key))
     }
 
     /// Everyone but these goes indoors, so nobody else can see what happens.
@@ -87,18 +82,6 @@ fn the_authored_cast_carries_its_quirks() {
     assert_eq!(quirks("Vex"), vec![Quirk::Rumourmonger]);
     assert!(quirks("Aldric").is_empty());
     assert!(!w.sim.state.characters[&w.who("Elowen")].profile.secret.is_empty());
-}
-
-#[test]
-fn old_saves_learn_the_quirks_when_they_load() {
-    let text =
-        std::fs::read_to_string(format!("{}/tests/fixtures/export-day-1.json", env!("CARGO_MANIFEST_DIR"))).unwrap();
-    let save: SaveFile = serde_json::from_str(&text).unwrap();
-    assert!(save.state.characters.values().all(|c| c.quirks.is_empty()));
-    let sim = Sim::new(save.state);
-    let dorn = sim.state.characters.values().find(|c| c.profile.name == "Dorn Copperkettle").unwrap();
-    assert!(dorn.has(Quirk::Drunkard));
-    assert!(dorn.profile.traits.iter().any(|t| t == "a drunk"));
 }
 
 #[test]

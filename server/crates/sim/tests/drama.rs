@@ -3,13 +3,18 @@
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
-use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, RelationLabel, TalkTone};
+use fsw_sim::data::classes::ClassId;
+use fsw_sim::state::{
+    Bond, BondKind, FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, NewVillager, Pronouns,
+    Quirk, RelationLabel, TalkTone,
+};
 use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, max_hp, panic_chance, run_fight, start_fight};
 use fsw_sim::systems::death::kill_character;
 use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, RUNG_GRUDGE, Rung, label_for, lethal_unlocked, rung_of};
 use fsw_sim::util::{Ctx, first_name, living, new_relationship, rel};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::create_test_state;
 
 struct World {
     sim: Sim,
@@ -18,7 +23,7 @@ struct World {
 
 impl World {
     fn new(seed: u32) -> Self {
-        let mut sim = Sim::new(create_state(seed));
+        let mut sim = Sim::new(create_test_state(seed));
         // No small talk: these tests set up their own encounters and must not be interrupted by a chat.
         sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
         Self { sim, events: Vec::new() }
@@ -140,7 +145,7 @@ fn a_spiteful_villager_comes_to_blows_over_a_grudge_short_of_a_feud() {
 
 /// Hostile talks Garrick starts with people he holds no grudge against, over four days of a busy village.
 fn quarrels_picked_by_garrick(seed: u32, spite: f64) -> (usize, Sim) {
-    let mut sim = Sim::new(create_state(seed));
+    let mut sim = Sim::new(create_test_state(seed));
     let garrick = living(&sim.state).find(|c| first_name(c) == "Garrick").unwrap().id.clone();
     sim.state.characters.get_mut(&garrick).unwrap().profile.spite = spite;
     let mut picked = 0;
@@ -312,10 +317,38 @@ fn the_fearless_do_not_panic() {
     assert!(!ran);
 }
 
-#[test]
-fn a_newcomer_arrives_after_a_death() {
+/// A description of a newcomer, as the server would send it: Torvald's brother, come looking for him.
+fn bjarke() -> NewVillager {
+    NewVillager {
+        class_id: ClassId::Barbarian,
+        name: "Bjarke Greymane".into(),
+        pronouns: Pronouns::HeHim,
+        age: 24,
+        occupation: "hill-clan hunter".into(),
+        backstory: "Torvald's younger brother, come down from the hills after two winters without a word.".into(),
+        traits: vec!["shy".into(), "brave".into(), "kind".into()],
+        goals: vec!["find his brother Torvald".into(), "earn a place in the valley".into()],
+        speech_style: "Short, quiet and polite; often just a nod.".into(),
+        timbre: "low, warm, hesitant".into(),
+        temper: 0.3,
+        bravery: 0.8,
+        sociability: 0.3,
+        spite: 0.0,
+        allure: 0.0,
+        shyness: 0.7,
+        looks: 0.6,
+        secret: String::new(),
+        reason: "looking for his brother".into(),
+        quirks: vec![Quirk::Fighter],
+        bonds: vec![Bond { to: "Torvald Greymane".into(), relation: BondKind::Sibling, summary: "My brother.".into() }],
+    }
+}
+
+/// Kills Isolde on day one and runs until the road brings someone, with `on_wanted` run when the sim asks for a
+/// description. Returns the world and the newcomer.
+fn lose_isolde_and_wait(seed: u32, on_wanted: impl Fn(&mut World)) -> (World, String) {
     // A world where nobody else dies in the next few days, which would put the newcomer off.
-    let mut w = World::new(4);
+    let mut w = World::new(seed);
     w.run(10);
     let victim = w.who("Isolde");
     {
@@ -324,19 +357,85 @@ fn a_newcomer_arrives_after_a_death() {
         kill_character(&mut ctx, &victim, "lost to a fever", None);
     }
     assert_eq!(w.sim.state.order.len(), 12);
-    w.run_until(TICKS_PER_DAY * 4, |w| w.sim.state.director.arrivals > 0);
+    let mut asked = false;
+    for _ in 0..TICKS_PER_DAY * 4 {
+        if w.sim.state.director.arrivals > 0 {
+            break;
+        }
+        let events = w.sim.step();
+        if events.iter().any(|e| matches!(e, SimEvent::NewcomerWanted { .. })) {
+            assert!(!asked, "asked twice");
+            asked = true;
+            on_wanted(&mut w);
+        }
+        w.events.extend(events);
+    }
+    assert!(asked, "the sim never asked for a newcomer");
     assert_eq!(w.sim.state.director.arrivals, 1);
-    let newcomer = living(&w.sim.state).find(|c| c.arrived_tick > 0).unwrap();
+    let newcomer = living(&w.sim.state).find(|c| c.arrived_tick > 0).unwrap().id.clone();
+    (w, newcomer)
+}
+
+#[test]
+fn the_newcomer_the_server_describes_arrives_after_a_death_and_knows_his_kin() {
+    let (w, id) = lose_isolde_and_wait(4, |w| w.sim.enqueue(Command::NewcomerDraft(Box::new(bjarke()))));
+    let state = &w.sim.state;
+    let newcomer = &state.characters[&id];
     assert_eq!(newcomer.profile.name, "Bjarke Greymane");
     assert!(newcomer.home_id.starts_with("home_"));
+    assert!(newcomer.has(Quirk::Fighter));
+    assert!(newcomer.look.texture.as_deref().is_some_and(|t| t.starts_with("barbarian_texture_alt_")));
     // His brother is still alive, so they know each other at once.
     let torvald = w.who("Torvald");
-    let state = &w.sim.state;
     assert!(newcomer.relationships[&torvald].kin);
-    assert!(state.characters[&torvald].relationships[&newcomer.id].kin);
+    assert!(state.characters[&torvald].relationships[&id].kin);
     assert!(newcomer.relationships[&torvald].trust >= 80.0);
-    let rowan = &w.sim.state.characters[&w.who("Rowan")];
+    assert_eq!(newcomer.relationships[&torvald].summary, "My brother.");
+    assert_eq!(state.characters[&torvald].relationships[&id].summary, "Bjarke is my sibling.");
+    assert!(
+        state
+            .chronicle
+            .iter()
+            .any(|e| e.text == "Bjarke Greymane, hill-clan hunter, arrived by the west road, looking for his brother.")
+    );
+    assert!(state.director.newcomer_draft.is_none());
+    assert_eq!(state.director.newcomer_deadline_tick, 0);
+    let rowan = &state.characters[&w.who("Rowan")];
     assert!(rowan.memories.iter().any(|m| m.text.contains("Isolde is dead")));
+}
+
+#[test]
+fn without_a_description_the_sim_invents_the_newcomer_once_its_patience_runs_out() {
+    let (w, id) = lose_isolde_and_wait(4, |_| {});
+    let newcomer = &w.sim.state.characters[&id];
+    assert_ne!(newcomer.profile.name, "Bjarke Greymane");
+    assert!(!fsw_testing::founder_names().contains(&newcomer.profile.name.as_str()));
+    assert_eq!(newcomer.profile.traits.len(), 3);
+    assert!(!newcomer.profile.backstory.is_empty());
+    // The road waited the patience out before giving up on the server.
+    let wanted = w.events.iter().find_map(|e| match e {
+        SimEvent::NewcomerWanted { deadline_tick } => Some(*deadline_tick),
+        _ => None,
+    });
+    assert!(wanted.is_some_and(|deadline| newcomer.arrived_tick >= deadline));
+}
+
+#[test]
+fn a_description_whose_name_is_taken_is_dropped_and_told_to_the_sim_arrives_at_once() {
+    let (w, id) = lose_isolde_and_wait(4, |w| {
+        let mut taken = bjarke();
+        taken.name = "Torvald Hale".into();
+        w.sim.enqueue(Command::NewcomerDraft(Box::new(taken)));
+        // The server then says no description is coming, so the road does not wait the patience out.
+        w.sim.enqueue(Command::NewcomerLocal);
+    });
+    let newcomer = &w.sim.state.characters[&id];
+    assert_ne!(newcomer.profile.name, "Torvald Hale");
+    let wanted = w.events.iter().find_map(|e| match e {
+        SimEvent::NewcomerWanted { deadline_tick } => Some(*deadline_tick),
+        _ => None,
+    });
+    assert!(wanted.is_some_and(|deadline| newcomer.arrived_tick < deadline), "arrived before the patience ran out");
 }
 
 #[test]

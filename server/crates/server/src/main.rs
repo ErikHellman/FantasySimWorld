@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use fsw_server::config::{AuthMode, Config};
 use fsw_server::store::{self, Store};
-use fsw_server::{AppState, brain_task, chat, digest, router, world_task};
+use fsw_server::{AppState, brain_task, casting_task, chat, digest, router, world_task};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
@@ -70,6 +70,8 @@ async fn main() -> ExitCode {
     brain.set_memory(memory.clone());
     let indexing = memory.map(|index| brain_task::spawn_indexer(index, world.clone(), store.clone(), shutdown.clone()));
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
+    // Founds a new world (and describes later newcomers) with the model, by direct requests of its own.
+    let casting = casting_task::spawn(world.clone(), config.llm.clone(), config.llm_api_key.clone(), shutdown.clone());
     let app = AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone());
 
     let listener = match tokio::net::TcpListener::bind(config.bind).await {
@@ -93,6 +95,7 @@ async fn main() -> ExitCode {
     let _ = world_task.await;
     let _ = digest.await;
     let _ = chat_sweeper.await;
+    let _ = casting.await;
     let _ = thinking.await;
     if let Some(indexing) = indexing {
         let _ = indexing.await;

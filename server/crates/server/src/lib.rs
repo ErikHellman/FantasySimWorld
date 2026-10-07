@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 pub mod api;
 pub mod auth;
 pub mod brain_task;
+pub mod casting_task;
 pub mod chat;
 pub mod config;
 pub mod digest;

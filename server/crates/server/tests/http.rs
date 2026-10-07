@@ -8,8 +8,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use fsw_server::config::Config;
 use fsw_server::guests::GuestLimits;
+use fsw_server::store::SnapshotReason;
 use fsw_server::store::Store;
-use fsw_server::{AppState, brain_task, router, world_task};
+use fsw_server::{AppState, brain_task, digest, router, world_task};
 use http_body_util::BodyExt;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -56,8 +57,37 @@ async fn state_with_guests(
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
+    // A new world is empty until it is founded; these tests know the authored cast by name.
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    let founded = Box::new(fsw_testing::create_test_state(1));
+    let replace = world_task::WorldInput::Replace { state: founded, reason: SnapshotReason::NewWorld, reply };
+    world.inputs.send(replace).await.unwrap();
+    answer.await.unwrap().unwrap();
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
     (AppState::new(config, world, store, brain, shutdown.clone()), shutdown, data)
+}
+
+#[tokio::test]
+async fn a_fresh_world_reports_its_founding_in_the_status() {
+    let data = tempfile::tempdir().unwrap();
+    let vars = vec![
+        ("AUTH_TOKEN".to_string(), TOKEN.to_string()),
+        ("STATIC_DIR".to_string(), static_dir("founding").display().to_string()),
+        ("DATA_DIR".to_string(), data.path().display().to_string()),
+    ];
+    let config = Config::from_vars(vars).unwrap();
+    let shutdown = CancellationToken::new();
+    let store = Store::open(&config.data_dir).await.unwrap();
+    let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
+    let state = AppState::new(config, world, store, brain, shutdown.clone());
+    let _digest = digest::task::spawn(state.clone(), shutdown.clone());
+    let app = router(state);
+    let mut body = app.clone().oneshot(authed("/api/stream?viewer=tabF")).await.unwrap().into_body();
+    let seen = read_events(&mut body, |seen| seen.contains("event: status")).await;
+    assert!(seen.contains(r#""entities":[]"#), "{seen}");
+    assert_eq!(last_event(&seen, "status")["founding"], serde_json::json!({ "settled": 0, "total": 13 }));
+    shutdown.cancel();
 }
 
 fn get(uri: &str) -> Request<Body> {

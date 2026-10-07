@@ -105,6 +105,11 @@ pub enum SimEvent {
         id: Id,
         board_id: String,
     },
+    /// An arrival is due and the sim would like the server to describe the newcomer; past
+    /// `deadline_tick` it invents one itself.
+    NewcomerWanted {
+        deadline_tick: i64,
+    },
 }
 
 impl SimEvent {
@@ -127,6 +132,7 @@ impl SimEvent {
             Self::Woke { .. } => "woke",
             Self::SavePoint { .. } => "save_point",
             Self::BillboardRead { .. } => "billboard_read",
+            Self::NewcomerWanted { .. } => "newcomer_wanted",
         }
     }
 }

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::state::{BoardNotice, BoardReaction, ConversationLine, Feeling, Id, Intent, Map, PlanBlock};
+use crate::state::{BoardNotice, BoardReaction, ConversationLine, Feeling, Id, Intent, Map, NewVillager, PlanBlock};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,4 +91,14 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thought: Option<String>,
     },
+    /// One more founder for a village still being settled; ignored once it is founded or when the
+    /// first name is taken.
+    Settle(Box<NewVillager>),
+    /// Fills a village still being settled with villagers the sim invents (no model, or none that answers).
+    FoundVillage,
+    /// The server's description of the next newcomer, held until an arrival is due; dropped when the
+    /// first name is taken.
+    NewcomerDraft(Box<NewVillager>),
+    /// No description is coming for the newcomer that was asked for: the sim invents one at the next chance.
+    NewcomerLocal,
 }
