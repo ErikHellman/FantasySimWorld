@@ -356,6 +356,10 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     (None, _) => decision.problems.push(format!("unknown person \"{}\"", shown(args.get("person")))),
                 }
             }
+            // A child has nothing to give and never raises a hand; the sim would refuse it too.
+            "give" | "brawl" | "attack" if c.is_child() => {
+                decision.problems.push(format!("a child does not {}", call.name));
+            }
             "give" => {
                 let person = resolve_person(state, args.get("person"), Some(&c.id));
                 let item = item(args.get("item"));

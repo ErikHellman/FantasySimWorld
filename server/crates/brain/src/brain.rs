@@ -714,8 +714,12 @@ impl Brain {
                     let mind = Self::mind(s, &c.id);
                     let urgency = c.stimuli.iter().map(|st| st.urgency).max().unwrap_or(-1);
 
-                    // Danger: one quick fight-or-flee call, while instinct has already acted.
+                    // Danger: one quick fight-or-flee call, while instinct has already acted. A child is never
+                    // asked: they run, and that is that.
                     if is_fighting(c) {
+                        if c.is_child() {
+                            continue;
+                        }
                         let fresh = c.stimuli.iter().any(|st| {
                             matches!(st.kind, StimulusKind::Threat | StimulusKind::Attacked | StimulusKind::Alarm)
                                 && state.tick - st.tick < 200
