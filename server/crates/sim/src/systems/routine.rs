@@ -337,7 +337,7 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         return Some(act(ActivityId::Rebuild, Some(minutes), Some(ruin)));
     }
     // Woodcutters fell real trees and miners break real rocks when there are any within reach.
-    if let Some(work) = job_for_block(ctx.state, ctx.cr(id), block.activity, minutes) {
+    if let Some(work) = job_for_block(ctx.state, ctx.cr(id), block.activity, minutes, ctx.time.day) {
         return Some(work);
     }
     Some(act(block.activity, Some(minutes), block.place_id))

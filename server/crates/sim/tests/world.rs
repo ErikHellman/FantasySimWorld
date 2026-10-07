@@ -351,3 +351,171 @@ fn a_full_stockpile_overflows_to_the_market() {
     let json = serde_json::to_string(&state).unwrap();
     assert!(json.contains(r#""stockpiles":{"lumber_camp":{"wood":60},"market":{"wood":5,"stone":2}}"#), "{json}");
 }
+
+// ---- Taking things apart, digging and mowing ---------------------------------------------------
+
+use fsw_sim::describe::describe_activity;
+use fsw_sim::state::{BuildingStage, ChronicleKind, GroundStage, PropStage};
+use fsw_sim::systems::fire::{home_usable, is_homeless};
+use fsw_sim::systems::world::{DUG_DAYS, MOWN_DAYS, building_id, destroyable, ground_id, prop_id};
+use fsw_world::hex::Hex;
+
+fn set_work_for(sim: &mut Sim, id: &str, job: WorldJob, target: &str, minutes: f64) {
+    let epoch = sim.state.characters[id].epoch;
+    let action = IntentAction::WorldWork { job, target: target.into(), minutes: Some(minutes) };
+    sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents: vec![Intent::new(action, IntentSource::Llm)] });
+}
+
+#[test]
+fn only_the_right_things_can_be_touched() {
+    assert!(destroyable(&prop_id("green", 1)), "the bench on the green");
+    assert!(destroyable(&building_id("tavern")));
+    assert!(destroyable(&building_id("home_1")));
+    assert!(!destroyable(&prop_id("green", 0)), "the well stays");
+    assert!(!destroyable(&prop_id("tavern", 14)), "lanterns stay");
+    assert!(!destroyable(&prop_id("graveyard", 0)), "the dead are left alone");
+    assert!(!destroyable("b:green"), "the green has no building");
+    assert!(destroyable(&ground_id(Hex { col: 3, row: 9 })));
+    assert!(
+        !job_accepts(&create_state(1), WorldJob::Dig, &ground_id(Hex { col: 0, row: 0 })),
+        "the border is mountain"
+    );
+}
+
+#[test]
+fn a_table_taken_apart_frees_the_ground_and_yields_a_log() {
+    let mut sim = quiet(5);
+    sim.state.director.next_wave_tick = i64::MAX;
+    let bench = prop_id("tavern", 1);
+    assert!(get_place("tavern").obstacle_of_model(1).is_some(), "the table blocks the way");
+    let before = walkable_cells(&sim.state);
+    set_work_for(&mut sim, "c1", WorldJob::Dismantle, &bench, 200.0);
+    let working = |state: &SimState| {
+        describe_activity(state, &state.characters["c1"])
+            .contains("taking apart the medium table at The Gilded Tankard")
+    };
+    assert!(
+        run_until(&mut sim, 3000, working) < 3000,
+        "{}",
+        describe_activity(&sim.state, &sim.state.characters["c1"])
+    );
+    let apart = |state: &SimState| {
+        matches!(state.objects.get(&bench), Some(WorldObject::Prop { stage: PropStage::Pieces, .. }))
+    };
+    assert!(run_until(&mut sim, 4000, apart) < 4000);
+    assert!(walkable_cells(&sim.state) > before, "the bench's ground is free");
+    assert!(!job_accepts(&sim.state, WorldJob::Dismantle, &bench));
+    let wood = sim.state.characters["c1"].carried.get(Resource::Wood)
+        + wood_at(&sim.state, "lumber_camp")
+        + wood_at(&sim.state, "market");
+    assert_eq!(wood, 1);
+    // Its pieces are carried off in time, and the bench is gone.
+    while sim.state.tick < (fsw_sim::systems::world::PIECES_DAYS + 1) * TICKS_PER_DAY {
+        sim.step();
+    }
+    assert!(matches!(sim.state.objects.get(&bench), Some(WorldObject::Prop { stage: PropStage::Gone, .. })));
+}
+
+#[test]
+fn a_building_taken_apart_leaves_rubble_and_puts_its_people_out() {
+    let mut sim = quiet(6);
+    sim.state.director.next_wave_tick = i64::MAX;
+    let home = sim.state.characters["c1"].home_id.clone();
+    let target = building_id(&home);
+    for id in ["c1", "c2", "c3"] {
+        set_work_for(&mut sim, id, WorldJob::Dismantle, &target, 400.0);
+    }
+    let down = |state: &SimState| {
+        matches!(state.objects.get(&target), Some(WorldObject::Building { stage: BuildingStage::Dismantled, .. }))
+    };
+    let took = run_until(&mut sim, 12000, down);
+    assert!(took < 12000, "three could not take a house down in a day");
+    assert!(sim.state.nav.is_live());
+    assert!(!home_usable(&sim.state, &sim.state.characters["c1"]));
+    assert!(is_homeless(&sim.state, &sim.state.characters["c1"]));
+    let lines: Vec<&str> =
+        sim.state.chronicle.iter().filter(|e| e.kind == ChronicleKind::World).map(|e| e.text.as_str()).collect();
+    assert!(lines.iter().any(|l| l.contains("took") && l.contains("apart")), "{lines:?}");
+    let materials: i64 = ["c1", "c2", "c3"].iter().map(|id| sim.state.characters[*id].carried.total()).sum();
+    assert!(materials > 0 || !sim.state.stockpiles.is_empty(), "nothing came of the timbers");
+    // Newcomers are not given it.
+    assert_ne!(fsw_sim::systems::arrivals::free_home(&sim.state), home);
+    // Its people sleep rough that night.
+    let night = |state: &SimState| describe_activity(state, &state.characters["c1"]).contains("rough");
+    assert!(run_until(&mut sim, TICKS_PER_DAY, night) < TICKS_PER_DAY);
+}
+
+#[test]
+fn dug_ground_and_mown_grass_come_back_on_the_clock() {
+    let mut sim = quiet(8);
+    sim.state.director.next_wave_tick = i64::MAX;
+    let pit = fsw_sim::systems::world::ground_target(&sim.state, WorldJob::Dig).expect("ground to dig near the farm");
+    // Another hex than the pit's, or the two jobs would be in each other's way.
+    let farm = get_place("farm").origin;
+    let lawn = fsw_world::map::world_map()
+        .cells
+        .iter()
+        .filter(|cell| dist(cell.center, farm) < 30.0)
+        .map(|cell| ground_id(Hex { col: cell.col, row: cell.row }))
+        .find(|id| *id != pit && job_accepts(&sim.state, WorldJob::Mow, id))
+        .expect("grass to cut near the farm");
+    assert!(job_accepts(&sim.state, WorldJob::Dig, &pit));
+    assert!(job_accepts(&sim.state, WorldJob::Mow, &lawn), "there is grass there");
+    assert!(!job_accepts(&sim.state, WorldJob::Dig, &ground_id(Hex { col: 3, row: 9 })), "no pits in the road");
+    set_work_for(&mut sim, "c1", WorldJob::Dig, &pit, 200.0);
+    set_work_for(&mut sim, "c2", WorldJob::Mow, &lawn, 200.0);
+    let both = |state: &SimState| {
+        matches!(state.objects.get(&pit), Some(WorldObject::Ground { stage: GroundStage::Dug, .. }))
+            && matches!(state.objects.get(&lawn), Some(WorldObject::Ground { stage: GroundStage::Mown, .. }))
+    };
+    assert!(run_until(&mut sim, 6000, both) < 6000);
+    assert!(sim.state.nav.is_live(), "a pit is something to walk round");
+    assert!(!job_accepts(&sim.state, WorldJob::Mow, &lawn));
+    let dug_at = sim.state.objects[&pit].since_tick();
+    let mown_at = sim.state.objects[&lawn].since_tick();
+    while sim.state.tick < mown_at + MOWN_DAYS * TICKS_PER_DAY + 40 {
+        sim.step();
+    }
+    assert!(!sim.state.objects.contains_key(&lawn), "the grass grew back");
+    assert!(sim.state.objects.contains_key(&pit));
+    while sim.state.tick < dug_at + DUG_DAYS * TICKS_PER_DAY + 40 {
+        sim.step();
+    }
+    assert!(!sim.state.objects.contains_key(&pit), "the pit filled in");
+}
+
+#[test]
+fn farmers_take_a_turn_at_the_meadows() {
+    let mut sim = quiet(9);
+    let mut saw_ground = false;
+    for _ in 0..(6 * TICKS_PER_DAY) {
+        sim.step();
+        if sim.state.tick % 100 == 0 && sim.state.objects.values().any(|o| matches!(o, WorldObject::Ground { .. })) {
+            saw_ground = true;
+            break;
+        }
+    }
+    assert!(saw_ground, "no farmer mowed or dug in six days");
+}
+
+#[test]
+fn a_half_dismantled_building_survives_a_save_and_load() {
+    let mut sim = quiet(10);
+    sim.state.director.next_wave_tick = i64::MAX;
+    for id in ["c1", "c2"] {
+        set_work_for(&mut sim, id, WorldJob::Dismantle, &building_id("smithy"), 400.0);
+    }
+    let started = |state: &SimState| state.objects.get(&building_id("smithy")).is_some_and(|o| o.work() > 20.0);
+    assert!(run_until(&mut sim, 6000, started) < 6000);
+    let mut resumed = Sim::new(round_trip(&sim.state));
+    assert_eq!(resumed.state, sim.state);
+    for _ in 0..8000 {
+        sim.step();
+        resumed.step();
+    }
+    assert!(resumed.state == sim.state, "a reloaded dismantling went a different way");
+    assert!(matches!(
+        sim.state.objects.get(&building_id("smithy")),
+        Some(WorldObject::Building { stage: BuildingStage::Dismantled, .. })
+    ));
+}

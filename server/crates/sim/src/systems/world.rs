@@ -13,7 +13,9 @@ use fsw_core::math2d::{dist, facing_to};
 use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
-use fsw_world::places::{Obstacle, find_place, get_place};
+use fsw_world::hex::{Hex, hex_at};
+use fsw_world::map::{HexCell, Terrain, cell_at};
+use fsw_world::places::{Obstacle, PlaceKind, find_place, get_place};
 use fsw_world::scatter::{is_rock, is_tree, scatter};
 
 use crate::data::activities::{ActivityKind, activity};
@@ -21,11 +23,12 @@ use crate::data::anims::AnimId;
 use crate::data::jobs::job as job_def;
 use crate::nav;
 use crate::state::{
-    ActPhase, ActivityId, BuildingStage, CARRY_CAP, Character, Intent, IntentAction, IntentSource, PropStage, Quirk,
-    Resource, RockStage, SimState, Store, TreeStage, WorldJob, WorldObject,
+    ActPhase, ActivityId, BuildingStage, CARRY_CAP, Character, ChronicleKind, GroundStage, Intent, IntentAction,
+    IntentSource, MemoryKind, PropStage, Quirk, Resource, RockStage, SimState, StimulusKind, Store, TreeStage,
+    WorldJob, WorldObject,
 };
-use crate::systems::intents::{finish, travel, travel_to};
-use crate::util::{Ctx, place_name_at, set_anim};
+use crate::systems::intents::{finish, leave_building, travel, travel_to};
+use crate::util::{Ctx, first_name, join_names, living, living_ids, place_name_at, set_anim};
 
 /// How long a felled tree takes to come down.
 pub const FALL_TICKS: i64 = 30;
@@ -55,6 +58,32 @@ const DELIVER_SECONDS: f64 = 2.0;
 const DEFAULT_JOB_MINUTES: f64 = 240.0;
 /// Work on a tree or rock nobody has touched for this long is lost: the cuts close over.
 const ABANDONED_MINUTES: i64 = 30;
+/// Grass grows back this long after it is cut, and a pit fills in after this.
+pub const MOWN_DAYS: i64 = 3;
+pub const DUG_DAYS: i64 = 4;
+/// Pieces of a thing taken apart are carried off, and ash blows away, after this.
+pub const PIECES_DAYS: i64 = 10;
+pub const ASH_DAYS: i64 = 6;
+/// Villager-minutes to take a building down to its footings.
+pub const BUILDING_WORK: f64 = 600.0;
+/// What taking a building apart gives back, and how far a farmer looks for ground to work.
+const BUILDING_WOOD: i64 = 5;
+const BUILDING_STONE: i64 = 2;
+pub const FARMING_REACH: f64 = 30.0;
+/// Places whose things are left alone: the dead's, the ruins', and the signpost at the road's end.
+const UNTOUCHABLE_PLACES: [&str; 3] = ["graveyard", "ruins", "west_road"];
+/// Props nobody takes apart: what gives light, the well, the campfire, and what grows.
+const UNTOUCHABLE_MODELS: [&str; 9] = [
+    "post_lantern",
+    "lantern_standing",
+    "torch_lit",
+    "Campfire_Base",
+    "Campfire_Logs",
+    "building_well_blue",
+    "dirt_plot",
+    "lettuce",
+    "carrot",
+];
 
 /// Where the village keeps its materials: the place, what it takes, and how much it holds. The market
 /// takes anything the others cannot.
@@ -128,6 +157,18 @@ pub fn prop_id(place_id: &str, index: usize) -> String {
     format!("p:{place_id}:{index}")
 }
 
+/// The id of a hex's ground.
+pub fn ground_id(hex: Hex) -> String {
+    format!("h:{},{}", hex.col, hex.row)
+}
+
+/// The hex an `h:` id names, if it is on the map.
+pub fn ground_cell(id: &str) -> Option<&'static HexCell> {
+    let rest = id.strip_prefix("h:")?;
+    let (col, row) = rest.split_once(',')?;
+    cell_at(col.parse().ok()?, row.parse().ok()?)
+}
+
 /// The place and model index a `p:` or `b:` id names.
 pub fn place_model(id: &str) -> Option<(&str, usize)> {
     if let Some(place) = id.strip_prefix("b:") {
@@ -153,6 +194,9 @@ pub fn static_obstacle(id: &str) -> Option<&'static Obstacle> {
 pub fn position_of(id: &str, object: &WorldObject) -> Option<(f64, f64)> {
     if let WorldObject::Built { spec, .. } = object {
         return Some((spec.x, spec.z));
+    }
+    if let Some(cell) = ground_cell(id) {
+        return Some((cell.center.x, cell.center.z));
     }
     if let Some(index) = scatter_index(id) {
         let model = scatter().models.get(index)?;
@@ -191,7 +235,9 @@ pub fn footprint(id: &str, object: &WorldObject) -> Footprint {
             Footprint { removed: static_obstacle(id), added: at(RUBBLE_RADIUS), signature: "rubble" }
         }
         WorldObject::Building { .. } => Footprint::NONE,
-        WorldObject::Ground { stage: crate::state::GroundStage::Dug, .. } => Footprint::NONE,
+        WorldObject::Ground { stage: GroundStage::Dug, .. } => {
+            Footprint { removed: None, added: at(PIT_RADIUS), signature: "pit" }
+        }
         WorldObject::Ground { .. } => Footprint::NONE,
         WorldObject::Built { stage: PropStage::Whole | PropStage::Burning, spec, .. } => {
             Footprint { removed: None, added: spec.footprint, signature: "built" }
@@ -215,6 +261,71 @@ pub fn drop_object(state: &mut SimState, id: &str) {
     let Some(old) = state.objects.shift_remove(id) else { return };
     if !footprint(id, &old).signature.is_empty() {
         nav::refresh(state);
+    }
+}
+
+/// Whether a thing of the map may be felled, mined, taken apart or set alight at all.
+pub fn destroyable(id: &str) -> bool {
+    if let Some(index) = scatter_index(id) {
+        return scatter().models.get(index).is_some_and(|m| is_tree(&m.model) || is_rock(&m.model));
+    }
+    if ground_cell(id).is_some() || id.starts_with("n:") {
+        return true;
+    }
+    let Some((place_id, index)) = place_model(id) else { return false };
+    if UNTOUCHABLE_PLACES.contains(&place_id) {
+        return false;
+    }
+    let model = &get_place(place_id).models[index].model;
+    !UNTOUCHABLE_MODELS.contains(&model.as_str())
+}
+
+/// Whether a place's building stands to be used: not taken down, not being raised again. A home that
+/// burns or lies in ruins is `houses`' business, not this.
+pub fn building_whole(state: &SimState, place_id: &str) -> bool {
+    match state.objects.get(&building_id(place_id)) {
+        None => true,
+        Some(WorldObject::Building { stage: BuildingStage::Whole | BuildingStage::Expanded, .. }) => true,
+        Some(_) => false,
+    }
+}
+
+/// Whether a prop of the map is still there to be worked on.
+pub fn prop_whole(state: &SimState, id: &str) -> bool {
+    match state.objects.get(id) {
+        None => true,
+        Some(WorldObject::Prop { stage: PropStage::Whole, .. }) => true,
+        Some(WorldObject::Built { stage: PropStage::Whole, .. }) => true,
+        Some(_) => false,
+    }
+}
+
+/// How much grass the map put on a hex.
+fn grass_on(cell: &HexCell) -> usize {
+    scatter()
+        .models
+        .iter()
+        .filter(|m| m.model.starts_with("Grass"))
+        .filter(|m| {
+            let hex = hex_at(m.x, m.z);
+            hex.col == cell.col && hex.row == cell.row
+        })
+        .count()
+}
+
+/// Ground a spade or a scythe can be taken to: open meadow (or a grain field), no road or river over
+/// it, and nothing done to it already.
+fn ground_workable(state: &SimState, id: &str, job: WorldJob) -> bool {
+    let Some(cell) = ground_cell(id) else { return false };
+    if !matches!(cell.terrain, Terrain::Meadow | Terrain::Grain) || cell.road_mask != 0 || cell.river_mask != 0 {
+        return false;
+    }
+    if state.objects.contains_key(id) {
+        return false;
+    }
+    match job {
+        WorldJob::Mow => grass_on(cell) > 0,
+        _ => state.nav.nearest_walkable(cell.center, 2).is_some(),
     }
 }
 
@@ -284,9 +395,19 @@ pub fn update_world(ctx: &mut Ctx) {
         let next = match object {
             WorldObject::Tree { stage: TreeStage::Standing, .. }
             | WorldObject::Rock { stage: RockStage::Whole, .. }
+            | WorldObject::Prop { stage: PropStage::Whole, .. }
+            | WorldObject::Building { stage: BuildingStage::Whole, .. }
                 if age >= ABANDONED_MINUTES * TICKS_PER_GAME_MINUTE && claims_on(ctx.state, &id) == 0 =>
             {
                 Some(None)
+            }
+            WorldObject::Ground { stage: GroundStage::Mown, .. } if age >= MOWN_DAYS * TICKS_PER_DAY => Some(None),
+            WorldObject::Ground { stage: GroundStage::Dug, .. } if age >= DUG_DAYS * TICKS_PER_DAY => Some(None),
+            WorldObject::Prop { stage: PropStage::Pieces, .. } if age >= PIECES_DAYS * TICKS_PER_DAY => {
+                Some(Some(TreeStage::Standing))
+            }
+            WorldObject::Prop { stage: PropStage::Ash, .. } if age >= ASH_DAYS * TICKS_PER_DAY => {
+                Some(Some(TreeStage::Standing))
             }
             WorldObject::Tree { stage, .. } => match stage {
                 TreeStage::Falling if age >= FALL_TICKS => Some(Some(TreeStage::Stump)),
@@ -297,7 +418,13 @@ pub fn update_world(ctx: &mut Ctx) {
             },
             _ => None,
         };
+        let prop = matches!(object, WorldObject::Prop { .. });
         match next {
+            // Pieces and ash are cleared away: the prop is gone until the village puts up another.
+            Some(Some(_)) if prop => {
+                let gone = WorldObject::Prop { stage: PropStage::Gone, since_tick: tick, work: 0.0, fire: 0.0 };
+                put_object(ctx.state, &id, gone);
+            }
             Some(Some(stage)) => put_object(ctx.state, &id, WorldObject::Tree { stage, since_tick: tick, work: 0.0 }),
             Some(None) => drop_object(ctx.state, &id),
             None => {}
@@ -317,8 +444,19 @@ pub fn job_accepts(state: &SimState, job: WorldJob, target: &str) -> bool {
         WorldJob::Fell => scatter_index(target).is_some_and(|i| tree_standing(state, i)),
         WorldJob::Mine => scatter_index(target).is_some_and(|i| rock_whole(state, i)),
         WorldJob::Deliver => is_stockpile(target),
+        WorldJob::Dismantle => {
+            destroyable(target)
+                && match place_model(target) {
+                    Some((place, 0)) if get_place(place).has_building => {
+                        building_whole(state, place) && !state.houses.contains_key(place)
+                    }
+                    Some(_) => prop_whole(state, target),
+                    None => target.starts_with("n:") && prop_whole(state, target),
+                }
+        }
+        WorldJob::Dig | WorldJob::Mow => ground_workable(state, target, job),
         // These come later; nothing accepts them yet.
-        WorldJob::Dig | WorldJob::Mow | WorldJob::Dismantle | WorldJob::Burn | WorldJob::Build => false,
+        WorldJob::Burn | WorldJob::Build => false,
     }
 }
 
@@ -334,6 +472,9 @@ fn target_spot(state: &SimState, job: WorldJob, target: &str) -> Option<(Vec2, f
             _ => 0.5,
         };
         return Some((vec2(model.x, model.z), radius));
+    }
+    if let Some(cell) = ground_cell(target) {
+        return Some((cell.center, 0.0));
     }
     let object = state.objects.get(target);
     let (x, z) = object.and_then(|o| position_of(target, o)).or_else(|| {
@@ -424,7 +565,7 @@ pub fn gather_target(state: &SimState, from: Vec2, job: WorldJob) -> Option<Stri
 
 /// The world work a routine work block turns into, if any: woodcutters fell real trees, miners mine
 /// real rocks, and anyone with their arms full puts it down first. `None` leaves the block as it is.
-pub fn job_for_block(state: &SimState, c: &Character, block: ActivityId, minutes: f64) -> Option<Intent> {
+pub fn job_for_block(state: &SimState, c: &Character, block: ActivityId, minutes: f64, day: i64) -> Option<Intent> {
     if activity(block).kind != ActivityKind::Work {
         return None;
     }
@@ -434,6 +575,14 @@ pub fn job_for_block(state: &SimState, c: &Character, block: ActivityId, minutes
     if let Some((resource, _)) = c.carried.iter().next() {
         return work(WorldJob::Deliver, stockpile_for(resource).to_owned(), None);
     }
+    // Every fourth working day a farmer takes a scythe or a spade to the meadows round the farm.
+    let turn = i64::from(hash_string(&c.id)) + day;
+    if c.jobs.contains(&ActivityId::Farm) && turn.rem_euclid(4) == 0 {
+        let job = if turn.rem_euclid(8) == 0 { WorldJob::Dig } else { WorldJob::Mow };
+        if let Some(target) = ground_target(state, job) {
+            return work(job, target, Some(minutes));
+        }
+    }
     let job = match block {
         ActivityId::ChopWood => WorldJob::Fell,
         ActivityId::Mine => WorldJob::Mine,
@@ -441,6 +590,23 @@ pub fn job_for_block(state: &SimState, c: &Character, block: ActivityId, minutes
     };
     let target = gather_target(state, c.pos, job)?;
     work(job, target, Some(minutes))
+}
+
+/// The meadow hex nearest the farm that a spade or scythe could be taken to, in a fixed order.
+pub fn ground_target(state: &SimState, job: WorldJob) -> Option<String> {
+    let farm = get_place("farm").origin;
+    let mut best: Option<(f64, String)> = None;
+    for cell in &fsw_world::map::world_map().cells {
+        let d = dist(cell.center, farm);
+        if d > FARMING_REACH || best.as_ref().is_some_and(|(bd, _)| d >= *bd) {
+            continue;
+        }
+        let id = ground_id(Hex { col: cell.col, row: cell.row });
+        if ground_workable(state, &id, job) && claims_on(state, &id) == 0 {
+            best = Some((d, id));
+        }
+    }
+    best.map(|(_, id)| id)
 }
 
 /// What the work has come to: a sentence for the chronicle of one person's day, and the materials gained.
@@ -484,10 +650,124 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
                 format!("You put {} down at {place}.", put.describe())
             }
         }
-        WorldJob::Dig | WorldJob::Mow | WorldJob::Dismantle | WorldJob::Burn | WorldJob::Build => {
-            "Nothing came of it.".into()
+        WorldJob::Dismantle => dismantle(ctx, id, target),
+        WorldJob::Dig => {
+            put_object(ctx.state, target, WorldObject::Ground { stage: GroundStage::Dug, since_tick: tick });
+            let stone = if hash_string(target).is_multiple_of(4) { gain(ctx.c(id), Resource::Stone, 1) } else { 0 };
+            if stone > 0 {
+                format!("You dug a pit and turned up {}.", Resource::Stone.label(stone))
+            } else {
+                "You dug a pit; nothing but earth.".into()
+            }
         }
+        WorldJob::Mow => {
+            put_object(ctx.state, target, WorldObject::Ground { stage: GroundStage::Mown, since_tick: tick });
+            "You cut the grass short.".into()
+        }
+        WorldJob::Burn | WorldJob::Build => "Nothing came of it.".into(),
     }
+}
+
+/// Whether a prop is stone rather than wood, by what it is called; what comes of taking it apart.
+fn is_stone_model(model: &str) -> bool {
+    let lower = model.to_lowercase();
+    ["rock", "stone", "anvil", "statue", "font", "pillar", "wall", "grindstone", "iron"]
+        .iter()
+        .any(|w| lower.contains(w))
+}
+
+/// A thing of the map comes apart: a prop into pieces, a building down to its footings. Whoever lived or
+/// worked in a building is put out, and the village hears of it.
+fn dismantle(ctx: &mut Ctx, id: &str, target: &str) -> String {
+    let tick = ctx.tick();
+    let Some((place_id, index)) = place_model(target) else {
+        // Something the village built: it comes apart into pieces.
+        if let Some(WorldObject::Built { spec, .. }) = ctx.state.objects.get(target).cloned() {
+            let pieces = WorldObject::Built { stage: PropStage::Pieces, since_tick: tick, work: 0.0, fire: 0.0, spec };
+            put_object(ctx.state, target, pieces);
+            let wood = gain(ctx.c(id), Resource::Wood, 1);
+            return format!("You took it apart and kept {}.", Resource::Wood.label(wood));
+        }
+        return "There was nothing to take apart.".into();
+    };
+    let place = get_place(place_id);
+    if index == 0 && place.has_building {
+        let helpers = match ctx.state.objects.get(target) {
+            Some(WorldObject::Building { helpers, .. }) => helpers.clone(),
+            _ => vec![id.to_owned()],
+        };
+        let down = WorldObject::Building {
+            stage: BuildingStage::Dismantled,
+            since_tick: tick,
+            work: 0.0,
+            fire: 0.0,
+            helpers: helpers.clone(),
+        };
+        put_object(ctx.state, target, down);
+        let wood = gain(ctx.c(id), Resource::Wood, BUILDING_WOOD);
+        let stone = gain(ctx.c(id), Resource::Stone, BUILDING_STONE);
+        // Anyone inside is put out on the street.
+        let inside: Vec<String> =
+            living(ctx.state).filter(|c| c.inside.as_deref() == Some(place_id)).map(|c| c.id.clone()).collect();
+        let nav = ctx.state.nav.clone();
+        for other in &inside {
+            let c = ctx.c(other);
+            leave_building(&nav, c);
+            c.intent = None;
+            c.queue.clear();
+        }
+        let names = join_names(&helpers.iter().map(|h| first_name(ctx.cr(h)).to_owned()).collect::<Vec<_>>());
+        let what = if place.kind == PlaceKind::Home { "home" } else { "building" };
+        ctx.chronicle(
+            ChronicleKind::World,
+            format!("{names} took {} apart, down to its footings.", place.name),
+            helpers.clone(),
+        );
+        for other in living_ids(ctx.state) {
+            if helpers.contains(&other) {
+                continue;
+            }
+            let mine = ctx.cr(&other).home_id == place_id;
+            let text = if mine {
+                format!(
+                    "{names} took my home, {}, apart. I have nowhere to sleep until it is raised again.",
+                    place.name
+                )
+            } else {
+                format!("{names} took {} apart; the {what} is gone until the village raises it again.", place.name)
+            };
+            ctx.remember(&other, text, if mine { 9.0 } else { 5.0 }, MemoryKind::Event, helpers.clone());
+            let urgency = if mine { 2 } else { 1 };
+            let text = format!("{names} took {} apart.", place.name);
+            ctx.stimulate(&other, StimulusKind::Witness, text, urgency, Some(id));
+        }
+        ctx.emit(crate::events::SimEvent::SavePoint { reason: "building taken apart".into() });
+        return format!(
+            "You took {} apart and kept {} and {}.",
+            place.name,
+            Resource::Wood.label(wood),
+            Resource::Stone.label(stone)
+        );
+    }
+    let model = &place.models[index].model;
+    let pieces = WorldObject::Prop { stage: PropStage::Pieces, since_tick: tick, work: 0.0, fire: 0.0 };
+    put_object(ctx.state, target, pieces);
+    let resource = if is_stone_model(model) { Resource::Stone } else { Resource::Wood };
+    let got = gain(ctx.c(id), resource, 1);
+    format!("You took {} apart and kept {}.", prop_name(model), resource.label(got))
+}
+
+/// "the bench", "the small barrel": a prop's model name as words.
+pub fn prop_name(model: &str) -> String {
+    let words: Vec<String> =
+        model.split('_').filter(|w| w.len() > 1 && !["decorated"].contains(w)).map(|w| w.to_lowercase()).collect();
+    let words = match words.as_slice() {
+        [noun, size] if ["small", "large", "medium", "stacked", "broken"].contains(&size.as_str()) => {
+            format!("{size} {noun}")
+        }
+        _ => words.join(" "),
+    };
+    format!("the {words}")
 }
 
 /// After gathering, what is in the arms goes to a stockpile before anything else.
@@ -587,7 +867,12 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
             } else {
                 1.0
             };
-            let done = add_work(ctx.state, target, effort) >= def.work;
+            // Work on a thing is kept on the thing, shared by all hands; work on the ground is each worker's own.
+            let total = match add_work(ctx.state, id, target, effort) {
+                Some(total) => total,
+                None => (elapsed / TICKS_PER_GAME_MINUTE) as f64 * effort,
+            };
+            let done = total >= work_needed(job, target);
             if done {
                 let outcome = complete_job(ctx, id, job, target);
                 set_anim(ctx.c(id), AnimId::Idle, false);
@@ -599,33 +884,66 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
     }
 }
 
-/// A minute's work on a target, kept on the object itself so helpers share it; returns the total.
-fn add_work(state: &mut SimState, target: &str, effort: f64) -> f64 {
+/// Villager-minutes a job takes on this target: a building takes far more taking apart than a stool.
+pub fn work_needed(job: WorldJob, target: &str) -> f64 {
+    match (job, place_model(target)) {
+        (WorldJob::Dismantle, Some((place, 0))) if get_place(place).has_building => BUILDING_WORK,
+        _ => job_def(job).work,
+    }
+}
+
+/// A minute's work on a target, kept on the object itself so helpers share it; returns the total, or
+/// `None` for a target that keeps no record (the ground).
+fn add_work(state: &mut SimState, id: &str, target: &str, effort: f64) -> Option<f64> {
     let tick = state.tick;
     if let Some(object) = state.objects.get_mut(target) {
         if let Some(work) = object.work_mut() {
             *work += effort;
             let total = *work;
             // The last minute anyone worked at it, for the clock and for the swaying on the screen.
-            if let WorldObject::Tree { since_tick, .. } | WorldObject::Rock { since_tick, .. } = object {
-                *since_tick = tick;
+            match object {
+                WorldObject::Tree { since_tick, .. }
+                | WorldObject::Rock { since_tick, .. }
+                | WorldObject::Prop { since_tick, .. } => *since_tick = tick,
+                WorldObject::Building { since_tick, helpers, .. } => {
+                    *since_tick = tick;
+                    if !helpers.iter().any(|h| h == id) {
+                        helpers.push(id.to_owned());
+                    }
+                }
+                _ => {}
             }
-            return total;
+            return Some(total);
         }
-        return 0.0;
+        return None;
     }
     // The first swing at a thing of the map starts its record.
-    let Some(index) = scatter_index(target) else { return 0.0 };
-    let model = &scatter().models[index];
-    let object = if is_tree(&model.model) {
-        WorldObject::Tree { stage: TreeStage::Standing, since_tick: tick, work: effort }
-    } else if is_rock(&model.model) {
-        WorldObject::Rock { stage: RockStage::Whole, since_tick: tick, work: effort }
+    let object = if let Some(index) = scatter_index(target) {
+        let model = &scatter().models[index];
+        if is_tree(&model.model) {
+            WorldObject::Tree { stage: TreeStage::Standing, since_tick: tick, work: effort }
+        } else if is_rock(&model.model) {
+            WorldObject::Rock { stage: RockStage::Whole, since_tick: tick, work: effort }
+        } else {
+            return None;
+        }
+    } else if let Some((place, index)) = place_model(target) {
+        if index == 0 && get_place(place).has_building {
+            WorldObject::Building {
+                stage: BuildingStage::Whole,
+                since_tick: tick,
+                work: effort,
+                fire: 0.0,
+                helpers: vec![id.to_owned()],
+            }
+        } else {
+            WorldObject::Prop { stage: PropStage::Whole, since_tick: tick, work: effort, fire: 0.0 }
+        }
     } else {
-        return 0.0;
+        return None;
     };
     put_object(state, target, object);
-    effort
+    Some(effort)
 }
 
 /// How far the work on an object has got, 0..1: the swings at a standing tree against what felling takes,
@@ -637,6 +955,7 @@ pub fn progress_of(object: &WorldObject) -> f64 {
         WorldObject::Prop { stage: PropStage::Whole, .. } | WorldObject::Built { stage: PropStage::Whole, .. } => {
             job_def(WorldJob::Dismantle).work
         }
+        WorldObject::Building { stage: BuildingStage::Whole | BuildingStage::Expanded, .. } => BUILDING_WORK,
         _ => return 0.0,
     };
     (object.work() / whole).clamp(0.0, 1.0)
@@ -649,7 +968,15 @@ pub fn describe_target(state: &SimState, job: WorldJob, target: &str) -> String 
         WorldJob::Mine => "a rock",
         WorldJob::Dig => "the ground",
         WorldJob::Mow => "the grass",
-        WorldJob::Dismantle | WorldJob::Burn | WorldJob::Build => "something",
+        WorldJob::Dismantle | WorldJob::Burn => match place_model(target) {
+            Some((place, 0)) if get_place(place).has_building => return get_place(place).name.to_owned(),
+            Some((place, index)) => {
+                let place = get_place(place);
+                return format!("{} at {}", prop_name(&place.models[index].model), place.name);
+            }
+            None => "something",
+        },
+        WorldJob::Build => "something",
         WorldJob::Deliver => return find_place(target).map_or("the stockpile", |p| p.name).to_owned(),
     };
     match target_spot(state, job, target) {

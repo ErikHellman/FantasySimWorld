@@ -25,6 +25,7 @@ use crate::systems::death::{detach, kill_character};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::relationships::{RelationDelta, adjust};
+use crate::systems::world::building_whole;
 use crate::util::{
     Ctx, bump_epoch, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, set_anim,
 };
@@ -61,14 +62,16 @@ const ROUGH_PLACE: &str = "glade";
 /// Where those without a home hide from danger.
 const SHELTER: &str = "tavern";
 
-/// Whether this character's home can be slept in: it is neither burning nor in ruins.
+/// Whether this character's home can be slept in: it is neither burning nor in ruins, and nobody has
+/// taken it down.
 pub fn home_usable(state: &SimState, c: &Character) -> bool {
-    !state.houses.contains_key(&c.home_id)
+    !state.houses.contains_key(&c.home_id) && building_whole(state, &c.home_id)
 }
 
-/// Whether this character's home has burned down.
+/// Whether this character's home has burned down or been taken apart, and is not yet raised again.
 pub fn is_homeless(state: &SimState, c: &Character) -> bool {
     state.houses.get(&c.home_id).is_some_and(|house| house.phase == HousePhase::Ruined)
+        || !building_whole(state, &c.home_id)
 }
 
 /// The house on fire right now, if there is one.

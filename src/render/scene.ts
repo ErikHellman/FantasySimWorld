@@ -9,11 +9,12 @@ import { CameraRig } from './camera';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
-import { Houses, isHomeBuilding } from './houses';
 import { Lighting } from './lighting';
 import { Overlay, type LabelState } from './overlay';
 import type { QualitySettings } from './quality';
+import { Marks } from './marks';
 import { PartCache, SceneryBuilder } from './scenery';
+import { Structures, isBuilding } from './structures';
 import { Terrain } from './terrain';
 import { Vegetation, isVegetation } from './vegetation';
 
@@ -41,9 +42,11 @@ export class WorldView {
   private gravesVersion = -1;
   private readonly billboards: Billboards;
   private billboardsVersion = -1;
-  private readonly houses: Houses;
+  private readonly structures: Structures;
   private housesVersion = -1;
   private readonly vegetation: Vegetation;
+  private readonly marks: Marks;
+  private readonly builder: SceneryBuilder;
   private worldObjectsVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
@@ -60,14 +63,21 @@ export class WorldView {
 
     const parts = new PartCache();
     const builder = new SceneryBuilder(parts);
+    this.builder = builder;
     this.terrain = new Terrain(assets, builder);
-    const place = (model: PlacedModel, castShadow: boolean): void => {
+    this.marks = new Marks(assets, builder, this.heightAt, quality);
+    const place = (model: PlacedModel, castShadow: boolean): number =>
       builder.add(assets.model(model.bundle, model.model), {
         x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale, castShadow,
       });
-    };
-    // The homes are left out here: `Houses` keeps each as its own object, because a house can burn down.
-    for (const entry of places) for (const model of entry.models) if (!isHomeBuilding(entry, model)) place(model, true);
+    // The buildings are left out here: `Structures` keeps each as its own object, because one can burn down or be
+    // taken apart. The props stay merged, but `Marks` remembers each one's handle so it can be hidden when it is.
+    for (const entry of places) {
+      entry.models.forEach((model, index) => {
+        if (isBuilding(entry, model)) return;
+        this.marks.prop(entry.id, index, place(model, true));
+      });
+    }
     // Grass, flowers and the like are most of the valley's triangles; their shadows are specks nobody would miss.
     // A small machine draws only some of them, the same ones every time.
     // Trees and rocks are left out too: `Vegetation` draws them as instances, because the sim can fell and mine them.
@@ -75,12 +85,15 @@ export class WorldView {
     for (const model of scatter.models) {
       if (isVegetation(model)) continue;
       if (!GROUND_COVER.has(model.model)) place(model, true);
-      else if (cover++ % quality.groundCoverStep === 0) place(model, false);
+      else if (cover++ % quality.groundCoverStep === 0) {
+        const handle = place(model, false);
+        if (model.model.startsWith('Grass')) this.marks.grassOn(model, handle);
+      }
     }
     this.vegetation = new Vegetation(assets, scatter.models, this.heightAt, quality, parts);
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
-    this.houses = new Houses(assets, places, this.heightAt, quality);
-    this.scene.add(builder.build(), this.vegetation.group, this.houses.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.structures = new Structures(assets, places, this.heightAt, quality);
+    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -123,15 +136,17 @@ export class WorldView {
       this.billboardsVersion = world.billboardsVersion;
       this.billboards.show(world.billboards);
     }
-    if (this.housesVersion !== world.housesVersion) {
-      this.housesVersion = world.housesVersion;
-      this.houses.show(world.houses);
-    }
     this.vegetation.setTick(world.tick);
-    if (this.worldObjectsVersion !== world.worldObjectsVersion) {
+    const changed = this.housesVersion !== world.housesVersion || this.worldObjectsVersion !== world.worldObjectsVersion;
+    if (changed) {
+      this.housesVersion = world.housesVersion;
       this.worldObjectsVersion = world.worldObjectsVersion;
+      this.structures.show(world.houses, world.worldObjects);
       this.vegetation.show(world.worldObjects);
+      this.marks.show(world.worldObjects);
     }
+    // A prop or grass hidden in a baked chunk needs that chunk baked again: one chunk per tick, at most.
+    this.builder.flush();
 
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
@@ -169,9 +184,9 @@ export class WorldView {
   /** Per rendered frame: camera, light, interpolated actors, effects and labels. */
   frame(dt: number, simDt: number, alpha: number, hour: number): void {
     this.rig.update(dt);
-    this.houses.update(dt);
+    this.structures.update(dt);
     this.vegetation.update(dt, alpha);
-    this.lighting.setFire(this.houses.light());
+    this.lighting.setFire(this.structures.light());
     this.lighting.update(hour, this.rig.target, this.rig.distance);
     this.effects.update(simDt);
 

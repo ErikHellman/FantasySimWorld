@@ -1,14 +1,17 @@
 import * as THREE from 'three/webgpu';
-import type { House } from '../generated/api';
-import type { Place, PlacedModel } from '../world/places';
+import type { House, WorldObject } from '../generated/api';
+import { buildingPlaces, type Place, type PlacedModel } from '../world/places';
 import type { Assets } from './assets';
 import type { Lamp } from './lighting';
 import type { QualitySettings } from './quality';
 
-/** The burnt shell that stands where a house was. */
+/** The burnt shell that stands where a building was. */
 const RUIN_MODEL = 'building_destroyed';
+/** What is left where a building was taken down to its footings: a bare plot and a heap of rubble. */
+const PLOT_MODEL = 'building_dirt';
+const RUBBLE_MODEL = 'rubble_half';
 /**
- * Timber that gathers beside a ruin as it is rebuilt: [model, right, forward, turn], in the home's own frame.
+ * Timber that gathers beside a ruin as it is rebuilt: [model, right, forward, turn], in the building's own frame.
  * It lies to the sides, clear of the door where the builders stand.
  */
 const STACKS: [string, number, number, number][] = [
@@ -17,22 +20,24 @@ const STACKS: [string, number, number, number][] = [
   ['Wood_Planks_Stack_Medium', -5.0, -1.4, 1.5],
   ['Stone_Bricks_Stack_Medium', 5.3, -2.0, 0.9],
 ];
-/** The height a house's flames reach when it is all alight, in metres. */
+/** The height a building's flames reach when it is all alight, in metres. */
 const FLAME_REACH = 7;
 
-interface Home {
+interface Structure {
   placeId: string;
   x: number;
   y: number;
   z: number;
-  house: THREE.Object3D;
+  building: THREE.Object3D;
   ruin: THREE.Object3D;
+  plot: THREE.Object3D;
+  rubble: THREE.Object3D;
   stacks: THREE.Object3D[];
 }
 
 interface Flame {
   mesh: THREE.Mesh;
-  /** where it sits around the house, and how far up its walls */
+  /** where it sits around the building, and how far up its walls */
   dx: number;
   dz: number;
   lift: number;
@@ -53,26 +58,27 @@ function spread(index: number, salt: number): number {
   return x - Math.floor(x);
 }
 
-/** The home building among a place's models; the rest (bench, lantern, flowers) is ordinary scenery. */
-export function isHomeBuilding(place: Place, model: PlacedModel): boolean {
-  return place.kind === 'home' && model.model.startsWith('building_home');
+/** Whether a place's model is its building (the first model of a place that has one); the rest is ordinary scenery. */
+export function isBuilding(place: Place, model: PlacedModel): boolean {
+  return buildingPlaces.has(place.id) && place.models[0] === model;
 }
 
 /**
- * The village's homes, kept as one object each (unlike the rest of the scenery, which is merged) so that a
- * house can burn, stand as a ruin and be built again. One fire is drawn at a time, as the sim allows only one.
+ * The village's buildings, kept as one object each (unlike the rest of the scenery, which is merged) so that
+ * one can burn, stand as a ruin, be taken down to its footings and be built again. One fire is drawn at a
+ * time, as the sim allows only one.
  */
-export class Houses {
+export class Structures {
   readonly group = new THREE.Group();
-  private readonly homes = new Map<string, Home>();
+  private readonly structures = new Map<string, Structure>();
   private readonly flames: Flame[] = [];
   private readonly puffs: Puff[] = [];
   private readonly fire = new THREE.Group();
-  private burning: { home: Home; level: number } | null = null;
+  private burning: { structure: Structure; level: number } | null = null;
   private time = 0;
 
   constructor(assets: Assets, places: readonly Place[], heightAt: (x: number, z: number) => number, quality: QualitySettings) {
-    this.group.name = 'houses';
+    this.group.name = 'structures';
     const put = (source: THREE.Object3D, x: number, y: number, z: number, rotation: number, scale: number): THREE.Object3D => {
       const object = source.clone();
       object.position.set(x, y, z);
@@ -88,12 +94,16 @@ export class Houses {
       return object;
     };
     for (const place of places) {
-      const model = place.models.find((entry) => isHomeBuilding(place, entry));
+      const model = place.models.find((entry) => isBuilding(place, entry));
       if (!model) continue;
       const y = model.y + heightAt(model.x, model.z);
-      const house = put(assets.model(model.bundle, model.model), model.x, y, model.z, model.rotation, model.scale);
+      const building = put(assets.model(model.bundle, model.model), model.x, y, model.z, model.rotation, model.scale);
       const ruin = put(assets.model('hex', RUIN_MODEL), model.x, y, model.z, model.rotation, model.scale);
       ruin.visible = false;
+      const plot = put(assets.model('hex', PLOT_MODEL), model.x, y + 0.02, model.z, model.rotation, model.scale);
+      plot.visible = false;
+      const rubble = put(assets.model('dungeon', RUBBLE_MODEL), model.x, y, model.z, model.rotation + 0.6, 0.7);
+      rubble.visible = false;
       const [sin, cos] = [Math.sin(place.facing), Math.cos(place.facing)];
       const stacks = STACKS.filter(([name]) => assets.hasModel('resource', name)).map(([name, right, forward, turn]) => {
         const x = place.origin.x + right * cos + forward * sin;
@@ -102,7 +112,7 @@ export class Houses {
         stack.visible = false;
         return stack;
       });
-      this.homes.set(place.id, { placeId: place.id, x: model.x, y, z: model.z, house, ruin, stacks });
+      this.structures.set(place.id, { placeId: place.id, x: model.x, y, z: model.z, building, ruin, plot, rubble, stacks });
     }
 
     const flameGeometry = new THREE.ConeGeometry(0.5, 1.6, 6).translate(0, 0.8, 0);
@@ -127,23 +137,32 @@ export class Houses {
     this.group.add(this.fire);
   }
 
-  /** Brings every home in line with what the server says of it; a home it does not mention stands whole. */
-  show(houses: ReadonlyMap<string, House>): void {
+  /**
+   * Brings every building in line with what the server says: the homes' fires and ruins from `houses`, and
+   * whatever was done to any building from `objects` (`b:<place>`). A building mentioned in neither stands whole.
+   */
+  show(houses: ReadonlyMap<string, House>, objects: ReadonlyMap<string, WorldObject>): void {
     this.burning = null;
-    for (const home of this.homes.values()) {
-      const state = houses.get(home.placeId);
-      const ruined = state?.phase === 'ruin';
-      home.house.visible = !ruined;
-      home.ruin.visible = ruined;
+    for (const structure of this.structures.values()) {
+      const house = houses.get(structure.placeId);
+      const object = objects.get(`b:${structure.placeId}`);
+      const stage = object?.stage ?? 'whole';
+      const ruined = house?.phase === 'ruin' || stage === 'ruin';
+      const down = stage === 'dismantled' || stage === 'raising';
+      structure.building.visible = !ruined && !down;
+      structure.ruin.visible = ruined;
+      structure.plot.visible = down;
+      structure.rubble.visible = stage === 'dismantled';
       // The timber arrives stack by stack, the last of it when the work is nearly done.
-      home.stacks.forEach((stack, index) => (stack.visible = ruined && state.built >= (index * 100) / home.stacks.length + 5));
-      if (state?.phase === 'burning') this.burning = { home, level: Math.max(0.15, state.fire / 100) };
+      const built = house?.phase === 'ruin' ? house.built : stage === 'raising' ? object?.progress ?? 0 : -1;
+      structure.stacks.forEach((stack, index) => (stack.visible = built >= 0 && built >= (index * 100) / structure.stacks.length + 5));
+      if (house?.phase === 'burning') this.burning = { structure, level: Math.max(0.15, house.fire / 100) };
     }
     this.fire.visible = this.burning !== null;
-    if (this.burning) this.fire.position.set(this.burning.home.x, this.burning.home.y, this.burning.home.z);
+    if (this.burning) this.fire.position.set(this.burning.structure.x, this.burning.structure.y, this.burning.structure.z);
   }
 
-  /** Per rendered frame: flames lick and smoke rises over the burning house. */
+  /** Per rendered frame: flames lick and smoke rises over the burning building. */
   update(dt: number): void {
     if (!this.burning) return;
     this.time += dt;
@@ -166,8 +185,8 @@ export class Houses {
   /** The light the fire throws, flickering, or null when nothing burns. */
   light(): Lamp | null {
     if (!this.burning) return null;
-    const { home, level } = this.burning;
+    const { structure, level } = this.burning;
     const flicker = 0.85 + 0.15 * Math.sin(this.time * 11) + 0.08 * Math.sin(this.time * 29);
-    return { x: home.x, y: home.y + 4, z: home.z, power: (1 + level * 2.5) * flicker };
+    return { x: structure.x, y: structure.y + 4, z: structure.z, power: (1 + level * 2.5) * flicker };
   }
 }

@@ -14,6 +14,7 @@ use crate::state::{
 };
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
+use crate::systems::world::building_whole;
 use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
 
 const FIRST_NAMES: [&str; 15] = [
@@ -63,7 +64,7 @@ pub fn free_home(state: &SimState) -> String {
     let mut best = homes()[0].id.clone();
     let mut best_free = f64::NEG_INFINITY;
     for home in homes() {
-        if state.houses.contains_key(&home.id) {
+        if state.houses.contains_key(&home.id) || !building_whole(state, &home.id) {
             continue;
         }
         let residents = living(state).filter(|c| c.home_id == home.id).count();
