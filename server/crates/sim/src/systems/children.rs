@@ -86,7 +86,7 @@ pub fn daily_children(ctx: &mut Ctx) {
 
 /// A couple who have been together long enough, when the village has room for
 /// another child and the last birth is far enough behind, may have a child at
-/// dawn. At most one a day, and the RNG is only asked when a couple qualifies.
+/// the turn of the day. At most one a day, and the RNG is only asked when a couple qualifies.
 pub fn maybe_birth(ctx: &mut Ctx) {
     let tick = ctx.tick();
     let last = ctx.state.director.last_birth_tick;
@@ -196,6 +196,9 @@ pub fn welcome_child(ctx: &mut Ctx, entry: &CastEntry, parents: Vec<Id>) -> Id {
         .map_or_else(|| free_home(ctx.state), |p| p.home_id.clone());
     let mut c = make_character(ctx.state, entry, &home);
     c.arrived_tick = tick;
+    // Born at the turn of the day: indoors and asleep, not on the step for the dead to find.
+    c.inside = Some(home.clone());
+    c.asleep = true;
     if let Some(child) = &mut c.child {
         child.parents = parents.clone();
         child.next_birthday_day = day + BIRTHDAY_DAYS;
@@ -270,7 +273,10 @@ fn come_of_age(ctx: &mut Ctx, id: &str) {
     let c = ctx.c(id);
     let parents = c.child.take().map_or(Vec::new(), |child| child.parents);
     let def = c.class_id.def();
-    if c.inside.is_some() {
+    // At the turn of the day most children are asleep at home; they sleep on and take up the day in the
+    // morning. Anyone awake is given a fresh start now.
+    let sleeping = c.asleep && c.inside.is_some();
+    if !sleeping && c.inside.is_some() {
         leave_building(c);
     }
     c.look = Look {
@@ -293,14 +299,23 @@ fn come_of_age(ctx: &mut Ctx, id: &str) {
     let full = adults(ctx.state).filter(|o| o.home_id == home.id).count() > home.beds as usize;
     if full {
         let new_home = free_home(ctx.state);
-        ctx.c(id).home_id = new_home;
+        let c = ctx.c(id);
+        c.home_id = new_home.clone();
+        // A sleeper is carried to the new bed: indoors nobody is drawn, so no viewer sees the move, and the
+        // routine's sleep carries on there instead of walking them across the village at midnight.
+        if sleeping {
+            c.inside = Some(new_home.clone());
+            c.pos = get_place(&new_home).door;
+        }
     }
     let c = ctx.c(id);
     c.plan_day = 0;
     c.plan_source = PlanSource::Routine;
-    c.intent = None;
-    c.queue.clear();
-    c.act = fresh_act(tick);
+    if !sleeping {
+        c.intent = None;
+        c.queue.clear();
+        c.act = fresh_act(tick);
+    }
     bump_epoch(c);
 
     let name = first_name(ctx.cr(id)).to_owned();
@@ -337,7 +352,7 @@ fn come_of_age(ctx: &mut Ctx, id: &str) {
 
 // --- Mischief -----------------------------------------------------------------
 
-/// At dawn a child rolls their `mischief`; on a hit one piece of trouble is planned for the day.
+/// At the turn of the day a child rolls their `mischief`; on a hit one piece of trouble is planned for it.
 fn plan_mischief(ctx: &mut Ctx, id: &str) {
     let mischief = ctx.cr(id).child.as_ref().map_or(0.0, |child| child.mischief);
     if let Some(child) = &mut ctx.c(id).child {

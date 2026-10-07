@@ -37,7 +37,11 @@ const MAX_QUEUE: usize = 3;
 fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
     match &intent.action {
         IntentAction::GoTo { place_id } => find_place(place_id).is_some(),
-        IntentAction::Activity { place_id, .. } => place_id.as_deref().is_none_or(|p| find_place(p).is_some()),
+        // A child has no trade: nothing outside a child's activities, whoever asks.
+        IntentAction::Activity { activity, place_id, .. } => {
+            (!ctx.cr(id).is_child() || ActivityId::CHILD_OFFERED.contains(activity))
+                && place_id.as_deref().is_none_or(|p| find_place(p).is_some())
+        }
         IntentAction::Talk { target_id, .. } | IntentAction::Give { target_id, .. } => {
             target_id != id && ctx.alive(target_id)
         }

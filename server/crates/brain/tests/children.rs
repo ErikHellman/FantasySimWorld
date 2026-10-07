@@ -62,6 +62,31 @@ fn a_child_is_told_they_are_a_child_and_offered_a_childs_choices() {
 }
 
 #[test]
+fn a_whole_child_is_told_they_are_unhurt() {
+    let state = create_state(1);
+    let pip = who(&state, "Pip");
+    let text = prompt_text(&decide_prompt(&state, pip, 1200, None));
+    assert!(text.contains("unhurt"), "{text}");
+    assert!(!text.contains("hurt ("), "{text}");
+}
+
+#[test]
+fn a_child_sent_to_work_by_the_model_plays_instead() {
+    let state = create_state(1);
+    let pip = who(&state, "Pip");
+    let decision = interpret_decision(&state, pip, &[call("do_activity", json!({"activity": "smith"}))]);
+    assert!(
+        !decision
+            .intents
+            .iter()
+            .any(|i| matches!(i.action, IntentAction::Activity { activity: ActivityId::Smith, .. })),
+        "{:?}",
+        decision.intents
+    );
+    assert!(decision.problems.iter().any(|p| p.contains("child")), "{:?}", decision.problems);
+}
+
+#[test]
 fn a_grown_up_is_not_offered_play() {
     let state = create_state(1);
     let aldric = who(&state, "Aldric");

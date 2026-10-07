@@ -13,6 +13,7 @@ use fsw_sim::state::{
     Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Relationship, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
@@ -162,7 +163,7 @@ fn as_character(c: &Character, situation: String) -> Vec<ChatMessage> {
 
 fn need_words(c: &Character) -> String {
     let n = &c.needs;
-    let max = c.class_id.def().max_hp;
+    let max = max_hp(c);
     let hp = c.hp / max;
     let health = js_round(c.hp);
     let hurt = if hp < 0.35 {

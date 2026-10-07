@@ -333,6 +333,9 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                 None => decision.problems.push(format!("unknown place \"{}\"", shown(args.get("place")))),
             },
             "do_activity" => match resolve_doable(state, args.get("activity")) {
+                Some(activity) if c.is_child() && !ActivityId::CHILD_OFFERED.contains(&activity) => {
+                    decision.problems.push(format!("a child does not {}", activity.as_str()));
+                }
                 Some(activity) => {
                     decision.intents.push(intent(IntentAction::Activity { activity, place_id: None, minutes: None }))
                 }

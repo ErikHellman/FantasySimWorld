@@ -50,7 +50,7 @@ pub const NEWBORN_AGE: i64 = 5;
 pub const MAX_CHILDREN: usize = 6;
 /// Lovers must have been together this long before a child comes.
 pub const LOVERS_BEFORE_CHILD_TICKS: i64 = 8 * TICKS_PER_DAY;
-/// Each dawn, a couple who qualify have this chance of a child.
+/// At the turn of each day, a couple who qualify have this chance of a child.
 pub const BIRTH_CHANCE: f64 = 1.0 / 6.0;
 /// Days between births in the village.
 pub const BIRTH_COOLDOWN_TICKS: i64 = 6 * TICKS_PER_DAY;

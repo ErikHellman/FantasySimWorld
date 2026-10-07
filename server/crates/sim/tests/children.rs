@@ -174,6 +174,23 @@ mod protection {
     }
 
     #[test]
+    fn a_command_cannot_put_a_child_to_work() {
+        let mut sim = Sim::new(create_state(1));
+        let pip = by_first_name(&sim.state, "Pip").id.clone();
+        let epoch = sim.state.characters[&pip].epoch;
+        let work =
+            IntentAction::Activity { activity: fsw_world::places::ActivityId::Smith, place_id: None, minutes: None };
+        sim.enqueue(Command::SetIntents {
+            id: pip.clone(),
+            epoch,
+            intents: vec![Intent::new(work, IntentSource::Llm)],
+        });
+        sim.step();
+        let intent = &sim.state.characters[&pip].intent;
+        assert!(!intent.as_ref().is_some_and(|i| i.is_activity(fsw_world::places::ActivityId::Smith)), "{intent:?}");
+    }
+
+    #[test]
     fn the_dead_go_for_an_adult_before_a_child() {
         let mut state = create_state(1);
         let (pip, aldric) = (by_first_name(&state, "Pip").id.clone(), by_first_name(&state, "Aldric").id.clone());
@@ -369,10 +386,16 @@ mod growing_up {
             c.child.as_mut().unwrap().next_birthday_day = 2;
         }
         run_to_day(&mut sim, 2);
-        sim.step();
+        // The routine restarts everyone's sleep at the turn of the day; a few ticks later all is still again.
+        for _ in 0..10 {
+            sim.step();
+        }
         let grown = &sim.state.characters[&pip];
         assert!(!grown.is_child());
         assert_eq!(grown.profile.age, 16);
+        // It is midnight: they sleep on, in their own bed, and take up the day in the morning.
+        assert_eq!(grown.inside.as_deref(), Some(grown.home_id.as_str()), "{:?}", grown.intent);
+        assert!(grown.asleep);
         assert_eq!(grown.profile.name, before.profile.name);
         assert_eq!(grown.profile.occupation, "young knight");
         assert_eq!(grown.look.model, "Knight");
@@ -486,6 +509,9 @@ mod births {
         assert_eq!(child.profile.age, 5);
         assert!(child.look.model.starts_with("Child_"), "{}", child.look.model);
         assert!(child.jobs.is_empty());
+        // Born in the night, indoors and asleep, not standing on the step for the dead to find.
+        assert_eq!(child.inside.as_deref(), Some(child.home_id.as_str()));
+        assert!(child.asleep);
         assert!(
             child.home_id == sim.state.characters[&mira].home_id
                 || child.home_id == sim.state.characters[&theron].home_id
