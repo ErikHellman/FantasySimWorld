@@ -156,6 +156,8 @@ export function App() {
 
   if (!ui.started.value) return <StartOverlay />;
   const burning = ui.houses.value.find((house) => house.phase === 'burning');
+  const alight = ui.fires.value[0];
+  const alightName = alight ? alight.name.charAt(0).toUpperCase() + alight.name.slice(1) : '';
   return (
     <>
       {ui.mobile.value ? (
@@ -180,6 +182,7 @@ export function App() {
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
       )}
       {burning && <div class="alarm">🔥 {burning.name.charAt(0).toUpperCase() + burning.name.slice(1)} is on fire</div>}
+      {!burning && alight && <div class="alarm">🔥 {alightName} is on fire</div>}
       {ui.alarm.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
       {ui.throttled.value && !ui.alarm.value && !burning && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>

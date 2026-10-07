@@ -320,6 +320,10 @@ export type Placed = { bundle: string, model: string, x: number, z: number, rota
  */
 export type WorldObject = { id: string, kind: WorldObjectKind, 
 /**
+ * what the village calls it: "the bench at the village green", "The Gilded Tankard"
+ */
+name: string, 
+/**
  * `standing`, `falling`, `stump`, `sapling`, `young`; `whole`, `mined_out`; `pieces`, `burning`, `ash`,
  * `gone`; `ruin`, `dismantled`, `raising`, `expanded`; `dug`, `mown`; or `intact` when it is as the map
  * has it again and can be forgotten

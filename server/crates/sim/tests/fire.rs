@@ -297,3 +297,124 @@ fn a_fire_and_a_ruin_survive_a_save_and_load() {
     assert!(resumed.state == sim.state, "a reloaded ruin went a different way");
     assert!(sim.state.houses[&home].built > 0.0);
 }
+
+// ---- Fires set by villagers, and fires at anything -------------------------------------------------
+
+use fsw_sim::state::{BuildingStage, PropStage, WorldJob, WorldObject};
+use fsw_sim::systems::fire::{alarm_sites, burning_sites, fire_of, ignite_site, site_name};
+use fsw_sim::systems::world::{building_id, job_accepts, prop_id};
+use fsw_sim::util::rel_or_default;
+
+fn set_fire_to(sim: &mut Sim, id: &str, target: &str) {
+    let epoch = sim.state.characters[id].epoch;
+    let action = IntentAction::WorldWork { job: WorldJob::Burn, target: target.into(), minutes: None };
+    sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents: vec![Intent::new(action, IntentSource::Llm)] });
+}
+
+#[test]
+fn a_villager_who_sets_fire_to_the_tavern_musters_the_village_and_is_held_to_blame() {
+    let mut sim = quiet(create_state(21));
+    sim.state.director.next_wave_tick = i64::MAX;
+    let target = building_id("tavern");
+    assert!(job_accepts(&sim.state, WorldJob::Burn, &target));
+    set_fire_to(&mut sim, "c1", &target);
+    let alight = |state: &SimState| fire_of(state, &target).is_some();
+    assert!(run_until(&mut sim, 6000, alight) < 6000, "{}", describe_activity(&sim.state, &sim.state.characters["c1"]));
+    assert_eq!(alarm_sites(&sim.state), vec![target.clone()]);
+    assert!(
+        fire_lines(&sim.state).iter().any(|l| l.contains("set fire to The Gilded Tankard")),
+        "{:?}",
+        fire_lines(&sim.state)
+    );
+    assert!(sim.state.characters["c1"].last_arson_tick > 0);
+    // The village comes running; the one who lit it does not.
+    for _ in 0..200 {
+        sim.step();
+    }
+    let carriers = living(&sim.state).filter(|c| fighting_fire(&sim.state, &c.id)).count();
+    assert!(carriers >= 6, "only {carriers} carry water");
+    assert!(!fighting_fire(&sim.state, "c1"));
+    // Those who saw it hold it against them.
+    let angry = living(&sim.state).filter(|c| c.id != "c1" && rel_or_default(c, "c1").grievance >= 40.0).count();
+    assert!(angry >= 1, "nobody holds the fire against the arsonist");
+    // Saved or lost, the tavern's fire is over within the hour.
+    let over = |state: &SimState| fire_of(state, &target).is_none();
+    assert!(run_until(&mut sim, 20 * 60 * 3, over) < 20 * 60 * 3);
+    let stage = sim.state.objects.get(&target).map(|o| o.stage_name()).unwrap_or("whole");
+    assert!(stage == "whole" || stage == "ruin", "{stage}");
+    assert!(fire_lines(&sim.state).iter().any(|l| l.contains("is out") || l.contains("burned to the ground")));
+}
+
+#[test]
+fn a_bench_set_alight_with_nobody_near_burns_to_ash_on_its_own() {
+    let mut sim = asleep_at_night(22);
+    let bench = prop_id("green", 1);
+    {
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        ignite_site(&mut ctx, &bench, None);
+    }
+    assert!(matches!(sim.state.objects.get(&bench), Some(WorldObject::Prop { stage: PropStage::Burning, .. })));
+    assert!(alarm_sites(&sim.state).is_empty(), "a bench is no alarm");
+    assert_eq!(site_name(&bench), "the bench at the village green");
+    let ash =
+        |state: &SimState| matches!(state.objects.get(&bench), Some(WorldObject::Prop { stage: PropStage::Ash, .. }));
+    let took = run_until(&mut sim, 20 * 60 * 2, ash);
+    assert!(took < 20 * 60 * 2, "the bench did not burn out");
+    assert!(living(&sim.state).all(|c| !fighting_fire(&sim.state, &c.id)), "nobody carries water to a bench");
+    assert!(!job_accepts(&sim.state, WorldJob::Dismantle, &bench));
+}
+
+#[test]
+fn two_buildings_may_burn_at_once_and_a_third_is_not_lit() {
+    let mut sim = asleep_at_night(23);
+    {
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        ignite(&mut ctx, "home_1");
+        ignite_site(&mut ctx, &building_id("smithy"), None);
+    }
+    assert_eq!(alarm_sites(&sim.state).len(), 2);
+    assert!(!job_accepts(&sim.state, WorldJob::Burn, &building_id("tavern")), "two fires are enough");
+    assert!(job_accepts(&sim.state, WorldJob::Burn, &prop_id("green", 1)), "a bench may still be lit");
+    for _ in 0..300 {
+        sim.step();
+    }
+    let at = |state: &SimState, site: &str| {
+        living(state)
+            .filter(|c| {
+                c.intent
+                    .as_ref()
+                    .is_some_and(|i| matches!(&i.action, IntentAction::FightFire { place_id } if place_id == site))
+            })
+            .count()
+    };
+    assert!(at(&sim.state, "home_1") >= 1 && at(&sim.state, &building_id("smithy")) >= 1, "both fires are fought");
+    // The whole village sees both out, or one of them lost.
+    let over = |state: &SimState| burning_sites(state).is_empty();
+    assert!(run_until(&mut sim, 20 * 60 * 3, over) < 20 * 60 * 3);
+    let smithy = sim.state.objects.get(&building_id("smithy"));
+    assert!(smithy.is_none() || matches!(smithy, Some(WorldObject::Building { stage: BuildingStage::Ruin, .. })));
+}
+
+#[test]
+fn a_burning_bench_survives_a_save_and_load() {
+    let round_trip =
+        |state: &SimState| -> SimState { serde_json::from_str(&serde_json::to_string(state).unwrap()).unwrap() };
+    let mut sim = asleep_at_night(24);
+    {
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        ignite_site(&mut ctx, &prop_id("tavern", 12), None);
+    }
+    for _ in 0..200 {
+        sim.step();
+    }
+    let mut resumed = Sim::new(round_trip(&sim.state));
+    assert_eq!(resumed.state, sim.state);
+    for _ in 0..3000 {
+        sim.step();
+        resumed.step();
+    }
+    assert!(resumed.state == sim.state, "a reloaded fire went a different way");
+}

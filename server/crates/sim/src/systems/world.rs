@@ -27,6 +27,7 @@ use crate::state::{
     IntentSource, MemoryKind, PropStage, Quirk, Resource, RockStage, SimState, StimulusKind, Store, TreeStage,
     WorldJob, WorldObject,
 };
+use crate::systems::fire;
 use crate::systems::intents::{finish, leave_building, travel, travel_to};
 use crate::util::{Ctx, first_name, join_names, living, living_ids, place_name_at, set_anim};
 
@@ -277,7 +278,8 @@ pub fn destroyable(id: &str) -> bool {
         return false;
     }
     let model = &get_place(place_id).models[index].model;
-    !UNTOUCHABLE_MODELS.contains(&model.as_str())
+    // Flowers and mushrooms are dressing, not things.
+    !UNTOUCHABLE_MODELS.contains(&model.as_str()) && !model.starts_with("flowers") && !model.starts_with("mushrooms")
 }
 
 /// Whether a place's building stands to be used: not taken down, not being raised again. A home that
@@ -455,9 +457,136 @@ pub fn job_accepts(state: &SimState, job: WorldJob, target: &str) -> bool {
                 }
         }
         WorldJob::Dig | WorldJob::Mow => ground_workable(state, target, job),
-        // These come later; nothing accepts them yet.
-        WorldJob::Burn | WorldJob::Build => false,
+        WorldJob::Burn => {
+            let building = place_model(target).is_some_and(|(place, i)| i == 0 && get_place(place).has_building);
+            let fires = fire::burning_sites(state).len();
+            destroyable(target)
+                && fire::fire_of(state, target).is_none()
+                && fires < fire::MAX_FIRES
+                && (!building || fire::alarm_sites(state).len() < fire::MAX_ALARM_FIRES)
+                && match place_model(target) {
+                    Some((place, 0)) if get_place(place).has_building => {
+                        building_whole(state, place) && !state.houses.contains_key(place)
+                    }
+                    Some(_) => prop_whole(state, target),
+                    None => target.starts_with("n:") && prop_whole(state, target),
+                }
+        }
+        // Building comes later; nothing accepts it yet.
+        WorldJob::Build => false,
     }
+}
+
+/// A fire site id for a `Burn` target: a home is known to the fire system by its place id.
+fn fire_site(target: &str) -> String {
+    match place_model(target) {
+        Some((place, 0)) if get_place(place).kind == PlaceKind::Home => place.to_owned(),
+        _ => target.to_owned(),
+    }
+}
+
+/// How long a torch is held to something before it catches.
+const LIGHT_SECONDS: f64 = 8.0;
+
+/// What someone standing at `pos` could work on, for the brain to choose from: trees and rocks within
+/// reach (the nearest of each), the ground underfoot, and the buildings and props round about, nearest
+/// first, at most `limit` entries.
+pub struct WorkTarget {
+    pub id: String,
+    pub jobs: Vec<WorldJob>,
+    /// "a tree (3 within reach)", "the bench at the village green"
+    pub label: String,
+}
+
+pub const TARGET_REACH: f64 = 30.0;
+
+pub fn nearby_targets(state: &SimState, pos: Vec2, limit: usize) -> Vec<WorkTarget> {
+    let mut targets = Vec::new();
+    for (job, what) in [(WorldJob::Fell, "a tree"), (WorldJob::Mine, "a rock")] {
+        let within: Vec<(f64, usize)> = scatter()
+            .models
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| match job {
+                WorldJob::Fell => tree_standing(state, *i),
+                _ => rock_whole(state, *i),
+            })
+            .map(|(i, m)| (dist(pos, vec2(m.x, m.z)), i))
+            .filter(|(d, _)| *d <= TARGET_REACH)
+            .collect();
+        if let Some((_, nearest)) = within.iter().min_by(|a, b| a.0.total_cmp(&b.0)) {
+            let label =
+                if within.len() > 1 { format!("{what} ({} within reach)", within.len()) } else { what.to_owned() };
+            targets.push(WorkTarget { id: scatter_id(*nearest), jobs: vec![job], label });
+        }
+    }
+    let here = ground_id(hex_at(pos.x, pos.z));
+    let ground: Vec<WorldJob> =
+        [WorldJob::Dig, WorldJob::Mow].into_iter().filter(|job| ground_workable(state, &here, *job)).collect();
+    if !ground.is_empty() {
+        targets.push(WorkTarget { id: here, jobs: ground, label: "the ground here".to_owned() });
+    }
+    let mut things: Vec<(f64, WorkTarget)> = Vec::new();
+    for place in fsw_world::places::places() {
+        for (index, model) in place.models.iter().enumerate() {
+            let id = if index == 0 && place.has_building { building_id(&place.id) } else { prop_id(&place.id, index) };
+            let d = dist(pos, vec2(model.x, model.z));
+            if d > TARGET_REACH || !destroyable(&id) {
+                continue;
+            }
+            let jobs: Vec<WorldJob> =
+                [WorldJob::Dismantle, WorldJob::Burn].into_iter().filter(|job| job_accepts(state, *job, &id)).collect();
+            if jobs.is_empty() {
+                continue;
+            }
+            let label = if index == 0 && place.has_building {
+                place.name.to_owned()
+            } else {
+                format!("{} at {}", prop_name(&model.model), place.name)
+            };
+            things.push((d, WorkTarget { id, jobs, label }));
+        }
+    }
+    // Buildings before props, nearest first, and one of a kind: three stools are one entry.
+    things.sort_by(|a, b| {
+        let building = |t: &WorkTarget| !t.id.starts_with("b:");
+        building(&a.1).cmp(&building(&b.1)).then_with(|| a.0.total_cmp(&b.0)).then_with(|| a.1.id.cmp(&b.1.id))
+    });
+    for (_, thing) in things {
+        if targets.len() >= limit {
+            break;
+        }
+        if !targets.iter().any(|t| t.label == thing.label) {
+            targets.push(thing);
+        }
+    }
+    targets.truncate(limit);
+    targets
+}
+
+/// The nearest tree or rock to `pos` that the job could be done to, for a villager who asked for one.
+pub fn nearest_target(state: &SimState, pos: Vec2, job: WorldJob) -> Option<String> {
+    nearby_targets(state, pos, 8).into_iter().find(|t| t.jobs.contains(&job)).map(|t| t.id)
+}
+
+/// The ground underfoot if a spade or scythe can be taken to it, else the nearest hex within reach that can.
+pub fn ground_near(state: &SimState, pos: Vec2, job: WorldJob) -> Option<String> {
+    let here = ground_id(hex_at(pos.x, pos.z));
+    if ground_workable(state, &here, job) {
+        return Some(here);
+    }
+    let mut best: Option<(f64, String)> = None;
+    for cell in &fsw_world::map::world_map().cells {
+        let d = dist(cell.center, pos);
+        if d > TARGET_REACH || best.as_ref().is_some_and(|(bd, _)| d >= *bd) {
+            continue;
+        }
+        let id = ground_id(Hex { col: cell.col, row: cell.row });
+        if ground_workable(state, &id, job) && claims_on(state, &id) == 0 {
+            best = Some((d, id));
+        }
+    }
+    best.map(|(_, id)| id)
 }
 
 /// Where a job's target stands, and how far its footprint reaches.
@@ -664,7 +793,12 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
             put_object(ctx.state, target, WorldObject::Ground { stage: GroundStage::Mown, since_tick: tick });
             "You cut the grass short.".into()
         }
-        WorldJob::Burn | WorldJob::Build => "Nothing came of it.".into(),
+        WorldJob::Burn => {
+            let site = fire_site(target);
+            fire::ignite_site(ctx, &site, Some(id));
+            format!("You set fire to {}.", fire::site_name(&site))
+        }
+        WorldJob::Build => "Nothing came of it.".into(),
     }
 }
 
@@ -834,6 +968,9 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
             if job == WorldJob::Deliver {
                 c.act.until_tick = tick + seconds_to_ticks(DELIVER_SECONDS);
             }
+            if job == WorldJob::Burn {
+                c.act.until_tick = tick + seconds_to_ticks(LIGHT_SECONDS);
+            }
         }
         ActPhase::Perform => {
             if !job_accepts(ctx.state, job, target) {
@@ -843,7 +980,7 @@ pub fn run_world_work(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str, minu
             }
             let c = ctx.cr(id);
             let elapsed = tick - c.act.since_tick;
-            if job == WorldJob::Deliver {
+            if job == WorldJob::Deliver || job == WorldJob::Burn {
                 if tick >= c.act.until_tick {
                     let outcome = complete_job(ctx, id, job, target);
                     set_anim(ctx.c(id), AnimId::Idle, false);
@@ -959,6 +1096,28 @@ pub fn progress_of(object: &WorldObject) -> f64 {
         _ => return 0.0,
     };
     (object.work() / whole).clamp(0.0, 1.0)
+}
+
+/// What a thing of the world is called: "a tree near the lumber camp", "the bench at the village green",
+/// "The Gilded Tankard", "the ground near the windmill farm".
+pub fn object_name(id: &str, object: &WorldObject) -> String {
+    match object {
+        WorldObject::Tree { .. } | WorldObject::Rock { .. } | WorldObject::Ground { .. } => {
+            let what = match object {
+                WorldObject::Tree { .. } => "a tree",
+                WorldObject::Rock { .. } => "a rock",
+                _ => "the ground",
+            };
+            match position_of(id, object) {
+                Some((x, z)) => format!("{what} near {}", place_name_at(vec2(x, z))),
+                None => what.to_owned(),
+            }
+        }
+        WorldObject::Prop { .. } | WorldObject::Building { .. } => fire::site_name(id),
+        WorldObject::Built { spec, .. } => {
+            format!("{} near {}", prop_name(&spec.model), place_name_at(vec2(spec.x, spec.z)))
+        }
+    }
 }
 
 /// "a tree near the lumber camp": what someone is working on, for status lines.

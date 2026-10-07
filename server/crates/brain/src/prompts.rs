@@ -16,6 +16,7 @@ use fsw_sim::systems::charm;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::world;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
 
@@ -295,6 +296,26 @@ fn place_list() -> String {
     format!("Places: {}, home.", names.join(", "))
 }
 
+/// The most things a prompt offers to work on.
+const TARGETS_NAMED: usize = 6;
+
+/// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
+/// when nothing is within reach.
+fn targets_line(state: &SimState, c: &Character) -> String {
+    let targets = world::nearby_targets(state, c.pos, TARGETS_NAMED);
+    if targets.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = targets
+        .iter()
+        .map(|t| {
+            let jobs: Vec<&str> = t.jobs.iter().map(|job| job.as_str()).collect();
+            format!("{} ({})", t.label, jobs.join(" or "))
+        })
+        .collect();
+    format!("Things you could work on nearby (work_on): {}.", items.join("; "))
+}
+
 /// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
 /// over to it while a house lies in ruins.
 fn activity_list() -> String {
@@ -537,6 +558,10 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if killable {
         tools.push(TOOLS.attack.clone());
     }
+    let targets = targets_line(state, c);
+    if !targets.is_empty() {
+        tools.push(TOOLS.work_on.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -589,6 +614,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
                 },
             ),
             section(2, plan_line(c, time.hour)),
+            section(2, targets),
             section(
                 5,
                 if far.len() > 5 {
@@ -1128,6 +1154,17 @@ mod tests {
         assert_eq!(prompt.max_calls, 3);
         // Reading the state for a prompt never changes it.
         assert_eq!(state, world());
+    }
+
+    #[test]
+    fn decide_prompts_offer_the_things_within_reach_to_work_on() {
+        let state = world();
+        let c = &state.characters["c1"];
+        let prompt = decide_prompt(&state, c, 1500, None);
+        let text = prompt_text(&prompt);
+        assert!(text.contains("Things you could work on nearby (work_on):"), "{text}");
+        assert!(text.contains("(dismantle or burn)"), "{text}");
+        assert!(prompt.tools.iter().any(|t| t.name == "work_on"));
     }
 
     #[test]

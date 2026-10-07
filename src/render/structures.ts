@@ -52,6 +52,15 @@ interface Puff {
   phase: number;
 }
 
+/** One fire's flames and smoke, moved to whichever building burns. */
+interface Fire {
+  group: THREE.Group;
+  flames: Flame[];
+  puffs: Puff[];
+  at: Structure | null;
+  level: number;
+}
+
 /** A repeatable scatter: the same flames in the same places every time. */
 function spread(index: number, salt: number): number {
   const x = Math.sin(index * 127.1 + salt * 311.7) * 43758.5453;
@@ -65,16 +74,13 @@ export function isBuilding(place: Place, model: PlacedModel): boolean {
 
 /**
  * The village's buildings, kept as one object each (unlike the rest of the scenery, which is merged) so that
- * one can burn, stand as a ruin, be taken down to its footings and be built again. One fire is drawn at a
- * time, as the sim allows only one.
+ * one can burn, stand as a ruin, be taken down to its footings and be built again. As many fires are drawn
+ * as the sim allows buildings to burn at once.
  */
 export class Structures {
   readonly group = new THREE.Group();
   private readonly structures = new Map<string, Structure>();
-  private readonly flames: Flame[] = [];
-  private readonly puffs: Puff[] = [];
-  private readonly fire = new THREE.Group();
-  private burning: { structure: Structure; level: number } | null = null;
+  private readonly fires: Fire[] = [];
   private time = 0;
 
   constructor(assets: Assets, places: readonly Place[], heightAt: (x: number, z: number) => number, quality: QualitySettings) {
@@ -119,22 +125,27 @@ export class Structures {
     const flameMaterials = [0xffd24a, 0xff8a1e, 0xff5a1a].map(
       (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
-    for (let i = 0; i < quality.fireFlames; i++) {
-      const mesh = new THREE.Mesh(flameGeometry, flameMaterials[i % flameMaterials.length]);
-      const angle = spread(i, 1) * Math.PI * 2;
-      const radius = 1.4 + spread(i, 2) * 2;
-      this.flames.push({ mesh, dx: Math.cos(angle) * radius, dz: Math.sin(angle) * radius, lift: spread(i, 3), size: 0.8 + spread(i, 4) * 0.9, phase: spread(i, 5) * 6.28 });
-      this.fire.add(mesh);
-    }
     const puffGeometry = new THREE.SphereGeometry(1, 8, 6);
-    for (let i = 0; i < quality.fireSmoke; i++) {
-      const material = new THREE.MeshBasicMaterial({ color: 0x2b2622, transparent: true, opacity: 0.4, depthWrite: false });
-      const mesh = new THREE.Mesh(puffGeometry, material);
-      this.puffs.push({ mesh, dx: (spread(i, 6) - 0.5) * 3, dz: (spread(i, 7) - 0.5) * 3, phase: i / Math.max(1, quality.fireSmoke) });
-      this.fire.add(mesh);
+    // As many fires as the sim allows buildings to burn at once, each with its own flames and smoke.
+    for (let f = 0; f < quality.fireSites; f++) {
+      const fire: Fire = { group: new THREE.Group(), flames: [], puffs: [], at: null, level: 0 };
+      for (let i = 0; i < quality.fireFlames; i++) {
+        const mesh = new THREE.Mesh(flameGeometry, flameMaterials[i % flameMaterials.length]);
+        const angle = spread(i, 1 + f) * Math.PI * 2;
+        const radius = 1.4 + spread(i, 2 + f) * 2;
+        fire.flames.push({ mesh, dx: Math.cos(angle) * radius, dz: Math.sin(angle) * radius, lift: spread(i, 3), size: 0.8 + spread(i, 4) * 0.9, phase: spread(i, 5 + f) * 6.28 });
+        fire.group.add(mesh);
+      }
+      for (let i = 0; i < quality.fireSmoke; i++) {
+        const material = new THREE.MeshBasicMaterial({ color: 0x2b2622, transparent: true, opacity: 0.4, depthWrite: false });
+        const mesh = new THREE.Mesh(puffGeometry, material);
+        fire.puffs.push({ mesh, dx: (spread(i, 6) - 0.5) * 3, dz: (spread(i, 7) - 0.5) * 3, phase: i / Math.max(1, quality.fireSmoke) });
+        fire.group.add(mesh);
+      }
+      fire.group.visible = false;
+      this.group.add(fire.group);
+      this.fires.push(fire);
     }
-    this.fire.visible = false;
-    this.group.add(this.fire);
   }
 
   /**
@@ -142,7 +153,7 @@ export class Structures {
    * whatever was done to any building from `objects` (`b:<place>`). A building mentioned in neither stands whole.
    */
   show(houses: ReadonlyMap<string, House>, objects: ReadonlyMap<string, WorldObject>): void {
-    this.burning = null;
+    const burning: { structure: Structure; level: number }[] = [];
     for (const structure of this.structures.values()) {
       const house = houses.get(structure.placeId);
       const object = objects.get(`b:${structure.placeId}`);
@@ -156,37 +167,46 @@ export class Structures {
       // The timber arrives stack by stack, the last of it when the work is nearly done.
       const built = house?.phase === 'ruin' ? house.built : stage === 'raising' ? object?.progress ?? 0 : -1;
       structure.stacks.forEach((stack, index) => (stack.visible = built >= 0 && built >= (index * 100) / structure.stacks.length + 5));
-      if (house?.phase === 'burning') this.burning = { structure, level: Math.max(0.15, house.fire / 100) };
+      const fire = house?.phase === 'burning' ? house.fire : stage === 'burning' ? object?.fire ?? 20 : -1;
+      if (fire >= 0) burning.push({ structure, level: Math.max(0.15, fire / 100) });
     }
-    this.fire.visible = this.burning !== null;
-    if (this.burning) this.fire.position.set(this.burning.structure.x, this.burning.structure.y, this.burning.structure.z);
+    this.fires.forEach((fire, index) => {
+      const site = burning[index];
+      fire.at = site?.structure ?? null;
+      fire.level = site?.level ?? 0;
+      fire.group.visible = site !== undefined;
+      if (site) fire.group.position.set(site.structure.x, site.structure.y, site.structure.z);
+    });
   }
 
   /** Per rendered frame: flames lick and smoke rises over the burning building. */
   update(dt: number): void {
-    if (!this.burning) return;
+    if (!this.fires.some((fire) => fire.at)) return;
     this.time += dt;
-    const level = this.burning.level;
-    for (const flame of this.flames) {
-      const flicker = 0.75 + 0.25 * Math.sin(this.time * 9 + flame.phase) + 0.15 * Math.sin(this.time * 23 + flame.phase * 3);
-      const size = flame.size * (0.5 + level * 1.3);
-      flame.mesh.position.set(flame.dx, 0.4 + flame.lift * level * FLAME_REACH * 0.7, flame.dz);
-      flame.mesh.scale.set(size, size * (1 + level) * flicker, size);
-    }
-    for (const puff of this.puffs) {
-      const age = (this.time * 0.22 + puff.phase) % 1;
-      const size = (0.6 + age * 2.4) * (0.5 + level);
-      puff.mesh.position.set(puff.dx + age * 2.5, 3 + level * FLAME_REACH * 0.6 + age * 12, puff.dz + age * 1.2);
-      puff.mesh.scale.setScalar(size);
-      (puff.mesh.material as THREE.MeshBasicMaterial).opacity = 0.45 * (1 - age) * Math.min(1, age * 6);
+    for (const fire of this.fires) {
+      if (!fire.at) continue;
+      const level = fire.level;
+      for (const flame of fire.flames) {
+        const flicker = 0.75 + 0.25 * Math.sin(this.time * 9 + flame.phase) + 0.15 * Math.sin(this.time * 23 + flame.phase * 3);
+        const size = flame.size * (0.5 + level * 1.3);
+        flame.mesh.position.set(flame.dx, 0.4 + flame.lift * level * FLAME_REACH * 0.7, flame.dz);
+        flame.mesh.scale.set(size, size * (1 + level) * flicker, size);
+      }
+      for (const puff of fire.puffs) {
+        const age = (this.time * 0.22 + puff.phase) % 1;
+        const size = (0.6 + age * 2.4) * (0.5 + level);
+        puff.mesh.position.set(puff.dx + age * 2.5, 3 + level * FLAME_REACH * 0.6 + age * 12, puff.dz + age * 1.2);
+        puff.mesh.scale.setScalar(size);
+        (puff.mesh.material as THREE.MeshBasicMaterial).opacity = 0.45 * (1 - age) * Math.min(1, age * 6);
+      }
     }
   }
 
-  /** The light the fire throws, flickering, or null when nothing burns. */
+  /** The light the biggest fire throws, flickering, or null when nothing burns. */
   light(): Lamp | null {
-    if (!this.burning) return null;
-    const { structure, level } = this.burning;
+    const fire = this.fires.filter((f) => f.at).sort((a, b) => b.level - a.level)[0];
+    if (!fire || !fire.at) return null;
     const flicker = 0.85 + 0.15 * Math.sin(this.time * 11) + 0.08 * Math.sin(this.time * 29);
-    return { x: structure.x, y: structure.y + 4, z: structure.z, power: (1 + level * 2.5) * flicker };
+    return { x: fire.at.x, y: fire.at.y + 4, z: fire.at.z, power: (1 + fire.level * 2.5) * flicker };
   }
 }

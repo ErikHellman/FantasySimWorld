@@ -115,6 +115,7 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         needs,
         inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0 },
         carried: Default::default(),
+        last_arson_tick: 0,
         plan: Vec::new(),
         plan_day: 0,
         plan_source: PlanSource::Routine,

@@ -4,7 +4,7 @@ import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
   Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, CreditOffer, CreditsState, Grave, House, LlmStatus, Me,
   RosterEntry,
-  Snapshot, Status, Stockpile, Utterance,
+  Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
 import type { ConnectionState } from '../net/stream';
 
@@ -81,6 +81,8 @@ export const ui = {
   houses: signal<House[]>([]),
   /** the materials the village has put by, for the places that hold any */
   stockpiles: signal<Stockpile[]>([]),
+  /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
+  fires: signal<WorldObject[]>([]),
   panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -159,6 +161,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.billboards.value = snapshot.billboards;
   ui.houses.value = snapshot.houses;
   ui.stockpiles.value = snapshot.stockpiles;
+  ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -194,6 +197,12 @@ export function setHouse(house: House): void {
 export function setStockpile(pile: Stockpile): void {
   const others = ui.stockpiles.value.filter((entry) => entry.place !== pile.place);
   ui.stockpiles.value = pile.wood + pile.stone + pile.ore === 0 ? others : [...others, pile];
+}
+
+/** A thing of the world caught fire or stopped burning. */
+export function setWorldObject(object: WorldObject): void {
+  const others = ui.fires.value.filter((entry) => entry.id !== object.id);
+  ui.fires.value = object.stage === 'burning' ? [...others, object] : others;
 }
 
 /** Everything the village has put by, over every stockpile. */

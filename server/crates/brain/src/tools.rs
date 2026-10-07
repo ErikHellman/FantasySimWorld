@@ -62,6 +62,7 @@ pub struct Tools {
     pub finish: ToolDef,
     pub reflection: ToolDef,
     pub billboard: ToolDef,
+    pub work_on: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -227,5 +228,20 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["reaction"],
+    ),
+    work_on: tool(
+        "work_on",
+        "Change the world: fell a tree, mine a rock, dig or mow the ground, take something apart, or set it alight. Only the things the message lists are within reach.",
+        json!({
+            "job": {
+                "type": "string",
+                "enum": ["fell", "mine", "dig", "mow", "dismantle", "burn"],
+                "description": "fell: cut a tree down for wood. mine: break a rock up for stone. dig: a pit in the ground. mow: cut the grass. dismantle: take a thing or building apart for its materials. burn: set it on fire.",
+            },
+            "target": { "type": "string", "description": "What to work on, as the message names it: a tree, a rock, the ground, a thing at a place, or a building." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["job", "target"],
     ),
 });

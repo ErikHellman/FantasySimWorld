@@ -737,6 +737,9 @@ pub struct Character {
     pub combat: CombatState,
     /// bumped whenever the situation changes enough to invalidate a pending decision
     pub epoch: i64,
+    /// the tick this character last set something alight; 0 for the innocent
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_arson_tick: i64,
     pub thought: String,
     /// what came of the last intent, for the next decision
     pub outcome: String,

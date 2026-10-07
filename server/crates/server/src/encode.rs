@@ -23,7 +23,7 @@ use fsw_sim::state::{
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::fire::built_fraction;
-use fsw_sim::systems::world::progress_of;
+use fsw_sim::systems::world::{object_name, progress_of};
 use fsw_sim::util::first_name;
 use fsw_world::places::{billboards, find_place, get_place};
 use indexmap::IndexMap;
@@ -301,6 +301,7 @@ fn wire_object(id: &str, object: &SimWorldObject) -> WorldObject {
     WorldObject {
         id: id.to_owned(),
         kind,
+        name: object_name(id, object),
         stage: object.stage_name().to_owned(),
         since_tick: object.since_tick().max(0) as u64,
         // Coarse steps, so a shift of work is a handful of events rather than one a minute.

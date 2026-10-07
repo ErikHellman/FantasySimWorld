@@ -65,14 +65,14 @@ describe('view world', () => {
 
   it('keeps what differs from the map and what the stockpiles hold, forgetting what is whole or empty again', () => {
     const world = new ViewWorld();
-    const tree = { id: 's:7', kind: 'tree' as const, stage: 'standing', sinceTick: 40, progress: 20, fire: 0, placed: null };
+    const tree = { id: 's:7', kind: 'tree' as const, name: 'a tree near the lumber camp', stage: 'standing', sinceTick: 40, progress: 20, fire: 0, placed: null };
     const camp = { place: 'lumber_camp', name: 'the lumber camp', wood: 4, stone: 0, ore: 0 };
     world.reset({ ...snapshot(1, []), worldObjects: [tree], stockpiles: [camp] });
     const objects = world.worldObjectsVersion;
     const piles = world.stockpilesVersion;
     expect(world.worldObjects.get('s:7')?.progress).toBe(20);
     world.apply({ t: 2, ev: [{ type: 'world_object', object: { ...tree, stage: 'falling', sinceTick: 900, progress: 0 } }] });
-    world.apply({ t: 3, ev: [{ type: 'world_object', object: { id: 's:9', kind: 'rock', stage: 'mined_out', sinceTick: 950, progress: 0, fire: 0, placed: null } }] });
+    world.apply({ t: 3, ev: [{ type: 'world_object', object: { id: 's:9', kind: 'rock', name: 'a rock near the old mine', stage: 'mined_out', sinceTick: 950, progress: 0, fire: 0, placed: null } }] });
     expect(world.worldObjects.get('s:7')).toMatchObject({ stage: 'falling', sinceTick: 900 });
     expect(world.worldObjects.size).toBe(2);
     world.apply({ t: 4, ev: [{ type: 'world_object', object: { ...tree, stage: 'intact' } }] });

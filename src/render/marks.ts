@@ -35,6 +35,7 @@ export class Marks {
   private readonly pit: THREE.Object3D;
   private readonly mown: THREE.Mesh;
   private readonly pieces: THREE.Object3D;
+  private readonly flame: THREE.Object3D;
 
   constructor(
     private readonly assets: Assets,
@@ -63,6 +64,15 @@ export class Marks {
       pieces.add(piece);
     }
     this.pieces = pieces;
+    const flame = new THREE.Group();
+    const cone = new THREE.ConeGeometry(0.35, 1.2, 6).translate(0, 0.6, 0);
+    [0xffd24a, 0xff8a1e].forEach((color, i) => {
+      const mesh = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+      mesh.position.set(i * 0.3 - 0.15, 0.1 + i * 0.2, i * 0.2);
+      mesh.scale.setScalar(1 - i * 0.3);
+      flame.add(mesh);
+    });
+    this.flame = flame;
   }
 
   /** Remembers a prop's handle so it can be hidden when the prop is taken apart. */
@@ -116,6 +126,8 @@ export class Marks {
     switch (object.stage) {
       case 'pieces':
         return 'pieces';
+      case 'burning':
+        return 'flame';
       case 'ash':
         return 'ash';
       case 'dug':
@@ -150,7 +162,8 @@ export class Marks {
   private make(kind: string, id: string): THREE.Object3D | null {
     const at = this.positionOf(id);
     if (!at) return null;
-    const template = kind === 'pieces' ? this.pieces : kind === 'ash' ? this.ash : kind === 'pit' ? this.pit : this.mown;
+    const template =
+      kind === 'pieces' ? this.pieces : kind === 'ash' ? this.ash : kind === 'pit' ? this.pit : kind === 'flame' ? this.flame : this.mown;
     const mark = template.clone();
     mark.name = kind;
     mark.position.set(at.x, this.heightAt(at.x, at.z), at.z);
