@@ -30,9 +30,9 @@ pub struct Vec2 {
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// holds the admin's token (or sign-in is off): runs the world
     Admin,
-    Viewer,
-    /// watching without signing in, for a while: no chat (never on the allowlist)
+    /// holds a guest seat: watches and chats
     Guest,
 }
 
@@ -738,24 +738,7 @@ pub struct WatchRequest {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Me {
-    pub email: String,
-    pub display_name: String,
     pub role: Role,
-    /// for a guest, the seconds left before their pass ends; `null` for everyone else
-    pub guest_seconds_left: Option<u32>,
-}
-
-/// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct SignInOptions {
-    /// `AUTH_MODE=off`: no sign-in needed (local development)
-    pub open: bool,
-    /// `/auth/token` works (`AUTH_MODE=token`)
-    pub token: bool,
-    /// `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
-    pub providers: Vec<SignInProvider>,
-    /// `POST /auth/guest` works: people may watch for a while without signing in
-    pub guests: bool,
 }
 
 /// `POST /auth/guest`: asks for a guest seat.
@@ -770,8 +753,8 @@ pub struct GuestRequest {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum GuestAnswer {
-    /// a seat: the guest cookie is set, and `/api/stream` works until the pass ends
-    Admitted { seconds_left: u32 },
+    /// a seat: the guest cookie is set, and `/api/stream` works for as long as the guest watches
+    Admitted,
     /// every seat is taken: ask again with `ticket` after `retryAfterSeconds`
     Queued {
         ticket: String,
@@ -787,8 +770,6 @@ pub enum GuestAnswer {
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum GuestEndReason {
-    /// the pass ran out
-    Time,
     /// another tab of this browser took the stream over
     Elsewhere,
     /// the guest left (`POST /api/logout`)
@@ -799,18 +780,6 @@ pub enum GuestEndReason {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct GuestEnd {
     pub reason: GuestEndReason,
-}
-
-/// A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
-#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum SignInProvider {
-    Google,
-    Apple,
-    Microsoft,
-    LinkedIn,
-    GitHub,
-    Discord,
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -898,43 +867,6 @@ pub struct LlmTestResult {
     pub message: String,
 }
 
-/// `GET /api/admin/allowlist` rows.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct AllowlistEntry {
-    pub email: String,
-    pub role: Role,
-    pub added_by: String,
-    /// ms since the epoch
-    #[ts(type = "number")]
-    pub added_at: u64,
-    pub note: String,
-}
-
-/// `POST /api/admin/allowlist`
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct AllowlistAdd {
-    pub email: String,
-    pub role: Role,
-    #[serde(default)]
-    pub note: String,
-}
-
-/// `GET /api/admin/attempts`: refused sign-ins, newest first.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct AuthAttempt {
-    #[ts(type = "number")]
-    pub id: u64,
-    /// a [`SignInProvider`]'s name, such as "google" or "github"
-    pub provider: String,
-    pub email: String,
-    /// "not_allowlisted", "email_unverified" or "no_email"
-    pub outcome: String,
-    /// ms since the epoch
-    #[ts(type = "number")]
-    pub at: u64,
-}
-
 /// `POST /api/admin/world/new`
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct NewWorldRequest {
@@ -992,8 +924,6 @@ pub fn typescript() -> String {
     decl!(
         Vec2,
         Role,
-        SignInOptions,
-        SignInProvider,
         GuestRequest,
         GuestAnswer,
         GuestEndReason,
@@ -1054,9 +984,6 @@ pub fn typescript() -> String {
         ReasoningMode,
         LlmSettingsView,
         LlmTestResult,
-        AllowlistEntry,
-        AllowlistAdd,
-        AuthAttempt,
         NewWorldRequest,
         LlmUsage,
         HealthReport,

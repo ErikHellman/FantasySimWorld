@@ -14,9 +14,9 @@ path = "src/main.rs"
 
 [dependencies]
 async-stream = "0.3.6"
+# The one crypto backend of the workspace (rustls in the brain crate); here it hashes guest tokens.
 aws-lc-rs = "1"
 axum = "0.8.9"
-base64 = "0.22"
 fsw-brain.workspace = true
 fsw-sim.workspace = true
 fsw-core.workspace = true
@@ -25,11 +25,6 @@ indexmap = "2"
 parking_lot = "0.12"
 futures-util = "0.3.34"
 getrandom = "0.4.3"
-# One crypto backend everywhere: aws-lc-rs (rustls via reqwest, jsonwebtoken, our own hashing).
-jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
-# Without its bundled reqwest 0.12; token requests go through our reqwest 0.13 client.
-oauth2 = { version = "5", default-features = false }
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "json"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true

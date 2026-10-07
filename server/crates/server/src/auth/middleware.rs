@@ -14,31 +14,14 @@ use crate::AppState;
 use crate::api::error;
 use crate::api::wire::Role;
 
-/// For `/api`: 401 unless signed in; puts the [`Viewer`] in the request extensions.
+/// For `/api`: 401 without the admin's token or a guest seat; puts the [`Viewer`] in the request extensions.
 pub async fn require_viewer(State(app): State<Arc<AppState>>, mut request: Request, next: Next) -> Response {
-    match authenticate(&app, request.headers()).await {
-        Ok(Some((viewer, renewed))) => {
+    match authenticate(&app, request.headers()) {
+        Some(viewer) => {
             request.extensions_mut().insert(viewer);
-            let mut response = next.run(request).await;
-            if let Some(cookie) = renewed {
-                response.headers_mut().append(header::SET_COOKIE, cookie);
-            }
-            response
+            next.run(request).await
         }
-        Ok(None) => error(StatusCode::UNAUTHORIZED, "not signed in"),
-        Err(e) => {
-            tracing::error!(error = %e, "session lookup failed");
-            error(StatusCode::SERVICE_UNAVAILABLE, "sign-in check unavailable")
-        }
-    }
-}
-
-/// For the `/api` routes beyond watching (chat, admin): 403 for guests. Runs inside
-/// [`require_viewer`].
-pub async fn members_only(request: Request, next: Next) -> Response {
-    match request.extensions().get::<Viewer>() {
-        Some(viewer) if viewer.role == Role::Guest => error(StatusCode::FORBIDDEN, "guests can only watch"),
-        _ => next.run(request).await,
+        None => error(StatusCode::UNAUTHORIZED, "not signed in"),
     }
 }
 

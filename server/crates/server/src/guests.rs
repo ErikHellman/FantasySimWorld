@@ -1,14 +1,14 @@
-//! Guests: people who watch without signing in.
+//! Guests: everyone who watches without the admin's token.
 //!
-//! A guest takes one of a few seats ([`GUEST_STREAMS`], fixed when the server is built) for at
-//! most [`SESSION`]. The seat is a pass in an HttpOnly cookie, shared by the browser's tabs, with
+//! A guest takes one of the seats (`MAX_VIEWERS`, read at start; 0 means no cap) and keeps it for as
+//! long as they watch. The seat is a pass in an HttpOnly cookie, shared by the browser's tabs, with
 //! one live stream at a time: a newer tab takes the stream from an older one. When every seat is
 //! taken, newcomers wait in line and ask again once a minute; a seat that comes free goes to the
 //! front of the line, not to whoever happens to ask first. Everything here lives in memory: guests
 //! are anonymous, and a restart simply empties the seats and the line.
 //!
-//! Guests may only watch. They have no chat key (so no chat), and the routes for taking part
-//! answer 403.
+//! Guests watch and chat (their chat key is the pass, so a browser's tabs share one name); only the
+//! admin routes are closed to them.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -17,17 +17,8 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::session::{hash, random_token};
-
-/// How many guests may watch at once: `GUEST_STREAMS` when the server is built, 25 if it is not
-/// set. 0 turns guest viewing off. A value that is not a whole number stops the build.
-pub const GUEST_STREAMS: u32 = match option_env!("GUEST_STREAMS") {
-    Some(value) => parse_seats(value),
-    None => 25,
-};
-
-/// The longest a guest pass lasts. Reconnecting never extends it.
-pub const SESSION: Duration = Duration::from_secs(15 * 60);
+/// How many guests may watch at once unless `MAX_VIEWERS` says otherwise.
+pub const DEFAULT_SEATS: u32 = 25;
 /// How long a guest in line waits between asks.
 pub const POLL_EVERY: Duration = Duration::from_secs(60);
 /// An ask sooner than this after the last one is refused; the gap to [`POLL_EVERY`] allows for
@@ -42,37 +33,28 @@ const GRACE: Duration = Duration::from_secs(60);
 /// first, which takes a while on a slow phone.
 const FIRST_STREAM: Duration = Duration::from_secs(3 * 60);
 
-/// Parses the build-time seat count; a `const fn` so a bad value fails the build, not the start.
-const fn parse_seats(value: &str) -> u32 {
-    let bytes = value.as_bytes();
-    assert!(!bytes.is_empty(), "GUEST_STREAMS must be a whole number");
-    let mut seats: u32 = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        let digit = bytes[i];
-        assert!(digit.is_ascii_digit(), "GUEST_STREAMS must be a whole number");
-        seats = match seats.checked_mul(10) {
-            Some(tens) => match tens.checked_add((digit - b'0') as u32) {
-                Some(sum) => sum,
-                None => panic!("GUEST_STREAMS is too large"),
-            },
-            None => panic!("GUEST_STREAMS is too large"),
-        };
-        i += 1;
-    }
-    seats
+/// A fresh random token, as hex.
+pub fn random_token() -> String {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).expect("the OS random source works");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// How many guests, for how long. Fixed at build time; tests shrink them.
+/// The key a token is kept under: only its hash ever sits in memory.
+pub fn hash(token: &str) -> [u8; 32] {
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, token.as_bytes());
+    digest.as_ref().try_into().expect("SHA-256 is 32 bytes")
+}
+
+/// How many guests may watch at once; 0 is no cap. From `MAX_VIEWERS`; tests shrink it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GuestLimits {
     pub seats: u32,
-    pub session: Duration,
 }
 
 impl Default for GuestLimits {
     fn default() -> Self {
-        Self { seats: GUEST_STREAMS, session: SESSION }
+        Self { seats: DEFAULT_SEATS }
     }
 }
 
@@ -81,24 +63,20 @@ impl Default for GuestLimits {
 pub struct GuestPass {
     /// the SHA-256 of the cookie's token
     pub id: [u8; 32],
-    pub ends: Instant,
 }
 
 /// The answer to a guest who asks for a seat.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Admission {
     /// A seat. `token` is the new pass for the cookie, or `None` when the asker already had one.
-    Admitted { token: Option<String>, ends: Instant },
+    Admitted { token: Option<String> },
     /// Every seat is taken: `position` in line (1 is next), and the ticket to ask again with.
     Queued { ticket: String, position: u32 },
     /// Asked again sooner than allowed; the place in line is kept.
     TooSoon { retry_after: Duration },
-    /// Guest viewing is off.
-    Off,
 }
 
 struct Pass {
-    ends: Instant,
     /// the live stream's token (cancelled when a newer stream takes over) and its number
     stream: Option<(u64, CancellationToken)>,
     /// since when the pass has had no stream; `None` while one is open
@@ -123,16 +101,15 @@ impl Inner {
     fn prune(&mut self, now: Instant) {
         self.passes.retain(|_, pass| {
             let grace = if pass.streamed { GRACE } else { FIRST_STREAM };
-            pass.ends > now && pass.idle_since.is_none_or(|idle| now.saturating_duration_since(idle) < grace)
+            pass.idle_since.is_none_or(|idle| now.saturating_duration_since(idle) < grace)
         });
         self.line.retain(|ticket| now.saturating_duration_since(ticket.last_ask) < TICKET_LOST);
     }
 
-    fn admit(&mut self, now: Instant, session: Duration) -> Admission {
+    fn admit(&mut self, now: Instant) -> Admission {
         let token = random_token();
-        let ends = now + session;
-        self.passes.insert(hash(&token), Pass { ends, stream: None, idle_since: Some(now), streamed: false });
-        Admission::Admitted { token: Some(token), ends }
+        self.passes.insert(hash(&token), Pass { stream: None, idle_since: Some(now), streamed: false });
+        Admission::Admitted { token: Some(token) }
     }
 }
 
@@ -154,13 +131,14 @@ impl GuestHub {
     /// A guest asks for a seat, with the pass from their cookie and the ticket from their last
     /// ask, if any.
     pub fn ask(&self, pass: Option<&str>, ticket: Option<&str>, now: Instant) -> Admission {
-        if self.limits.seats == 0 {
-            return Admission::Off;
-        }
         let mut inner = self.inner.lock();
         inner.prune(now);
-        if let Some(held) = pass.and_then(|token| inner.passes.get(&hash(token))) {
-            return Admission::Admitted { token: None, ends: held.ends };
+        if pass.is_some_and(|token| inner.passes.contains_key(&hash(token))) {
+            return Admission::Admitted { token: None };
+        }
+        // No cap: everyone is seated at once.
+        if self.limits.seats == 0 {
+            return inner.admit(now);
         }
         let free = (self.limits.seats as usize).saturating_sub(inner.passes.len());
         let place = ticket.map(hash).and_then(|id| inner.line.iter().position(|t| t.id == id));
@@ -172,13 +150,13 @@ impl GuestHub {
                 }
                 if i < free {
                     inner.line.remove(i);
-                    return inner.admit(now, self.limits.session);
+                    return inner.admit(now);
                 }
                 inner.line[i].last_ask = now;
                 let ticket = ticket.expect("a place in line comes from a ticket").to_owned();
                 Admission::Queued { ticket, position: i as u32 + 1 }
             }
-            None if inner.line.len() < free => inner.admit(now, self.limits.session),
+            None if inner.line.len() < free => inner.admit(now),
             None => {
                 let ticket = random_token();
                 inner.line.push_back(Ticket { id: hash(&ticket), last_ask: now });
@@ -187,12 +165,12 @@ impl GuestHub {
         }
     }
 
-    /// The pass behind a cookie's token, while it lasts.
+    /// The pass behind a cookie's token, while it holds a seat.
     pub fn pass(&self, token: &str, now: Instant) -> Option<GuestPass> {
         let mut inner = self.inner.lock();
         inner.prune(now);
         let id = hash(token);
-        inner.passes.get(&id).map(|pass| GuestPass { id, ends: pass.ends })
+        inner.passes.contains_key(&id).then_some(GuestPass { id })
     }
 
     /// Whether a pass still holds its seat.
@@ -216,7 +194,7 @@ impl GuestHub {
         }
         pass.idle_since = None;
         pass.streamed = true;
-        Some(GuestStream { hub: self.clone(), id, number, ends: pass.ends, superseded: token })
+        Some(GuestStream { hub: self.clone(), id, number, superseded: token })
     }
 
     /// A stream closed: if it was the pass's live one, the seat's grace period starts.
@@ -230,7 +208,7 @@ impl GuestHub {
         }
     }
 
-    /// Ends a pass at once (the guest left, or their time is up), stopping its stream.
+    /// Ends a pass at once (the guest left), stopping its stream.
     pub fn end(&self, id: [u8; 32]) {
         if let Some(pass) = self.inner.lock().passes.remove(&id)
             && let Some((_, token)) = pass.stream
@@ -252,7 +230,6 @@ pub struct GuestStream {
     hub: Arc<GuestHub>,
     pub id: [u8; 32],
     number: u64,
-    pub ends: Instant,
     /// cancelled when a newer stream takes over the pass, or the pass ends
     pub superseded: CancellationToken,
 }
@@ -270,12 +247,12 @@ mod tests {
     const MINUTE: Duration = Duration::from_secs(60);
 
     fn hub(seats: u32) -> Arc<GuestHub> {
-        Arc::new(GuestHub::new(GuestLimits { seats, session: SESSION }))
+        Arc::new(GuestHub::new(GuestLimits { seats }))
     }
 
     fn admitted(answer: Admission) -> String {
         match answer {
-            Admission::Admitted { token: Some(token), .. } => token,
+            Admission::Admitted { token: Some(token) } => token,
             other => panic!("expected a new pass, got {other:?}"),
         }
     }
@@ -294,18 +271,24 @@ mod tests {
     }
 
     #[test]
-    fn seats_parse_at_build_time() {
-        assert_eq!(parse_seats("0"), 0);
-        assert_eq!(parse_seats("25"), 25);
-        assert_eq!(parse_seats("4294967295"), u32::MAX);
-        for bad in ["", "-1", "2.5", " 3", "4294967296", "lots"] {
-            assert!(std::panic::catch_unwind(|| parse_seats(bad)).is_err(), "{bad:?} should be refused");
-        }
+    fn tokens_are_hex_and_hash_to_their_key() {
+        let token = random_token();
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(token, random_token());
+        assert_eq!(hash(&token), hash(&token));
+        assert_ne!(hash(&token), hash("other"));
     }
 
     #[test]
-    fn no_seats_means_guests_are_off() {
-        assert_eq!(hub(0).ask(None, None, Instant::now()), Admission::Off);
+    fn no_cap_seats_everyone() {
+        let hub = hub(0);
+        let now = Instant::now();
+        let mut streams = Vec::new();
+        for _ in 0..40 {
+            streams.push(seat(&hub, now));
+        }
+        assert_eq!(hub.counts(now), (40, 0));
     }
 
     #[test]
@@ -325,7 +308,7 @@ mod tests {
         let now = Instant::now();
         let token = admitted(hub.ask(None, None, now));
         let again = hub.ask(Some(&token), None, now + MINUTE / 2);
-        assert_eq!(again, Admission::Admitted { token: None, ends: now + SESSION });
+        assert_eq!(again, Admission::Admitted { token: None });
         assert_eq!(hub.counts(now), (1, 0));
     }
 
@@ -372,22 +355,18 @@ mod tests {
     }
 
     #[test]
-    fn a_pass_ends_after_the_session_however_often_it_reconnects() {
+    fn a_pass_with_a_stream_keeps_its_seat_however_long_it_watches() {
         let hub = hub(1);
         let now = Instant::now();
         let token = admitted(hub.ask(None, None, now));
         let id = hash(&token);
-        // A reconnect a minute, each taking over from the last.
+        // A reconnect a minute for an hour, each taking over from the last.
         let mut streams = Vec::new();
-        for minute in 0..15 {
-            let stream = hub.open_stream(id, now + MINUTE * minute).expect("the pass is valid");
-            assert_eq!(stream.ends, now + SESSION);
-            streams.push(stream);
+        for minute in 0..60 {
+            streams.push(hub.open_stream(id, now + MINUTE * minute).expect("the pass is valid"));
         }
-        assert!(hub.pass(&token, now + SESSION - Duration::from_secs(1)).is_some());
-        assert!(hub.pass(&token, now + SESSION).is_none());
-        assert!(hub.open_stream(id, now + SESSION).is_none());
-        admitted(hub.ask(None, None, now + SESSION));
+        assert!(hub.pass(&token, now + MINUTE * 60 * 24).is_some());
+        assert!(hub.holds(id, now + MINUTE * 60 * 24));
     }
 
     #[test]

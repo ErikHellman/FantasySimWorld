@@ -1,6 +1,6 @@
 # Fantasy Sim World
 
-A 3D world in the KayKit style. A dozen fantasy villagers follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who signs in watches the same village from their own free top-down camera.
+A 3D world in the KayKit style. A dozen fantasy villagers follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
 
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated by the server and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
@@ -17,15 +17,13 @@ The server migration is complete. The world, the language-model brain and every 
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
-- Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
-- Guests: a few people at a time may watch for 15 minutes without signing in, with a line when the seats are full (see [Guests](#guests)).
+- Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
 - Ambient sound, effects and adaptive music.
 - A container image with Litestream backups and Fly.io settings, and a GitHub Actions workflow that deploys it when started by hand.
 
 Not yet done or not yet tried:
 
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
-- **Sign-in with real accounts**: every provider is tested against fakes only ([docs/sign-in.md](docs/sign-in.md) links a guide per provider, with the console steps and the check).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
 - **Later**: spoken lines (text to speech; the seam is in place), orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
 
@@ -45,13 +43,13 @@ cd server
 AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist LOG_FORMAT=pretty cargo run --release
 ```
 
-Open <http://localhost:8080/auth/token>, paste the token, and you are watching (as an admin) a world that keeps running while the server does. Every tab and every person watches the same world. The world, its history and the settings live in `server/data/world.db`; stop the server with Ctrl-C and it resumes where it was.
+Open <http://localhost:8080> and you are watching, as a guest, a world that keeps running while the server does; <http://localhost:8080/auth/token> and the token make you an admin. Every tab and every person watches the same world. The world, its history and the settings live in `server/data/world.db`; stop the server with Ctrl-C and it resumes where it was.
 
 `PUBLIC_ORIGIN` is the address in the browser. It defaults to `http://localhost:5173`, the dev server's, and the CSRF check refuses changes (speed, admin actions) from any other origin, so set it whenever you browse the server directly.
 
-For work on the client, run `pnpm dev` next to the server: it serves the client with hot reload on <http://localhost:5173> and forwards `/api` and `/auth` to `http://localhost:8080` (`SERVER_URL` changes it). Start the server without `PUBLIC_ORIGIN` (or with the dev server's address) and open `/auth/token` on the dev server's port once to sign in.
+For work on the client, run `pnpm dev` next to the server: it serves the client with hot reload on <http://localhost:5173> and forwards `/api` and `/auth` to `http://localhost:8080` (`SERVER_URL` changes it). Start the server without `PUBLIC_ORIGIN` (or with the dev server's address) and open `/auth/token` on the dev server's port once to become an admin.
 
-To skip signing in while developing, start the server with `AUTH_MODE=off` instead of `AUTH_TOKEN`: every browser on this machine is an admin. The server then listens on `127.0.0.1` only and refuses to start with a non-local `BIND_ADDR` or `PUBLIC_ORIGIN`. With `pnpm dev` that is all it takes; when the browser talks to the server directly on :8080, set `PUBLIC_ORIGIN` to match:
+To skip the token while developing, start the server with `AUTH_MODE=off` instead of `AUTH_TOKEN`: every browser on this machine is an admin. The server then listens on `127.0.0.1` only and refuses to start with a non-local `BIND_ADDR` or `PUBLIC_ORIGIN`. With `pnpm dev` that is all it takes; when the browser talks to the server directly on :8080, set `PUBLIC_ORIGIN` to match:
 
 ```bash
 AUTH_MODE=off PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist LOG_FORMAT=pretty cargo run --release
@@ -70,12 +68,11 @@ set -a; . ./.env; set +a
 - Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
-- A guest sees ⏳ and the time they have left in the top bar.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
-The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, the allowlist and refused sign-ins, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
+The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
 
 ### Server settings
 
@@ -83,12 +80,11 @@ All settings come from environment variables, read at start:
 
 | Variable | Default | What it is |
 | --- | --- | --- |
-| `AUTH_MODE` | `token` | `token`, `oidc` (Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts, [docs/sign-in.md](docs/sign-in.md)) or `off` (local development only) |
-| `AUTH_TOKEN` | none | The shared secret for `AUTH_MODE=token`, 16 characters or more |
-| `AUTH_PROVIDERS`, `ADMIN_EMAILS` | none | Which sign-in providers are on, and the first admins ([docs/sign-in.md](docs/sign-in.md)) |
-| `GOOGLE_*`, `APPLE_*`, `MICROSOFT_*`, `LINKEDIN_*`, `GITHUB_*`, `DISCORD_*` | none | Each provider's client ID and secret; one guide per provider in [docs/sign-in/](docs/sign-in/) |
+| `AUTH_MODE` | `token` | `token` (the admin's shared secret, [docs/sign-in.md](docs/sign-in.md)) or `off` (everyone is an admin; local development only) |
+| `AUTH_TOKEN` | none | The admin's secret for `AUTH_MODE=token`, 16 characters or more |
+| `MAX_VIEWERS` | `25` | How many people may watch at once; the rest wait in line. `0` for no cap (see [Guests](#guests)) |
 | `PORT` or `BIND_ADDR` | `0.0.0.0:8080` (`127.0.0.1:8080` with `AUTH_MODE=off`) | Where the server listens; `BIND_ADDR` wins when both are set |
-| `PUBLIC_ORIGIN` | `http://localhost:5173` | The address in the browser; sign-in redirects and the CSRF check use it |
+| `PUBLIC_ORIGIN` | `http://localhost:5173` | The address in the browser; the CSRF check uses it |
 | `STATIC_DIR` | `dist` | The web build the server serves |
 | `DATA_DIR` | `data` | Where `world.db` and its backups live |
 | `INITIAL_SPEED` | `1` | Speed of a new world: `0` (paused), `1`, `2` or `4` |
@@ -96,8 +92,6 @@ All settings come from environment variables, read at start:
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
 | `EMBED_*` | off | Memory by meaning ([below](#memory-by-meaning)) |
-
-One setting is fixed when the server is built instead: `GUEST_STREAMS`, how many people may watch as guests at once (25 if it is not set, `0` for no guests). Set it in the environment of the build, as in `GUEST_STREAMS=10 cargo build --release`, or with `--build-arg GUEST_STREAMS=10` for the container image. A value that is not a whole number stops the build. See [Guests](#guests).
 
 A value the server cannot use stops it at start with a message naming the variable. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
 
@@ -178,14 +172,14 @@ The server embeds each new memory in the background (a few hundred short texts a
 
 ## Guests
 
-People who have not signed in can still look in on the village for a while. The login page has a **Watch as a guest** button next to the sign-in buttons (with `AUTH_MODE=token` or `oidc`; with sign-in off everyone is in already).
+Everyone who opens the page is a guest: there is nothing to sign up for or into. The page asks the server for a seat and, with one, shows the valley (with `AUTH_MODE=off` everyone is an admin and needs no seat).
 
-- **Seats.** At most `GUEST_STREAMS` guests (25 unless the server was built with another number) watch at once. A guest's seat is a cookie that the browser's tabs share; it holds one stream, and a newer tab takes it over from an older one.
-- **Fifteen minutes.** A visit lasts 15 minutes from the moment the seat is given, however often the page reconnects. Then the page goes back to the login page, which says the time is up. Watching again means asking for a new seat.
-- **The line.** When every seat is taken, the login page shows the guest's place in line and asks again once a minute; the server refuses asks that come sooner. A seat that comes free goes to whoever is first in line. Closing the page gives up the place after three minutes, and closing the world gives up the seat after one.
-- **Only watching.** Guests are anonymous. They can look around, follow villagers and read the chat, but cannot write in it. The server enforces this; the routes for chat and admin answer `403` to a guest.
+- **Seats.** At most `MAX_VIEWERS` guests (25 unless set; `0` for no cap) watch at once. A guest's seat is a cookie that the browser's tabs share; it holds one stream, and a newer tab takes it over from an older one. A seat is kept for as long as its holder watches.
+- **The line.** When every seat is taken, the launch screen shows the guest's place in line and asks again once a minute; the server refuses asks that come sooner. A seat that comes free goes to whoever is first in line. Closing the page gives up the place after three minutes, and closing the world gives up the seat after one.
+- **Watching and talking.** Guests are anonymous. They look around, follow villagers, read the chat and write in it under a name of their choosing (see [Chat](#chat)). Only the admin routes answer `403` to a guest.
 - **Leaving.** Settings has a **Leave** button, which gives the seat to the next person straight away.
-- The seats and the line live in memory; a restart empties them.
+- **Admins.** With `AUTH_MODE=token`, the link at the bottom of Settings leads to `/auth/token`; the token makes the browser an admin instead of a guest ([docs/sign-in.md](docs/sign-in.md)).
+- The seats and the line live in memory; a restart empties them, and the browsers ask again.
 
 ## Chat
 
@@ -193,7 +187,7 @@ Everyone watching shares a chat along the bottom of the screen. It can be expand
 
 - Each person gets a made-up name when they connect ("Mossy Wren"). Settings changes it, as long as nobody else in the chat has it (ignoring case). The chosen name is kept in this browser and asked for on each connect; if someone else has it by then, you get a made-up one.
 - The chat says when someone joins and when they leave. A reload, or a tab that was hidden for a while, drops the connection for a moment, so someone only counts as gone after five minutes away; back sooner, and neither is mentioned. Until then their name stays theirs.
-- Signed in with an account (Google, GitHub and the rest), all your tabs share one name. With a shared token or sign-in off, everyone is the same account, so each tab is its own person. [Guests](#guests) can read the chat but not write in it.
+- A guest's tabs share the seat, so they share one name. Admins all hold the same token, so each admin tab is its own person.
 - The server keeps the last 50 messages, in memory, and sends them to everyone who connects. They survive a new world but not a server restart.
 - A message is at most 500 characters, text only. It may use **bold**, *italic* (or _italic_), ~~strikethrough~~, `code`, fenced code blocks, links (`[text](https://…)` or a bare `https://…` address; nothing but http and https) and emoji, from your keyboard or the 😀 picker. Nothing in a message is ever treated as HTML.
 - Each person may send about one message a second, in bursts of up to five.
@@ -217,7 +211,7 @@ cd server && cargo fmt --check && cargo clippy --all-targets --locked -- -D warn
 ```
 
 - `pnpm test` covers the client's stream playback, the view of the world it builds from the stream, the world layer, the audio mood and settings, and the architecture rules (the browser never reaches the simulation, the brain or saves; three.js stays in `src/render`).
-- `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the prompts byte for byte, the brain against a fake model, sign-in against a fake OpenID provider, the store, and the HTTP routes.
+- `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the prompts byte for byte, the brain against a fake model, the store, and the HTTP routes (the admin's token, guest seats and the line, the chat, the world's routes).
 - `cargo test -- --ignored` adds the 200-day soak and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
 - Two committed files are written by the server and checked by its tests. In `server/`, after changing a type in `server/crates/server/src/api/wire.rs`, run `cargo run --bin export-api` (rewrites `src/generated/api.ts`); after changing the stream encoder, run `cargo run --bin export-frames` (rewrites `tests/fixtures/server-frames.json`, which the client's tests replay).
 
@@ -236,12 +230,12 @@ Other tools:
 | `src/world` | The hex map, places and activity spots, scatter, navigation grid, pathfinding (terrain, scenery and camera bounds in the browser) |
 | `src/net` | The event stream, the world as this viewer knows it, the jitter buffer, REST calls |
 | `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table |
-| `src/ui` | The HUD, chat, admin panel, login and no-access pages (Preact and signals) |
+| `src/ui` | The HUD, chat, admin panel and the launch screen with the line for a seat (Preact and signals) |
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
 | `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
-| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, chat, sign-in, SQLite store) |
+| `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
 On the server the sim depends only on `core` and `world`; the brain reads the world and talks to the sim through commands applied at tick boundaries, so a run is reproducible for a given command stream. The browser depends on `core`, `world`, `net` and `generated`, never on the sim.

@@ -1,6 +1,6 @@
 # Deploying the server
 
-One container runs everything: the shared world, the language-model brain, the event stream to every viewer, sign-in, and the web client's files. The world lives in one SQLite file on a persistent volume. These steps use [Fly.io](https://fly.io) (`fly.toml` is in the repository); any host with a persistent volume and a proxy that passes server-sent events through unbuffered works the same way with the `Dockerfile`.
+One container runs everything: the shared world, the language-model brain, the event stream to every viewer, the guest seats and the admin's token, and the web client's files. The world lives in one SQLite file on a persistent volume. These steps use [Fly.io](https://fly.io) (`fly.toml` is in the repository); any host with a persistent volume and a proxy that passes server-sent events through unbuffered works the same way with the `Dockerfile`.
 
 ## What it costs to run
 
@@ -15,7 +15,7 @@ fly secrets set AUTH_TOKEN=$(openssl rand -hex 24) PUBLIC_ORIGIN=https://<your-a
 fly deploy
 ```
 
-Open `https://<your-app>.fly.dev/auth/token`, paste the token, and you are an admin of a brand-new world (paused worlds and speeds are set in **🛠 Admin**). Everyone who has the token is an admin; for real accounts switch to sign-in with Google, Apple, Microsoft, LinkedIn, GitHub or Discord ([sign-in.md](sign-in.md)).
+Open `https://<your-app>.fly.dev/auth/token`, paste the token, and you are an admin of a brand-new world (paused worlds and speeds are set in **🛠 Admin**). Everyone who has the token is an admin; everyone else who opens the page watches as a guest ([sign-in.md](sign-in.md)).
 
 To check that the event stream reaches browsers unbuffered through Fly's proxy (headers flushed at once, keep-alives through idle periods, reconnection across a deploy):
 
@@ -50,35 +50,26 @@ Secrets (`fly secrets set NAME=value`):
 
 | Name | What it is |
 | --- | --- |
-| `AUTH_TOKEN` | The shared token for `AUTH_MODE=token` (16+ characters) |
-| `PUBLIC_ORIGIN` | The address people use, e.g. `https://village.example.com`; sign-in redirects and the CSRF check use it |
-| `AUTH_MODE`, `AUTH_PROVIDERS`, `ADMIN_EMAILS` | Sign-in with real accounts and the first admins ([sign-in.md](sign-in.md)) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in ([guide](sign-in/google.md)) |
-| `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_SERVICES_ID`, `APPLE_PRIVATE_KEY` | Apple sign-in ([guide](sign-in/apple.md)) |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT` | Microsoft sign-in ([guide](sign-in/microsoft.md)); the tenant is a plain setting and may go under `[env]` |
-| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn sign-in ([guide](sign-in/linkedin.md)) |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub sign-in ([guide](sign-in/github.md)) |
-| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord sign-in ([guide](sign-in/discord.md)) |
+| `AUTH_TOKEN` | The admin's shared token for `AUTH_MODE=token` (16+ characters) |
+| `PUBLIC_ORIGIN` | The address people use, e.g. `https://village.example.com`; the CSRF check uses it |
 | `LLM_API_KEY`, `LLM_HEADERS` | Optional: the model endpoint's key and any extra request headers. Read at every start and never stored in the database or sent to a browser. |
 | `EMBED_API_KEY` | Optional: the embedding endpoint's key. Read at every start and never stored in the database or sent to a browser. |
 | `BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Optional: Litestream backups (set by `fly storage create`) |
 
-Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`), `TRUST_PROXY=true` (take the visitor's address from `Fly-Client-IP` for the sign-in rate limit; only behind a proxy that sets it), `INITIAL_SPEED` (0, 1, 2 or 4: the speed of a brand-new world; afterwards the speed an admin chose is kept), `LOG_FORMAT` (`json`, or `pretty` for people), `RUST_LOG` (`info` by default).
+Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`), `MAX_VIEWERS` (25: how many people may watch at once, the rest waiting in line; `0` for no cap), `TRUST_PROXY=true` (take the visitor's address from `Fly-Client-IP` for the rate limit on the token and guest routes; only behind a proxy that sets it), `INITIAL_SPEED` (0, 1, 2 or 4: the speed of a brand-new world; afterwards the speed an admin chose is kept), `LOG_FORMAT` (`json`, or `pretty` for people), `RUST_LOG` (`info` by default).
 
 The language model (`LLM_BASE_URL`, `LLM_MODEL` and the tuning variables `LLM_CONCURRENCY`, `LLM_REQUESTS_PER_MINUTE`, `LLM_MAX_REQUESTS_PER_DAY`, `LLM_MAX_TOKENS_PER_DAY`, `LLM_PROTOCOL`, `LLM_CONVERSATIONS`, `LLM_REASONING`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`) is configured only here, either under `[env]` or as secrets. The admin panel can show and test it but not change it. Without `LLM_BASE_URL` and `LLM_MODEL` the model is off. All the variables and their defaults are in the [README](../README.md#connecting-a-language-model). A change takes effect when the machine restarts, which `fly secrets set` does on its own. Memory by meaning is set the same way, with `EMBED_BASE_URL` and `EMBED_MODEL` (and `EMBED_API_KEY` as a secret); see the [README](../README.md#memory-by-meaning).
 
-Guest seats are not a runtime setting: how many people may watch as guests at once is fixed when the image is built, 25 unless you pass another number with `fly deploy --build-arg GUEST_STREAMS=10` (or `[build.args]` in `fly.toml`); `0` turns guests off. See the [README](../README.md#guests).
-
-Sessions need no secret: a session is 32 random bytes in an HttpOnly cookie, and the database keeps only its SHA-256.
+Guest seats need no secret: a seat is 32 random bytes in an HttpOnly cookie, and the server keeps only its SHA-256, in memory. See the [README](../README.md#guests).
 
 ## Data, backups and restarts
 
-Everything lives in `/data/world.db` (SQLite in WAL mode): world snapshots, the chronicle, the command record, the decision log, settings, users, sessions and the allowlist.
+Everything lives in `/data/world.db` (SQLite in WAL mode): world snapshots, the chronicle, the command record, the decision log and settings.
 
 - **Snapshots** (zstd-compressed): every 30 seconds, 1.5 seconds after a notable event (a death, an arrival, the end of an attack, a new game day), and on shutdown, import and new world. Kept: the newest 20 of the 30-second ones (about ten minutes), the event ones for 24 hours, the first one of each game day for 14 days, and one per real day forever (a few hundred KB each). The newest snapshot is never removed.
 - **Restarts and deploys**: on SIGTERM the server stops the world, writes a final snapshot and closes the database; on start it resumes from the newest snapshot, at the same tick. Viewers' pages reconnect by themselves. A deploy pauses the world for the 10 to 30 seconds the new machine takes to start.
 - **Nightly copy**: once a day the server writes a consistent copy to `/data/backup/latest.db` (`VACUUM INTO`). It protects against a bad write, not against losing the volume.
-- **Retention** (checked hourly): the command record is kept 2 days, the decision log 30 days (prompts and replies only for the newest 5,000 rows), refused sign-ins 90 days; expired sessions are removed. The chronicle is kept whole.
+- **Retention** (checked hourly): the command record is kept 2 days, the decision log 30 days (prompts and replies only for the newest 5,000 rows), memory vectors a week past their last use. The chronicle is kept whole.
 - **Litestream** (recommended): with a bucket configured, [Litestream](https://litestream.io) streams every change to object storage within a second, and a machine that starts with an empty volume restores from it first. On Fly.io:
 
   ```bash
@@ -105,7 +96,7 @@ The volume belongs to one machine, so there is exactly one machine: do not scale
 
 - `/healthz` (no sign-in; Fly's health check) answers `ok tick <n>`, or 503 when the world has not ticked for 5 seconds while running.
 - **🛠 Admin → Server health** (`GET /api/admin/health`): the tick, tick timing jitter (median and 99th percentile), how often the clock fell behind and skipped ahead, viewers dropped for falling behind, the database size, the age of the newest snapshot, and the model's requests, failures and tokens in the last 24 hours.
-- Logs are JSON lines (`fly logs`); notable events carry an `event` field: `sign_in`, `sign_in_refused`, `sign_in_error`, `token_refused`, `allowlist_add`, `allowlist_remove`, `user_removed`, `rate_limited`, `csrf_refused`, `clock_skip`, `prune`, `backup`.
+- Logs are JSON lines (`fly logs`); notable events carry an `event` field: `token_refused`, `guest_admitted`, `guest_queued`, `guest_left`, `rate_limited`, `csrf_refused`, `clock_skip`, `prune`, `backup`.
 
 ## The language model
 

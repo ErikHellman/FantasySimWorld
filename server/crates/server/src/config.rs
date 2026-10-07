@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, ReasoningMode, WireProtocol};
 
-use crate::api::wire::SignInProvider;
-use crate::guests::GuestLimits;
+use crate::guests::{DEFAULT_SEATS, GuestLimits};
 
 /// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
 /// refuses to start anywhere but on this machine.
@@ -15,167 +14,9 @@ pub enum AuthMode {
     /// No sign-in: everyone is an admin. For local development only, so it needs
     /// a loopback bind address and an `http://localhost` (or loopback IP) origin.
     Off,
-    /// One shared secret, for local work and the first deployments. Browsers
-    /// post it to `/auth/token` once and get a cookie; everyone is an admin.
+    /// One shared secret, the admin's. Browsers post it to `/auth/token` once and get a
+    /// cookie; everyone without it watches as a guest.
     Token(String),
-    /// Sign-in with Google, Apple, Microsoft, LinkedIn, GitHub and/or Discord, limited to the allowlist.
-    Oidc(Box<OidcConfig>),
-}
-
-/// The providers `AUTH_PROVIDERS` turned on.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct OidcConfig {
-    /// in `AUTH_PROVIDERS` order, which is also the order of the buttons on the login page
-    pub providers: Vec<ProviderConfig>,
-}
-
-impl OidcConfig {
-    /// The settings of one provider, if it is on.
-    pub fn get_mut(&mut self, kind: SignInProvider) -> Option<&mut ProviderConfig> {
-        self.providers.iter_mut().find(|p| p.kind() == kind)
-    }
-}
-
-/// One provider's settings.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ProviderConfig {
-    Google(DiscoveryConfig),
-    Apple(AppleConfig),
-    Microsoft(DiscoveryConfig),
-    LinkedIn(DiscoveryConfig),
-    GitHub(ApiConfig),
-    Discord(ApiConfig),
-}
-
-impl ProviderConfig {
-    pub fn kind(&self) -> SignInProvider {
-        match self {
-            Self::Google(_) => SignInProvider::Google,
-            Self::Apple(_) => SignInProvider::Apple,
-            Self::Microsoft(_) => SignInProvider::Microsoft,
-            Self::LinkedIn(_) => SignInProvider::LinkedIn,
-            Self::GitHub(_) => SignInProvider::GitHub,
-            Self::Discord(_) => SignInProvider::Discord,
-        }
-    }
-}
-
-pub const GOOGLE_DISCOVERY_URL: &str = "https://accounts.google.com/.well-known/openid-configuration";
-pub const LINKEDIN_DISCOVERY_URL: &str = "https://www.linkedin.com/oauth/.well-known/openid-configuration";
-
-/// Microsoft's discovery document for a tenant: `common`, `consumers`, `organizations`, a tenant id or a domain.
-pub fn microsoft_discovery_url(tenant: &str) -> String {
-    format!("https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration")
-}
-
-/// An OpenID Connect provider found through its discovery document (Google, Microsoft, LinkedIn).
-#[derive(Clone, PartialEq, Eq)]
-pub struct DiscoveryConfig {
-    /// `<PROVIDER>_CLIENT_ID`
-    pub client_id: String,
-    /// `<PROVIDER>_CLIENT_SECRET`
-    pub client_secret: String,
-    /// the provider's discovery document; only tests (and `MICROSOFT_TENANT`) change it
-    pub discovery_url: String,
-}
-
-impl std::fmt::Debug for DiscoveryConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DiscoveryConfig")
-            .field("client_id", &self.client_id)
-            .field("discovery_url", &self.discovery_url)
-            .finish_non_exhaustive()
-    }
-}
-
-/// A plain OAuth2 provider whose profile API says who signed in (GitHub, Discord).
-#[derive(Clone, PartialEq, Eq)]
-pub struct ApiConfig {
-    /// `<PROVIDER>_CLIENT_ID`
-    pub client_id: String,
-    /// `<PROVIDER>_CLIENT_SECRET`
-    pub client_secret: String,
-    /// the provider's URLs; only tests change them
-    pub endpoints: ApiEndpoints,
-}
-
-impl std::fmt::Debug for ApiConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ApiConfig")
-            .field("client_id", &self.client_id)
-            .field("endpoints", &self.endpoints)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ApiEndpoints {
-    pub authorize_url: String,
-    pub token_url: String,
-    /// the profile API, without a trailing slash
-    pub api_url: String,
-}
-
-impl ApiEndpoints {
-    pub fn github() -> Self {
-        Self {
-            authorize_url: "https://github.com/login/oauth/authorize".into(),
-            token_url: "https://github.com/login/oauth/access_token".into(),
-            api_url: "https://api.github.com".into(),
-        }
-    }
-
-    pub fn discord() -> Self {
-        Self {
-            authorize_url: "https://discord.com/oauth2/authorize".into(),
-            token_url: "https://discord.com/api/oauth2/token".into(),
-            api_url: "https://discord.com/api".into(),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct AppleConfig {
-    /// `APPLE_TEAM_ID`
-    pub team_id: String,
-    /// `APPLE_KEY_ID`, the id of the Sign in with Apple key
-    pub key_id: String,
-    /// `APPLE_SERVICES_ID`, used as the OAuth client id
-    pub services_id: String,
-    /// `APPLE_PRIVATE_KEY`, the PEM contents of the `.p8` file
-    pub private_key_pem: String,
-    /// Apple's URLs; only tests change them
-    pub endpoints: AppleEndpoints,
-}
-
-impl std::fmt::Debug for AppleConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AppleConfig")
-            .field("team_id", &self.team_id)
-            .field("key_id", &self.key_id)
-            .field("services_id", &self.services_id)
-            .field("endpoints", &self.endpoints)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AppleEndpoints {
-    pub issuer: String,
-    pub authorize_url: String,
-    pub token_url: String,
-    pub jwks_url: String,
-}
-
-impl Default for AppleEndpoints {
-    fn default() -> Self {
-        Self {
-            issuer: "https://appleid.apple.com".into(),
-            authorize_url: "https://appleid.apple.com/auth/authorize".into(),
-            token_url: "https://appleid.apple.com/auth/token".into(),
-            jwks_url: "https://appleid.apple.com/auth/keys".into(),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -188,11 +29,8 @@ pub struct Config {
     pub static_dir: PathBuf,
     /// `DATA_DIR`, where SQLite lives; default `data`
     pub data_dir: PathBuf,
-    /// `AUTH_MODE`: `token` (with `AUTH_TOKEN`), `oidc` (with `AUTH_PROVIDERS` and the provider secrets)
-    /// or `off` (no sign-in; local development only)
+    /// `AUTH_MODE`: `token` (with `AUTH_TOKEN`, the admin's) or `off` (everyone is an admin; local development only)
     pub auth: AuthMode,
-    /// `ADMIN_EMAILS`, comma-separated: put on the allowlist as admins at every start
-    pub admin_emails: Vec<String>,
     /// `TRUST_PROXY=true`: take the client address from `Fly-Client-IP` / `X-Forwarded-For`
     /// (only behind a proxy that sets them; otherwise anyone could pick their own address)
     pub trust_proxy: bool,
@@ -210,8 +48,7 @@ pub struct Config {
     pub embed: EmbedSettings,
     /// `EMBED_API_KEY`: the embedding endpoint's key, if it needs one (masked in `Debug`)
     pub embed_api_key: ApiKey,
-    /// How many guests may watch without signing in, and for how long. Not read from the
-    /// environment at start: the seats are `GUEST_STREAMS` when the server is built (see `guests`).
+    /// `MAX_VIEWERS`: how many guests may watch at once (default 25); `0` for no cap. The rest wait in line.
     pub guests: GuestLimits,
 }
 
@@ -234,8 +71,7 @@ impl Config {
                 }
                 AuthMode::Token(token.to_owned())
             }
-            "oidc" => AuthMode::Oidc(Box::new(oidc_from(&get)?)),
-            other => return Err(format!("AUTH_MODE must be token, oidc or off, got {other:?}")),
+            other => return Err(format!("AUTH_MODE must be token or off, got {other:?}")),
         };
         let open = auth == AuthMode::Off;
 
@@ -265,13 +101,13 @@ impl Config {
             ));
         }
 
-        let mut admin_emails = Vec::new();
-        for email in get("ADMIN_EMAILS").unwrap_or("").split(',').map(str::trim).filter(|e| !e.is_empty()) {
-            if !plausible_email(email) {
-                return Err(format!("ADMIN_EMAILS: {email:?} is not an e-mail address"));
-            }
-            admin_emails.push(email.to_lowercase());
-        }
+        let seats = match get("MAX_VIEWERS") {
+            None => DEFAULT_SEATS,
+            Some(text) => match text.parse::<u32>() {
+                Ok(seats) => seats,
+                Err(_) => return Err(format!("MAX_VIEWERS must be a whole number (0 for no cap), got {text:?}")),
+            },
+        };
 
         let trust_proxy = match get("TRUST_PROXY").map(str::to_ascii_lowercase).as_deref() {
             None | Some("0" | "false" | "no") => false,
@@ -296,7 +132,6 @@ impl Config {
             static_dir: get("STATIC_DIR").unwrap_or("dist").into(),
             data_dir: get("DATA_DIR").unwrap_or("data").into(),
             auth,
-            admin_emails,
             trust_proxy,
             pretty_logs: get("LOG_FORMAT") == Some("pretty"),
             initial_speed,
@@ -304,7 +139,7 @@ impl Config {
             llm_api_key: ApiKey::new(get("LLM_API_KEY").unwrap_or("")),
             embed,
             embed_api_key: ApiKey::new(get("EMBED_API_KEY").unwrap_or("")),
-            guests: GuestLimits::default(),
+            guests: GuestLimits { seats },
         })
     }
 
@@ -312,19 +147,6 @@ impl Config {
     pub fn secure_cookies(&self) -> bool {
         self.public_origin.starts_with("https://")
     }
-
-    /// Whether people may watch as guests: there are seats, and sign-in is on (with it off,
-    /// everyone is an admin already).
-    pub fn guests_on(&self) -> bool {
-        self.guests.seats > 0 && self.auth != AuthMode::Off
-    }
-}
-
-/// Good enough to catch a typo: something@something, no spaces.
-pub fn plausible_email(email: &str) -> bool {
-    email.len() <= 254
-        && !email.chars().any(char::is_whitespace)
-        && email.split_once('@').is_some_and(|(user, host)| !user.is_empty() && !host.is_empty() && !host.contains('@'))
 }
 
 /// An `http://` origin on this machine: `localhost`, `127.0.0.1` or `[::1]`, with any port.
@@ -341,70 +163,6 @@ pub fn local_origin(origin: &str) -> bool {
         None => rest.split_once(':').map_or(rest, |(host, _)| host),
     };
     host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
-}
-
-/// The names `AUTH_PROVIDERS` accepts, for error messages.
-const PROVIDER_NAMES: &str = "google, apple, microsoft, linkedin, github, discord";
-
-fn oidc_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<OidcConfig, String> {
-    let need = |name: &str, provider: &str| {
-        get(name).map(str::to_owned).ok_or_else(|| format!("AUTH_PROVIDERS includes {provider}, which needs {name}"))
-    };
-    let discovery = |prefix: &str, provider: &str, discovery_url: String| -> Result<DiscoveryConfig, String> {
-        Ok(DiscoveryConfig {
-            client_id: need(&format!("{prefix}_CLIENT_ID"), provider)?,
-            client_secret: need(&format!("{prefix}_CLIENT_SECRET"), provider)?,
-            discovery_url,
-        })
-    };
-    let api = |prefix: &str, provider: &str, endpoints: ApiEndpoints| -> Result<ApiConfig, String> {
-        Ok(ApiConfig {
-            client_id: need(&format!("{prefix}_CLIENT_ID"), provider)?,
-            client_secret: need(&format!("{prefix}_CLIENT_SECRET"), provider)?,
-            endpoints,
-        })
-    };
-    let names = get("AUTH_PROVIDERS")
-        .ok_or_else(|| format!("AUTH_MODE=oidc needs AUTH_PROVIDERS, a comma-separated list of {PROVIDER_NAMES}"))?;
-    let mut oidc = OidcConfig::default();
-    for name in names.split(',').map(str::trim).filter(|n| !n.is_empty()) {
-        let provider = match name {
-            "google" => ProviderConfig::Google(discovery("GOOGLE", name, GOOGLE_DISCOVERY_URL.into())?),
-            "apple" => {
-                // Platforms that cannot hold newlines in a secret get "\n" written out instead.
-                let pem = need("APPLE_PRIVATE_KEY", name)?.replace("\\n", "\n");
-                jsonwebtoken::EncodingKey::from_ec_pem(pem.as_bytes())
-                    .map_err(|e| format!("APPLE_PRIVATE_KEY is not the PEM of a .p8 key: {e}"))?;
-                ProviderConfig::Apple(AppleConfig {
-                    team_id: need("APPLE_TEAM_ID", name)?,
-                    key_id: need("APPLE_KEY_ID", name)?,
-                    services_id: need("APPLE_SERVICES_ID", name)?,
-                    private_key_pem: pem,
-                    endpoints: AppleEndpoints::default(),
-                })
-            }
-            "microsoft" => {
-                let tenant = get("MICROSOFT_TENANT").unwrap_or("common");
-                // It goes into a URL path, so only what tenant ids and domains are made of.
-                if !tenant.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
-                    return Err(format!("MICROSOFT_TENANT {tenant:?} is not a tenant id, domain or common"));
-                }
-                ProviderConfig::Microsoft(discovery("MICROSOFT", name, microsoft_discovery_url(tenant))?)
-            }
-            "linkedin" => ProviderConfig::LinkedIn(discovery("LINKEDIN", name, LINKEDIN_DISCOVERY_URL.into())?),
-            "github" => ProviderConfig::GitHub(api("GITHUB", name, ApiEndpoints::github())?),
-            "discord" => ProviderConfig::Discord(api("DISCORD", name, ApiEndpoints::discord())?),
-            other => return Err(format!("AUTH_PROVIDERS: unknown provider {other:?} ({PROVIDER_NAMES})")),
-        };
-        if oidc.providers.iter().any(|p| p.kind() == provider.kind()) {
-            return Err(format!("AUTH_PROVIDERS names {name} twice"));
-        }
-        oidc.providers.push(provider);
-    }
-    if oidc.providers.is_empty() {
-        return Err("AUTH_PROVIDERS names no provider".into());
-    }
-    Ok(oidc)
 }
 
 /// The language model's settings. Every value has the same default and range the
@@ -497,7 +255,7 @@ mod tests {
         assert_eq!(config.auth, AuthMode::Token("0123456789abcdef".into()));
         assert!(!config.secure_cookies());
         assert_eq!(config.initial_speed, 1);
-        assert!(config.admin_emails.is_empty());
+        assert_eq!(config.guests, GuestLimits { seats: 25 });
         assert!(!config.trust_proxy);
     }
 
@@ -528,95 +286,25 @@ mod tests {
         assert!(Config::from_vars(vars(&[])).is_err());
         assert!(Config::from_vars(vars(&[("AUTH_TOKEN", "short")])).is_err());
         assert!(Config::from_vars(vars(&[("AUTH_MODE", "nope"), ("AUTH_TOKEN", "0123456789abcdef")])).is_err());
-        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc")])).is_err());
-        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_PROVIDERS", ",")])).is_err());
+        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_TOKEN", "0123456789abcdef")])).is_err());
     }
 
     #[test]
-    fn oidc_needs_each_providers_secrets() {
-        let google = [
-            ("AUTH_MODE", "oidc"),
-            ("AUTH_PROVIDERS", "google"),
-            ("GOOGLE_CLIENT_ID", "id.apps.googleusercontent.com"),
-            ("GOOGLE_CLIENT_SECRET", "shh"),
-            ("ADMIN_EMAILS", " Boss@Example.com, , second@example.com"),
-            ("TRUST_PROXY", "true"),
-        ];
-        let config = Config::from_vars(vars(&google)).unwrap();
-        let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
-        let [ProviderConfig::Google(only)] = oidc.providers.as_slice() else { panic!("only Google") };
-        assert_eq!(only.discovery_url, GOOGLE_DISCOVERY_URL);
-        assert!(!format!("{config:?}").contains("shh"), "secrets stay out of logs");
-        assert_eq!(config.admin_emails, ["boss@example.com", "second@example.com"]);
-        assert!(config.trust_proxy);
-
-        assert!(Config::from_vars(vars(&google[..3])).is_err(), "no client secret");
-        let mut apple = google.to_vec();
-        apple[1] = ("AUTH_PROVIDERS", "google,apple");
-        assert!(Config::from_vars(vars(&apple)).is_err(), "no Apple settings");
-        apple.extend([
-            ("APPLE_TEAM_ID", "TEAM"),
-            ("APPLE_KEY_ID", "KEY"),
-            ("APPLE_SERVICES_ID", "com.example.world"),
-            ("APPLE_PRIVATE_KEY", "not a key"),
-        ]);
-        assert!(Config::from_vars(vars(&apple)).unwrap_err().contains("APPLE_PRIVATE_KEY"));
-        assert!(Config::from_vars(vars(&[("AUTH_MODE", "oidc"), ("AUTH_PROVIDERS", "facebook")])).is_err());
-    }
-
-    #[test]
-    fn every_provider_reads_its_own_variables_in_order() {
-        let all = [
-            ("AUTH_MODE", "oidc"),
-            ("AUTH_PROVIDERS", "github, microsoft,linkedin,discord"),
-            ("GITHUB_CLIENT_ID", "gh-id"),
-            ("GITHUB_CLIENT_SECRET", "shh-gh"),
-            ("MICROSOFT_CLIENT_ID", "ms-id"),
-            ("MICROSOFT_CLIENT_SECRET", "shh-ms"),
-            ("LINKEDIN_CLIENT_ID", "li-id"),
-            ("LINKEDIN_CLIENT_SECRET", "shh-li"),
-            ("DISCORD_CLIENT_ID", "dc-id"),
-            ("DISCORD_CLIENT_SECRET", "shh-dc"),
-        ];
-        let config = Config::from_vars(vars(&all)).unwrap();
-        let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
-        let kinds: Vec<_> = oidc.providers.iter().map(ProviderConfig::kind).collect();
-        use SignInProvider::*;
-        assert_eq!(kinds, [GitHub, Microsoft, LinkedIn, Discord]);
-        let ProviderConfig::Microsoft(microsoft) = &oidc.providers[1] else { panic!("Microsoft") };
-        assert_eq!(microsoft.discovery_url, microsoft_discovery_url("common"));
-        let ProviderConfig::GitHub(github) = &oidc.providers[0] else { panic!("GitHub") };
-        assert_eq!((github.client_id.as_str(), github.endpoints.clone()), ("gh-id", ApiEndpoints::github()));
-        let logged = format!("{config:?}");
-        assert!(!logged.contains("shh"), "secrets stay out of logs: {logged}");
-
-        for (i, (name, _)) in all.iter().enumerate().skip(2) {
-            let without: Vec<_> = all.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, v)| *v).collect();
-            let error = Config::from_vars(vars(&without)).unwrap_err();
-            assert!(error.contains(name), "{error}");
-        }
-
-        let mut tenant = all.to_vec();
-        tenant.push(("MICROSOFT_TENANT", "contoso.onmicrosoft.com"));
-        let config = Config::from_vars(vars(&tenant)).unwrap();
-        let AuthMode::Oidc(oidc) = &config.auth else { panic!("oidc") };
-        let ProviderConfig::Microsoft(microsoft) = &oidc.providers[1] else { panic!("Microsoft") };
-        assert!(microsoft.discovery_url.contains("/contoso.onmicrosoft.com/v2.0/"));
-        *tenant.last_mut().unwrap() = ("MICROSOFT_TENANT", "evil.example/x?");
-        assert!(Config::from_vars(vars(&tenant)).unwrap_err().contains("MICROSOFT_TENANT"));
-
-        let mut twice = all.to_vec();
-        twice[1] = ("AUTH_PROVIDERS", "github,discord,github");
-        assert!(Config::from_vars(vars(&twice)).unwrap_err().contains("twice"));
-    }
-
-    #[test]
-    fn admin_emails_and_proxy_flag_are_checked() {
+    fn proxy_flag_is_checked() {
         let with =
             |name: &str, value: &str| Config::from_vars(vars(&[("AUTH_TOKEN", "0123456789abcdef"), (name, value)]));
-        assert!(with("ADMIN_EMAILS", "not-an-email").is_err());
         assert!(with("TRUST_PROXY", "maybe").is_err());
         assert!(!with("TRUST_PROXY", "0").unwrap().trust_proxy);
+    }
+
+    #[test]
+    fn max_viewers_is_a_whole_number_and_zero_means_no_cap() {
+        let with = |value: &str| Config::from_vars(vars(&[("AUTH_TOKEN", "0123456789abcdef"), ("MAX_VIEWERS", value)]));
+        assert_eq!(with("10").unwrap().guests.seats, 10);
+        assert_eq!(with("0").unwrap().guests.seats, 0);
+        for bad in ["-1", "2.5", "lots", "4294967296"] {
+            assert!(with(bad).unwrap_err().contains("MAX_VIEWERS"), "{bad:?} should be refused");
+        }
     }
 
     #[test]
@@ -711,15 +399,6 @@ mod tests {
         assert!(!local_origin("http://localhost@evil.example"));
         assert!(!local_origin("http://10.0.0.1"));
         assert!(!local_origin("http://[::1]evil"));
-    }
-
-    #[test]
-    fn emails() {
-        assert!(plausible_email("a@b.c"));
-        assert!(!plausible_email("a b@c"));
-        assert!(!plausible_email("@b"));
-        assert!(!plausible_email("a@"));
-        assert!(!plausible_email("a@b@c"));
     }
 
     #[test]

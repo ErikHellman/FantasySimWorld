@@ -10,10 +10,8 @@ use super::brain_log::{KEEP_FULL, LOG_TTL_MS};
 use super::commands::COMMANDS_TTL_MS;
 use super::snapshots::{expired, metas};
 use super::vectors::VECTORS_TTL_MS;
-use super::{DAY_MS, Result, Store, StoreError, db, now_ms};
+use super::{Result, Store, StoreError, db, now_ms};
 
-/// Refused sign-ins are kept this long.
-pub const ATTEMPTS_TTL_MS: i64 = 90 * DAY_MS;
 pub const BACKUP_DIR: &str = "backup";
 pub const BACKUP_FILE: &str = "latest.db";
 /// A backup older than this is replaced on the next maintenance run.
@@ -31,8 +29,6 @@ pub struct PruneReport {
     pub brain_log_deleted: usize,
     /// brain log rows that lost their prompt and response (past the newest 5,000)
     pub brain_log_trimmed: usize,
-    pub sessions: usize,
-    pub attempts: usize,
     /// memory vectors unused for a week
     pub vectors: usize,
 }
@@ -59,8 +55,6 @@ impl Store {
                    AND id <= (SELECT id FROM brain_log ORDER BY id DESC LIMIT 1 OFFSET ?1)",
                 [KEEP_FULL],
             )?;
-            report.sessions = tx.execute("DELETE FROM sessions WHERE expires_at <= ?1", [now_ms])?;
-            report.attempts = tx.execute("DELETE FROM auth_attempts WHERE at < ?1", [now_ms - ATTEMPTS_TTL_MS])?;
             report.vectors = tx.execute("DELETE FROM memory_vectors WHERE used_ms < ?1", [now_ms - VECTORS_TTL_MS])?;
             tx.commit()?;
             conn.execute_batch("PRAGMA incremental_vacuum")?;
@@ -141,6 +135,7 @@ mod tests {
     use super::super::{BrainLogWrite, CommandRecord, testing};
     use super::*;
     use crate::api::wire::{LogStatus, RequestKind};
+    use crate::store::DAY_MS;
 
     #[tokio::test]
     async fn prune_applies_every_rule() {

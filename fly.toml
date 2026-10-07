@@ -12,12 +12,12 @@ kill_timeout = 30
 
 [build]
 dockerfile = "Dockerfile"
-# Guest seats are fixed at build time (docs/deploy.md); 25 when this is left out, 0 for none.
-# args = { GUEST_STREAMS = "25" }
 
 [env]
 PORT = "8080"
 DATA_DIR = "/data"
+# How many people may watch at once; the rest wait in line. 0 for no cap.
+MAX_VIEWERS = "25"
 # Fly's proxy sets Fly-Client-IP; the sign-in rate limit keys on it.
 TRUST_PROXY = "true"
 LOG_FORMAT = "json"

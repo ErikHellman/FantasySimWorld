@@ -36,36 +36,34 @@ pub struct AppState {
     pub brain: Brain,
     /// the viewers' chat (in memory: survives a new world, not a restart)
     pub chat: Arc<chat::ChatHub>,
-    /// the guests' seats and the line for them (in memory)
+    /// the viewers' seats and the line for them (in memory)
     pub guests: Arc<guests::GuestHub>,
     /// cancelled on SIGTERM: streams end so the server can stop
     pub shutdown: CancellationToken,
 }
 
 impl AppState {
-    /// Fails only when sign-in cannot be set up (an unusable Apple key, no TLS backend).
     pub fn new(
         config: Config,
         world: Arc<World>,
         store: Store,
         brain: Brain,
         shutdown: CancellationToken,
-    ) -> Result<Arc<Self>, String> {
-        let auth = Auth::new(&config)?;
+    ) -> Arc<Self> {
         let guests = Arc::new(guests::GuestHub::new(config.guests));
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             config,
             world_hash: fsw_world::navgrid::world_hash(),
             world,
             viewers: AtomicU32::new(0),
             backlog_drops: AtomicU32::new(0),
             store,
-            auth,
+            auth: Auth::default(),
             brain,
             chat: Arc::default(),
             guests,
             shutdown,
-        }))
+        })
     }
 }
 

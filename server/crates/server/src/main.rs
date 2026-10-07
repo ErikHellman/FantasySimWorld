@@ -30,15 +30,8 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(error) = store.seed_admins(&config.admin_emails).await {
-        tracing::error!(%error, "cannot seed ADMIN_EMAILS");
-        return ExitCode::FAILURE;
-    }
     if config.auth == AuthMode::Off {
         tracing::warn!(bind = %config.bind, "AUTH_MODE=off: anyone who can reach this server is an admin (local development only)");
-    }
-    if matches!(config.auth, AuthMode::Oidc(_)) && config.admin_emails.is_empty() {
-        tracing::warn!("AUTH_MODE=oidc without ADMIN_EMAILS: only people already on the allowlist can sign in");
     }
     if config.llm.enabled {
         let llm = &config.llm;
@@ -77,14 +70,7 @@ async fn main() -> ExitCode {
     brain.set_memory(memory.clone());
     let indexing = memory.map(|index| brain_task::spawn_indexer(index, world.clone(), store.clone(), shutdown.clone()));
     let thinking = brain_task::spawn(brain.clone(), world.clone(), store.clone(), shutdown.clone());
-    let app = match AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone()) {
-        Ok(app) => app,
-        Err(message) => {
-            tracing::error!(message, "cannot set up sign-in");
-            store.close().await;
-            return ExitCode::FAILURE;
-        }
-    };
+    let app = AppState::new(config.clone(), world, store.clone(), brain, shutdown.clone());
 
     let listener = match tokio::net::TcpListener::bind(config.bind).await {
         Ok(listener) => listener,

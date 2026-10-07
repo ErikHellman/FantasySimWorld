@@ -2,10 +2,11 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Utterance,
 } from '../generated/api';
+import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
 
 export type { CharacterDetail, RelationRow, RosterEntry } from '../generated/api';
@@ -58,8 +59,10 @@ export const ui = {
   quality: signal(''),
   /** who is watching; null until /api/me answers */
   me: signal<Me | null>(null),
-  /** when a guest's pass ends (ms since the epoch, by this browser's clock); null for everyone who signed in */
-  guestEndsAt: signal<number | null>(null),
+  /** waiting for a seat: this page's place in line (null before the server answers) and any trouble asking; null once seated */
+  line: signal<{ wait: GuestWait | null; problem: string | null } | null>(null),
+  /** why this guest's stream is over, once it is; the launch screen says so and offers to come back */
+  ended: signal<GuestEndReason | null>(null),
   connection: signal<ConnectionState>('connecting'),
   clock: signal({ day: 1, time: '06:00', part: 'early morning' }),
   /** the world's speed as the server runs it (0 = paused) */
@@ -106,14 +109,8 @@ export const ui = {
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
-/** Watching without signing in: no chat, and only for a while. */
+/** Watching with a guest seat, as everyone but the admin does. */
 export const isGuest = (): boolean => ui.me.value?.role === 'guest';
-
-/** How long a guest has left, in words: whole minutes rounded up, so the last minute reads as such. */
-export function guestTimeLeft(ms: number): string {
-  if (ms < 60_000) return 'under a minute left';
-  return `${Math.ceil(ms / 60_000)} min left`;
-}
 
 /** Things the UI can ask the app to do; filled in by main.ts. */
 export interface UiActions {

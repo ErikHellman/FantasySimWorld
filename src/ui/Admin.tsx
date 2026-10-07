@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type {
-  AllowlistEntry, AuthAttempt, Billboard, BillboardTone, HealthReport, LlmSettingsView, Role,
+  Billboard, BillboardTone, HealthReport, LlmSettingsView,
 } from '../generated/api';
 import { api } from '../net/api';
 import { actions, ui } from './store';
@@ -203,82 +203,6 @@ function LlmSection() {
 }
 
 /** Why a sign-in was refused, by the server's outcome code. */
-const REFUSALS: Record<string, string> = {
-  not_allowlisted: 'not on the list',
-  email_unverified: 'e-mail not verified by the provider',
-  no_email: 'the provider gave no e-mail',
-};
-
-function AccessSection() {
-  const [list, setList] = useState<AllowlistEntry[]>([]);
-  const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<Role>('viewer');
-  const [message, setMessage] = useState('');
-  const reload = (): void => {
-    api.admin.allowlist().then(setList, (error) => setMessage(errorText(error)));
-    api.admin.attempts().then(setAttempts, (error) => setMessage(errorText(error)));
-  };
-  useEffect(reload, []);
-  const allow = (address: string, as: Role, note = ''): void => {
-    api.admin.allow({ email: address, role: as, note }).then(() => {
-      setEmail('');
-      setMessage(`${address} may now sign in.`);
-      reload();
-    }, (error) => setMessage(errorText(error)));
-  };
-  const remove = (address: string): void => {
-    if (!confirm(`Remove ${address}? Their sessions end at once.`)) return;
-    api.admin.disallow(address).then(reload, (error) => setMessage(errorText(error)));
-  };
-  const allowed = new Set(list.map((entry) => entry.email.toLowerCase()));
-
-  return (
-    <>
-      <h3>Who may watch</h3>
-      <ul class="graves">
-        {list.map((entry) => (
-          <li key={entry.email} class="row">
-            <strong>{entry.email}</strong>
-            <span class={`badge ${entry.role === 'admin' ? 'good' : ''}`}>{entry.role}</span>
-            {entry.note && <span class="muted">{entry.note}</span>}
-            <span class="test-result" />
-            <button onClick={() => remove(entry.email)}>Remove</button>
-          </li>
-        ))}
-      </ul>
-      <div class="row">
-        <input type="text" placeholder="e-mail address" value={email} onInput={(event) => setEmail(event.currentTarget.value.trim())} />
-        <select value={role} onChange={(event) => setRole(event.currentTarget.value as Role)} style={{ maxWidth: '110px' }}>
-          <option value="viewer">viewer</option>
-          <option value="admin">admin</option>
-        </select>
-        <button onClick={() => allow(email, role)} disabled={!email.includes('@')}>Add</button>
-      </div>
-      {message && <p class="test-result">{message}</p>}
-      <details>
-        <summary>Refused sign-ins ({attempts.length})</summary>
-        <ul class="graves">
-          {attempts.length === 0 && <li class="muted">None.</li>}
-          {attempts.map((attempt) => (
-            <li key={attempt.id} class="row">
-              <strong>{attempt.email || '(no e-mail)'}</strong>
-              <span class="muted">
-                {attempt.provider} · {REFUSALS[attempt.outcome] ?? attempt.outcome} · {new Date(attempt.at).toLocaleString()}
-              </span>
-              <span class="test-result" />
-              {attempt.email && (allowed.has(attempt.email.toLowerCase())
-                ? <span class="badge good">allowed</span>
-                : <button onClick={() => allow(attempt.email, 'viewer', `allowed after a ${attempt.provider} sign-in`)}>Allow</button>)}
-            </li>
-          ))}
-        </ul>
-      </details>
-    </>
-  );
-}
-
-/** Running the shared world: speed, saves, billboards, the language model and who may watch. Admins only. */
 export function AdminPanel() {
   return (
     <div class="modal" onClick={() => (ui.panel.value = 'none')}>
@@ -288,7 +212,6 @@ export function AdminPanel() {
         <WorldSection />
         <BillboardsSection />
         <LlmSection />
-        <AccessSection />
         <footer>
           <button class="primary" onClick={() => (ui.panel.value = 'none')}>Done</button>
         </footer>

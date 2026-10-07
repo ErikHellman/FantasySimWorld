@@ -20,7 +20,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::wire::{ChatKind, ChatMessage, ChatWelcome, ChatYou, Role};
+use crate::api::wire::{ChatKind, ChatMessage, ChatWelcome, ChatYou};
 use crate::auth::Viewer;
 use crate::auth::rate_limit::RateLimiter;
 use crate::store::now_ms;
@@ -130,23 +130,20 @@ const NOUNS: [&str; 40] = [
     "Wren",
 ];
 
-/// One chat participant: a signed-in account (all its tabs share a name) or, when everyone
-/// shares one identity (token or sign-in off), a single tab.
+/// One chat participant: a guest's pass (a browser's tabs share the cookie, so they share a
+/// name) or, for admins, who all hold the same token, a single tab.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ChatKey {
-    User(i64),
+    Guest([u8; 32]),
     Tab(String),
 }
 
 impl ChatKey {
-    /// `None` when there is nothing to tell this person apart by (no account, no tab id), or
-    /// for a guest: they can read the chat but not take part (and so have no credits either).
+    /// `None` when there is nothing to tell this person apart by (an admin without a tab id):
+    /// they can read the chat but not take part.
     pub fn of(viewer: &Viewer, tab: &str) -> Option<Self> {
-        if viewer.role == Role::Guest {
-            return None;
-        }
-        match viewer.user_id {
-            Some(id) => Some(Self::User(id)),
+        match &viewer.guest {
+            Some(pass) => Some(Self::Guest(pass.id)),
             None if !tab.is_empty() && tab.len() <= 64 => Some(Self::Tab(tab.to_owned())),
             None => None,
         }
@@ -519,6 +516,8 @@ impl Drop for ChatGuard {
 
 #[cfg(test)]
 mod tests {
+    use crate::api::wire::Role;
+    use crate::guests::GuestPass;
     use std::time::Duration;
 
     use super::*;
@@ -548,9 +547,9 @@ mod tests {
     }
 
     #[test]
-    fn an_accounts_tabs_share_a_name_until_the_last_one_closes() {
+    fn a_guests_tabs_share_a_name_until_the_last_one_closes() {
         let hub = Arc::new(ChatHub::default());
-        let key = ChatKey::User(7);
+        let key = ChatKey::Guest([7; 32]);
         let (first, welcome) = hub.join(Some(key.clone()), None, Instant::now());
         let (second, again) = hub.join(Some(key.clone()), None, Instant::now());
         assert_eq!(welcome.you, again.you);
@@ -570,17 +569,13 @@ mod tests {
     }
 
     #[test]
-    fn guests_have_no_key_even_with_a_tab() {
-        let viewer = |role| Viewer {
-            user_id: None,
-            email: String::new(),
-            display_name: String::new(),
-            role,
-            session: None,
-            guest: None,
-        };
-        assert_eq!(ChatKey::of(&viewer(Role::Admin), "tab"), Some(ChatKey::Tab("tab".into())));
-        assert_eq!(ChatKey::of(&viewer(Role::Guest), "tab"), None);
+    fn guests_are_known_by_their_pass_and_admins_by_their_tab() {
+        let admin = Viewer { role: Role::Admin, guest: None };
+        let guest = Viewer { role: Role::Guest, guest: Some(GuestPass { id: [3; 32] }) };
+        assert_eq!(ChatKey::of(&admin, "tab"), Some(ChatKey::Tab("tab".into())));
+        assert_eq!(ChatKey::of(&admin, ""), None);
+        assert_eq!(ChatKey::of(&guest, "tab"), Some(ChatKey::Guest([3; 32])));
+        assert_eq!(ChatKey::of(&guest, ""), Some(ChatKey::Guest([3; 32])));
     }
 
     #[test]
@@ -673,9 +668,9 @@ mod tests {
     }
 
     #[test]
-    fn more_tabs_of_one_account_are_not_announced_again() {
+    fn more_tabs_of_one_guest_are_not_announced_again() {
         let hub = Arc::new(ChatHub::default());
-        let key = Some(ChatKey::User(7));
+        let key = Some(ChatKey::Guest([7; 32]));
         let (_first, _) = hub.join(key.clone(), None, Instant::now());
         let (_second, _) = hub.join(key, Some("Someone Else"), Instant::now());
         assert_eq!(lines(&hub).len(), 1);

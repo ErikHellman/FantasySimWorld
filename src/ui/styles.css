@@ -152,8 +152,6 @@ button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
 button:disabled { opacity: 0.45; cursor: default; }
 button.primary, a.button.primary { background: var(--accent); color: #23200f; border-color: transparent; font-weight: 800; }
 button.primary:hover:not(:disabled), a.button.primary:hover { background: #f7d06f; }
-.signin { display: grid; gap: 4px; justify-items: center; margin: 8px 0; }
-.signin .button { min-width: 260px; }
 a.file-button { color: inherit; text-decoration: none; }
 button.danger { color: var(--bad); }
 button.on { background: var(--accent); color: #23200f; border-color: transparent; }
@@ -356,8 +354,6 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 code { background: rgba(0, 0, 0, 0.3); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .graves li { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
 .billboard-row .row + .row { margin-top: 6px; }
-.pill.guest { color: inherit; text-decoration: none; border-color: var(--accent); }
-.chat-guest { margin: 6px 0 0; font-size: 12.5px; }
 .dialog.help { width: min(640px, 100%); line-height: 1.45; }
 .dialog.help > p { margin: 6px 0 8px; }
 .controls { display: grid; grid-template-columns: 200px 1fr; gap: 6px 14px; margin: 0; align-items: baseline; }

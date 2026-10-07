@@ -4,33 +4,7 @@ export const PROTOCOL_VERSION = 6;
 
 export type Vec2 = { x: number, z: number, };
 
-export type Role = "admin" | "viewer" | "guest";
-
-/**
- * `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
- */
-export type SignInOptions = { 
-/**
- * `AUTH_MODE=off`: no sign-in needed (local development)
- */
-open: boolean, 
-/**
- * `/auth/token` works (`AUTH_MODE=token`)
- */
-token: boolean, 
-/**
- * `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
- */
-providers: Array<SignInProvider>, 
-/**
- * `POST /auth/guest` works: people may watch for a while without signing in
- */
-guests: boolean, };
-
-/**
- * A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
- */
-export type SignInProvider = "google" | "apple" | "microsoft" | "linkedin" | "github" | "discord";
+export type Role = "admin" | "guest";
 
 /**
  * `POST /auth/guest`: asks for a guest seat.
@@ -44,7 +18,7 @@ ticket: string | null, };
 /**
  * The answer to `POST /auth/guest`. Asking again sooner than `retryAfterSeconds` answers 429.
  */
-export type GuestAnswer = { "kind": "admitted", secondsLeft: number, } | { "kind": "queued", ticket: string, 
+export type GuestAnswer = { "kind": "admitted" } | { "kind": "queued", ticket: string, 
 /**
  * 1 is next
  */
@@ -57,7 +31,7 @@ seats: number, retryAfterSeconds: number, };
 /**
  * Why a guest's stream ended.
  */
-export type GuestEndReason = "time" | "elsewhere" | "left";
+export type GuestEndReason = "elsewhere" | "left";
 
 /**
  * `guest_end`: the last event on a guest's stream; the browser should not reconnect.
@@ -465,11 +439,7 @@ viewer: string, id: string | null, };
 /**
  * `GET /api/me`
  */
-export type Me = { email: string, displayName: string, role: Role, 
-/**
- * for a guest, the seconds left before their pass ends; `null` for everyone else
- */
-guestSecondsLeft: number | null, };
+export type Me = { role: Role, };
 
 /**
  * `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -542,37 +512,6 @@ embedModel: string | null, embedApiKeySet: boolean, };
  * `POST /api/admin/llm/test`
  */
 export type LlmTestResult = { ok: boolean, message: string, };
-
-/**
- * `GET /api/admin/allowlist` rows.
- */
-export type AllowlistEntry = { email: string, role: Role, addedBy: string, 
-/**
- * ms since the epoch
- */
-addedAt: number, note: string, };
-
-/**
- * `POST /api/admin/allowlist`
- */
-export type AllowlistAdd = { email: string, role: Role, note: string, };
-
-/**
- * `GET /api/admin/attempts`: refused sign-ins, newest first.
- */
-export type AuthAttempt = { id: number, 
-/**
- * a [`SignInProvider`]'s name, such as "google" or "github"
- */
-provider: string, email: string, 
-/**
- * "not_allowlisted", "email_unverified" or "no_email"
- */
-outcome: string, 
-/**
- * ms since the epoch
- */
-at: number, };
 
 /**
  * `POST /api/admin/world/new`

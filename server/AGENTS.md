@@ -14,7 +14,7 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | `fsw-world` (`crates/world`) | The static world: hex map, places, scatter, nav grid, A* | core |
 | `fsw-sim` (`crates/sim`) | The 20 Hz simulation: state, commands, events, the systems | core, world |
 | `fsw-brain` (`crates/brain`) | The model client, queue, governor, prompts, retrieval, tools, validation | core, world, sim |
-| `fsw-server` (`crates/server`) | HTTP (axum), the event stream, sign-in, the SQLite store, the tasks that run it all | all of the above |
+| `fsw-server` (`crates/server`) | HTTP (axum), the event stream, guest seats and the admin's token, the SQLite store, the tasks that run it all | all of the above |
 
 Keep that order. The sim must not depend on the brain or the server, and the brain must not drive the sim except through `Command`s. The crates are named `fsw-*` because a crate called `core` would shadow Rust's own.
 
@@ -57,8 +57,8 @@ The tests that hold this in place: `crates/sim/tests/sim.rs` (determinism throug
 - The brain must never block the world. Answers are validated against the world as it is when they arrive (`validate.rs`) and anything stale or invalid falls back to the routines.
 - Tests use a fake transport (`crates/brain/tests/brain.rs`). For an end-to-end run use `node tools/mock-llm.mjs` (port 8787) and `cargo test -p fsw-brain --test mock_llm -- --ignored`. Do not point tests or servers at a real endpoint unless asked.
 
-## Sign-in and HTTP
+## Access and HTTP
 
-- Routes are in `crates/server/src/api/router.rs`: `/auth/*` (sign-in, rate-limited), `/api/*` (CSRF check, then the session), `/api/admin/*` (admins only), `/healthz`, and the web build as static files.
-- Tests: `crates/server/tests/http.rs` for the routes and `auth.rs` for sign-in with every provider against fake ones (discovery, keys, tokens and the GitHub and Discord profile APIs). Add a test there for a new route or a change to who may call one.
+- Routes are in `crates/server/src/api/router.rs`: `/auth/*` (the admin's token form and the guest seats, rate-limited), `/api/*` (CSRF check, then the viewer: an admin by token or a guest by seat), `/api/admin/*` (admins only), `/healthz`, and the web build as static files.
+- Tests: `crates/server/tests/http.rs` for the routes, the token, the seats and the line. Add a test there for a new route or a change to who may call one.
 - Run the server for a manual check with a scratch `DATA_DIR` so the developer's `data/world.db` stays untouched.

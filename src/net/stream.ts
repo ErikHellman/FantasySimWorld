@@ -21,9 +21,9 @@ export interface StreamHandlers {
   chat(message: ChatMessage): void;
   /** this viewer's chat name changed (here or in another tab of the same account) */
   chatYou(you: ChatYou): void;
-  /** a guest's stream is over (time is up, they left, or another tab took it); it is not reopened */
+  /** a guest's stream is over (they left, or another tab took it); it is not reopened */
   guestEnd(end: GuestEnd): void;
-  /** the server refused the stream and `/api/me` says this browser is not signed in (401) or not allowed (403) */
+  /** the server refused the stream and `/api/me` says this browser holds no seat and no token (401) or may not watch (403) */
   refused(status: 401 | 403): void;
   connection(state: ConnectionState): void;
 }

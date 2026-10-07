@@ -36,14 +36,12 @@ pub mod maintenance;
 pub mod migrations;
 pub mod settings;
 pub mod snapshots;
-pub mod users;
 pub mod vectors;
 pub mod worlds;
 
 pub use brain_log::{BrainLogWrite, EMBED_USAGE, UsageRow};
 pub use commands::CommandRecord;
 pub use snapshots::{LoadedSnapshot, SnapshotReason, SnapshotSaved, SnapshotWrite, Tier};
-pub use users::{LoginOutcome, SessionRecord, User};
 pub use worlds::World;
 
 pub const DB_FILE: &str = "world.db";
