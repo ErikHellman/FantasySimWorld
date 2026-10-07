@@ -497,11 +497,13 @@ impl Tracker {
 pub const FRAMES_FIXTURE: (u32, usize) = (99, 600);
 
 /// What the web client's tests replay through its view of the world: the
-/// snapshot of a fresh world, the frames of its first ticks, and the entities
-/// at the end (JSON; `cargo run --bin export-frames` writes it).
+/// snapshot of a fresh, empty world, the frames of its first ticks (the first of which founds the
+/// village from the sim's own lists), and the entities at the end (JSON; `cargo run --bin
+/// export-frames` writes it).
 pub fn frames_fixture() -> String {
     let (seed, ticks) = FRAMES_FIXTURE;
     let mut sim = fsw_sim::Sim::new(fsw_sim::create_state(seed));
+    sim.enqueue(fsw_sim::Command::FoundVillage);
     let mut tracker = Tracker::new(&sim.state);
     let start = sim.state.tick;
     let entities = tracker.entities();
@@ -526,11 +528,12 @@ pub fn frames_fixture() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::{Sim, create_state};
+    use fsw_sim::Sim;
+    use fsw_testing::create_test_state;
 
     #[test]
     fn deltas_rebuild_the_state_a_snapshot_would_show() {
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let mut client: IndexMap<String, Entity> =
             tracker.entities().into_iter().map(|e| (e.fixed.id.clone(), e)).collect();
@@ -563,7 +566,7 @@ mod tests {
 
     #[test]
     fn idle_ticks_send_nothing() {
-        let sim = Sim::new(create_state(3));
+        let sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let frame = tracker.frame(&sim.state, &[]);
         assert!(frame.add.is_empty() && frame.d.is_empty() && frame.del.is_empty());
@@ -571,7 +574,7 @@ mod tests {
 
     #[test]
     fn billboards_are_announced_when_they_change() {
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let count = |frame: &TickFrame| frame.ev.iter().filter(|e| matches!(e, WireEvent::Billboard { .. })).count();
         // An ordinary tick, then the next midnight, when every board turns to a new slogan.
@@ -596,7 +599,7 @@ mod tests {
     #[test]
     fn houses_are_announced_as_they_burn_fall_and_rise_again() {
         use fsw_sim::state::{House as SimHouse, HousePhase as SimPhase};
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let houses = |frame: &TickFrame| -> Vec<House> {
             frame
@@ -636,7 +639,7 @@ mod tests {
 
     #[test]
     fn weapons_are_put_away_at_ease() {
-        let mut state = create_state(3);
+        let mut state = create_test_state(3);
         let id = state.order[0].clone();
         let c = state.characters.get_mut(&id).unwrap();
         c.anim = AnimId::SitChair;

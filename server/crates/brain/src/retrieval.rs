@@ -83,7 +83,7 @@ pub fn since(c: &Character, tick: i64, count: usize) -> Vec<&Memory> {
 mod tests {
     use std::sync::Arc;
 
-    use fsw_sim::create_state;
+    use fsw_testing::create_test_state;
 
     use super::*;
     use crate::recall::{Recall, VectorCache};
@@ -103,7 +103,7 @@ mod tests {
     }
 
     fn villager(memories: Vec<Memory>) -> Character {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let mut c = state.characters.values().next().unwrap().clone();
         c.memories = memories;
         c

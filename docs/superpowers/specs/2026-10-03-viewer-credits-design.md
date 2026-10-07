@@ -1,5 +1,7 @@
 # Viewer credits: earn by watching, spend on world events
 
+> **Removed on 2026-10-07.** The village is watched, not steered: credits, the shop, bought monsters, blessings and prayer payouts are gone from the server, the sim and the client. This document stays as the record of what was built and why.
+
 ## Context
 
 Viewers only watch the village today; nothing they do reaches the sim. This adds a small economy: a viewer who is actively watching (tab visible and focused, reporting every 30 s) earns credits, and spends them on events in the world, priced by how much they change it.

@@ -3,7 +3,6 @@ import { SOUND_CREDITS } from '../audio/credits';
 import type { AudioSettings } from '../audio/engine';
 import { api } from '../net/api';
 import { chatError } from './Chat';
-import { signInHref, useGuestTimeLeft } from './Guest';
 import { actions, isGuest, ui } from './store';
 
 type Toggle = 'ambientOn' | 'effectsOn' | 'musicOn';
@@ -49,18 +48,18 @@ function ChatName() {
   );
 }
 
-/** This viewer's own settings: sound and chat name (kept in this browser) and signing out. */
+/** This viewer's own settings: sound and chat name (kept in this browser), and the way in or out for admins. */
 export function SettingsPanel() {
   const audio = ui.audio.value;
   const setAudio = (patch: Partial<AudioSettings>): void => actions.applyAudio({ ...audio, ...patch });
   const me = ui.me.value;
-  const guestLeft = useGuestTimeLeft();
 
+  // Giving up the seat or the admin's cookie; the page then starts over as a guest.
   const signOut = async (): Promise<void> => {
     try {
       await api.logout();
     } finally {
-      location.assign(isGuest() ? '/login?ended=left' : '/login');
+      location.reload();
     }
   };
 
@@ -113,22 +112,23 @@ export function SettingsPanel() {
           </ul>
         </details>
 
-        {!isGuest() && <ChatName />}
+        <ChatName />
 
         {me && isGuest() && (
           <>
-            <h3>Guest</h3>
+            <h3>Access</h3>
             <div class="row">
-              <span class="test-result">Watching as a guest, {guestLeft}. <a href={signInHref()}>Sign in</a> to stay longer.</span>
+              <span class="test-result">Watching as a guest. Your chat name is kept in this browser.</span>
               <button onClick={() => void signOut()} title="Give your seat to someone waiting">Leave</button>
             </div>
+            <p class="muted small-text">Running the village? <a href="/auth/token">Admin sign-in</a>.</p>
           </>
         )}
         {me && !isGuest() && (
           <>
-            <h3>Account</h3>
+            <h3>Access</h3>
             <div class="row">
-              <span class="test-result">Signed in as {me.displayName ? `${me.displayName} (${me.email})` : me.email}{me.role === 'admin' ? ', admin' : ''}.</span>
+              <span class="test-result">You are an admin.</span>
               <button onClick={() => void signOut()}>Sign out</button>
             </div>
           </>

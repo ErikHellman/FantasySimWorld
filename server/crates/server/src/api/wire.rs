@@ -16,7 +16,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -30,9 +30,9 @@ pub struct Vec2 {
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    /// holds the admin's token (or sign-in is off): runs the world
     Admin,
-    Viewer,
-    /// watching without signing in, for a while: no chat, no credits (never on the allowlist)
+    /// holds a guest seat: watches and chats
     Guest,
 }
 
@@ -472,6 +472,15 @@ pub struct Status {
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
     pub ambient: AmbientCounts,
+    /// the village is still being founded: how many of its founders have settled; `null` once it is
+    pub founding: Option<Founding>,
+}
+
+/// How far a new world's founding has come.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Founding {
+    pub settled: u32,
+    pub total: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -668,8 +677,6 @@ pub enum ChatKind {
     Join,
     /// someone has been gone for a few minutes
     Leave,
-    /// a viewer made something happen in the world, or the village prayed to one; reads as "{author} {text}"
-    Event,
 }
 
 /// One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
@@ -725,108 +732,6 @@ pub struct ChatRename {
 }
 
 // ---------------------------------------------------------------------------
-// Credits
-// ---------------------------------------------------------------------------
-
-/// What an offer needs from the viewer who buys it.
-#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum CreditTarget {
-    /// nothing: it happens to the whole village
-    None,
-    /// `characterId`: the villager the viewer has selected
-    Character,
-    /// `x` and `z`: the spot the viewer's camera looks at
-    Point,
-}
-
-/// How the shop groups its offers.
-#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum CreditGroup {
-    Gift,
-    Monster,
-    Blessing,
-    Threat,
-}
-
-/// One thing credits can buy.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct CreditOffer {
-    /// what `POST /api/credits/buy` takes as `offer`
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub cost: u32,
-    pub target: CreditTarget,
-    pub group: CreditGroup,
-}
-
-/// `GET /api/credits?viewer=<tab>`: this viewer's credits and what they buy.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CreditsState {
-    pub balance: u32,
-    /// watching and prayer earn nothing past this
-    pub cap: u32,
-    /// credits for a minute of watching with the tab in front; 0 when credits are off
-    pub per_minute: u32,
-    /// seconds between the reports of watching the server expects (`POST /api/presence`)
-    pub beat_seconds: u32,
-    /// cheapest first within each group; empty when credits are off
-    pub offers: Vec<CreditOffer>,
-}
-
-/// The answer to `POST /api/presence` and `POST /api/credits/buy`: what the viewer has now.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct CreditsBalance {
-    pub balance: u32,
-}
-
-/// `POST /api/presence`: this tab is in front and being watched. Sent every
-/// [`CreditsState::beat_seconds`] while that is true; each one that arrives on time earns credits.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct PresenceRequest {
-    /// random per tab, as in `?viewer=` on the stream
-    pub viewer: String,
-}
-
-/// `POST /api/credits/buy`
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct BuyRequest {
-    /// random per tab, as in `?viewer=` on the stream
-    pub viewer: String,
-    /// a [`CreditOffer::id`]
-    pub offer: String,
-    /// for a [`CreditTarget::Character`] offer
-    pub character_id: Option<Id>,
-    /// for a [`CreditTarget::Point`] offer: world units
-    pub x: Option<f64>,
-    pub z: Option<f64>,
-}
-
-/// One row of `GET /api/admin/credits`: someone with the world open right now.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct CreditViewer {
-    /// their chat name, which is also what `POST /api/admin/credits/grant` takes
-    pub name: String,
-    pub balance: u32,
-    /// signed in with an account, so the balance is kept; false for a tab's balance held in memory
-    pub account: bool,
-    /// their tab is in front and reporting, so they are earning
-    pub watching: bool,
-}
-
-/// `POST /api/admin/credits/grant`: gives credits to someone with the world open, or to all of them.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct CreditGrant {
-    /// a [`CreditViewer::name`]; `null` for everyone with the world open
-    pub name: Option<String>,
-    pub amount: u32,
-}
-
-// ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
 
@@ -842,24 +747,7 @@ pub struct WatchRequest {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Me {
-    pub email: String,
-    pub display_name: String,
     pub role: Role,
-    /// for a guest, the seconds left before their pass ends; `null` for everyone else
-    pub guest_seconds_left: Option<u32>,
-}
-
-/// `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct SignInOptions {
-    /// `AUTH_MODE=off`: no sign-in needed (local development)
-    pub open: bool,
-    /// `/auth/token` works (`AUTH_MODE=token`)
-    pub token: bool,
-    /// `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
-    pub providers: Vec<SignInProvider>,
-    /// `POST /auth/guest` works: people may watch for a while without signing in
-    pub guests: bool,
 }
 
 /// `POST /auth/guest`: asks for a guest seat.
@@ -874,8 +762,8 @@ pub struct GuestRequest {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum GuestAnswer {
-    /// a seat: the guest cookie is set, and `/api/stream` works until the pass ends
-    Admitted { seconds_left: u32 },
+    /// a seat: the guest cookie is set, and `/api/stream` works for as long as the guest watches
+    Admitted,
     /// every seat is taken: ask again with `ticket` after `retryAfterSeconds`
     Queued {
         ticket: String,
@@ -891,8 +779,6 @@ pub enum GuestAnswer {
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum GuestEndReason {
-    /// the pass ran out
-    Time,
     /// another tab of this browser took the stream over
     Elsewhere,
     /// the guest left (`POST /api/logout`)
@@ -903,18 +789,6 @@ pub enum GuestEndReason {
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct GuestEnd {
     pub reason: GuestEndReason,
-}
-
-/// A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
-#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum SignInProvider {
-    Google,
-    Apple,
-    Microsoft,
-    LinkedIn,
-    GitHub,
-    Discord,
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -1002,43 +876,6 @@ pub struct LlmTestResult {
     pub message: String,
 }
 
-/// `GET /api/admin/allowlist` rows.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct AllowlistEntry {
-    pub email: String,
-    pub role: Role,
-    pub added_by: String,
-    /// ms since the epoch
-    #[ts(type = "number")]
-    pub added_at: u64,
-    pub note: String,
-}
-
-/// `POST /api/admin/allowlist`
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct AllowlistAdd {
-    pub email: String,
-    pub role: Role,
-    #[serde(default)]
-    pub note: String,
-}
-
-/// `GET /api/admin/attempts`: refused sign-ins, newest first.
-#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
-pub struct AuthAttempt {
-    #[ts(type = "number")]
-    pub id: u64,
-    /// a [`SignInProvider`]'s name, such as "google" or "github"
-    pub provider: String,
-    pub email: String,
-    /// "not_allowlisted", "email_unverified" or "no_email"
-    pub outcome: String,
-    /// ms since the epoch
-    #[ts(type = "number")]
-    pub at: u64,
-}
-
 /// `POST /api/admin/world/new`
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct NewWorldRequest {
@@ -1096,8 +933,6 @@ pub fn typescript() -> String {
     decl!(
         Vec2,
         Role,
-        SignInOptions,
-        SignInProvider,
         GuestRequest,
         GuestAnswer,
         GuestEndReason,
@@ -1128,6 +963,7 @@ pub fn typescript() -> String {
         LlmState,
         LlmStatus,
         AmbientCounts,
+        Founding,
         Status,
         Mood,
         RosterEntry,
@@ -1148,15 +984,6 @@ pub fn typescript() -> String {
         ChatYou,
         ChatPost,
         ChatRename,
-        CreditTarget,
-        CreditGroup,
-        CreditOffer,
-        CreditsState,
-        CreditsBalance,
-        PresenceRequest,
-        BuyRequest,
-        CreditViewer,
-        CreditGrant,
         WatchRequest,
         Me,
         ChroniclePage,
@@ -1167,9 +994,6 @@ pub fn typescript() -> String {
         ReasoningMode,
         LlmSettingsView,
         LlmTestResult,
-        AllowlistEntry,
-        AllowlistAdd,
-        AuthAttempt,
         NewWorldRequest,
         LlmUsage,
         HealthReport,

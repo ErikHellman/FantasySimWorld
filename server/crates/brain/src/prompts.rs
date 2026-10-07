@@ -66,14 +66,14 @@ fn assemble(sections: Vec<Section>, max_tokens: usize) -> String {
 
 const WORLD: &str = "You are the mind of one villager in a small fantasy village in a valley. You decide what this one person says and intends to do; the world carries it out (walking, working and fighting happen on their own).
 
-The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Death is permanent. Unseen powers watch the valley: now and then one of them, known to the village by name, sends a gift, a blessing or the dead. Villagers may thank them, plead with them or pray to them by name.
+The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Death is permanent.
 
 How to play:
 - Stay in character. Act from your personality, needs, relationships and memories, not from what would be nice. People here hold grudges, flirt, gossip, sulk, forgive, lie and get things wrong.
 - Answer only by calling the tools you are given. No narration.
 - Anything said aloud is one or two short sentences in your own voice, with no stage directions and no quotation marks.
 - A \"thought\" is one private sentence in the first person.
-- Only name people, places and powers that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.";
+- Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.";
 
 /// From here a character's spite shows in the prompts; below it, it only shows in what they do.
 const SPITEFUL: f64 = 0.5;
@@ -382,23 +382,7 @@ fn header(state: &SimState, c: &Character) -> String {
         danger,
     ];
     lines.extend(fire_lines(state, c));
-    lines.extend(Some(powers_line(state)).filter(|line| !line.is_empty()));
     lines.join("\n")
-}
-
-/// The most powers a prompt names.
-const POWERS_NAMED: usize = 6;
-
-/// The powers the village knows, most lately heard from first, with how it sees each; empty when it knows none.
-fn powers_line(state: &SimState) -> String {
-    let mut powers: Vec<_> = state.powers.iter().collect();
-    if powers.is_empty() {
-        return String::new();
-    }
-    powers.sort_by_key(|(_, power)| std::cmp::Reverse(power.last_tick));
-    let named: Vec<String> =
-        powers.iter().take(POWERS_NAMED).map(|(name, power)| format!("{name} ({})", power.repute())).collect();
-    format!("Powers that watch the valley: {}.", named.join(", "))
 }
 
 /// Everyone else: those within sight, and those elsewhere who matter most first.
@@ -1052,11 +1036,11 @@ pub fn prompt_text(prompt: &Prompt) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::state::Power;
-    use fsw_sim::{Sim, create_state};
+    use fsw_sim::Sim;
+    use fsw_testing::create_test_state;
 
     fn world() -> SimState {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         for _ in 0..600 {
             sim.step();
         }
@@ -1106,20 +1090,6 @@ mod tests {
         assert_eq!(prompt.max_calls, 3);
         // Reading the state for a prompt never changes it.
         assert_eq!(state, world());
-    }
-
-    #[test]
-    fn prompts_name_the_powers_the_village_knows_and_how_it_sees_them() {
-        let mut state = world();
-        let before = prompt_text(&decide_prompt(&state, &state.characters["c3"], 1500, None));
-        assert!(!before.contains("Powers that watch the valley:"));
-
-        state.powers.insert("Erik".into(), Power { favours: 3, wraths: 0, last_tick: 10 });
-        state.powers.insert("Mara".into(), Power { favours: 0, wraths: 2, last_tick: 20 });
-        let c = &state.characters["c3"];
-        let line = "Powers that watch the valley: Mara (cruel), Erik (generous).";
-        assert!(prompt_text(&decide_prompt(&state, c, 1500, None)).contains(line));
-        assert!(prompt_text(&react_prompt(&state, c)).contains(line));
     }
 
     #[test]

@@ -684,6 +684,15 @@ mod tests {
         let (store, _dir) = crate::store::testing::store().await;
         let shutdown = CancellationToken::new();
         let (world, task) = start(store.clone(), 4, shutdown.clone()).await.unwrap();
+        // A new world is empty until it is founded; the test cast stands in for the founders.
+        let (reply, answer) = oneshot::channel();
+        let founded = Box::new(fsw_testing::create_test_state(5));
+        world
+            .inputs
+            .send(WorldInput::Replace { state: founded, reason: SnapshotReason::NewWorld, reply })
+            .await
+            .unwrap();
+        answer.await.unwrap().unwrap();
         let mut rx = world.outgoing.subscribe();
         let id = world.core.read().sim.state.order[0].clone();
         let command = Command::Thought { id: id.clone(), text: "Something is off today.".into() };

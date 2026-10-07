@@ -1,5 +1,5 @@
-//! `AUTH_MODE=token`: one shared secret, for local work and the first
-//! deployment. Whoever holds it is an admin (a pseudo-user with no database row).
+//! `AUTH_MODE=token`: one shared secret, the admin's. Whoever holds it is an admin; everyone
+//! else watches as a guest.
 
 use std::sync::Arc;
 
@@ -24,7 +24,7 @@ pub fn cookie_name(config: &Config) -> &'static str {
 fn expected(config: &Config) -> Option<&str> {
     match &config.auth {
         AuthMode::Token(token) => Some(token),
-        AuthMode::Oidc(_) | AuthMode::Off => None,
+        AuthMode::Off => None,
     }
 }
 
@@ -41,14 +41,7 @@ fn presented<'a>(config: &Config, headers: &'a HeaderMap) -> Option<&'a str> {
 pub fn viewer(config: &Config, headers: &HeaderMap) -> Option<Viewer> {
     let expected = expected(config)?;
     let token = presented(config, headers)?;
-    same(token.as_bytes(), expected.as_bytes()).then(|| Viewer {
-        user_id: None,
-        email: String::new(),
-        display_name: "Token holder".into(),
-        role: Role::Admin,
-        guest: None,
-        session: None,
-    })
+    same(token.as_bytes(), expected.as_bytes()).then_some(Viewer { role: Role::Admin, guest: None })
 }
 
 pub fn clear_cookie(config: &Config) -> HeaderValue {

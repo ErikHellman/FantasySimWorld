@@ -20,6 +20,7 @@ tokio = { version = "1.53.1", features = ["rt", "macros", "time", "sync"] }
 tokio-util = "0.7.19"
 
 [dev-dependencies]
+fsw-testing.workspace = true
 proptest = "1.11.0"
 tokio = { version = "1.53.1", features = ["test-util", "rt-multi-thread"] }
 

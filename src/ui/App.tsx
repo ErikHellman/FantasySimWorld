@@ -3,15 +3,16 @@ import { AboutTechPanel } from './About';
 import { AdminPanel } from './Admin';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
-import { GuestNote, GuestPill } from './Guest';
+import { FoundingDialog } from './Founding';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
 import { isTouchScreen } from './layout';
+import { GuestLine } from './Line';
 import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
-import { ShopPanel } from './Shop';
-import { actions, closeSheet, creditsOn, isAdmin, isGuest, togglePanel, ui } from './store';
+import type { GuestEndReason } from '../generated/api';
+import { actions, closeSheet, isAdmin, togglePanel, ui } from './store';
 
 function TopBar() {
   const clock = ui.clock.value;
@@ -41,12 +42,6 @@ function TopBar() {
           </button>
         )}
         <LlmPill />
-        {isGuest() && <GuestPill />}
-        {creditsOn() && (
-          <button class="pill credits" title="Your credits: spend them on the village" onClick={() => togglePanel('shop')}>
-            ✦ {ui.credits.value?.balance}
-          </button>
-        )}
         {admin && (
           <button class="pill" title="Run the world: model, access, saves" onClick={() => togglePanel('admin')}>
             🛠 Admin
@@ -82,8 +77,22 @@ function Graves() {
   );
 }
 
+/** Why a guest's stream ended, in words, with the way back. */
+function Ended({ reason }: { reason: GuestEndReason }) {
+  return (
+    <>
+      <p class="ended">
+        {reason === 'elsewhere' ? 'You are watching in another tab.' : 'You gave up your seat. Come back any time.'}
+      </p>
+      <button class="primary big" onClick={() => location.reload()}>Watch again</button>
+    </>
+  );
+}
+
 function StartOverlay() {
   const loading = ui.loading.value;
+  const line = ui.line.value;
+  const ended = ui.ended.value;
   return (
     <div class="start">
       <div class="start-card">
@@ -103,7 +112,11 @@ function StartOverlay() {
             Once inside, ❓ Help (or the ? key) lists every control.
           </p>
         )}
-        {loading ? (
+        {ended ? (
+          <Ended reason={ended} />
+        ) : line ? (
+          <GuestLine wait={line.wait} problem={line.problem} />
+        ) : loading ? (
           <div class="loading">{loading}</div>
         ) : (
           <button class="primary big" onClick={() => actions.start()}>Enter the valley</button>
@@ -113,8 +126,10 @@ function StartOverlay() {
             The villagers are running on their built-in routines{isAdmin() ? '. Set LLM_BASE_URL and LLM_MODEL on the server to give them minds of their own.' : '.'}
           </p>
         )}
-        {!loading && ui.me.value && !isGuest() && <p class="muted small-text">Signed in as {ui.me.value.displayName || ui.me.value.email}.</p>}
-        {!loading && isGuest() && <GuestNote />}
+        {!loading && ui.founding.value && (
+          <p class="muted small-text">The valley is being settled: {ui.founding.value.settled} of {ui.founding.value.total} villagers have arrived.</p>
+        )}
+        {!loading && isAdmin() && <p class="muted small-text">You are an admin.</p>}
       </div>
     </div>
   );
@@ -161,10 +176,10 @@ export function App() {
       {ui.panel.value === 'settings' && <SettingsPanel />}
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
+      <FoundingDialog />
       {ui.panel.value === 'graves' && <Graves />}
       {ui.panel.value === 'help' && <HelpPanel />}
       {ui.panel.value === 'tech' && <AboutTechPanel />}
-      {ui.panel.value === 'shop' && creditsOn() && <ShopPanel />}
       {ui.notice.value && (
         <div class="notice" onClick={() => (ui.notice.value = null)}>{ui.notice.value}</div>
       )}

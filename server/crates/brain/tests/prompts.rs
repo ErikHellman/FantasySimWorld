@@ -2,16 +2,19 @@
 //! world (`tests/fixtures/prompts.json`, written by `bun tools/make-prompt-fixture.ts`
 //! at the `ts-sim-reference` tag).
 //!
-//! After a deliberate change to a prompt or to the cast, run this test with
+//! The world is the authored cast of the TypeScript game (`fsw_testing`), so the prompts can be
+//! compared word for word. After a deliberate change to a prompt or to the cast, run this test with
 //! `UPDATE_PROMPT_FIXTURE=1` to write the current prompts into the fixture, then
 //! read the diff before committing it.
 
+use fsw_brain::casting::{CastingContext, Purpose, casting_prompt};
 use fsw_brain::prompts::{
     Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,
     reply_prompt,
 };
+use fsw_sim::Sim;
 use fsw_sim::state::{Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, SimState, TalkTone};
-use fsw_sim::{Sim, create_state};
+use fsw_testing::create_test_state;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -67,6 +70,10 @@ fn build(state: &SimState, case: &Case) -> Prompt {
             let convo = convo(state, &case.ids[1], &case.ids[0]);
             reply_prompt(state, &convo, &convo.lines, c(0), c(1), case.budget, None)
         }
+        "cast_founder" => {
+            casting_prompt(&CastingContext::from_state(state, Purpose::Founder { settled: 4, total: 13 }, &[]))
+        }
+        "cast_newcomer" => casting_prompt(&CastingContext::from_state(state, Purpose::Newcomer, &[])),
         other => panic!("unknown prompt kind {other}"),
     }
 }
@@ -75,7 +82,7 @@ fn build(state: &SimState, case: &Case) -> Prompt {
 fn prompts_match_the_typescript_brain_word_for_word() {
     let path = format!("{}/tests/fixtures/prompts.json", env!("CARGO_MANIFEST_DIR"));
     let mut fixture: Fixture = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let mut sim = Sim::new(create_state(fixture.seed));
+    let mut sim = Sim::new(create_test_state(fixture.seed));
     if std::env::var_os("UPDATE_PROMPT_FIXTURE").is_some() {
         update_fixture(&path, &mut fixture, &mut sim);
         return;

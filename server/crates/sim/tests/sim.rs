@@ -3,9 +3,11 @@
 use std::collections::HashMap;
 
 use fsw_core::time::{TICKS_PER_DAY, game_time};
+use fsw_sim::state::Quirk;
 use fsw_sim::state::{ActPhase, Character};
 use fsw_sim::util::living;
-use fsw_sim::{Sim, SimEvent, SimState, create_state};
+use fsw_sim::{Command, FOUNDERS, Sim, SimEvent, SimState, create_state};
+use fsw_testing::create_test_state;
 use fsw_world::navgrid::{is_walkable, nearest_walkable};
 use fsw_world::places::ActivityId;
 
@@ -24,10 +26,11 @@ fn round_trip(state: &SimState) -> SimState {
 }
 
 #[test]
-fn starts_with_the_authored_cast_all_housed() {
-    let state = create_state(1);
+fn the_test_cast_starts_all_housed() {
+    let state = create_test_state(1);
     assert_eq!(state.order.len(), 13);
     assert_eq!(state.director.population_target, 13);
+    assert!(!state.director.founding);
     for c in living(&state) {
         assert!(c.home_id.starts_with("home_"));
         assert!(is_walkable(c.pos.x, c.pos.z), "{}", c.profile.name);
@@ -36,17 +39,62 @@ fn starts_with_the_authored_cast_all_housed() {
 }
 
 #[test]
+fn a_new_world_is_empty_and_founding_and_the_dead_stay_buried_meanwhile() {
+    let state = create_state(1);
+    assert!(state.order.is_empty());
+    assert!(state.director.founding);
+    assert_eq!(state.director.population_target, FOUNDERS);
+    assert_eq!(round_trip(&state), state);
+    // A day passes with nobody home: no wave, no arrival, and the world is none the worse for it.
+    let sim = run(state, TICKS_PER_DAY, |event| assert!(!matches!(event, SimEvent::MonsterSpawn { .. })));
+    assert!(sim.state.order.is_empty());
+    assert!(sim.state.monsters.is_empty());
+}
+
+#[test]
+fn found_village_fills_the_village_from_the_sims_own_lists_and_ends_the_founding() {
+    let mut sim = Sim::new(create_state(7));
+    sim.enqueue(Command::FoundVillage);
+    sim.step();
+    let state = &sim.state;
+    assert_eq!(state.order.len(), FOUNDERS);
+    assert!(!state.director.founding);
+    let firsts: Vec<String> = living(state).map(|c| c.profile.name.split(' ').next().unwrap().to_lowercase()).collect();
+    let mut unique = firsts.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), firsts.len(), "{firsts:?}");
+    for c in living(state) {
+        assert!(c.home_id.starts_with("home_"));
+        assert!(is_walkable(c.pos.x, c.pos.z), "{}", c.profile.name);
+        assert!(!c.has(Quirk::Murderous) && !c.has(Quirk::Occultist), "{}", c.profile.name);
+        assert_eq!(c.relationships.len(), FOUNDERS - 1, "{}", c.profile.name);
+        assert_eq!(c.profile.traits.len(), 3);
+    }
+    // The first night comes at the usual hour, and the village runs on like any other.
+    assert_eq!(state.director.next_wave_tick, fsw_sim::systems::director::tick_at(1, 20.6));
+    let seed7 = round_trip(state);
+    let mut again = Sim::new(create_state(7));
+    again.enqueue(Command::FoundVillage);
+    again.step();
+    assert_eq!(again.state, seed7, "the same seed founds the same village");
+    let mut sim = run(round_trip(state), TICKS_PER_DAY * 2, |_| {});
+    sim.step();
+    assert!(sim.state.order.len() >= 10);
+}
+
+#[test]
 fn is_deterministic_and_survives_a_save_and_load_in_the_middle() {
-    let straight = run(create_state(42), 4000, |_| {}).state;
-    let first = run(create_state(42), 2000, |_| {}).state;
+    let straight = run(create_test_state(42), 4000, |_| {}).state;
+    let first = run(create_test_state(42), 2000, |_| {}).state;
     let resumed = run(round_trip(&first), 2000, |_| {}).state;
     assert!(resumed == straight, "a reloaded world went a different way");
 }
 
 #[test]
 fn gives_different_worlds_for_different_seeds() {
-    let a = run(create_state(1), 3000, |_| {}).state;
-    let b = run(create_state(2), 3000, |_| {}).state;
+    let a = run(create_test_state(1), 3000, |_| {}).state;
+    let b = run(create_test_state(2), 3000, |_| {}).state;
     assert_ne!(a.rng, b.rng);
 }
 
@@ -54,7 +102,7 @@ fn gives_different_worlds_for_different_seeds() {
 fn keeps_everyone_fed_rested_and_on_walkable_ground_for_three_days() {
     // With thirteen founders, seed 5 once had a guard starve on a night watch.
     for seed in [2, 5] {
-        let mut sim = Sim::new(create_state(seed));
+        let mut sim = Sim::new(create_test_state(seed));
         let mut lowest_hunger: f64 = 100.0;
         for i in 0..TICKS_PER_DAY * 3 {
             sim.step();
@@ -83,7 +131,7 @@ fn a_guard_with_an_empty_pack_breaks_off_watch_to_eat_and_goes_back() {
             && c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Watch))
             && c.act.phase == ActPhase::Perform
     }
-    let mut sim = Sim::new(create_state(5));
+    let mut sim = Sim::new(create_test_state(5));
     let mut guard = None;
     for _ in 0..TICKS_PER_DAY * 2 {
         guard = living(&sim.state).find(|c| at_the_post(&sim, c)).map(|c| c.id.clone());
@@ -116,7 +164,7 @@ fn a_guard_with_an_empty_pack_breaks_off_watch_to_eat_and_goes_back() {
 #[test]
 fn has_people_talking_sleeping_and_fighting_off_the_dead() {
     let mut counts: HashMap<&'static str, u32> = HashMap::new();
-    let sim = run(create_state(9), TICKS_PER_DAY * 3, |event| *counts.entry(event.kind()).or_default() += 1);
+    let sim = run(create_test_state(9), TICKS_PER_DAY * 3, |event| *counts.entry(event.kind()).or_default() += 1);
     let count = |kind| counts.get(kind).copied().unwrap_or(0);
     assert!(count("conversation_ended") > 20);
     assert!(count("woke") > 10 && count("woke") < 200);
@@ -125,7 +173,7 @@ fn has_people_talking_sleeping_and_fighting_off_the_dead() {
 }
 
 fn long_run(days: i64) {
-    let mut sim = Sim::new(create_state(11));
+    let mut sim = Sim::new(create_test_state(11));
     let mut lowest = 13;
     let mut longest_memory = 0;
     for i in 0..TICKS_PER_DAY * days {

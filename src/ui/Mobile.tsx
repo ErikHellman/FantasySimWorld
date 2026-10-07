@@ -1,10 +1,9 @@
 import type { RefObject } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ChatPanel } from './Chat';
-import { GuestNote } from './Guest';
 import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
-import { actions, creditsOn, isAdmin, isGuest, togglePanel, toggleSheet, ui, type Sheet } from './store';
+import { actions, isAdmin, togglePanel, toggleSheet, ui, type Sheet } from './store';
 
 // The phone layout: the world fills the screen, a slim bar at the top keeps the time, and a tab bar opens one pane
 // at a time over the world. Windows (settings, help and the like) are shared with the desktop and fill the screen.
@@ -89,13 +88,11 @@ function MenuSheet() {
       {admin && <Speeds />}
       <nav class="menu-list">
         {graves > 0 && <button onClick={() => togglePanel('graves')}>🪦 The graveyard ({graves})</button>}
-        {creditsOn() && <button onClick={() => togglePanel('shop')}>✦ Credits ({ui.credits.value?.balance})</button>}
         <button onClick={() => togglePanel('settings')}>⚙ Settings</button>
         <button onClick={() => togglePanel('help')}>❓ Help</button>
         {admin && <button onClick={() => togglePanel('admin')}>🛠 Admin</button>}
       </nav>
-      {me && !isGuest() && <p class="muted small-text">Signed in as {me.displayName || me.email}.</p>}
-      {isGuest() && <GuestNote />}
+      {admin && <p class="muted small-text">You are an admin.</p>}
     </div>
   );
 }

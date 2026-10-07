@@ -115,6 +115,69 @@ pub enum Quirk {
     Drunkard,
 }
 
+/// Someone new for the valley, as the language model or the sim's own lists describe them. A
+/// `Command::Settle` or `Command::NewcomerDraft` carries one; the sim turns it into a character,
+/// drawing the look and the voice's pitch and rate itself.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewVillager {
+    pub class_id: crate::data::classes::ClassId,
+    /// "First Last"; the first name must be nobody else's, living or dead
+    pub name: String,
+    pub pronouns: Pronouns,
+    pub age: i64,
+    pub occupation: String,
+    pub backstory: String,
+    pub traits: Vec<String>,
+    pub goals: Vec<String>,
+    pub speech_style: String,
+    /// the voice's colour, in words
+    pub timbre: String,
+    pub temper: f64,
+    pub bravery: f64,
+    pub sociability: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub spite: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub allure: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shyness: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub looks: f64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret: String,
+    /// why they came up the road (newcomers), for the chronicle
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quirks: Vec<Quirk>,
+    /// people already here they know
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bonds: Vec<Bond>,
+}
+
+/// A tie a newcomer brings with them to someone living, by full name.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Bond {
+    pub to: String,
+    pub relation: BondKind,
+    /// how the newcomer puts it, in the first person; the sim words the other side
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BondKind {
+    Sibling,
+    Parent,
+    Child,
+    Spouse,
+    Friend,
+    Comrade,
+    Rival,
+}
+
 /// Bookkeeping for quirks, kept with the character so it survives a save.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -488,9 +551,9 @@ pub enum StimulusKind {
     Victory,
     Hostility,
     Romance,
-    /// one of the powers that watch the valley did the village a kindness
+    /// a gift from a viewer, from the days when viewers could send them; kept so those saves still load
     Favour,
-    /// one of the powers that watch the valley sent harm
+    /// harm a viewer sent, from the same days; kept so those saves still load
     Wrath,
 }
 
@@ -666,9 +729,6 @@ pub struct Monster {
     /// the villager this monster once was
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub was_id: Option<Id>,
-    /// raised by a viewer: daylight does not touch it, and it crumbles at this tick whatever the hour
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub until_tick: Option<i64>,
     /// the house this monster means to set on fire
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arson: Option<Arson>,
@@ -889,6 +949,15 @@ pub struct Director {
     /// tick the last house fire was lit; the dead leave the houses alone for a while after one
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub last_fire_tick: i64,
+    /// the village is still being settled: no waves, no arrivals, until `population_target` are here
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub founding: bool,
+    /// the model's description of the next newcomer, held until an arrival is due
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub newcomer_draft: Option<Box<NewVillager>>,
+    /// an arrival is due and the server has been asked for a newcomer; past this tick the sim invents one (0: not asked)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub newcomer_deadline_tick: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -941,35 +1010,6 @@ pub struct SimState {
     /// home id -> its condition, for homes that are burning or in ruins; a home not listed stands whole
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub houses: IndexMap<String, House>,
-    /// name -> what the village has had from that viewer; see [`Power`]
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub powers: IndexMap<String, Power>,
-}
-
-/// A viewer as the villagers know them: an unseen power that watches the valley and now and
-/// then sends a gift, a blessing or the dead. Villagers thank, plead with and pray to them by name.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Power {
-    /// gifts and blessings sent
-    pub favours: i64,
-    /// monsters and raids sent
-    pub wraths: i64,
-    /// tick of the last thing they did
-    pub last_tick: i64,
-}
-
-impl Power {
-    /// One word for how the village sees them.
-    pub fn repute(&self) -> &'static str {
-        if self.favours > self.wraths * 2 {
-            "generous"
-        } else if self.wraths > self.favours * 2 {
-            "cruel"
-        } else {
-            "fickle"
-        }
-    }
 }
 
 impl SimState {
@@ -1056,6 +1096,6 @@ pub struct SaveFile {
 }
 
 /// For `Option<Option<T>>` fields where a missing key and `null` mean different things.
-pub(crate) fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
+pub fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(d).map(Some)
 }

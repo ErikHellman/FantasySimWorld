@@ -1,5 +1,7 @@
 # Newcomers written by the model
 
+> **Built on 2026-10-07, with these differences.** There is no authored cast any more: a new world founds itself the same way, one `Command::Settle` per villager the model invents (`fsw_brain::casting`, `server/crates/server/src/casting_task.rs`), and the authored people are in the prompt for flavour only. The casting task calls the model with its own client, outside the brain's queue, governor and decision log. The tool is `create_villager`; a `link` is a `bonds` list of up to two, and the model may not give `murderous` or `occultist`. The sim asks with `SimEvent::NewcomerWanted` and waits six game hours (`NEWCOMER_PATIENCE_MINUTES`) for a `NewcomerDraft`; `NewcomerLocal` tells it none is coming, and then or at the deadline it invents the newcomer itself from `data/names.rs` instead of a wanderer. The rest of this page is the design as first written.
+
 When the eleven authored newcomers have all arrived, the village today fills its empty beds with wanderers made from lists: a class, a name, three traits and the same backstory for every one of them. This lets the language model write each newcomer instead, with the village in mind: who died and how, who misses them, which work nobody does any more. Some come as the sister of the woman the dead killed last week, or the old comrade of the guard who fell at the gate. Without a model, wanderers come as before.
 
 ## What happens

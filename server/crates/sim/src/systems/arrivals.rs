@@ -1,62 +1,20 @@
-//! Newcomers: the authored ones first, then wanderers made up from name and trait lists.
+//! Newcomers: described by the server (the language model's work) or invented by the sim, and
+//! walked in by the west road.
 
-use fsw_core::math2d::clamp;
 use fsw_core::vec2;
 use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
-use crate::data::cast::{CastEntry, by_key, newcomers};
-use crate::data::classes::ClassId;
 use crate::events::SimEvent;
 use crate::state::{
-    Character, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource, Inventory, Look,
-    MemoryKind, Needs, PlanSource, Profile, Pronouns, Quirk, QuirkState, SimState, StimulusKind, VoiceProfile,
+    Bond, Character, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource, Inventory, Look,
+    MemoryKind, Needs, PlanSource, Quirk, QuirkState, SimState, StimulusKind,
 };
+use crate::systems::founding::{Blueprint, apply_bonds, first_name_taken, invent_villager};
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
-use crate::util::{Ctx, first_name, living, living_ids, new_relationship, rel};
-
-const FIRST_NAMES: [&str; 15] = [
-    "Edda", "Bram", "Wren", "Osric", "Tamsin", "Hale", "Ysolt", "Garnet", "Perrin", "Linnea", "Cade", "Marta", "Jory",
-    "Senna", "Alder",
-];
-const LAST_NAMES: [&str; 10] = [
-    "Underhill",
-    "Blackwater",
-    "Fairweather",
-    "Stonebridge",
-    "Larkspur",
-    "Holt",
-    "Greenmantle",
-    "Ashby",
-    "Wolfe",
-    "Tanner",
-];
-const TRAIT_POOL: [&str; 12] = [
-    "cheerful",
-    "wary",
-    "stubborn",
-    "generous",
-    "sharp-tongued",
-    "patient",
-    "restless",
-    "superstitious",
-    "ambitious",
-    "soft-hearted",
-    "boastful",
-    "thoughtful",
-];
-const WANDERER_CLASSES: [ClassId; 8] = [
-    ClassId::Knight,
-    ClassId::Barbarian,
-    ClassId::Mage,
-    ClassId::Ranger,
-    ClassId::Rogue,
-    ClassId::Druid,
-    ClassId::Engineer,
-    ClassId::Farmer,
-];
+use crate::util::{Ctx, first_name, living, living_ids, new_relationship};
 
 /// A home with a free bed (the emptiest one, so newcomers spread out). Nobody is given a house that is
 /// burning or in ruins while another stands.
@@ -77,8 +35,8 @@ pub fn free_home(state: &SimState) -> String {
     best
 }
 
-/// Builds a character from an authored entry.
-pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) -> Character {
+/// Builds a character from a blueprint, at their own door.
+pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) -> Character {
     let def = entry.class_id.def();
     let home = get_place(home_id);
     let rng = &mut state.rng;
@@ -100,7 +58,7 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
         look: Look {
             model: entry.model.clone().unwrap_or_else(|| def.model.into()),
             texture: entry.texture.clone(),
-            hide: entry.hide.clone().unwrap_or_default(),
+            hide: entry.hide.clone(),
             main_hand: entry.main_hand.clone().unwrap_or_else(|| def.main_hand.map(str::to_owned)),
             off_hand: entry.off_hand.clone().unwrap_or_else(|| def.off_hand.map(str::to_owned)),
         },
@@ -161,102 +119,25 @@ pub fn make_character(state: &mut SimState, entry: &CastEntry, home_id: &str) ->
     }
 }
 
-/// When the authored newcomers run out, wanderers are made up from name and trait lists.
-fn wanderer(ctx: &mut Ctx) -> CastEntry {
-    let class_id = ctx.pick(&WANDERER_CLASSES);
-    let used: Vec<String> = living(ctx.state)
-        .map(|c| c.profile.name.clone())
-        .chain(ctx.state.dead.values().map(|d| d.name.clone()))
-        .collect();
-    let mut name = String::new();
-    let mut i = 0;
-    while i < 20 && (name.is_empty() || used.contains(&name)) {
-        let first = ctx.pick(&FIRST_NAMES);
-        let last = ctx.pick(&LAST_NAMES);
-        name = format!("{first} {last}");
-        i += 1;
-    }
-    let picked = [ctx.pick(&TRAIT_POOL), ctx.pick(&TRAIT_POOL), ctx.pick(&TRAIT_POOL)];
-    let mut traits: Vec<String> = Vec::new();
-    for t in picked {
-        if !traits.iter().any(|existing| existing == t) {
-            traits.push(t.to_owned());
-        }
-    }
-    let def = class_id.def();
-    let base = def.model.to_lowercase();
-    let recolour = ["knight", "barbarian", "mage", "ranger", "rogue", "druid", "engineer"].contains(&base.as_str());
-    let key = format!("wanderer{}", ctx.state.director.arrivals);
-    let texture = recolour.then(|| format!("{base}_texture_alt_{}", ctx.pick(&["A", "B", "C"])));
-    let pronouns = ctx.pick(&[Pronouns::SheHer, Pronouns::HeHim, Pronouns::TheyThem]);
-    let age = ctx.int_range(20, 55);
-    let temper = clamp(ctx.next_float(), 0.15, 0.85);
-    let bravery = clamp(ctx.next_float(), 0.25, 0.9);
-    let sociability = clamp(ctx.next_float(), 0.25, 0.9);
-    let pitch = ctx.range(0.7, 1.3);
-    let rate = ctx.range(0.85, 1.15);
-    CastEntry {
-        key,
-        class_id,
-        model: None,
-        texture,
-        hide: None,
-        main_hand: None,
-        off_hand: None,
-        home_id: None,
-        jobs: None,
-        hobbies: None,
-        profile: Profile {
-            name,
-            pronouns,
-            age,
-            occupation: format!("travelling {}", def.label),
-            backstory:
-                "A traveller who came up the west road looking for a place to settle, and decided to stay a while."
-                    .into(),
-            traits,
-            goals: vec![
-                "find a place in the village".into(),
-                "make a friend or two".into(),
-                "stay alive through the nights".into(),
-            ],
-            speech_style: "Plain and direct.".into(),
-            temper,
-            bravery,
-            sociability,
-            spite: 0.0,
-            allure: 0.0,
-            shyness: 0.0,
-            looks: 0.0,
-            voice: VoiceProfile { pitch, rate, timbre: "plain".into() },
-            secret: String::new(),
-        },
-        bonds: Vec::new(),
-        quirks: Vec::new(),
-    }
-}
-
-/// The living character an authored bond means by `key`: the newcomer itself, or
-/// whoever was made from that cast entry.
-fn bonded(ctx: &Ctx, entry: &CastEntry, newcomer: &str, key: &str) -> Option<Id> {
-    if key == entry.key {
-        return Some(newcomer.to_owned());
-    }
-    let name = &by_key(key)?.profile.name;
-    living(ctx.state).find(|c| &c.profile.name == name).map(|c| c.id.clone())
-}
-
-/// A new face walks in by the west road.
+/// A new face walks in by the west road: the one the server described, if a description is waiting
+/// and its name is still free, else one the sim invents.
 pub fn arrive(ctx: &mut Ctx) -> Id {
-    let tick = ctx.tick();
-    let arrivals = ctx.state.director.arrivals;
-    let entry = match newcomers().get(arrivals as usize) {
-        Some(entry) => entry.clone(),
-        None => wanderer(ctx),
+    let draft = ctx.state.director.newcomer_draft.take();
+    ctx.state.director.newcomer_deadline_tick = 0;
+    let villager = match draft {
+        Some(v) if !first_name_taken(ctx.state, &v.name) => *v,
+        _ => invent_villager(ctx, false),
     };
+    let blueprint = Blueprint::from_villager(ctx, &villager);
+    arrive_with(ctx, &blueprint, &villager.bonds, &villager.reason)
+}
+
+/// Walks this person in by the west road, with the ties they bring and, for the chronicle, why they came.
+pub fn arrive_with(ctx: &mut Ctx, blueprint: &Blueprint, bonds: &[Bond], reason: &str) -> Id {
+    let tick = ctx.tick();
     ctx.state.director.arrivals += 1;
     let home = free_home(ctx.state);
-    let mut c = make_character(ctx.state, &entry, &home);
+    let mut c = make_character(ctx.state, blueprint, &home);
     let road = get_place("west_road");
     let z = road.origin.z + ctx.range(-1.0, 1.0);
     c.pos = nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
@@ -317,16 +198,13 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
         }
     }
     // Kin and old friends who are still alive know the newcomer at once.
-    for bond in &entry.bonds {
-        let from = bonded(ctx, &entry, &id, &bond.from);
-        let to = bonded(ctx, &entry, &id, &bond.to);
-        if let (Some(from), Some(to)) = (from, to) {
-            let r = rel(ctx.c(&from), &to);
-            bond.apply(r);
-            r.label = label_for(r, false);
-        }
-    }
-    ctx.chronicle(ChronicleKind::Arrival, format!("{name}, {occupation}, arrived by the west road."), vec![id.clone()]);
+    apply_bonds(ctx, &id, bonds);
+    let why = if reason.is_empty() { String::new() } else { format!(", {reason}") };
+    ctx.chronicle(
+        ChronicleKind::Arrival,
+        format!("{name}, {occupation}, arrived by the west road{why}."),
+        vec![id.clone()],
+    );
     ctx.emit(SimEvent::Arrival { id: id.clone() });
     ctx.emit(SimEvent::SavePoint { reason: "arrival".into() });
     let first = first_name(ctx.cr(&id)).to_owned();
