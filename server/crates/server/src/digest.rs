@@ -12,7 +12,7 @@ use fsw_sim::state::{
 use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::living;
+use fsw_sim::util::{living, name_of};
 use fsw_world::places::{ActivityId, find_place};
 
 use crate::api::wire::{
@@ -115,6 +115,7 @@ fn label(label: SimLabel) -> RelationLabel {
         SimLabel::Rival => RelationLabel::Rival,
         SimLabel::Enemy => RelationLabel::Enemy,
         SimLabel::Family => RelationLabel::Family,
+        SimLabel::Spouse => RelationLabel::Spouse,
     }
 }
 
@@ -187,6 +188,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
         },
         home: find_place(&c.home_id).map_or(c.home_id.clone(), |place| place.name.into()),
         homeless: is_homeless(state, c),
+        spouse: c.spouse_id.as_deref().map(|spouse| name_of(state, spouse)),
         kills: c.kills.max(0) as u32,
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),

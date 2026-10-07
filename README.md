@@ -15,6 +15,7 @@ The server migration is complete. The world, the language-model brain and every 
 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
+- Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.

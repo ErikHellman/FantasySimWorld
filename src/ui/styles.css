@@ -414,6 +414,7 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 .feed-tabs button { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 10px; }
 .chron.voice .chron-text { color: #e9e4d6; }
 .alarm.calm { background: rgba(40, 60, 110, 0.92); animation: none; }
+.alarm.festive { background: rgba(110, 60, 140, 0.92); animation: none; }
 
 /* Chat: a strip along the bottom edge; the panels above move up by --chat-h, which Chat.tsx keeps current. */
 .chat { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-direction: column; padding: 6px 8px 6px 12px; font-size: 13px; }

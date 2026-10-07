@@ -6,6 +6,7 @@ use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone,
 };
+use fsw_sim::systems::ceremonies;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
 use fsw_sim::util::{first_name, living};
@@ -249,6 +250,17 @@ fn strip_spans(text: &str, open: char, close: char) -> String {
 
 /// Tidies a spoken line: no quotes, no stage directions, not too long.
 pub fn spoken(value: Option<&Value>) -> Option<String> {
+    tidy(value, MAX_SPOKEN)
+}
+
+/// The text of a ceremony speech from the `speech` call: tidied like any spoken line, but allowed to run
+/// longer. `None` when nothing usable was said.
+pub fn interpret_speech(calls: &[ToolCall]) -> Option<String> {
+    let call = calls.iter().find(|c| c.name == "speech")?;
+    tidy(call.args.get("text"), ceremonies::SPEECH_CAP)
+}
+
+fn tidy(value: Option<&Value>, max: usize) -> Option<String> {
     let Some(Value::String(text)) = value else { return None };
     let text = strip_spans(&strip_spans(text, '*', '*'), '(', ')');
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -256,10 +268,10 @@ pub fn spoken(value: Option<&Value>) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    if utf16_len(&text) <= MAX_SPOKEN {
+    if utf16_len(&text) <= max {
         return Some(text);
     }
-    let cut = utf16_truncate(&text, MAX_SPOKEN);
+    let cut = utf16_truncate(&text, max);
     let stop = [". ", "! ", "? "].iter().filter_map(|mark| cut.rfind(mark)).max();
     Some(match stop {
         Some(stop) if utf16_len(&cut[..stop]) > 60 => cut[..=stop].to_owned(),

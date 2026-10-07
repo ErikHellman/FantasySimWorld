@@ -7,10 +7,16 @@
 //! read the diff before committing it.
 
 use fsw_brain::prompts::{
-    Prompt, conversation_prompt, decide_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt, reflect_prompt,
-    reply_prompt,
+    Prompt, conversation_prompt, decide_prompt, eulogy_prompt, mercy_prompt, plan_prompt, prompt_text, react_prompt,
+    reflect_prompt, reply_prompt, vows_prompt,
 };
-use fsw_sim::state::{Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, SimState, TalkTone};
+use fsw_sim::state::{
+    Ceremony, CeremonyPhase, Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, Rite, SimState,
+    TalkTone,
+};
+use fsw_sim::systems::death::kill_character;
+use fsw_sim::systems::director::tick_at;
+use fsw_sim::util::Ctx;
 use fsw_sim::{Sim, create_state};
 use serde::{Deserialize, Serialize};
 
@@ -52,9 +58,47 @@ fn convo(state: &SimState, a: &str, b: &str) -> Conversation {
     }
 }
 
+/// The fixture world with a wedding arranged for the next afternoon between the first two ids.
+fn betrothed(state: &SimState, a: &str, b: &str, officiant: &str) -> SimState {
+    let mut state = state.clone();
+    state.ceremony = Some(Ceremony {
+        id: "y0".into(),
+        rite: Rite::Wedding { a: a.into(), b: b.into() },
+        place_id: "green".into(),
+        start_tick: tick_at(2, 14.0),
+        phase: CeremonyPhase::Announced,
+        step: 0,
+        until_tick: 0,
+        officiant: officiant.into(),
+        speeches: Vec::new(),
+        attendees: Vec::new(),
+        slips: 0,
+    });
+    state
+}
+
+/// The fixture world a moment after `victim` fell; the sim has arranged the funeral.
+fn bereaved(state: &SimState, victim: &str) -> SimState {
+    let mut state = state.clone();
+    let mut events = Vec::new();
+    let mut ctx = Ctx::new(&mut state, &mut events);
+    kill_character(&mut ctx, victim, "slain by a skeleton", None);
+    state
+}
+
 fn build(state: &SimState, case: &Case) -> Prompt {
     let c = |i: usize| &state.characters[&case.ids[i]];
     match case.kind.as_str() {
+        "vows" => {
+            let state = betrothed(state, &case.ids[0], &case.ids[1], &case.ids[2]);
+            let ceremony = state.ceremony.as_ref().unwrap();
+            vows_prompt(&state, &state.characters[&case.ids[0]], &state.characters[&case.ids[1]], ceremony)
+        }
+        "eulogy" => {
+            let state = bereaved(state, &case.ids[1]);
+            let ceremony = state.ceremony.as_ref().unwrap();
+            eulogy_prompt(&state, &state.characters[&case.ids[0]], ceremony)
+        }
         "decide" => decide_prompt(state, c(0), case.budget, None),
         "plan" => plan_prompt(state, c(0), case.budget, None),
         "react" => react_prompt(state, c(0)),

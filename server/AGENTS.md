@@ -37,7 +37,7 @@ A given seed and command stream must produce the same world on every machine (x8
 - Ordered maps are `IndexMap`, removed from with `shift_remove`, never `swap_remove`. Sorts are stable (`sort_by`).
 - Text lengths and caps count UTF-16 code units (`encode_utf16()`) and never split a surrogate pair, as the saves and prompts expect.
 - Systems reach characters by id through `Ctx` (`ctx.c(id)`). `rel()` creates relationship records and is for the sim only; readers outside it use `rel_or_default` and `lethal_unlocked_read`, which never write.
-- `Sim::step` runs commands, then the day roll-over, then the systems in a fixed order (director, routine, quirks, intents, conversations, monsters, fire, perception, separation, needs). Changing that order changes every world.
+- `Sim::step` runs commands, then the day roll-over, then the systems in a fixed order (director, routine, quirks, intents, conversations, monsters, fire, ceremonies, perception, separation, needs). Changing that order changes every world.
 
 The tests that hold this in place: `crates/sim/tests/sim.rs` (determinism through a save round trip, invariants, a 20-day run, the 200-day soak under `--ignored`), `drama.rs`, and `save_fixtures.rs`.
 

@@ -5,7 +5,7 @@ import { actions, closeSheet, ui, type CharacterDetail, type RelationRow } from 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
 const LABEL_CLASS: Record<string, string> = {
-  lover: 'love', family: 'good', 'close friend': 'good', friend: 'good', acquaintance: '', stranger: '', rival: 'bad', enemy: 'bad',
+  spouse: 'love', lover: 'love', family: 'good', 'close friend': 'good', friend: 'good', acquaintance: '', stranger: '', rival: 'bad', enemy: 'bad',
 };
 
 function Meter({ label, value, max = 100, tone }: { label: string; value: number; max?: number; tone?: string }) {
@@ -62,6 +62,7 @@ function About({ d }: { d: CharacterDetail }) {
       </p>
       <p class="muted inventory">
         {d.homeless ? `Homeless: ${d.home} burned down. Sleeps rough by the campfire until it is rebuilt.` : `Home: ${d.home}`}
+        {d.spouse && ` · Married to ${d.spouse}`}
       </p>
     </div>
   );

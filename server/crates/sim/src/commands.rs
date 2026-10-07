@@ -118,4 +118,11 @@ pub enum Command {
         by: String,
         event: ViewerEvent,
     },
+    /// Words the model wrote for someone to say at a ceremony; ignored unless the ceremony still stands and
+    /// the speaker still speaks at it.
+    CeremonySpeech {
+        ceremony_id: Id,
+        speaker_id: Id,
+        text: String,
+    },
 }

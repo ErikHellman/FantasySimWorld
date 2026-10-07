@@ -73,6 +73,13 @@ function respond(body) {
     { reaction: 'scoff', say: 'Who pays for these things?' },
     { reaction: 'love', say: 'Well, that is rather nice.', thought: 'I will hold on to that one.' },
   ]) }];
+  if (names.includes('speech')) {
+    const vow = /Write the vow you will speak to (\w+)/.exec(user)?.[1];
+    const text = vow
+      ? `${vow}, I have no fine words, only this: whatever comes up the road, it finds us standing together. That is my promise, before everyone here.`
+      : 'We lay a neighbour in the earth today, and the valley is smaller for it. Remember the work of their hands and the nights they stood with us. Go gently, and let the living hold each other a little closer.';
+    return [{ name: 'speech', args: { text } }];
+  }
   if (names.includes('reflection')) return [{ name: 'reflection', args: { summary: 'I am holding together, though the nights wear on me. I have more friends here than I thought.', insights: ['I should say what I feel before it is too late.'], relationships: [] } }];
   if (names.includes('go_to') || names.includes('do_activity')) return decide(names, user);
   return [{ name: names[0] ?? 'continue', args: {} }];

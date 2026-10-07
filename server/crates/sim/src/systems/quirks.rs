@@ -458,6 +458,7 @@ pub fn fall_to_necromancy(ctx: &mut Ctx, id: &str) {
             cause: "lost to necromancy".into(),
             killer_id: None,
             hidden_killer_id: None,
+            spouse_id: fallen.spouse_id.clone(),
         },
     );
     for other in living_ids(ctx.state) {
@@ -468,6 +469,10 @@ pub fn fall_to_necromancy(ctx: &mut Ctx, id: &str) {
         let was_partner = c.partner_id.as_deref() == Some(id);
         if was_partner {
             c.partner_id = None;
+            c.partner_since_tick = 0;
+        }
+        if c.spouse_id.as_deref() == Some(id) {
+            c.spouse_id = None;
         }
         let close = was_partner || c.relationships.get(id).is_some_and(|r| r.kin || r.affinity >= 25.0);
         if close {
@@ -517,6 +522,8 @@ pub fn fall_to_necromancy(ctx: &mut Ctx, id: &str) {
     ctx.emit(SimEvent::Death { id: id.into(), name: fallen.profile.name.clone(), pos: fallen.pos, monster: false });
     ctx.emit(SimEvent::SavePoint { reason: "death".into() });
     ctx.state.director.death_ticks.push(tick);
+    // No grave yet, so no funeral; but a wedding they were to have is off.
+    crate::systems::ceremonies::cancel_wedding_of(ctx, id);
     schedule_arrival_after_loss(ctx);
 }
 

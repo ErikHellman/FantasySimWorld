@@ -23,7 +23,7 @@ import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setClock, setHouse, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setCeremony, setClock, setHouse, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -153,6 +153,7 @@ async function start(): Promise<void> {
       else if (event.type === 'grave') addGrave(event.grave);
       else if (event.type === 'billboard') setBillboard(event.billboard);
       else if (event.type === 'house') setHouse(event.house);
+      else if (event.type === 'ceremony') setCeremony(event.ceremony);
     }
     speech.handle(events);
     if (!fast) {
@@ -293,7 +294,9 @@ async function start(): Promise<void> {
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
-    audio.music.setMood(mood.update({ hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood }, seconds()));
+    const ceremony = ui.ceremony.value;
+    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase } };
+    audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);
     audio.music.update();

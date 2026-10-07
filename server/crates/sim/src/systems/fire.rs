@@ -48,8 +48,8 @@ const ESCAPE_BURN: [i64; 2] = [6, 14];
 /// The chance that throwing a bucket costs a scorched arm, and what it costs.
 const SCORCH_CHANCE: f64 = 0.05;
 const SCORCH: [i64; 2] = [2, 5];
-/// Too badly hurt to carry water.
-const UNFIT: f64 = 0.25;
+/// Too badly hurt to carry water, or to stand through a ceremony.
+pub const UNFIT: f64 = 0.25;
 /// Villager-minutes of work that raise a house again.
 pub const REBUILD_WORK: f64 = 6000.0;
 /// What water is carried in.

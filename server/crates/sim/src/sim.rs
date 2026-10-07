@@ -14,6 +14,7 @@ use crate::state::{
     SimState,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
@@ -62,6 +63,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Stalk { .. } => false,
         // Nor is the bucket chain: the fire itself calls people to it.
         IntentAction::FightFire { .. } => false,
+        // Nor a wedding or a funeral: the village is called to them.
+        IntentAction::Attend { .. } => false,
     }
 }
 
@@ -77,8 +80,11 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
-    // Nobody talks their way out of the bucket chain; only a fight or flight comes before a burning house.
-    if fighting_fire(ctx.cr(id)) && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
+    // Nobody talks their way out of the bucket chain, or leaves a wedding or a funeral; only a fight or
+    // flight comes before those.
+    if (fighting_fire(ctx.cr(id)) || attending(ctx.cr(id)))
+        && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee)
+    {
         return;
     }
     let thought = first.thought.clone().filter(|t| !t.is_empty());
@@ -247,6 +253,9 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));
         }
         Command::ViewerEvent { by, event } => viewer_events::apply(ctx, &by, event),
+        Command::CeremonySpeech { ceremony_id, speaker_id, text } => {
+            ceremonies::hold_speech(ctx, &ceremony_id, &speaker_id, text);
+        }
     }
 }
 
@@ -286,6 +295,7 @@ impl Sim {
 
         if ctx.time.day != previous_day {
             daily_relationships(&mut ctx);
+            ceremonies::daily(&mut ctx);
             let day = ctx.time.day;
             ctx.emit(SimEvent::NewDay { day });
             ctx.emit(SimEvent::SavePoint { reason: "new day".into() });
@@ -302,6 +312,7 @@ impl Sim {
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
         update_fire(&mut ctx);
+        update_ceremonies(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);
