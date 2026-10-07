@@ -7,7 +7,7 @@ use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActPhase, Character, IntentAction, MemoryKind as SimMemoryKind, MonsterPhase, PlanSource,
-    RelationLabel as SimLabel, SimState,
+    RelationLabel as SimLabel, Resource, SimState,
 };
 use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
@@ -16,8 +16,8 @@ use fsw_sim::util::living;
 use fsw_world::places::{ActivityId, find_place};
 
 use crate::api::wire::{
-    AmbientCounts, CharacterDetail, ChronicleEntry, Inventory, LlmStatus, Memory, MemoryKind, Mood, Needs, PlanRow,
-    RelationLabel, RelationRow, RosterEntry, Status,
+    AmbientCounts, CharacterDetail, ChronicleEntry, Goods, Inventory, LlmStatus, Memory, MemoryKind, Mood, Needs,
+    PlanRow, RelationLabel, RelationRow, RosterEntry, Status,
 };
 use crate::encode::chronicle_entry;
 
@@ -184,6 +184,11 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
             food: c.inventory.food.max(0) as u32,
             potion: c.inventory.potion.max(0) as u32,
             gift: c.inventory.gift.max(0) as u32,
+        },
+        carried: Goods {
+            wood: c.carried.get(Resource::Wood).max(0) as u32,
+            stone: c.carried.get(Resource::Stone).max(0) as u32,
+            ore: c.carried.get(Resource::Ore).max(0) as u32,
         },
         home: find_place(&c.home_id).map_or(c.home_id.clone(), |place| place.name.into()),
         homeless: is_homeless(state, c),

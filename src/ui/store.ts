@@ -4,7 +4,7 @@ import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
   Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, CreditOffer, CreditsState, Grave, House, LlmStatus, Me,
   RosterEntry,
-  Snapshot, Status, Utterance,
+  Snapshot, Status, Stockpile, Utterance,
 } from '../generated/api';
 import type { ConnectionState } from '../net/stream';
 
@@ -79,6 +79,8 @@ export const ui = {
   billboards: signal<Billboard[]>([]),
   /** the homes that are burning or in ruins */
   houses: signal<House[]>([]),
+  /** the materials the village has put by, for the places that hold any */
+  stockpiles: signal<Stockpile[]>([]),
   panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -156,6 +158,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.graves.value = snapshot.graves;
   ui.billboards.value = snapshot.billboards;
   ui.houses.value = snapshot.houses;
+  ui.stockpiles.value = snapshot.stockpiles;
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -185,6 +188,23 @@ export function addGrave(grave: Grave): void {
 export function setHouse(house: House): void {
   const others = ui.houses.value.filter((entry) => entry.id !== house.id);
   ui.houses.value = house.phase === 'intact' ? others : [...others, house];
+}
+
+/** A stockpile filled or emptied; one with nothing left is dropped. */
+export function setStockpile(pile: Stockpile): void {
+  const others = ui.stockpiles.value.filter((entry) => entry.place !== pile.place);
+  ui.stockpiles.value = pile.wood + pile.stone + pile.ore === 0 ? others : [...others, pile];
+}
+
+/** Everything the village has put by, over every stockpile. */
+export function villageStores(): { wood: number; stone: number; ore: number } {
+  const all = { wood: 0, stone: 0, ore: 0 };
+  for (const pile of ui.stockpiles.value) {
+    all.wood += pile.wood;
+    all.stone += pile.stone;
+    all.ore += pile.ore;
+  }
+  return all;
 }
 
 export function setBillboard(board: Billboard): void {

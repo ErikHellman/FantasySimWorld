@@ -11,7 +11,7 @@ const entity = (id: string, x: number): Entity => ({
 });
 
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
-  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [],
+  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], worldObjects: [], stockpiles: [],
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -61,6 +61,28 @@ describe('view world', () => {
     world.apply({ t: 4, ev: [{ type: 'house', house: { ...house, phase: 'intact', fire: 0, built: 100 } }] });
     expect(world.houses.size).toBe(0);
     expect(world.housesVersion).toBe(version + 3);
+  });
+
+  it('keeps what differs from the map and what the stockpiles hold, forgetting what is whole or empty again', () => {
+    const world = new ViewWorld();
+    const tree = { id: 's:7', kind: 'tree' as const, stage: 'standing', sinceTick: 40, progress: 20, fire: 0, placed: null };
+    const camp = { place: 'lumber_camp', name: 'the lumber camp', wood: 4, stone: 0, ore: 0 };
+    world.reset({ ...snapshot(1, []), worldObjects: [tree], stockpiles: [camp] });
+    const objects = world.worldObjectsVersion;
+    const piles = world.stockpilesVersion;
+    expect(world.worldObjects.get('s:7')?.progress).toBe(20);
+    world.apply({ t: 2, ev: [{ type: 'world_object', object: { ...tree, stage: 'falling', sinceTick: 900, progress: 0 } }] });
+    world.apply({ t: 3, ev: [{ type: 'world_object', object: { id: 's:9', kind: 'rock', stage: 'mined_out', sinceTick: 950, progress: 0, fire: 0, placed: null } }] });
+    expect(world.worldObjects.get('s:7')).toMatchObject({ stage: 'falling', sinceTick: 900 });
+    expect(world.worldObjects.size).toBe(2);
+    world.apply({ t: 4, ev: [{ type: 'world_object', object: { ...tree, stage: 'intact' } }] });
+    expect([...world.worldObjects.keys()]).toEqual(['s:9']);
+    expect(world.worldObjectsVersion).toBe(objects + 3);
+    world.apply({ t: 5, ev: [{ type: 'stockpile', stockpile: { ...camp, wood: 9 } }] });
+    expect(world.stockpiles.get('lumber_camp')?.wood).toBe(9);
+    world.apply({ t: 6, ev: [{ type: 'stockpile', stockpile: { ...camp, wood: 0 } }] });
+    expect(world.stockpiles.size).toBe(0);
+    expect(world.stockpilesVersion).toBe(piles + 2);
   });
 
   it('follows the server frame for frame', () => {

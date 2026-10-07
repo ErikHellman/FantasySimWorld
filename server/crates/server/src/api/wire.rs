@@ -16,7 +16,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -223,6 +223,10 @@ pub struct Snapshot {
     pub billboards: Vec<Billboard>,
     /// the homes that are burning or in ruins; every other home stands whole
     pub houses: Vec<House>,
+    /// everything that differs from the map: felled trees, mined rocks, things taken apart, built or burnt
+    pub world_objects: Vec<WorldObject>,
+    /// the materials the village has put by, for the stockpiles that hold any
+    pub stockpiles: Vec<Stockpile>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -326,6 +330,80 @@ pub enum WireEvent {
     House {
         house: House,
     },
+    /// something of the world changed stage or was worked on; stage `intact` means it is the map's own again
+    WorldObject {
+        object: WorldObject,
+    },
+    /// a stockpile's contents changed
+    Stockpile {
+        stockpile: Stockpile,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldObjectKind {
+    Tree,
+    Rock,
+    Prop,
+    Building,
+    Ground,
+    Built,
+}
+
+/// Where something the village built stands, and what it looks like.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Placed {
+    pub bundle: String,
+    pub model: String,
+    pub x: f64,
+    pub z: f64,
+    pub rotation: f64,
+    pub scale: f64,
+}
+
+/// A thing of the world that is not as the map has it. Where it stands comes from the client's own
+/// copy of the map, by id: `s:<scatter index>`, `p:<place>:<model index>`, `b:<place>`, `h:<col>,<row>`;
+/// a thing the village built (`n:<n>`) carries its own placement.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldObject {
+    pub id: Id,
+    pub kind: WorldObjectKind,
+    /// `standing`, `falling`, `stump`, `sapling`, `young`; `whole`, `mined_out`; `pieces`, `burning`, `ash`,
+    /// `gone`; `ruin`, `dismantled`, `raising`, `expanded`; `dug`, `mown`; or `intact` when it is as the map
+    /// has it again and can be forgotten
+    pub stage: String,
+    /// the tick the stage began, or (for a standing tree or whole rock) the last minute anyone worked at it
+    #[ts(type = "number")]
+    pub since_tick: u64,
+    /// how far the work on it has got, in percent, in steps of 5
+    pub progress: u8,
+    /// how far a fire has taken hold of it, 0..100 in steps of 5
+    pub fire: u8,
+    pub placed: Option<Placed>,
+}
+
+/// The materials kept at one place.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Stockpile {
+    /// the place id
+    pub place: Id,
+    pub name: String,
+    pub wood: u32,
+    pub stone: u32,
+    pub ore: u32,
+}
+
+/// Raw materials in a villager's arms.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Goods {
+    pub wood: u32,
+    pub stone: u32,
+    pub ore: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -594,6 +672,8 @@ pub struct CharacterDetail {
     pub max_hp: f64,
     pub needs: Needs,
     pub inventory: Inventory,
+    /// raw materials in their arms
+    pub carried: Goods,
     pub home: String,
     /// that home has burned down and is not yet rebuilt
     pub homeless: bool,
@@ -1125,6 +1205,11 @@ pub fn typescript() -> String {
         BillboardRequest,
         HousePhase,
         House,
+        WorldObjectKind,
+        Placed,
+        WorldObject,
+        Stockpile,
+        Goods,
         LlmState,
         LlmStatus,
         AmbientCounts,

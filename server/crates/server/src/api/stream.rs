@@ -83,6 +83,8 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         voices: core.voices.iter().cloned().collect(),
         billboards: core.tracker.billboards(),
         houses: core.tracker.houses(),
+        world_objects: core.tracker.world_objects(),
+        stockpiles: core.tracker.stockpiles(),
     }
 }
 

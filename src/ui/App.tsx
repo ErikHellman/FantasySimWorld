@@ -11,7 +11,17 @@ import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
 import { ShopPanel } from './Shop';
-import { actions, closeSheet, creditsOn, isAdmin, isGuest, togglePanel, ui } from './store';
+import { actions, closeSheet, creditsOn, isAdmin, isGuest, togglePanel, ui, villageStores } from './store';
+
+
+/** What the village has put by: wood, stone and ore in its stockpiles. Nothing is shown until it has gathered some. */
+function Stores() {
+  const all = villageStores();
+  if (all.wood + all.stone + all.ore === 0) return null;
+  const parts = [`🪵 ${all.wood}`, `🪨 ${all.stone}`];
+  if (all.ore > 0) parts.push(`⛏ ${all.ore}`);
+  return <span class="pill" title="The village's stores: wood at the lumber camp, stone and ore at the mine, the rest at the market">{parts.join(' ')}</span>;
+}
 
 function TopBar() {
   const clock = ui.clock.value;
@@ -35,6 +45,7 @@ function TopBar() {
         <span class="pill" title="People watching">👁 {ui.viewers.value}</span>
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
+        <Stores />
         {ui.graves.value.length > 0 && (
           <button class="pill" title="The graveyard" onClick={() => togglePanel('graves')}>
             🪦 {ui.graves.value.length}

@@ -23,7 +23,7 @@ import { Login } from './ui/Login';
 import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setClock, setHouse, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setClock, setHouse, setStockpile, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -153,6 +153,7 @@ async function start(): Promise<void> {
       else if (event.type === 'grave') addGrave(event.grave);
       else if (event.type === 'billboard') setBillboard(event.billboard);
       else if (event.type === 'house') setHouse(event.house);
+      else if (event.type === 'stockpile') setStockpile(event.stockpile);
     }
     speech.handle(events);
     if (!fast) {

@@ -13,8 +13,9 @@ import { Houses, isHomeBuilding } from './houses';
 import { Lighting } from './lighting';
 import { Overlay, type LabelState } from './overlay';
 import type { QualitySettings } from './quality';
-import { SceneryBuilder } from './scenery';
+import { PartCache, SceneryBuilder } from './scenery';
 import { Terrain } from './terrain';
+import { Vegetation, isVegetation } from './vegetation';
 
 const GRAVE_MODELS = ['gravestone', 'gravemarker_A', 'gravemarker_B'];
 /** Props that give light at night, and how high above their base the light sits. */
@@ -42,6 +43,8 @@ export class WorldView {
   private billboardsVersion = -1;
   private readonly houses: Houses;
   private housesVersion = -1;
+  private readonly vegetation: Vegetation;
+  private worldObjectsVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -55,7 +58,8 @@ export class WorldView {
     this.overlay = new Overlay(overlayElement);
     this.effects = new Effects(assets);
 
-    const builder = new SceneryBuilder();
+    const parts = new PartCache();
+    const builder = new SceneryBuilder(parts);
     this.terrain = new Terrain(assets, builder);
     const place = (model: PlacedModel, castShadow: boolean): void => {
       builder.add(assets.model(model.bundle, model.model), {
@@ -66,14 +70,17 @@ export class WorldView {
     for (const entry of places) for (const model of entry.models) if (!isHomeBuilding(entry, model)) place(model, true);
     // Grass, flowers and the like are most of the valley's triangles; their shadows are specks nobody would miss.
     // A small machine draws only some of them, the same ones every time.
+    // Trees and rocks are left out too: `Vegetation` draws them as instances, because the sim can fell and mine them.
     let cover = 0;
     for (const model of scatter.models) {
+      if (isVegetation(model)) continue;
       if (!GROUND_COVER.has(model.model)) place(model, true);
       else if (cover++ % quality.groundCoverStep === 0) place(model, false);
     }
+    this.vegetation = new Vegetation(assets, scatter.models, this.heightAt, quality, parts);
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.houses = new Houses(assets, places, this.heightAt, quality);
-    this.scene.add(builder.build(), this.houses.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.scene.add(builder.build(), this.vegetation.group, this.houses.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -120,6 +127,11 @@ export class WorldView {
       this.housesVersion = world.housesVersion;
       this.houses.show(world.houses);
     }
+    this.vegetation.setTick(world.tick);
+    if (this.worldObjectsVersion !== world.worldObjectsVersion) {
+      this.worldObjectsVersion = world.worldObjectsVersion;
+      this.vegetation.show(world.worldObjects);
+    }
 
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
@@ -158,6 +170,7 @@ export class WorldView {
   frame(dt: number, simDt: number, alpha: number, hour: number): void {
     this.rig.update(dt);
     this.houses.update(dt);
+    this.vegetation.update(dt, alpha);
     this.lighting.setFire(this.houses.light());
     this.lighting.update(hour, this.rig.target, this.rig.distance);
     this.effects.update(simDt);

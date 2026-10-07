@@ -11,7 +11,7 @@ export const MIN_INSTANCES = 8;
 /** The name prefix `Assets` gives the untextured, single-colour materials. */
 const FLAT_PREFIX = 'flat:';
 
-interface Part {
+export interface Part {
   geometry: THREE.BufferGeometry;
   material: THREE.Material;
   /** mesh transform relative to the model root */
@@ -142,23 +142,17 @@ function pack(geometry: THREE.BufferGeometry): THREE.Matrix4 {
 }
 
 /**
- * Collects static scenery and builds it with as few draw calls as it can: an
- * InstancedMesh per (geometry, material, chunk) for models that repeat, and
- * one baked mesh per (material, chunk) for the rest.
+ * A model's meshes joined into one part per material, remembered per template
+ * so every layer that draws the model (the merged scenery, the trees) shares
+ * the same geometries.
  */
-export class SceneryBuilder {
+export class PartCache {
   private readonly parts = new WeakMap<THREE.Object3D, Part[]>();
-  private readonly batches = new Map<string, Batch>();
-  private readonly position = new THREE.Vector3();
-  private readonly quaternion = new THREE.Quaternion();
-  private readonly scale = new THREE.Vector3();
-  private readonly up = new THREE.Vector3(0, 1, 0);
   /** Every single-colour material is drawn by this one, its colour moved into the vertices, so such parts can share a mesh. */
   private readonly painted = new THREE.MeshLambertMaterial({ vertexColors: true });
-  count = 0;
 
   /** A model's meshes, joined so that there is one part per material. */
-  private partsOf(template: THREE.Object3D): Part[] {
+  partsOf(template: THREE.Object3D): Part[] {
     let parts = this.parts.get(template);
     if (!parts) {
       template.updateMatrixWorld(true);
@@ -188,6 +182,22 @@ export class SceneryBuilder {
     }
     return parts;
   }
+}
+
+/**
+ * Collects static scenery and builds it with as few draw calls as it can: an
+ * InstancedMesh per (geometry, material, chunk) for models that repeat, and
+ * one baked mesh per (material, chunk) for the rest.
+ */
+export class SceneryBuilder {
+  private readonly batches = new Map<string, Batch>();
+  private readonly position = new THREE.Vector3();
+  private readonly quaternion = new THREE.Quaternion();
+  private readonly scale = new THREE.Vector3();
+  private readonly up = new THREE.Vector3(0, 1, 0);
+  count = 0;
+
+  constructor(private readonly cache = new PartCache()) {}
 
   add(template: THREE.Object3D, options: PlaceOptions): void {
     const s = options.scale ?? 1;
@@ -197,7 +207,7 @@ export class SceneryBuilder {
     const world = new THREE.Matrix4().compose(this.position, this.quaternion, this.scale);
     const chunk = `${Math.floor(options.x / CHUNK_SIZE)},${Math.floor(options.z / CHUNK_SIZE)}`;
     const castShadow = options.castShadow ?? true;
-    for (const part of this.partsOf(template)) {
+    for (const part of this.cache.partsOf(template)) {
       const key = `${part.geometry.uuid}|${part.material.uuid}|${chunk}|${castShadow ? 1 : 0}`;
       let batch = this.batches.get(key);
       if (!batch) {

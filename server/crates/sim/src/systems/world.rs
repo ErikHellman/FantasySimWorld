@@ -53,6 +53,8 @@ const STONE_PER_ROCK: i64 = 3;
 const DELIVER_SECONDS: f64 = 2.0;
 /// If no block is left to finish a job in, this long is allowed.
 const DEFAULT_JOB_MINUTES: f64 = 240.0;
+/// Work on a tree or rock nobody has touched for this long is lost: the cuts close over.
+const ABANDONED_MINUTES: i64 = 30;
 
 /// Where the village keeps its materials: the place, what it takes, and how much it holds. The market
 /// takes anything the others cannot.
@@ -264,11 +266,28 @@ pub fn update_world(ctx: &mut Ctx) {
     if tick % TICKS_PER_GAME_MINUTE != 0 && !falling_done {
         return;
     }
+    // A claim on a target outlives its holder only until here.
+    let stale: Vec<String> = ctx
+        .state
+        .slots
+        .iter()
+        .filter(|(key, holder)| key.contains('@') && !ctx.state.characters.contains_key(*holder))
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in stale {
+        ctx.state.slots.shift_remove(&key);
+    }
     let ids: Vec<String> = ctx.state.objects.keys().cloned().collect();
     for id in ids {
         let Some(object) = ctx.state.objects.get(&id) else { continue };
         let age = tick - object.since_tick();
         let next = match object {
+            WorldObject::Tree { stage: TreeStage::Standing, .. }
+            | WorldObject::Rock { stage: RockStage::Whole, .. }
+                if age >= ABANDONED_MINUTES * TICKS_PER_GAME_MINUTE && claims_on(ctx.state, &id) == 0 =>
+            {
+                Some(None)
+            }
             WorldObject::Tree { stage, .. } => match stage {
                 TreeStage::Falling if age >= FALL_TICKS => Some(Some(TreeStage::Stump)),
                 TreeStage::Stump if age >= STUMP_DAYS * TICKS_PER_DAY => Some(Some(TreeStage::Sapling)),
@@ -586,7 +605,12 @@ fn add_work(state: &mut SimState, target: &str, effort: f64) -> f64 {
     if let Some(object) = state.objects.get_mut(target) {
         if let Some(work) = object.work_mut() {
             *work += effort;
-            return *work;
+            let total = *work;
+            // The last minute anyone worked at it, for the clock and for the swaying on the screen.
+            if let WorldObject::Tree { since_tick, .. } | WorldObject::Rock { since_tick, .. } = object {
+                *since_tick = tick;
+            }
+            return total;
         }
         return 0.0;
     }
@@ -602,6 +626,20 @@ fn add_work(state: &mut SimState, target: &str, effort: f64) -> f64 {
     };
     put_object(state, target, object);
     effort
+}
+
+/// How far the work on an object has got, 0..1: the swings at a standing tree against what felling takes,
+/// the blows at a rock against mining it. Zero for anything not being worked on.
+pub fn progress_of(object: &WorldObject) -> f64 {
+    let whole = match object {
+        WorldObject::Tree { stage: TreeStage::Standing, .. } => job_def(WorldJob::Fell).work,
+        WorldObject::Rock { stage: RockStage::Whole, .. } => job_def(WorldJob::Mine).work,
+        WorldObject::Prop { stage: PropStage::Whole, .. } | WorldObject::Built { stage: PropStage::Whole, .. } => {
+            job_def(WorldJob::Dismantle).work
+        }
+        _ => return 0.0,
+    };
+    (object.work() / whole).clamp(0.0, 1.0)
 }
 
 /// "a tree near the lumber camp": what someone is working on, for status lines.
