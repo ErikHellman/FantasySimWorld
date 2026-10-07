@@ -427,6 +427,7 @@ mod growing_up {
 mod births {
     use fsw_core::time::TICKS_PER_DAY;
     use fsw_sim::state::RelationLabel;
+    use fsw_sim::systems::children::maybe_birth;
     use fsw_sim::systems::relationships::{become_lovers, break_up};
     use fsw_sim::util::{Ctx, children, rel, rel_or_default};
     use fsw_sim::{Sim, create_state};
@@ -470,15 +471,15 @@ mod births {
             (r.affinity, r.attraction) = (70.0, 70.0);
         }
         let before = children(&sim.state).count();
-        let mut born_on = None;
-        for day in 1..=12 {
-            run_days(&mut sim, 1);
-            if children(&sim.state).count() > before {
-                born_on = Some(day);
-                break;
-            }
+        // The dawn roll is one in six; ask it directly rather than wait on the luck of a seed.
+        let mut rolls = 0;
+        while children(&sim.state).count() == before && rolls < 60 {
+            let mut events = Vec::new();
+            let mut ctx = Ctx::new(&mut sim.state, &mut events);
+            maybe_birth(&mut ctx);
+            rolls += 1;
         }
-        let day = born_on.expect("no child was born in twelve days");
+        assert!(rolls < 60, "no child in sixty dawns");
         let child = children(&sim.state).find(|c| c.arrived_tick > 0).expect("the newborn");
         let parents = &child.child.as_ref().unwrap().parents;
         assert!(parents.contains(&mira) && parents.contains(&theron), "{parents:?}");
@@ -497,9 +498,9 @@ mod births {
         assert!(sim.state.chronicle.iter().any(|e| e.text.contains(&child.profile.name) && e.text.contains("child")));
         let first_birth = sim.state.director.last_birth_tick;
         assert!(first_birth > 0);
-        // One is enough for now: the village is full of children and births are spaced out.
-        run_days(&mut sim, 12 - day);
-        assert_eq!(sim.state.director.last_birth_tick, first_birth, "a second child was born");
+        // Births are spaced out: nothing for six days, whatever the dawn rolls say.
+        run_days(&mut sim, 5);
+        assert_eq!(sim.state.director.last_birth_tick, first_birth, "a second child was born within the cooldown");
     }
 
     #[test]
@@ -510,5 +511,264 @@ mod births {
         assert_eq!(sim.state.director.last_birth_tick, 0);
         assert!(children(&sim.state).count() <= authored);
         assert!(children(&sim.state).all(|c| c.arrived_tick == 0));
+    }
+}
+
+// --- Mischief --------------------------------------------------------------------
+
+mod mischief {
+    use fsw_core::time::{TICKS_PER_DAY, game_time};
+    use fsw_core::vec2;
+    use fsw_sim::commands::TuningPatch;
+    use fsw_sim::events::Projectile;
+    use fsw_sim::state::{ActPhase, Intent, IntentAction, IntentSource, Mischief, MischiefPlan, TalkTone};
+    use fsw_sim::util::{children, rel_or_default};
+    use fsw_sim::{Command, Sim, SimEvent, create_state};
+    use fsw_world::places::{ActivityId, get_place};
+
+    use super::by_first_name;
+
+    fn quiet(seed: u32) -> Sim {
+        let mut sim = Sim::new(create_state(seed));
+        sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
+        sim
+    }
+
+    fn hour(sim: &Sim) -> f64 {
+        game_time(sim.state.tick).hour
+    }
+
+    fn run_to_hour(sim: &mut Sim, target: f64) {
+        while (hour(sim) - target).abs() > 0.02 {
+            sim.step();
+        }
+    }
+
+    fn plan(sim: &mut Sim, id: &str, kind: Mischief) {
+        let child = sim.state.characters.get_mut(id).unwrap().child.as_mut().unwrap();
+        child.plan = Some(MischiefPlan { kind, place_id: None, done_tick: 0 });
+    }
+
+    /// Stands two people out in the open side by side with nothing to do.
+    fn side_by_side(sim: &mut Sim, a: &str, b: &str, place: &str) {
+        let spot = get_place(place).door;
+        for (id, dx) in [(a, 0.0), (b, 1.5)] {
+            let c = sim.state.characters.get_mut(id).unwrap();
+            c.pos = vec2(spot.x + dx, spot.z + 1.0);
+            c.inside = None;
+            c.asleep = false;
+            c.convo_id = None;
+            c.intent = Some(Intent::new(IntentAction::Wait { minutes: 240.0 }, IntentSource::Routine));
+            c.queue.clear();
+            c.act = fsw_sim::systems::intents::fresh_act(sim.state.tick);
+        }
+    }
+
+    fn run(sim: &mut Sim, ticks: i64) -> Vec<SimEvent> {
+        let mut events = Vec::new();
+        for _ in 0..ticks {
+            events.extend(sim.step());
+        }
+        events
+    }
+
+    fn chronicled(sim: &Sim, text: &str) -> bool {
+        sim.state.chronicle.iter().any(|e| e.text.contains(text))
+    }
+
+    #[test]
+    fn the_naughty_plan_trouble_at_dawn_and_the_good_do_not() {
+        let mut sim = quiet(1);
+        let kids: Vec<String> = children(&sim.state).map(|c| c.id.clone()).collect();
+        for id in &kids {
+            sim.state.characters.get_mut(id).unwrap().child.as_mut().unwrap().mischief = 1.0;
+        }
+        for _ in 0..TICKS_PER_DAY {
+            sim.step();
+        }
+        assert!(children(&sim.state).any(|c| c.child.as_ref().unwrap().plan.is_some()), "nobody planned any trouble");
+        let mut sim = quiet(1);
+        for id in &kids {
+            sim.state.characters.get_mut(id).unwrap().child.as_mut().unwrap().mischief = 0.0;
+        }
+        for _ in 0..TICKS_PER_DAY {
+            sim.step();
+        }
+        assert!(children(&sim.state).all(|c| c.child.as_ref().unwrap().plan.is_none()));
+    }
+
+    #[test]
+    fn a_child_pinches_food_from_a_grown_up_who_holds_it_against_them_a_little() {
+        let mut sim = quiet(1);
+        let (tansy, kael) =
+            (by_first_name(&sim.state, "Tansy").id.clone(), by_first_name(&sim.state, "Kael").id.clone());
+        run_to_hour(&mut sim, 10.0);
+        side_by_side(&mut sim, &tansy, &kael, "green");
+        sim.state.characters.get_mut(&kael).unwrap().inventory.food = 2;
+        sim.state.characters.get_mut(&tansy).unwrap().inventory.food = 0;
+        plan(&mut sim, &tansy, Mischief::PinchFood);
+        run(&mut sim, 200);
+        assert_eq!(sim.state.characters[&kael].inventory.food, 1);
+        assert_eq!(sim.state.characters[&tansy].inventory.food, 1);
+        let r = rel_or_default(&sim.state.characters[&kael], &tansy);
+        assert!(r.grievance > 0.0 && r.grievance <= 30.0, "{r:?}");
+        assert!(chronicled(&sim, "Tansy pinched"), "{:?}", sim.state.chronicle.last());
+        assert!(sim.state.characters[&tansy].child.as_ref().unwrap().plan.as_ref().unwrap().done_tick > 0);
+        let garrick = by_first_name(&sim.state, "Garrick");
+        assert!(garrick.memories.iter().any(|m| m.text.contains("Tansy")), "her uncle hears of it");
+        assert!(garrick.stimuli.iter().any(|s| s.text.contains("Tansy")));
+    }
+
+    #[test]
+    fn a_child_throws_food_at_a_grown_up_and_runs_home() {
+        let mut sim = quiet(1);
+        let (tansy, kael) =
+            (by_first_name(&sim.state, "Tansy").id.clone(), by_first_name(&sim.state, "Kael").id.clone());
+        run_to_hour(&mut sim, 10.0);
+        side_by_side(&mut sim, &tansy, &kael, "green");
+        sim.state.characters.get_mut(&tansy).unwrap().inventory.food = 1;
+        plan(&mut sim, &tansy, Mischief::ThrowFood);
+        let events = run(&mut sim, 200);
+        assert!(events.iter().any(|e| matches!(e, SimEvent::Attack { ranged: Some(Projectile::Food), attacker_id, .. } if attacker_id == &tansy)));
+        assert_eq!(sim.state.characters[&tansy].inventory.food, 0);
+        assert_eq!(
+            sim.state.characters[&kael].hp,
+            fsw_sim::systems::combat::max_hp(&sim.state.characters[&kael]),
+            "no harm done"
+        );
+        let r = rel_or_default(&sim.state.characters[&kael], &tansy);
+        assert!(r.grievance >= 10.0 && r.grievance <= 30.0, "{r:?}");
+        assert!(!sim.state.characters[&kael].intent.as_ref().is_some_and(|i| i.is_fight()), "nobody fights a child");
+        let home = sim.state.characters[&tansy].home_id.clone();
+        assert!(
+            matches!(&sim.state.characters[&tansy].intent, Some(Intent { action: IntentAction::GoTo { place_id }, .. }) if place_id == &home),
+            "{:?}",
+            sim.state.characters[&tansy].intent
+        );
+        assert!(chronicled(&sim, "threw"), "{:?}", sim.state.chronicle.last());
+    }
+
+    #[test]
+    fn a_child_hides_a_tool_and_the_work_runs_long() {
+        let mut sim = quiet(1);
+        let (hollis, garrick) =
+            (by_first_name(&sim.state, "Hollis").id.clone(), by_first_name(&sim.state, "Garrick").id.clone());
+        run_to_hour(&mut sim, 10.0);
+        side_by_side(&mut sim, &hollis, &garrick, "lumber_camp");
+        let tick = sim.state.tick;
+        {
+            let c = sim.state.characters.get_mut(&garrick).unwrap();
+            c.intent = Some(Intent::new(
+                IntentAction::Activity { activity: ActivityId::ChopWood, place_id: None, minutes: Some(60.0) },
+                IntentSource::Routine,
+            ));
+            c.act.phase = ActPhase::Perform;
+            c.act.until_tick = tick + 1200;
+            c.tool = Some("tools/axe".into());
+        }
+        plan(&mut sim, &hollis, Mischief::HideTool);
+        run(&mut sim, 100);
+        let g = &sim.state.characters[&garrick];
+        assert!(g.tool.is_none(), "the axe is gone");
+        assert!(g.act.until_tick > tick + 1200, "the work runs long");
+        assert!(rel_or_default(g, &hollis).grievance > 0.0);
+        assert!(chronicled(&sim, "Hollis hid"), "{:?}", sim.state.chronicle.last());
+        assert!(g.stimuli.iter().any(|s| s.text.contains("axe")), "{:?}", g.stimuli);
+    }
+
+    #[test]
+    fn a_child_with_a_tall_tale_tells_it_in_conversation() {
+        let mut sim = quiet(1);
+        let (hollis, kael) =
+            (by_first_name(&sim.state, "Hollis").id.clone(), by_first_name(&sim.state, "Kael").id.clone());
+        run_to_hour(&mut sim, 10.0);
+        side_by_side(&mut sim, &hollis, &kael, "green");
+        plan(&mut sim, &hollis, Mischief::TallTale);
+        let epoch = sim.state.characters[&hollis].epoch;
+        let talk = IntentAction::Talk { target_id: kael.clone(), opener: String::new(), tone: TalkTone::Friendly };
+        sim.enqueue(Command::SetIntents {
+            id: hollis.clone(),
+            epoch,
+            intents: vec![Intent::new(talk, IntentSource::Llm)],
+        });
+        for _ in 0..6000 {
+            sim.step();
+            if chronicled(&sim, "Hollis told Kael") {
+                break;
+            }
+        }
+        assert!(chronicled(&sim, "Hollis told Kael a made-up story"), "{:?}", sim.state.chronicle);
+        assert!(sim.state.characters[&hollis].child.as_ref().unwrap().plan.as_ref().unwrap().done_tick > 0);
+    }
+
+    #[test]
+    fn a_child_who_wanders_off_at_dusk_is_fetched_home() {
+        let mut sim = quiet(1);
+        let (moss, rowan) =
+            (by_first_name(&sim.state, "Moss").id.clone(), by_first_name(&sim.state, "Rowan").id.clone());
+        run_to_hour(&mut sim, 18.0);
+        plan(&mut sim, &moss, Mischief::WanderOff);
+        side_by_side(&mut sim, &moss, &rowan, "green");
+        // Rowan has the evening free and the raids hold off.
+        sim.state.director.next_wave_tick = sim.state.tick + TICKS_PER_DAY;
+        let mut wandered = false;
+        let mut fetched = false;
+        for _ in 0..3000 {
+            sim.step();
+            let m = &sim.state.characters[&moss];
+            if matches!(&m.intent, Some(Intent { action: IntentAction::GoTo { place_id }, .. }) if ["glade", "graveyard", "ruins"].contains(&place_id.as_str()))
+            {
+                wandered = true;
+            }
+            // Standing right beside Moss, Rowan may catch up within the tick; the chronicle sees it either way.
+            if matches!(&sim.state.characters[&rowan].intent, Some(Intent { action: IntentAction::Fetch { target_id }, .. }) if target_id == &moss)
+                || chronicled(&sim, "Rowan fetched Moss")
+            {
+                fetched = true;
+            }
+            if wandered && fetched && m.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Sleep)) {
+                break;
+            }
+        }
+        assert!(wandered, "Moss never wandered off");
+        assert!(fetched, "nobody went after Moss");
+        assert!(
+            sim.state.characters[&moss].intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Sleep)),
+            "{:?}",
+            sim.state.characters[&moss].intent
+        );
+        assert!(chronicled(&sim, "Rowan fetched Moss"), "{:?}", sim.state.chronicle.last());
+        assert!(sim.state.characters[&moss].memories.iter().any(|m| m.text.contains("Rowan")));
+    }
+
+    #[test]
+    fn the_naughtiest_child_may_set_a_house_alight_by_day() {
+        let mut sim = quiet(1);
+        let hollis = by_first_name(&sim.state, "Hollis").id.clone();
+        run_to_hour(&mut sim, 11.0);
+        plan(&mut sim, &hollis, Mischief::PlayWithFire);
+        for _ in 0..TICKS_PER_DAY / 4 {
+            sim.step();
+            if !sim.state.houses.is_empty() {
+                break;
+            }
+        }
+        let (place, _) = sim.state.houses.first().expect("a house caught");
+        assert_ne!(place, &sim.state.characters[&hollis].home_id, "not her own home");
+        assert!(chronicled(&sim, "Hollis set fire"), "{:?}", sim.state.chronicle.last());
+        let dorn = by_first_name(&sim.state, "Dorn");
+        assert!(dorn.memories.iter().any(|m| m.text.contains("fire")), "{:?}", dorn.memories);
+        for _ in 0..40 {
+            sim.step();
+        }
+        assert!(
+            children(&sim.state)
+                .all(|c| !matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::FightFire { .. })))
+        );
+        assert!(
+            fsw_sim::util::adults(&sim.state)
+                .any(|c| matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::FightFire { .. }))),
+            "the village answers"
+        );
     }
 }

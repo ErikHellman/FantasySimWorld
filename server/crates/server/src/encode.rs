@@ -367,6 +367,7 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                     Projectile::Arrow => Ranged::Arrow,
                     Projectile::Bolt => Ranged::Bolt,
                     Projectile::Magic => Ranged::Magic,
+                    Projectile::Food => Ranged::Food,
                 }),
                 from: point(*from),
                 to: point(*to),

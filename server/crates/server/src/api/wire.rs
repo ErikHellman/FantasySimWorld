@@ -256,6 +256,8 @@ pub enum Ranged {
     Arrow,
     Bolt,
     Magic,
+    /// a loaf thrown by a child
+    Food,
 }
 
 /// One spoken line, with everything a sink needs to show it or say it aloud.

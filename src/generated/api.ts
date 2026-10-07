@@ -221,7 +221,7 @@ reason: string, };
 
 export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift";
 
-export type Ranged = "arrow" | "bolt" | "magic";
+export type Ranged = "arrow" | "bolt" | "magic" | "food";
 
 /**
  * One spoken line, with everything a sink needs to show it or say it aloud.

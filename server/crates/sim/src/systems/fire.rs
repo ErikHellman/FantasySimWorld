@@ -119,7 +119,7 @@ fn water_for(house: &Place) -> &'static Place {
     best
 }
 
-fn residents(state: &SimState, place_id: &str) -> Vec<Id> {
+pub(crate) fn residents(state: &SimState, place_id: &str) -> Vec<Id> {
     living(state).filter(|c| c.home_id == place_id).map(|c| c.id.clone()).collect()
 }
 
@@ -235,8 +235,16 @@ fn burn(ctx: &mut Ctx, id: &str, amount: i64, place: &Place) {
     ctx.stimulate(id, StimulusKind::Attacked, "The fire burned you.", 2, None);
 }
 
-/// Sets a house on fire. Whoever is inside is thrown out of bed, burnt, onto the street.
+/// Sets a house on fire, the dead's way: whoever is inside is thrown out of bed, burnt, onto the street.
 pub fn ignite(ctx: &mut Ctx, place_id: &str) {
+    let Some(place) = find_place(place_id) else { return };
+    let text = format!("While the village slept, the dead set fire to {}.", place.name);
+    ignite_by(ctx, place_id, text);
+}
+
+/// Sets a house on fire and writes `chronicle_text` for it. Whoever is inside is thrown out, burnt, onto
+/// the street.
+pub fn ignite_by(ctx: &mut Ctx, place_id: &str, chronicle_text: String) {
     let tick = ctx.tick();
     let Some(place) = find_place(place_id) else { return };
     if ctx.state.houses.contains_key(place_id) {
@@ -269,11 +277,7 @@ pub fn ignite(ctx: &mut Ctx, place_id: &str) {
         ctx.say(crier, format!("Fire! Fire! {} is burning!", capitalised(place.name)), None, true);
         ctx.emit(SimEvent::Emote { id: crier.clone(), emote: Emote::Alert });
     }
-    ctx.chronicle(
-        ChronicleKind::Fire,
-        format!("While the village slept, the dead set fire to {}.", place.name),
-        residents(ctx.state, place_id),
-    );
+    ctx.chronicle(ChronicleKind::Fire, chronicle_text, residents(ctx.state, place_id));
     ctx.emit(SimEvent::SavePoint { reason: "fire".into() });
 }
 

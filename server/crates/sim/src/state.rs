@@ -417,6 +417,10 @@ pub enum IntentAction {
     FightFire {
         place_id: String,
     },
+    /// runs after a child who has wandered off and brings them home
+    Fetch {
+        target_id: Id,
+    },
 }
 
 impl IntentAction {
@@ -432,6 +436,7 @@ impl IntentAction {
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
             Self::FightFire { .. } => "fight_fire",
+            Self::Fetch { .. } => "fetch",
         }
     }
 
@@ -440,7 +445,8 @@ impl IntentAction {
             Self::Talk { target_id, .. }
             | Self::Give { target_id, .. }
             | Self::Fight { target_id, .. }
-            | Self::Stalk { target_id } => Some(target_id),
+            | Self::Stalk { target_id }
+            | Self::Fetch { target_id } => Some(target_id),
             _ => None,
         }
     }

@@ -100,6 +100,7 @@ fn doing(state: &SimState, c: &Character) -> String {
                 format!("fetching water for the fire at {name}")
             }
         }
+        IntentAction::Fetch { target_id } => format!("fetching {} home", name_of(state, target_id)),
     }
 }
 

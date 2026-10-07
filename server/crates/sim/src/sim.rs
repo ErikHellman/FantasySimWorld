@@ -14,7 +14,7 @@ use crate::state::{
     SimState,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
-use crate::systems::children::daily_children;
+use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
@@ -67,6 +67,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Stalk { .. } => false,
         // Nor is the bucket chain: the fire itself calls people to it.
         IntentAction::FightFire { .. } => false,
+        // Nor is fetching a child home: whoever notices goes.
+        IntentAction::Fetch { .. } => false,
     }
 }
 
@@ -82,8 +84,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
-    // Nobody talks their way out of the bucket chain; only a fight or flight comes before a burning house.
-    if fighting_fire(ctx.cr(id)) && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
+    // Nobody talks their way out of the bucket chain, or out of fetching a child home; only a fight or flight
+    // comes before either.
+    let bound = fighting_fire(ctx.cr(id)) || fetching(ctx.cr(id));
+    if bound && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
         return;
     }
     let thought = first.thought.clone().filter(|t| !t.is_empty());
@@ -313,6 +317,7 @@ impl Sim {
         update_director(&mut ctx);
         update_routine(&mut ctx);
         update_quirks(&mut ctx);
+        update_children(&mut ctx);
         update_intents(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
