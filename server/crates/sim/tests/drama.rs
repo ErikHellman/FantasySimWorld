@@ -4,7 +4,7 @@ use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
 use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, RelationLabel, TalkTone};
-use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, panic_chance, start_fight};
+use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, max_hp, panic_chance, run_fight, start_fight};
 use fsw_sim::systems::death::kill_character;
 use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::systems::relationships::{RUNG_BLOOD, RUNG_FEUD, RUNG_GRUDGE, Rung, label_for, lethal_unlocked, rung_of};
@@ -365,4 +365,30 @@ fn conversations_wait_for_lines_then_fall_back_to_local_ones() {
     assert!(lines >= 3);
     let rowan = &w.sim.state.characters[&a];
     assert!(rowan.memories.iter().any(|m| m.kind == MemoryKind::Talk && m.subjects.contains(&b)));
+}
+
+/// Puts a villager of middling nerve in a model-ordered stand against a skeleton at the given share of
+/// their health, with no potion to drink, and lets the fight run one step. Returns whether they ran.
+fn stand_at(hp_share: f64) -> bool {
+    let mut w = World::new(3);
+    let id = w.who("Mira");
+    let c = w.sim.state.characters.get_mut(&id).unwrap();
+    c.profile.bravery = 0.5;
+    c.inventory.potion = 0;
+    let mut events = Vec::new();
+    let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
+    let pos = ctx.cr(&id).pos;
+    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0);
+    start_fight(&mut ctx, &id, &monster, FightMode::Monster, IntentSource::Llm, None);
+    let cap = max_hp(ctx.cr(&id));
+    ctx.c(&id).hp = cap * hp_share;
+    run_fight(&mut ctx, &id, &monster, FightMode::Monster, IntentSource::Llm);
+    matches!(ctx.cr(&id).intent.as_ref().map(|i| &i.action), Some(IntentAction::Flee))
+}
+
+#[test]
+fn a_stand_the_model_ordered_breaks_only_at_the_last_resort() {
+    // Bravery 0.5 gives up at 23% on instinct; the model's stand holds to half that.
+    assert!(!stand_at(0.2), "ran while there was still fight in them");
+    assert!(stand_at(0.06), "fought on to the last hit point");
 }
