@@ -18,6 +18,27 @@ use crate::places::{Obstacle, PlacedModel, places};
 pub struct Scatter {
     pub models: Vec<PlacedModel>,
     pub obstacles: Vec<Obstacle>,
+    /// For each model, the index of its obstacle in `obstacles`, or `None` for one that blocks nothing.
+    /// Not part of the golden dump: the TypeScript world has no need of it.
+    #[serde(skip)]
+    pub obstacle_of: Vec<Option<usize>>,
+}
+
+impl Scatter {
+    /// The obstacle a scatter model casts, if it is solid.
+    pub fn obstacle_of_model(&self, index: usize) -> Option<&Obstacle> {
+        self.obstacle_of.get(index).copied().flatten().map(|i| &self.obstacles[i])
+    }
+}
+
+/// Whether a scatter model is a tree (the only thing with a trunk to fell).
+pub fn is_tree(model: &str) -> bool {
+    model.starts_with("Tree")
+}
+
+/// Whether a scatter model is a rock (something to mine).
+pub fn is_rock(model: &str) -> bool {
+    model.starts_with("Rock")
 }
 
 const TREES: &[&str] = &[
@@ -90,6 +111,7 @@ struct Builder {
     rng: u32,
     models: Vec<PlacedModel>,
     obstacles: Vec<Obstacle>,
+    obstacle_of: Vec<Option<usize>>,
     solid: Vec<(Vec2, f64)>,
 }
 
@@ -132,15 +154,18 @@ impl Builder {
                     rotation,
                     scale,
                 });
+                let mut obstacle = None;
                 if options.solid {
                     let (width, height) = size_of(bundle, model);
                     self.solid.push((p, options.spacing));
                     if height * scale > 0.9 {
                         // Trunks are much thinner than the canopy; rocks and bushes block most of their width.
-                        let radius = if model.starts_with("Tree") { 0.7 } else { 2.2f64.min(width * scale * 0.4) };
+                        let radius = if is_tree(model) { 0.7 } else { 2.2f64.min(width * scale * 0.4) };
+                        obstacle = Some(self.obstacles.len());
                         self.obstacles.push(Obstacle::Circle { x: p.x, z: p.z, radius });
                     }
                 }
+                self.obstacle_of.push(obstacle);
                 break;
             }
         }
@@ -148,7 +173,13 @@ impl Builder {
 }
 
 fn build_scatter() -> Scatter {
-    let mut b = Builder { rng: SCATTER_SEED, models: Vec::new(), obstacles: Vec::new(), solid: Vec::new() };
+    let mut b = Builder {
+        rng: SCATTER_SEED,
+        models: Vec::new(),
+        obstacles: Vec::new(),
+        obstacle_of: Vec::new(),
+        solid: Vec::new(),
+    };
 
     for cell in &world_map().cells {
         match cell.terrain {
@@ -193,12 +224,14 @@ fn build_scatter() -> Scatter {
                         rotation,
                         scale: HEX_SCALE,
                     });
+                    b.obstacle_of.push(None);
                 }
             }
             _ => {}
         }
     }
-    Scatter { models: b.models, obstacles: b.obstacles }
+    debug_assert_eq!(b.models.len(), b.obstacle_of.len());
+    Scatter { models: b.models, obstacles: b.obstacles, obstacle_of: b.obstacle_of }
 }
 
 static SCATTER: LazyLock<Scatter> = LazyLock::new(build_scatter);
