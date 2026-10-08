@@ -8,13 +8,15 @@ use fsw_core::jsmath::{js_round, utf16_len};
 use fsw_core::math2d::dist;
 use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
+use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Pronouns,
-    Relationship, Rite, SimState, TalkTone,
+    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory, MonsterPhase,
+    Pronouns, Relationship, Rite, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
+use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
@@ -330,6 +332,9 @@ fn offered_to(c: &Character) -> Vec<ActivityId> {
 
 /// The most things a prompt offers to work on.
 const TARGETS_NAMED: usize = 6;
+/// How many pieces of loot, and how many deals, the decide prompt names.
+const LOOT_NAMED: usize = 4;
+const TRADES_NAMED: usize = 4;
 
 /// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
 /// when nothing is within reach.
@@ -346,6 +351,61 @@ fn targets_line(state: &SimState, c: &Character) -> String {
         })
         .collect();
     format!("Things you could work on nearby (work_on): {}.", items.join("; "))
+}
+
+/// What the villager could pay the village to build for them. Empty when nothing, so the prompt reads
+/// as it did.
+fn afford_line(state: &SimState, c: &Character) -> String {
+    let options = economy::affordable(state, c);
+    if options.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = options.iter().map(|o| format!("{} ({} gold)", o.label(), o.price())).collect();
+    format!("You could pay for (commission): {}.", items.join("; "))
+}
+
+/// The deals open with the neighbours within reach, at most four. Empty when there are none, so the
+/// prompt reads as it did.
+fn trade_line(state: &SimState, c: &Character) -> String {
+    let options = economy::trade_options(state, c);
+    if options.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = options
+        .iter()
+        .take(TRADES_NAMED)
+        .map(|o| {
+            let name = name_of(state, &o.other_id);
+            let what = trade_item(o.item);
+            if o.buy {
+                format!("buy {what} from {name} ({} gold)", o.price)
+            } else {
+                format!("sell {what} to {name} ({} gold)", o.price)
+            }
+        })
+        .collect();
+    format!("You could trade (trade): {}.", items.join("; "))
+}
+
+fn trade_item(item: ItemId) -> &'static str {
+    match item {
+        ItemId::Food => "food",
+        ItemId::Potion => "a potion",
+        ItemId::Gift => "a gift",
+        ItemId::Trinket => "a trinket",
+        ItemId::Relic => "a relic",
+    }
+}
+
+/// What the dead left lying within reach, nearest first, at most four. Empty when there is nothing, so
+/// the prompt reads as it did.
+fn loot_line(state: &SimState, c: &Character) -> String {
+    let near = economy::loot_near(state, c.pos, LOOT_REACH);
+    if near.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = near.iter().take(LOOT_NAMED).map(|(_, id)| economy::loot_label(&state.loot[id])).collect();
+    format!("On the ground within reach (pick_up): {}.", items.join("; "))
 }
 
 /// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
@@ -403,7 +463,7 @@ fn capitalise(text: &str) -> String {
 fn header(state: &SimState, c: &Character) -> String {
     let time = game_time(state.tick);
     let inv = &c.inventory;
-    let inventory = format!(
+    let mut inventory = format!(
         "{} food, {} healing potion{}, {} small gift{}",
         inv.food,
         inv.potion,
@@ -411,6 +471,12 @@ fn header(state: &SimState, c: &Character) -> String {
         inv.gift,
         if inv.gift == 1 { "" } else { "s" }
     );
+    for item in [ItemId::Trinket, ItemId::Relic] {
+        if inv.get(item) > 0 {
+            inventory.push_str(&format!(", {}", item.label(inv.get(item))));
+        }
+    }
+    inventory.push_str(&format!(", and {} gold", c.gold));
     let monsters: Vec<_> = state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).collect();
     let danger = if monsters.is_empty() {
         "All is quiet: there are no monsters about.".to_owned()
@@ -437,7 +503,23 @@ fn header(state: &SimState, c: &Character) -> String {
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
+    lines.extend(market_line(state));
     lines.join("\n")
+}
+
+/// What the market's stalls hold and what the village chest holds, while the stalls hold anything.
+/// Empty otherwise, so a village that has never traded reads as it did and the line costs no room
+/// until there is something to buy.
+fn market_line(state: &SimState) -> Option<String> {
+    let economy = &state.economy;
+    if economy.stock.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "The market stalls hold {}; the village chest holds {} gold.",
+        economy.describe_stock(),
+        economy.purse
+    ))
 }
 
 /// "today" or "tomorrow", and the clock, for the hour a ceremony is held.
@@ -636,6 +718,18 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if !targets.is_empty() {
         tools.push(TOOLS.work_on.clone());
     }
+    let loot = loot_line(state, c);
+    if !loot.is_empty() {
+        tools.push(TOOLS.pick_up.clone());
+    }
+    let trades = trade_line(state, c);
+    if !trades.is_empty() {
+        tools.push(TOOLS.trade.clone());
+    }
+    let afford = afford_line(state, c);
+    if !afford.is_empty() {
+        tools.push(TOOLS.commission.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -689,6 +783,9 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
             ),
             section(2, plan_line(c, time.hour)),
             section(2, targets),
+            section(2, loot),
+            section(2, trades),
+            section(3, afford),
             section(
                 5,
                 if far.len() > 5 {

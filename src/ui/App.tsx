@@ -24,6 +24,22 @@ function Stores() {
   return <span class="pill" title="The village's stores: wood at the lumber camp, stone and ore at the mine, the rest at the market">{parts.join(' ')}</span>;
 }
 
+/** The village chest, which pays wages and purchases, and what the market's stalls hold. */
+function Chest() {
+  const economy = ui.economy.value;
+  const goods = economy.food + economy.potion + economy.gift + economy.trinket + economy.relic;
+  const stalls = goods === 0
+    ? 'the stalls are bare'
+    : `the stalls hold ${[
+      economy.food > 0 && `${economy.food} food`,
+      economy.potion > 0 && `${economy.potion} potion${economy.potion === 1 ? '' : 's'}`,
+      economy.gift > 0 && `${economy.gift} gift${economy.gift === 1 ? '' : 's'}`,
+      economy.trinket > 0 && `${economy.trinket} trinket${economy.trinket === 1 ? '' : 's'}`,
+      economy.relic > 0 && `${economy.relic} relic${economy.relic === 1 ? '' : 's'}`,
+    ].filter(Boolean).join(', ')}`;
+  return <span class="pill" title={`The village chest: it pays for what villagers put down at the stores and sell at the market, and a passing trader fills it; ${stalls}`}>🪙 {economy.purse}{goods > 0 && ` · 🧺 ${goods}`}</span>;
+}
+
 function TopBar() {
   const clock = ui.clock.value;
   const admin = isAdmin();
@@ -50,6 +66,7 @@ function TopBar() {
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
         <Stores />
+        <Chest />
         {ui.graves.value.length > 0 && (
           <button class="pill" title="The graveyard" onClick={() => togglePanel('graves')}>
             🪦 {ui.graves.value.length}

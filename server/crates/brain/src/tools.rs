@@ -64,6 +64,9 @@ pub struct Tools {
     pub billboard: ToolDef,
     pub speech: ToolDef,
     pub work_on: ToolDef,
+    pub pick_up: ToolDef,
+    pub trade: ToolDef,
+    pub commission: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -101,7 +104,7 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
     give: tool(
         "give",
         "Walk up to someone and give them something you are carrying.",
-        json!({ "person": person(), "item": { "type": "string", "enum": ["food", "potion", "gift"] }, "say": say(), "thought": thought() }),
+        json!({ "person": person(), "item": { "type": "string", "enum": ["food", "potion", "gift", "trinket", "relic"] }, "say": say(), "thought": thought() }),
         &["person", "item"],
     ),
     continue_: tool("continue", "Carry on with what you are already doing.", json!({ "thought": thought() }), &[]),
@@ -255,5 +258,37 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["job", "target"],
+    ),
+    pick_up: tool(
+        "pick_up",
+        "Go and pick up something the dead left on the ground nearby: coins for your purse, or a trinket or relic to sell at the market.",
+        json!({
+            "what": { "type": "string", "description": "What to pick up, as the message names it." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["what"],
+    ),
+    trade: tool(
+        "trade",
+        "Buy something from a neighbour, or sell them something, at the market's price. Only the deals the message lists are open.",
+        json!({
+            "person": person(),
+            "item": { "type": "string", "enum": ["food", "potion", "gift", "trinket", "relic"] },
+            "deal": { "type": "string", "enum": ["buy", "sell"], "description": "buy: their thing for your coin. sell: your thing for their coin." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["person", "item", "deal"],
+    ),
+    commission: tool(
+        "commission",
+        "Go to the market and pay the village to build something of your own: a new room for your cottage, or a thing for your yard. Only what the message lists can be afforded.",
+        json!({
+            "what": { "type": "string", "description": "What to pay for, as the message names it." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["what"],
     ),
 });

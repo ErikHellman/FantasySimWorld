@@ -19,8 +19,9 @@ use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
-    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
-    Look as SimLook, Monster, Resource, Rite, SimState, VoiceProfile as SimVoice, WorldObject as SimWorldObject,
+    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, ItemId,
+    Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
+    VoiceProfile as SimVoice, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::combat::max_hp;
@@ -32,8 +33,8 @@ use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
-    Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Placed, Ranged, Stockpile, TickFrame,
-    Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
+    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Loot, LootKind, Placed, Ranged,
+    Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -234,6 +235,7 @@ pub fn chronicle_kind(kind: SimChronicleKind) -> ChronicleKind {
         SimChronicleKind::Death => ChronicleKind::Death,
         SimChronicleKind::Arrival => ChronicleKind::Arrival,
         SimChronicleKind::Fire => ChronicleKind::Fire,
+        SimChronicleKind::Trade => ChronicleKind::Trade,
     }
 }
 
@@ -353,6 +355,34 @@ pub fn stockpiles_of(state: &SimState) -> Vec<Stockpile> {
             ore: store.get(Resource::Ore).max(0) as u32,
         })
         .collect()
+}
+
+/// What the dead left lying about, as viewers are told of it.
+pub fn loot_of(state: &SimState) -> Vec<Loot> {
+    state.loot.iter().map(|(id, loot)| wire_loot(id, loot)).collect()
+}
+
+fn wire_loot(id: &str, loot: &SimLoot) -> Loot {
+    let (kind, count) = match loot.kind {
+        SimLootKind::Coins { count } => (LootKind::Coins, count.max(0) as u32),
+        SimLootKind::Trinket => (LootKind::Trinket, 0),
+        SimLootKind::Relic => (LootKind::Relic, 0),
+    };
+    Loot { id: id.to_owned(), kind, count, pos: point(loot.pos), gone: false }
+}
+
+/// The village chest and the market's stalls, as viewers are told of them.
+pub fn economy_of(state: &SimState) -> Economy {
+    let economy = &state.economy;
+    let count = |item: ItemId| economy.in_stock(item).max(0) as u32;
+    Economy {
+        purse: economy.purse.max(0) as u32,
+        food: count(ItemId::Food),
+        potion: count(ItemId::Potion),
+        gift: count(ItemId::Gift),
+        trinket: count(ItemId::Trinket),
+        relic: count(ItemId::Relic),
+    }
 }
 
 pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
@@ -491,6 +521,8 @@ pub struct Tracker {
     ceremony: Option<Ceremony>,
     objects: Vec<WorldObject>,
     stockpiles: Vec<Stockpile>,
+    economy: Option<Economy>,
+    loot: Vec<Loot>,
 }
 
 impl Tracker {
@@ -508,6 +540,8 @@ impl Tracker {
         self.ceremony = ceremony_of(state);
         self.objects = objects_of(state);
         self.stockpiles = stockpiles_of(state);
+        self.economy = Some(economy_of(state));
+        self.loot = loot_of(state);
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -538,6 +572,16 @@ impl Tracker {
     /// What viewers have been told the stockpiles hold (for a snapshot).
     pub fn stockpiles(&self) -> Vec<Stockpile> {
         self.stockpiles.clone()
+    }
+
+    /// What viewers have been told lies on the ground (for a snapshot).
+    pub fn loot(&self) -> Vec<Loot> {
+        self.loot.clone()
+    }
+
+    /// What viewers have been told the chest and the stalls hold (for a snapshot).
+    pub fn economy(&self) -> Economy {
+        self.economy.clone().unwrap_or(Economy { purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 })
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -643,6 +687,27 @@ impl Tracker {
                 }
             }
             self.stockpiles = now;
+        }
+        // Nor what the dead leave lying about, and what is picked up or blows away.
+        if !(state.loot.is_empty() && self.loot.is_empty()) {
+            let now = loot_of(state);
+            for loot in &now {
+                if !self.loot.contains(loot) {
+                    frame.ev.push(WireEvent::Loot { loot: loot.clone() });
+                }
+            }
+            for before in &self.loot {
+                if !now.iter().any(|loot| loot.id == before.id) {
+                    frame.ev.push(WireEvent::Loot { loot: Loot { gone: true, ..before.clone() } });
+                }
+            }
+            self.loot = now;
+        }
+        // Nor coin moving through the chest or goods on and off the stalls.
+        let economy = economy_of(state);
+        if self.economy.as_ref() != Some(&economy) {
+            frame.ev.push(WireEvent::Economy { economy: economy.clone() });
+            self.economy = Some(economy);
         }
         frame
     }
@@ -938,6 +1003,22 @@ mod tests {
         let told = piles(&tracker.frame(&sim.state, &[]));
         assert_eq!((told[0].place.as_str(), told[0].wood), ("lumber_camp", 0));
         assert!(tracker.stockpiles().is_empty());
+
+        // The chest and the stalls: told once when coin or goods move, and the snapshot has the latest.
+        let chests = |frame: &TickFrame| -> Vec<Economy> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Economy { economy } = e { Some(economy.clone()) } else { None })
+                .collect()
+        };
+        assert!(chests(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.economy.purse -= 6;
+        sim.state.economy.stock_up(ItemId::Food, 3);
+        let told = chests(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].purse, told[0].food, told[0].gift), (74, 3, 0));
+        assert!(chests(&tracker.frame(&sim.state, &[])).is_empty());
+        assert_eq!(tracker.economy(), economy_of(&sim.state));
     }
 
     #[test]

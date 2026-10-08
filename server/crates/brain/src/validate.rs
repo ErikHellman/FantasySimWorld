@@ -2,11 +2,13 @@
 //! commands, repairing what can be repaired (port of `src/brain/tools/validate.ts`).
 
 use fsw_core::jsmath::{js_hypot, utf16_len, utf16_truncate};
+use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone, WorldJob,
 };
 use fsw_sim::systems::ceremonies;
+use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
 use fsw_sim::systems::world::{self, gather_target};
@@ -319,8 +321,44 @@ fn item(value: Option<&Value>) -> Option<ItemId> {
         Some("food") => Some(ItemId::Food),
         Some("potion") => Some(ItemId::Potion),
         Some("gift") => Some(ItemId::Gift),
+        Some("trinket") => Some(ItemId::Trinket),
+        Some("relic") => Some(ItemId::Relic),
         _ => None,
     }
+}
+
+/// The commission the model named, by the words of its label ("room", "wagon", "strongbox"), else
+/// the first affordable; `None` when there is nothing to pay for.
+pub fn resolve_commission(state: &SimState, c: &Character, value: Option<&Value>) -> Option<economy::Commission> {
+    let options = economy::affordable(state, c);
+    let text = norm(value);
+    let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+    let mut best: Option<(usize, &economy::Commission)> = None;
+    for option in &options {
+        let label = norm_str(&option.label());
+        let hits = words.iter().filter(|w| label.contains(*w)).count();
+        if hits > 0 && best.is_none_or(|(b, _)| hits > b) {
+            best = Some((hits, option));
+        }
+    }
+    best.map(|(_, o)| o.clone()).or_else(|| options.first().cloned())
+}
+
+/// The loot within reach the model named, by the words of its label ("coins", "trinket", the place),
+/// else the nearest; `None` when there is none within reach.
+pub fn resolve_loot(state: &SimState, c: &Character, value: Option<&Value>) -> Option<String> {
+    let near = economy::loot_near(state, c.pos, LOOT_REACH);
+    let text = norm(value);
+    let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+    let mut best: Option<(usize, &String)> = None;
+    for (_, id) in &near {
+        let label = norm_str(&economy::loot_label(&state.loot[id]));
+        let hits = words.iter().filter(|w| label.contains(*w)).count();
+        if hits > 0 && best.is_none_or(|(b, _)| hits > b) {
+            best = Some((hits, id));
+        }
+    }
+    best.map(|(_, id)| id.clone()).or_else(|| near.first().map(|(_, id)| id.clone()))
 }
 
 /// Turns the tool calls of a "decide" or "react" reply into intents.
@@ -380,7 +418,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
             }
             // A child has nothing to give, never raises a hand and does no work on the world; the sim would
             // refuse it too.
-            "give" | "brawl" | "attack" | "work_on" if c.is_child() => {
+            "give" | "brawl" | "attack" | "work_on" | "trade" | "commission" if c.is_child() => {
                 decision.problems.push(format!("a child does not {}", call.name));
             }
             "work_on" => {
@@ -402,6 +440,45 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     },
                 }
             }
+            "trade" => {
+                let person = resolve_person(state, args.get("person"), Some(&c.id));
+                let item = item(args.get("item"));
+                let buy = match norm(args.get("deal")).as_str() {
+                    "buy" => Some(true),
+                    "sell" => Some(false),
+                    _ => None,
+                };
+                match (person, item, buy) {
+                    (None, _, _) => decision.problems.push(format!("unknown person \"{}\"", shown(args.get("person")))),
+                    (_, None, _) => decision.problems.push(format!("unknown item \"{}\"", shown(args.get("item")))),
+                    (_, _, None) => decision.problems.push(format!("unknown deal \"{}\"", shown(args.get("deal")))),
+                    (Some(person), Some(item), Some(buy)) => {
+                        let (buyer, seller) = if buy { (c, person) } else { (person, c) };
+                        match economy::trade_offer(state, buyer, seller, item) {
+                            Ok(_) => decision.intents.push(intent(IntentAction::Trade {
+                                target_id: person.id.clone(),
+                                item,
+                                buy,
+                            })),
+                            Err(why) => decision.problems.push(format!(
+                                "cannot {} {} {} {}: {why}",
+                                if buy { "buy" } else { "sell" },
+                                item.as_str(),
+                                if buy { "from" } else { "to" },
+                                first_name(person)
+                            )),
+                        }
+                    }
+                }
+            }
+            "commission" => match resolve_commission(state, c, args.get("what")) {
+                Some(choice) => decision.intents.push(intent(IntentAction::Commission { what: choice.key() })),
+                None => decision.problems.push(format!("nothing to pay for at \"{}\"", shown(args.get("what")))),
+            },
+            "pick_up" => match resolve_loot(state, c, args.get("what")) {
+                Some(loot_id) => decision.intents.push(intent(IntentAction::PickUp { loot_id })),
+                None => decision.problems.push(format!("nothing to pick up at \"{}\"", shown(args.get("what")))),
+            },
             "give" => {
                 let person = resolve_person(state, args.get("person"), Some(&c.id));
                 let item = item(args.get("item"));

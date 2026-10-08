@@ -229,6 +229,10 @@ pub struct Snapshot {
     pub world_objects: Vec<WorldObject>,
     /// the materials the village has put by, for the stockpiles that hold any
     pub stockpiles: Vec<Stockpile>,
+    /// the village chest and the market's stalls
+    pub economy: Economy,
+    /// what the dead left lying about
+    pub loot: Vec<Loot>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -346,6 +350,14 @@ pub enum WireEvent {
     Stockpile {
         stockpile: Stockpile,
     },
+    /// the village chest or the market's stalls changed
+    Economy {
+        economy: Economy,
+    },
+    /// something the dead left appeared on the ground, or is gone
+    Loot {
+        loot: Loot,
+    },
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,6 +417,42 @@ pub struct Stockpile {
     pub wood: u32,
     pub stone: u32,
     pub ore: u32,
+}
+
+/// Something the dead left on the ground, for whoever picks it up.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Loot {
+    /// `l:<n>`
+    pub id: String,
+    pub kind: LootKind,
+    /// how many coins, for `coins`; 0 otherwise
+    pub count: u32,
+    pub pos: Vec2,
+    /// picked up or blown away: forget it
+    #[serde(default)]
+    pub gone: bool,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LootKind {
+    Coins,
+    Trinket,
+    Relic,
+}
+
+/// The village chest and what the market's stalls hold.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Economy {
+    /// coin in the village chest, which pays wages and purchases and takes the trader's coin
+    pub purse: u32,
+    pub food: u32,
+    pub potion: u32,
+    pub gift: u32,
+    pub trinket: u32,
+    pub relic: u32,
 }
 
 /// Raw materials in a villager's arms.
@@ -526,6 +574,8 @@ pub enum ChronicleKind {
     Death,
     Arrival,
     Fire,
+    /// coin changed hands: the passing trader, or someone paying for building
+    Trade,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -707,6 +757,11 @@ pub struct Inventory {
     pub food: u32,
     pub potion: u32,
     pub gift: u32,
+    /// valuables the dead left, kept to be sold
+    #[serde(default)]
+    pub trinket: u32,
+    #[serde(default)]
+    pub relic: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -742,6 +797,9 @@ pub struct CharacterDetail {
     pub inventory: Inventory,
     /// raw materials in their arms
     pub carried: Goods,
+    /// coin in their purse
+    #[serde(default)]
+    pub gold: u32,
     pub home: String,
     /// that home has burned down and is not yet rebuilt
     pub homeless: bool,
@@ -1156,6 +1214,9 @@ pub fn typescript() -> String {
         Placed,
         WorldObject,
         Stockpile,
+        Economy,
+        Loot,
+        LootKind,
         Goods,
         LlmState,
         LlmStatus,

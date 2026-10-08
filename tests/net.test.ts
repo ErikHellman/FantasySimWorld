@@ -12,6 +12,7 @@ const entity = (id: string, x: number): Entity => ({
 
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
   tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], ceremony: null, worldObjects: [], stockpiles: [],
+  economy: { purse: 80, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }, loot: [],
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -99,6 +100,29 @@ describe('view world', () => {
     world.apply({ t: 6, ev: [{ type: 'stockpile', stockpile: { ...camp, wood: 0 } }] });
     expect(world.stockpiles.size).toBe(0);
     expect(world.stockpilesVersion).toBe(piles + 2);
+  });
+
+  it('keeps what the dead left on the ground until it is picked up', () => {
+    const world = new ViewWorld();
+    const coins = { id: 'l:4', kind: 'coins' as const, count: 3, pos: { x: 1, z: 2 }, gone: false };
+    world.reset({ ...snapshot(1, []), loot: [coins] });
+    const version = world.lootVersion;
+    expect(world.loot.get('l:4')?.count).toBe(3);
+    world.apply({ t: 2, ev: [{ type: 'loot', loot: { id: 'l:5', kind: 'relic', count: 0, pos: { x: 4, z: 4 }, gone: false } }] });
+    expect(world.loot.size).toBe(2);
+    world.apply({ t: 3, ev: [{ type: 'loot', loot: { ...coins, gone: true } }] });
+    expect([...world.loot.keys()]).toEqual(['l:5']);
+    expect(world.lootVersion).toBe(version + 2);
+  });
+
+  it('keeps the chest and the stalls as coin and goods move', () => {
+    const world = new ViewWorld();
+    world.reset(snapshot(1, []));
+    expect(world.economy.purse).toBe(80);
+    const chest = world.economyVersion;
+    world.apply({ t: 2, ev: [{ type: 'economy', economy: { purse: 74, food: 3, potion: 0, gift: 0, trinket: 0, relic: 0 } }] });
+    expect(world.economy).toMatchObject({ purse: 74, food: 3 });
+    expect(world.economyVersion).toBe(chest + 1);
   });
 
   it('follows the server frame for frame', () => {
