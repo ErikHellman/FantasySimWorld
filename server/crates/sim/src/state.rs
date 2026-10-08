@@ -280,21 +280,52 @@ pub struct Needs {
     pub social: f64,
 }
 
+/// What a villager keeps in their pack: food, potions and gifts of their own making, and the
+/// valuables the dead leave behind (a trinket, or a relic of the necromancer's), which are worth
+/// nothing but what the market pays for them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ItemId {
     Food,
     Potion,
     Gift,
+    Trinket,
+    Relic,
 }
 
 impl ItemId {
+    pub const ALL: [ItemId; 5] = [Self::Food, Self::Potion, Self::Gift, Self::Trinket, Self::Relic];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Food => "food",
             Self::Potion => "potion",
             Self::Gift => "gift",
+            Self::Trinket => "trinket",
+            Self::Relic => "relic",
         }
+    }
+
+    /// "2 food", "1 healing potion", "3 small gifts", "1 trinket", "2 relics".
+    pub fn label(self, count: i64) -> String {
+        let one = count == 1;
+        let noun = match self {
+            Self::Food => "food",
+            Self::Potion if one => "healing potion",
+            Self::Potion => "healing potions",
+            Self::Gift if one => "small gift",
+            Self::Gift => "small gifts",
+            Self::Trinket if one => "trinket",
+            Self::Trinket => "trinkets",
+            Self::Relic if one => "relic",
+            Self::Relic => "relics",
+        };
+        format!("{count} {noun}")
+    }
+
+    /// Whether this is something the dead leave behind, kept only to be sold.
+    pub fn is_valuable(self) -> bool {
+        matches!(self, Self::Trinket | Self::Relic)
     }
 }
 
@@ -303,6 +334,11 @@ pub struct Inventory {
     pub food: i64,
     pub potion: i64,
     pub gift: i64,
+    /// valuables from the dead, left out of a save when there are none so older saves read as they did
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub trinket: i64,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub relic: i64,
 }
 
 impl Inventory {
@@ -311,6 +347,8 @@ impl Inventory {
             ItemId::Food => self.food,
             ItemId::Potion => self.potion,
             ItemId::Gift => self.gift,
+            ItemId::Trinket => self.trinket,
+            ItemId::Relic => self.relic,
         }
     }
 
@@ -319,13 +357,21 @@ impl Inventory {
             ItemId::Food => &mut self.food,
             ItemId::Potion => &mut self.potion,
             ItemId::Gift => &mut self.gift,
+            ItemId::Trinket => &mut self.trinket,
+            ItemId::Relic => &mut self.relic,
         }
+    }
+
+    /// How many valuables are in the pack.
+    pub fn valuables(&self) -> i64 {
+        self.trinket + self.relic
     }
 }
 
 /// Raw materials: what felling, mining and taking things apart yield, and what building costs. They
 /// are counted, not carried as items, and move between villagers' arms and the village's stockpiles.
-/// Coin, when it comes, is one more variant here.
+/// Coin is not one of them: it is `Character.gold`, so that neither the arms' cap nor a stockpile's
+/// holds it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Resource {
@@ -829,6 +875,9 @@ pub struct Character {
     /// raw materials in their arms, on the way to a stockpile or a building site
     #[serde(default, skip_serializing_if = "Store::is_empty")]
     pub carried: Store,
+    /// coin in their purse; see `systems::economy`
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub gold: i64,
 
     pub plan: Vec<PlanBlock>,
     pub plan_day: i64,
@@ -1397,6 +1446,7 @@ pub enum ChronicleKind {
     Death,
     Arrival,
     Fire,
+    Trade,
 }
 
 impl ChronicleKind {
@@ -1410,6 +1460,7 @@ impl ChronicleKind {
             Self::Death => "death",
             Self::Arrival => "arrival",
             Self::Fire => "fire",
+            Self::Trade => "trade",
         }
     }
 }
@@ -1522,9 +1573,73 @@ pub struct SimState {
     /// what the village is building; see [`Project`]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projects: Vec<Project>,
+    /// the village's chest and the market's stalls; see [`Economy`] and `systems::economy`
+    #[serde(default, skip_serializing_if = "Economy::is_default")]
+    pub economy: Economy,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
+}
+
+/// The coin side of the village: the chest the market pays from and is paid into, and the goods
+/// on its stalls. A world that has never traded holds the starting chest and nothing on the
+/// stalls, and is left out of a save, so older saves read as they did.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Economy {
+    /// the village chest: what the market pays wages and purchases from, and takes sales into
+    pub purse: i64,
+    /// the goods on the market's stalls, by item; zero counts are not kept
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub stock: IndexMap<ItemId, i64>,
+}
+
+impl Default for Economy {
+    fn default() -> Self {
+        Self { purse: crate::data::economy::STARTING_PURSE, stock: IndexMap::new() }
+    }
+}
+
+impl Economy {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn in_stock(&self, item: ItemId) -> i64 {
+        self.stock.get(&item).copied().unwrap_or(0)
+    }
+
+    /// Puts goods on the stalls.
+    pub fn stock_up(&mut self, item: ItemId, count: i64) {
+        if count > 0 {
+            *self.stock.entry(item).or_insert(0) += count;
+        }
+    }
+
+    /// Takes up to `count` off the stalls; returns how many came off.
+    pub fn take_stock(&mut self, item: ItemId, count: i64) -> i64 {
+        let have = self.in_stock(item);
+        let taken = count.min(have).max(0);
+        if taken > 0 {
+            if taken == have {
+                self.stock.shift_remove(&item);
+            } else {
+                self.stock[&item] -= taken;
+            }
+        }
+        taken
+    }
+
+    /// "4 food and 2 small gifts": what the stalls hold, in a fixed order.
+    pub fn describe_stock(&self) -> String {
+        let parts: Vec<String> =
+            ItemId::ALL.into_iter().filter(|&i| self.in_stock(i) > 0).map(|i| i.label(self.in_stock(i))).collect();
+        match parts.len() {
+            0 => "nothing".into(),
+            1 => parts[0].clone(),
+            n => format!("{} and {}", parts[..n - 1].join(", "), parts[n - 1]),
+        }
+    }
 }
 
 /// What a ceremony is for: a couple to be wed, or the dead to be buried.

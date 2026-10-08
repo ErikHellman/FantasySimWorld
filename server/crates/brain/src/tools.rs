@@ -101,7 +101,7 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
     give: tool(
         "give",
         "Walk up to someone and give them something you are carrying.",
-        json!({ "person": person(), "item": { "type": "string", "enum": ["food", "potion", "gift"] }, "say": say(), "thought": thought() }),
+        json!({ "person": person(), "item": { "type": "string", "enum": ["food", "potion", "gift", "trinket", "relic"] }, "say": say(), "thought": thought() }),
         &["person", "item"],
     ),
     continue_: tool("continue", "Carry on with what you are already doing.", json!({ "thought": thought() }), &[]),

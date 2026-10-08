@@ -10,8 +10,8 @@ use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, Memory, MonsterPhase, Pronouns,
-    Relationship, Rite, SimState, TalkTone,
+    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory, MonsterPhase,
+    Pronouns, Relationship, Rite, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
@@ -403,7 +403,7 @@ fn capitalise(text: &str) -> String {
 fn header(state: &SimState, c: &Character) -> String {
     let time = game_time(state.tick);
     let inv = &c.inventory;
-    let inventory = format!(
+    let mut inventory = format!(
         "{} food, {} healing potion{}, {} small gift{}",
         inv.food,
         inv.potion,
@@ -411,6 +411,12 @@ fn header(state: &SimState, c: &Character) -> String {
         inv.gift,
         if inv.gift == 1 { "" } else { "s" }
     );
+    for item in [ItemId::Trinket, ItemId::Relic] {
+        if inv.get(item) > 0 {
+            inventory.push_str(&format!(", {}", item.label(inv.get(item))));
+        }
+    }
+    inventory.push_str(&format!(", and {} gold", c.gold));
     let monsters: Vec<_> = state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).collect();
     let danger = if monsters.is_empty() {
         "All is quiet: there are no monsters about.".to_owned()
@@ -437,7 +443,23 @@ fn header(state: &SimState, c: &Character) -> String {
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
+    lines.extend(market_line(state));
     lines.join("\n")
+}
+
+/// What the market's stalls hold and what the village chest holds, while the stalls hold anything.
+/// Empty otherwise, so a village that has never traded reads as it did and the line costs no room
+/// until there is something to buy.
+fn market_line(state: &SimState) -> Option<String> {
+    let economy = &state.economy;
+    if economy.stock.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "The market stalls hold {}; the village chest holds {} gold.",
+        economy.describe_stock(),
+        economy.purse
+    ))
 }
 
 /// "today" or "tomorrow", and the clock, for the hour a ceremony is held.

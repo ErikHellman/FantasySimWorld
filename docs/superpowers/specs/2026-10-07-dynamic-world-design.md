@@ -53,6 +53,6 @@ Headless, `cargo run --release -p fsw-sim --bin soak -- 60 <seed>` on seeds 1 to
 
 - No new places or homes: a `Place` is static on both sides, so a bigger village means a layout change in both twins. Small cottages grow instead.
 - Trees do not burn and fire does not spread; the field is there for later.
-- No coin and no trade: the stores fill and stay full once the pads are built. That saturation is the next thing an economy needs, and the `Resource` enum is where coin goes.
+- Coin and trade came later, on top of the materials: see [the economy design](2026-10-08-economy-design.md). The stores no longer saturate, because a passing trader buys the market's surplus.
 - No new sounds (a chop, a fall, a crash) and no new models: saplings are scaled trees, ash is dark discs, scaffolding is boxes.
 - The routines never dismantle or (but for the spiteful at the lethal rung) burn; only the model does, so a village without one keeps its buildings.

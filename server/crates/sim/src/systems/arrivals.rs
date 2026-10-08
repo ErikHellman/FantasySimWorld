@@ -6,6 +6,7 @@ use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
 use crate::data::children::{BIRTHDAY_DAYS, CHILD_HOBBIES, CHILD_HP_FRACTION, child_look};
+use crate::data::economy::starting_gold;
 use crate::events::SimEvent;
 use crate::state::{
     Bond, Character, Childhood, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource,
@@ -91,8 +92,10 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         moving: false,
         hp: if look.is_some() { def.max_hp * CHILD_HP_FRACTION } else { def.max_hp },
         needs,
-        inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0 },
+        inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0, trinket: 0, relic: 0 },
         carried: Default::default(),
+        // A fixed sum by trade, not a roll, so the founding draws from the RNG as it always did.
+        gold: if look.is_some() { 0 } else { starting_gold(entry.class_id) },
         last_arson_tick: 0,
         plan: Vec::new(),
         plan_day: 0,

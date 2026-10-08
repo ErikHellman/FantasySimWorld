@@ -19,6 +19,7 @@ use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
+use crate::systems::economy::update_economy;
 use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
@@ -353,6 +354,7 @@ impl Sim {
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_world(&mut ctx);
+        update_economy(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

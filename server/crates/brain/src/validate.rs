@@ -319,6 +319,8 @@ fn item(value: Option<&Value>) -> Option<ItemId> {
         Some("food") => Some(ItemId::Food),
         Some("potion") => Some(ItemId::Potion),
         Some("gift") => Some(ItemId::Gift),
+        Some("trinket") => Some(ItemId::Trinket),
+        Some("relic") => Some(ItemId::Relic),
         _ => None,
     }
 }

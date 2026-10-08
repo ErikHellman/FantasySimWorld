@@ -8,6 +8,7 @@ use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
+use crate::data::economy::price;
 use crate::events::{Emote, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::CARRY_CAP;
@@ -20,6 +21,7 @@ use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
+use crate::systems::economy::{buy_at_market, describe_gold, describe_goods, sell_to_market};
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
@@ -466,15 +468,51 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             }
         }
         ActivityId::Shop => {
-            let item = if c.inventory.food < 2 { ItemId::Food } else { ItemId::Gift };
-            give(c, item);
-            let what = if item == ItemId::Food { "some food" } else { "a small gift" };
-            finish(ctx, id, format!("You picked up {what} at the market."));
+            // Food when the pack is short of it, a potion for a fighter without one, else a small gift:
+            // whichever the stalls have and the shopper can pay for.
+            let fighter = c.profile.bravery >= 0.6;
+            let wants = [
+                (ItemId::Food, c.inventory.food < 2),
+                (ItemId::Potion, fighter && c.inventory.potion == 0),
+                (ItemId::Gift, true),
+            ];
+            let mut outcome = None;
+            for (item, wanted) in wants {
+                if !wanted {
+                    continue;
+                }
+                let in_stock = ctx.state.economy.in_stock(item);
+                if in_stock > 0 && ctx.cr(id).gold >= price(item, in_stock) {
+                    let paid = buy_at_market(ctx, id, item).unwrap_or(0);
+                    outcome =
+                        Some(format!("You bought {} at the market for {}.", describe_item(item), describe_gold(paid)));
+                    break;
+                }
+            }
+            let outcome = outcome.unwrap_or_else(|| {
+                if ctx.state.economy.stock.is_empty() {
+                    "The market stalls were bare.".to_owned()
+                } else {
+                    "You could not afford anything on the stalls.".to_owned()
+                }
+            });
+            finish(ctx, id, outcome);
         }
         ActivityId::Drink => {
             set_anim(c, AnimId::Idle, false);
             finish(ctx, id, format!("You finished {}.", def.verb));
             after_drink(ctx, id);
+        }
+        ActivityId::Trade => {
+            // A shift at the stall ends with the surplus of the pack sold onto it.
+            set_anim(c, AnimId::Idle, false);
+            let (sold, earned) = sell_to_market(ctx, id);
+            let outcome = if sold.is_empty() {
+                format!("You finished {}.", def.verb)
+            } else {
+                format!("You sold {} for {}.", describe_goods(&sold), describe_gold(earned))
+            };
+            finish(ctx, id, outcome);
         }
         _ => {
             set_anim(c, AnimId::Idle, false);
@@ -637,11 +675,13 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
     travel(tick, c, None);
 }
 
-fn describe_item(item: ItemId) -> &'static str {
+pub fn describe_item(item: ItemId) -> &'static str {
     match item {
         ItemId::Food => "some food",
         ItemId::Potion => "a healing potion",
         ItemId::Gift => "a small gift",
+        ItemId::Trinket => "a trinket",
+        ItemId::Relic => "a relic",
     }
 }
 

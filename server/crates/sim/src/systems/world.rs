@@ -27,6 +27,7 @@ use crate::state::{
     Intent, IntentAction, IntentSource, MemoryKind, Project, ProjectKind, PropStage, Quirk, Resource, RockStage,
     SimState, StimulusKind, Store, TreeStage, WorldJob, WorldObject,
 };
+use crate::systems::economy::{describe_gold, pay_wages};
 use crate::systems::fire;
 use crate::systems::intents::{finish, leave_building, travel, travel_to};
 use crate::util::{Ctx, first_name, join_names, living, living_ids, place_name_at, set_anim};
@@ -1117,7 +1118,15 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
             if put.is_empty() {
                 format!("There was no room left at {place} for what you carried.")
             } else {
-                format!("You put {} down at {place}.", put.describe())
+                // The village pays for what it is given, while the chest holds anything.
+                match pay_wages(ctx, id, &put) {
+                    0 => {
+                        format!("You put {} down at {place}; the chest was empty, so nobody paid you.", put.describe())
+                    }
+                    paid => {
+                        format!("You put {} down at {place} and were paid {}.", put.describe(), describe_gold(paid))
+                    }
+                }
             }
         }
         WorldJob::Build => {

@@ -1,4 +1,4 @@
-import type { Billboard, Ceremony, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, Stockpile, TickFrame, WorldObject } from '../generated/api';
+import type { Billboard, Ceremony, Dyn, DynDelta, Economy, Entity, EntityKind, Grave, House, Look, Snapshot, Stockpile, TickFrame, WorldObject } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -88,6 +88,10 @@ export class ViewWorld {
   readonly stockpiles = new Map<string, Stockpile>();
   /** bumped when a stockpile changes */
   stockpilesVersion = 0;
+  /** the village chest and what the market's stalls hold */
+  economy: Economy = { purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 };
+  /** bumped when coin or goods move */
+  economyVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -110,6 +114,8 @@ export class ViewWorld {
     this.stockpiles.clear();
     for (const pile of snapshot.stockpiles) this.stockpiles.set(pile.place, pile);
     this.stockpilesVersion++;
+    this.economy = snapshot.economy;
+    this.economyVersion++;
   }
 
   /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
@@ -139,6 +145,9 @@ export class ViewWorld {
         if (pile.wood + pile.stone + pile.ore === 0) this.stockpiles.delete(pile.place);
         else this.stockpiles.set(pile.place, pile);
         this.stockpilesVersion++;
+      } else if (event.type === 'economy') {
+        this.economy = event.economy;
+        this.economyVersion++;
       }
     }
   }
