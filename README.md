@@ -277,6 +277,13 @@ A few props the collection lacks at character scale (a wooden fence, wildflowers
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_props.py
 ```
 
+Draft pets, farm animals and birds in the same style are made the same way, into `tools/blender/out_animals/`, which the asset build does not bundle yet. A second script renders sheets for reviewing them (a lineup beside a villager, a farmyard, every colour and four views of each species) into `tools/blender/preview/`, using ImageMagick's `montage`:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_animals.py
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/render_animals_preview.py
+```
+
 ## Working on the code
 
 [AGENTS.md](AGENTS.md) has the rules a change has to keep (for people and coding agents alike), with more for the server in [server/AGENTS.md](server/AGENTS.md) and for the web client in [src/AGENTS.md](src/AGENTS.md).
