@@ -532,6 +532,9 @@ pub struct Relationship {
     pub last_talk_tick: i64,
     /// tick of the last thing that made this character angry at the other
     pub last_offence_tick: i64,
+    /// tick the other last stood in this character's way (`systems::blocking`); left out of saves until then
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_blocked_tick: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -974,6 +977,31 @@ pub struct Character {
     /// in good spirits after a fine tune until this tick (`systems::music`); 0 when not
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub heartened_until_tick: i64,
+    /// brushing past someone who stood in the way (`systems::blocking`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passing: Option<Passing>,
+    /// stepping out of someone's way (`systems::blocking`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidestep: Option<Sidestep>,
+}
+
+/// A walker brushing past the one who stood in their way: the two are not pushed apart until `until_tick`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Passing {
+    pub id: Id,
+    pub until_tick: i64,
+}
+
+/// A short step out of a walker's way, after which the one stepping takes up what they were doing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sidestep {
+    pub to: Vec2,
+    /// the animation to go back to once out of the way
+    pub anim: AnimId,
+    /// given up after this tick, in case something keeps them from getting there
+    pub until_tick: i64,
 }
 
 impl Character {

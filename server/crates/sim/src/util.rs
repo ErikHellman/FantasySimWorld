@@ -211,6 +211,7 @@ pub fn new_relationship() -> Relationship {
         summary: String::new(),
         last_talk_tick: -1_000_000_000,
         last_offence_tick: -1_000_000_000,
+        last_blocked_tick: None,
     }
 }
 

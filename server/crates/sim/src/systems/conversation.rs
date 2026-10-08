@@ -76,10 +76,10 @@ pub fn start_conversation(ctx: &mut Ctx, a: &str, b: &str, tone: TalkTone, opene
         c.convo_id = Some(id.clone());
         bump_epoch(c);
     }
-    // Being hailed is a reflex: stop, turn, wave. No decision needed.
+    // Being hailed is a reflex: stop, turn, wave. No decision needed. Their intent waits out the chat, so the
+    // route they were on is kept for afterwards; without it they would take themselves to have arrived.
     let bc = ctx.c(b);
     if !bc.anim.is_seated() {
-        bc.act.path.clear();
         set_anim(bc, if tone == TalkTone::Hostile { AnimId::Idle } else { AnimId::Wave }, true);
     }
     ctx.emit(SimEvent::ConversationStarted { convo_id: id.clone(), a: a.into(), b: b.into(), tone });
