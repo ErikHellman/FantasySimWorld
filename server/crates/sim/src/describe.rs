@@ -6,13 +6,20 @@ use crate::data::activities::activity;
 use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, Rite, SimState, WorldJob};
 use crate::systems::fire::home_usable;
+use crate::systems::music::{performance, venue_phrase};
 use crate::systems::quirks::reading_late;
 use crate::systems::world::describe_target;
 use crate::util::{join_names, name_of, place_name_at};
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
     let doing = doing(state, c);
-    if c.drunk(state.tick) { format!("{doing} (drunk)") } else { doing }
+    if c.drunk(state.tick) {
+        format!("{doing} (drunk)")
+    } else if c.heartened(state.tick) {
+        format!("{doing} (in good spirits)")
+    } else {
+        doing
+    }
 }
 
 fn doing(state: &SimState, c: &Character) -> String {
@@ -54,6 +61,21 @@ fn doing(state: &SimState, c: &Character) -> String {
                     format!("playing at {}", place_name_at(c.pos))
                 } else {
                     "playing".into()
+                };
+            }
+            if *id == ActivityId::Perform {
+                let venue = place_id.as_deref().filter(|p| find_place(p).is_some()).unwrap_or("tavern");
+                let where_ = venue_phrase(venue);
+                return match performance(state, &c.id) {
+                    Some(p) if c.act.phase == ActPhase::Perform => format!("{} {where_}", p.instrument.doing()),
+                    _ => {
+                        let (instrument, _) = crate::systems::music::skill_of(c);
+                        format!(
+                            "on the way to {} to {}",
+                            find_place(venue).map_or("the tavern", |p| p.name),
+                            instrument.to_do()
+                        )
+                    }
                 };
             }
             if *id == ActivityId::Rebuild {
@@ -102,6 +124,10 @@ fn doing(state: &SimState, c: &Character) -> String {
             }
         }
         IntentAction::Fetch { target_id } => format!("fetching {} home", name_of(state, target_id)),
+        IntentAction::Listen { performer_id } => match performance(state, performer_id) {
+            Some(p) => format!("listening to {} {}", name_of(state, performer_id), p.instrument.to_do()),
+            None => "listening to the music".into(),
+        },
         IntentAction::Attend { .. } => {
             let there = c.act.phase == ActPhase::Perform;
             match state.ceremony.as_ref().map(|ceremony| &ceremony.rite) {

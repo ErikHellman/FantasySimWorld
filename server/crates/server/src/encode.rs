@@ -404,6 +404,7 @@ fn emote(emote: SimEmote) -> Emote {
         SimEmote::Laugh => Emote::Laugh,
         SimEmote::BrokenHeart => Emote::BrokenHeart,
         SimEmote::Gift => Emote::Gift,
+        SimEmote::Music => Emote::Music,
     }
 }
 

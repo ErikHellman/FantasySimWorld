@@ -18,6 +18,8 @@ pub enum Emote {
     Laugh,
     BrokenHeart,
     Gift,
+    /// a note over someone singing or playing
+    Music,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

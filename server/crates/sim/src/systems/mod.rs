@@ -14,6 +14,7 @@ pub mod founding;
 pub mod intents;
 pub mod monsters;
 pub mod movement;
+pub mod music;
 pub mod needs;
 pub mod perception;
 pub mod quirks;

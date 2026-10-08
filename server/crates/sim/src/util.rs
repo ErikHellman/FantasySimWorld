@@ -335,10 +335,12 @@ pub fn is_fighting(c: &Character) -> bool {
     matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Fight { .. } | IntentAction::Flee))
 }
 
-/// Free to be approached for a chat or a gift. Nobody is drawn aside at a wedding or a funeral.
+/// Free to be approached for a chat or a gift. Nobody is drawn aside at a wedding or a funeral, nor in
+/// the middle of a song.
 pub fn is_approachable(c: &Character) -> bool {
     let attending = matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Attend { .. }));
-    is_present(c) && c.convo_id.is_none() && !is_fighting(c) && !c.combat.yielded && !attending
+    let performing = crate::systems::music::performing(c);
+    is_present(c) && c.convo_id.is_none() && !is_fighting(c) && !c.combat.yielded && !attending && !performing
 }
 
 pub fn place_name_at(pos: Vec2) -> String {

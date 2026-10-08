@@ -598,6 +598,10 @@ pub enum IntentAction {
     Attend {
         place_id: String,
     },
+    /// stands in the audience while someone sings or plays, until the music stops
+    Listen {
+        performer_id: Id,
+    },
     /// changes the world: fells a tree, mines a rock, digs, mows, takes something apart, sets it alight,
     /// builds, or carries materials to where they are kept. `target` is an object id, a hex id, a project
     /// id or a stockpile's place id, as the job needs
@@ -660,6 +664,7 @@ impl IntentAction {
             Self::FightFire { .. } => "fight_fire",
             Self::Fetch { .. } => "fetch",
             Self::Attend { .. } => "attend",
+            Self::Listen { .. } => "listen",
             Self::WorldWork { .. } => "world_work",
         }
     }
@@ -670,7 +675,8 @@ impl IntentAction {
             | Self::Give { target_id, .. }
             | Self::Fight { target_id, .. }
             | Self::Stalk { target_id }
-            | Self::Fetch { target_id } => Some(target_id),
+            | Self::Fetch { target_id }
+            | Self::Listen { performer_id: target_id } => Some(target_id),
             _ => None,
         }
     }
@@ -765,6 +771,8 @@ pub enum StimulusKind {
     Wrath,
     /// a birth, a child coming of age, or a child's mischief reported to those who raise them
     Family,
+    /// music heard or made: how a performance went, for the performer and the people who listened
+    Music,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -890,9 +898,20 @@ pub struct Character {
     /// set while this character is a child
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child: Option<Childhood>,
+    /// what practice has made of this character's music; left out of a save until they first perform
+    #[serde(default, skip_serializing_if = "MusicState::is_default")]
+    pub music: MusicState,
+    /// in good spirits after a fine tune until this tick (`systems::music`); 0 when not
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub heartened_until_tick: i64,
 }
 
 impl Character {
+    /// Heartened by music at this tick: lighter on their feet, quicker to heal, braver.
+    pub fn heartened(&self, tick: i64) -> bool {
+        tick < self.heartened_until_tick
+    }
+
     pub fn has(&self, quirk: Quirk) -> bool {
         self.quirks.contains(&quirk)
     }
@@ -916,6 +935,108 @@ impl Character {
     pub fn married(&self) -> bool {
         self.spouse_id.is_some()
     }
+}
+
+/// What a villager sings or plays. Which one, and how well, follows from who they are (`systems::music::talent`);
+/// nothing about it is drawn from the RNG, so a village lives exactly as it did before music until someone plays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Instrument {
+    Voice,
+    Lute,
+    Fiddle,
+    Pipe,
+    Drum,
+}
+
+impl Instrument {
+    pub const ALL: [Instrument; 5] = [Self::Voice, Self::Lute, Self::Fiddle, Self::Pipe, Self::Drum];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Voice => "voice",
+            Self::Lute => "lute",
+            Self::Fiddle => "fiddle",
+            Self::Pipe => "pipe",
+            Self::Drum => "drum",
+        }
+    }
+
+    /// "sang" or "played the lute".
+    pub fn did(self) -> &'static str {
+        match self {
+            Self::Voice => "sang",
+            Self::Lute => "played the lute",
+            Self::Fiddle => "played the fiddle",
+            Self::Pipe => "played the pipe",
+            Self::Drum => "beat the drum",
+        }
+    }
+
+    /// "singing" or "playing the lute".
+    pub fn doing(self) -> &'static str {
+        match self {
+            Self::Voice => "singing",
+            Self::Lute => "playing the lute",
+            Self::Fiddle => "playing the fiddle",
+            Self::Pipe => "playing the pipe",
+            Self::Drum => "beating the drum",
+        }
+    }
+
+    /// "sing" or "play the lute".
+    pub fn to_do(self) -> &'static str {
+        match self {
+            Self::Voice => "sing",
+            Self::Lute => "play the lute",
+            Self::Fiddle => "play the fiddle",
+            Self::Pipe => "play the pipe",
+            Self::Drum => "beat the drum",
+        }
+    }
+}
+
+/// Bookkeeping for music, kept with the character so practice survives a save.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicState {
+    /// performances given; each one makes the next a little better, up to a point
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub performances: i64,
+    /// the day they last performed, so nobody sings twice in one evening of their own accord
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_day: i64,
+}
+
+impl MusicState {
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// Someone singing or playing in public right now, from the first note to the last. One per performer,
+/// in `SimState.performances`; removed when the music stops.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Performance {
+    pub performer_id: Id,
+    pub instrument: Instrument,
+    /// how well it is going, 0..1, settled when the first note sounds
+    pub quality: f64,
+    /// what they are playing, for the chronicle ("a ballad of the old road")
+    pub tune: String,
+    /// where: the tavern or the green
+    pub place_id: String,
+    /// where the performer stands
+    pub pos: Vec2,
+    pub since_tick: i64,
+    pub until_tick: i64,
+    /// everyone who has heard a minute of it, in the order they came within earshot
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listeners: Vec<Id>,
+    /// when the audience next shows what it thinks
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_reaction_tick: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1522,6 +1643,9 @@ pub struct SimState {
     /// what the village is building; see [`Project`]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projects: Vec<Project>,
+    /// who is singing or playing in public right now; see [`Performance`]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub performances: Vec<Performance>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,

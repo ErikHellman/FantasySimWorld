@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import type { Emote } from '../generated/api';
 
 const EMOTE_GLYPH: Record<Emote, string> = {
-  heart: '❤', anger: '💢', alert: '❗', thinking: '…', sleep: '💤', grief: '💧', laugh: '😄', broken_heart: '💔', gift: '🎁',
+  heart: '❤', anger: '💢', alert: '❗', thinking: '…', sleep: '💤', grief: '💧', laugh: '😄', broken_heart: '💔', gift: '🎁', music: '🎵',
 };
 
 interface Label {

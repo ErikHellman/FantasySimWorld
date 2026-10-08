@@ -18,6 +18,7 @@ use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
 use crate::systems::fire::ruin_to_rebuild;
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
+use crate::systems::music::talent;
 use crate::systems::quirks::{NAP_HOURS, NAP_NOTE, STUDY_NOTE};
 use crate::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, brawl_unlocked, lethal_unlocked};
 use crate::systems::world::{building_id, job_accepts, job_for_block};
@@ -87,6 +88,16 @@ pub fn routine_plan(ctx: &mut Ctx, id: &str) -> Vec<PlanBlock> {
         plan[6].activity = ActivityId::Drink;
         if ctx.chance(0.3) {
             plan[4].activity = ActivityId::Drink;
+        }
+    }
+    // A musician sings or plays of an evening now and then, and on a free afternoon less often. Drawn only
+    // for those with a talent, so everyone else's day falls as it always did.
+    if let Some(talent) = talent(ctx.cr(id)) {
+        let draw = 0.3 + sociability * 0.3 + if talent.skill >= 0.6 { 0.15 } else { 0.0 };
+        if ctx.chance(draw) {
+            plan[6].activity = ActivityId::Perform;
+        } else if activity(plan[4].activity).kind == ActivityKind::Leisure && ctx.chance(0.15) {
+            plan[4].activity = ActivityId::Perform;
         }
     }
     if occultist && ctx.chance(0.4) {
@@ -378,6 +389,10 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     }
     if block.activity == ActivityId::Eat && c.needs.hunger > 78.0 {
         return Some(act(ActivityId::Stroll, Some(remaining.min(25.0)), None));
+    }
+    // One performance an evening is enough of anyone's own accord; the rest of the block goes on a drink.
+    if block.activity == ActivityId::Perform && c.music.last_day == ctx.time.day {
+        return Some(act(ActivityId::Drink, Some(remaining.min(60.0)), None));
     }
     if block.note.as_deref() == Some(NAP_NOTE) && NAP_HOURS.contains(&hour) && c.needs.energy < 90.0 {
         let minutes = remaining.min(ctx.range(40.0, 90.0));

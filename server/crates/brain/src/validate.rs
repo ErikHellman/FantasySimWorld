@@ -108,6 +108,14 @@ const ACTIVITY_ALIASES: &[(&str, ActivityId)] = {
         ("herbs", Forage),
         ("gather", Forage),
         ("foraging", Forage),
+        ("sing", Perform),
+        ("singing", Perform),
+        ("song", Perform),
+        ("music", Perform),
+        ("busk", Perform),
+        ("lute", Perform),
+        ("fiddle", Perform),
+        ("performing", Perform),
         ("guard", Watch),
         ("patrol", Watch),
         ("campfire", Relax),
@@ -207,6 +215,10 @@ pub fn resolve_activity(value: Option<&Value>) -> Option<ActivityId> {
     let offered = |text: &str| ActivityId::parse(text).filter(|id| ActivityId::OFFERED.contains(id));
     if let Some(id) = offered(&wanted) {
         return Some(id);
+    }
+    // "play music" is a song, not a child's game: settled before the word by word pass sees "play".
+    if wanted.split('_').any(|word| matches!(word, "music" | "sing" | "song" | "tune")) {
+        return Some(ActivityId::Perform);
     }
     for word in wanted.split('_') {
         if let Some(id) = offered(word) {
