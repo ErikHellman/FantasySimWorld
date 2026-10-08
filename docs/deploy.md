@@ -56,6 +56,12 @@ Secrets (`fly secrets set NAME=value`):
 | `EMBED_API_KEY` | Optional: the embedding endpoint's key. Read at every start and never stored in the database or sent to a browser. |
 | `BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Optional: Litestream backups (set by `fly storage create`) |
 
+An app set up before guest seats replaced sign-in still carries the old settings as secrets, and the server refuses to start with them (`AUTH_MODE must be token or off, got "oidc"` in `fly logs`). Remove them once (`AUTH_MODE` alone is enough for the server; the others, including each provider's client id and secret, are simply unused), making sure `AUTH_TOKEN` is set:
+
+```bash
+fly secrets unset AUTH_MODE AUTH_PROVIDERS ADMIN_EMAILS GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET
+```
+
 Plain settings (in `fly.toml` under `[env]`): `PORT` (8080), `DATA_DIR` (`/data`), `MAX_VIEWERS` (25: how many people may watch at once, the rest waiting in line; `0` for no cap), `TRUST_PROXY=true` (take the visitor's address from `Fly-Client-IP` for the rate limit on the token and guest routes; only behind a proxy that sets it), `INITIAL_SPEED` (0, 1, 2 or 4: the speed of a brand-new world; afterwards the speed an admin chose is kept), `LOG_FORMAT` (`json`, or `pretty` for people), `RUST_LOG` (`info` by default).
 
 The language model (`LLM_BASE_URL`, `LLM_MODEL` and the tuning variables `LLM_CONCURRENCY`, `LLM_REQUESTS_PER_MINUTE`, `LLM_MAX_REQUESTS_PER_DAY`, `LLM_MAX_TOKENS_PER_DAY`, `LLM_PROTOCOL`, `LLM_CONVERSATIONS`, `LLM_REASONING`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`) is configured only here, either under `[env]` or as secrets. The admin panel can show and test it but not change it. Without `LLM_BASE_URL` and `LLM_MODEL` the model is off. All the variables and their defaults are in the [README](../README.md#connecting-a-language-model). A change takes effect when the machine restarts, which `fly secrets set` does on its own. Memory by meaning is set the same way, with `EMBED_BASE_URL` and `EMBED_MODEL` (and `EMBED_API_KEY` as a secret); see the [README](../README.md#memory-by-meaning).
