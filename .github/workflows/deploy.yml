@@ -51,7 +51,16 @@ jobs:
           --ha=false
           --image-label "git-${GITHUB_SHA::12}"
           --wait-timeout 5m
+      # Fly's proxy holds a request for minutes while it tries to start a machine that keeps crashing, so cap each
+      # attempt: a server that refuses its settings fails this step in a few minutes rather than an hour.
       - name: Check /healthz
         env:
           URL: ${{ steps.app.outputs.url }}
-        run: curl --fail --silent --show-error --retry 10 --retry-delay 3 --retry-all-errors "$URL/healthz"
+        run: curl --fail --silent --show-error --max-time 20 --retry 10 --retry-delay 3 --retry-all-errors "$URL/healthz"
+      # When the check fails, the reason is almost always in the machine's log (a setting the server refuses,
+      # a missing volume); show it here so nobody has to open `fly logs` to find out.
+      - name: Show the machine's log
+        if: failure()
+        env:
+          APP: ${{ steps.app.outputs.name }}
+        run: flyctl logs --app "$APP" --no-tail | tail -n 60
