@@ -15,6 +15,7 @@ use crate::state::{
 use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, free_grave_plot, kill_character};
+use crate::systems::economy::drop_loot;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::relationships::{RelationDelta, adjust};
@@ -220,6 +221,7 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
     set_anim(m, AnimId::SkeletonDeath, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
+    drop_loot(ctx, monster_id, kind, pos, attacker);
     let where_ = place_name_at(pos);
     let necromancer = kind == MonsterKind::Necromancer;
     ctx.remember(

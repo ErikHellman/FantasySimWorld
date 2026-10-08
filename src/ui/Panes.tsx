@@ -14,7 +14,7 @@ const SPEEDS = [
 
 // ️ asks for the colour emoji form; without it some of these fall back to plain text glyphs.
 const KIND_ICON: Record<string, string> = {
-  world: '☀️', social: '💬', romance: '❤️', conflict: '⚡', combat: '⚔️', death: '🪦', arrival: '🚶', fire: '🔥',
+  world: '☀️', social: '💬', romance: '❤️', conflict: '⚡', combat: '⚔️', death: '🪦', arrival: '🚶', fire: '🔥', trade: '🪙',
 };
 
 const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔️', sleep: '💤', talk: '💬', hurt: '🩹' };

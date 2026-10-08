@@ -626,6 +626,9 @@ fn a_small_cottage_is_made_bigger_and_has_a_bed_more() {
         work: 0.0,
         since_tick: sim.state.tick,
         helpers: Vec::new(),
+        sponsor: None,
+        price: 0,
+        pad_kind: None,
     });
     assert!(job_accepts(&sim.state, WorldJob::Build, &id));
     let done = |state: &SimState| project(state, &id).is_none();

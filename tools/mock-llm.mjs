@@ -56,6 +56,19 @@ function decide(names, user) {
   const placeList = between(user, 'Places: ', '.').split(', ').filter(Boolean);
   const activities = [...between(user, 'Activities: ', '\n').matchAll(/(\w+) \(/g)].map((m) => m[1]);
   const roll = Math.random();
+  // The economy's tools, when the message offers them: now and then, so the real paths get exercised.
+  if (names.includes('pick_up') && roll < 0.5) {
+    const loot = /\(pick_up\): ([^;.]+)/.exec(user)?.[1] ?? 'the coins';
+    return [{ name: 'pick_up', args: { what: loot, thought: 'Waste not.' } }];
+  }
+  const deal = /\(trade\): (buy|sell) (?:a |an )?(\w+) (?:from|to) (\w+)/.exec(user);
+  if (names.includes('trade') && deal && roll < 0.3) {
+    return [{ name: 'trade', args: { person: deal[3], item: deal[2], deal: deal[1], say: 'A fair price, I think.' } }];
+  }
+  if (names.includes('commission') && roll < 0.4) {
+    const what = /\(commission\): ([^;.(]+)/.exec(user)?.[1]?.trim() ?? 'a new room';
+    return [{ name: 'commission', args: { what, thought: 'Time I had something to show for the coin.' } }];
+  }
   if (names.includes('talk_to') && nearby.length > 0 && roll < 0.35) {
     return [{ name: 'talk_to', args: { person: pick(nearby), message: pick(OPENERS), tone: Math.random() < 0.12 ? 'hostile' : 'friendly', thought: pick(THOUGHTS) } }];
   }

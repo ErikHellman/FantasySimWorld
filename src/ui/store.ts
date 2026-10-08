@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Economy, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   SiteDetail, Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
@@ -95,6 +95,8 @@ export const ui = {
   ceremony: signal<Ceremony | null>(null),
   /** the materials the village has put by, for the places that hold any */
   stockpiles: signal<Stockpile[]>([]),
+  /** the village chest and what the market's stalls hold */
+  economy: signal<Economy>({ purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }),
   /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
   fires: signal<WorldObject[]>([]),
   panel: signal<Panel>('none'),
@@ -165,6 +167,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.houses.value = snapshot.houses;
   ui.ceremony.value = snapshot.ceremony;
   ui.stockpiles.value = snapshot.stockpiles;
+  ui.economy.value = snapshot.economy;
   ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
@@ -207,6 +210,11 @@ export function setCeremony(ceremony: Ceremony): void {
 export function setStockpile(pile: Stockpile): void {
   const others = ui.stockpiles.value.filter((entry) => entry.place !== pile.place);
   ui.stockpiles.value = pile.wood + pile.stone + pile.ore === 0 ? others : [...others, pile];
+}
+
+/** Coin moved through the village chest, or goods on or off the market's stalls. */
+export function setEconomy(economy: Economy): void {
+  ui.economy.value = economy;
 }
 
 /** A thing of the world caught fire or stopped burning. */

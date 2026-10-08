@@ -197,6 +197,8 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
             food: c.inventory.food.max(0) as u32,
             potion: c.inventory.potion.max(0) as u32,
             gift: c.inventory.gift.max(0) as u32,
+            trinket: c.inventory.trinket.max(0) as u32,
+            relic: c.inventory.relic.max(0) as u32,
         },
         carried: Goods {
             wood: c.carried.get(Resource::Wood).max(0) as u32,
@@ -206,6 +208,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
         home: find_place(&c.home_id).map_or(c.home_id.clone(), |place| place.name.into()),
         homeless: is_homeless(state, c),
         spouse: c.spouse_id.as_deref().map(|spouse| name_of(state, spouse)),
+        gold: c.gold.max(0) as u32,
         kills: c.kills.max(0) as u32,
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),
@@ -308,7 +311,7 @@ pub fn site_of(state: &SimState, id: &str) -> Option<SiteDetail> {
                     && p.target.split('/').next() == Some(place.id.as_str()))
         })
         .map(|p| SiteProject {
-            label: project_label(p),
+            label: project_label(state, p),
             helpers: p.helpers.iter().filter_map(|h| state.characters.get(h)).map(person).collect(),
             needs: p
                 .cost
@@ -446,6 +449,9 @@ mod tests {
             work: 25.0,
             since_tick: 5,
             helpers: vec!["c1".into()],
+            sponsor: None,
+            price: 0,
+            pad_kind: None,
         });
         state.chronicle.push(SimChronicleEntry {
             tick: 9,

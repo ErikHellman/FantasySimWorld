@@ -111,6 +111,7 @@ fn main() {
             "deaths": state.dead.iter().map(|(id, r)| json!({"id": id, "name": r.name, "day": r.day, "cause": r.cause})).collect::<Vec<Value>>(),
             "chronicleKinds": kinds,
             "stockpiles": state.stockpiles,
+            "economy": state.economy,
             "objects": state.objects.len(),
             "characters": living(state).map(|c| json!({
                 "id": c.id,
@@ -123,6 +124,7 @@ fn main() {
                 "memories": c.memories.len(),
                 "inventory": c.inventory,
                 "carried": c.carried,
+                "gold": c.gold,
                 "partner": c.partner_id,
                 "labels": labels_of(&c.id),
             })).collect::<Vec<Value>>(),
@@ -138,6 +140,7 @@ fn main() {
             writeln!(out, "  † {}, day {}: {}", record.name, record.day, record.cause).unwrap();
         }
         writeln!(out, "chronicle kinds (last 600) {kinds:?}").unwrap();
+        writeln!(out, "chest {} gold, stalls hold {}", state.economy.purse, state.economy.describe_stock()).unwrap();
         for c in living(state) {
             let partner = c
                 .partner_id
@@ -146,7 +149,7 @@ fn main() {
                 .map_or(String::new(), |p| format!(" ♥{}", p.profile.name));
             writeln!(
                 out,
-                "{:<20} hp {:>3} hunger {:>3} energy {:>3} social {:>3} kills {} mem {} food {} potion {} gift {}{partner} {:?}",
+                "{:<20} hp {:>3} hunger {:>3} energy {:>3} social {:>3} kills {} mem {} food {} potion {} gift {} gold {}{partner} {:?}",
                 c.profile.name,
                 c.hp.round(),
                 c.needs.hunger.round(),
@@ -157,6 +160,7 @@ fn main() {
                 c.inventory.food,
                 c.inventory.potion,
                 c.inventory.gift,
+                c.gold,
                 labels_of(&c.id)
             )
             .unwrap();
