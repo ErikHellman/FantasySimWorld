@@ -30,7 +30,10 @@ function TopBar() {
   const connection = ui.connection.value;
   return (
     <header class="topbar">
-      <div class="brand">Fantasy Sim World</div>
+      <div class="brand">
+        <img class="mark" src="/favicon.svg" alt="" width="22" height="22" />
+        Fantasy Sim World
+      </div>
       <div class="clock" title={clock.part}>
         <span class="clock-day">Day {clock.day}</span>
         <span class="clock-time">{clock.time}</span>
@@ -107,6 +110,7 @@ function StartOverlay() {
   return (
     <div class="start">
       <div class="start-card">
+        <img class="mark" src="/favicon.svg" alt="" width="72" height="72" />
         <h1>Fantasy Sim World</h1>
         <p>
           A small village in a valley. Its people work, eat, gossip, fall out and fall in love, and at night the dead in the
