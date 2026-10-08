@@ -11,7 +11,7 @@ One shared village runs on a Rust server; browsers only watch it.
 - Every type that crosses the wire is a Rust struct in `server/crates/server/src/api/wire.rs`, exported to `src/generated/api.ts`.
 - The TypeScript simulation and brain the Rust port was checked against live only at the `ts-sim-reference` tag. Comments in the crates that name `src/sim/…`, `src/brain/…` or `tools/…` files that no longer exist refer to that tag. Do not bring those folders back to `src/`.
 
-Design and history: [the design](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md) (read its "Since the server migration" section first) and [the migration plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md) (its "Progress" section records what was built, measured and left open).
+Design and history: [the design](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md) (read its "Since the server migration" section first) and [the migration plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md) (its "Progress" section records what was built, measured and left open). Each later feature (billboards, house fires, combat, a world that changes, children, weddings and funerals, coin) has its own note beside them in `docs/superpowers/specs/`, with where it lives in the code and what was left out on purpose; read the one for the area you are changing.
 
 ## Commands
 
@@ -62,6 +62,6 @@ Fixtures from the TypeScript reference that cannot be regenerated on this branch
 - Match the code around you: names, comment density and idiom. Comments explain why, in full sentences; doc comments on public items say what a thing is for.
 - Rust: edition 2024, `rustfmt.toml` sets a 120-column width. `unsafe` is forbidden and `clippy::await_holding_lock` is denied workspace-wide.
 - TypeScript: strict mode with `noUncheckedIndexedAccess`; ES modules with `verbatimModuleSyntax` (`import type` for types); Preact with signals for UI state.
-- Docs are plain prose for someone running or changing the game: British spelling, no jargon where a plain word works. Keep [README.md](README.md), [docs/deploy.md](docs/deploy.md) and [docs/sign-in.md](docs/sign-in.md) true when behaviour, settings or commands change.
+- Docs are plain prose for someone running or changing the game: British spelling, no jargon where a plain word works. Keep [README.md](README.md), [docs/deploy.md](docs/deploy.md) and [docs/sign-in.md](docs/sign-in.md) true when behaviour, settings or commands change. So are the in-game help (`src/ui/Help.tsx`) and its tour of the tech (`src/ui/About.tsx`): a change to what a viewer sees or what the village does goes into them too.
 - Commit subjects are one imperative sentence that says what changed ("Configure the language model from server environment variables only").
 - Never commit `.env` or anything with secrets in it; `.env` is git-ignored and nothing loads it automatically.
