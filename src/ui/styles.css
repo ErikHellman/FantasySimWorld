@@ -96,6 +96,12 @@ body {
   background: var(--bad);
 }
 
+.tag.ghost .tag-name {
+  background: rgba(150, 180, 220, 0.45);
+  color: #eef6ff;
+  font-style: italic;
+}
+
 .tag-bubble {
   max-width: 230px;
   padding: 6px 10px;

@@ -57,6 +57,7 @@ pub fn create_state(seed: u32) -> SimState {
         economy: Default::default(),
         loot: Default::default(),
         weather: Default::default(),
+        ghosts: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

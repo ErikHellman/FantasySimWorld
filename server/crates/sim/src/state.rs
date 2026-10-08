@@ -1228,6 +1228,78 @@ pub struct Monster {
     pub blows: i64,
 }
 
+/// Where a ghost is in its few nights among the living. See `systems::ghosts`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GhostPhase {
+    /// dead, and not yet risen
+    Waiting,
+    /// walking the village by night
+    Abroad,
+    /// by its grave, unseen, until dusk
+    Resting,
+    /// at its last dawn, a moment before it is gone
+    Fading,
+}
+
+impl GhostPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Abroad => "abroad",
+            Self::Resting => "resting",
+            Self::Fading => "fading",
+        }
+    }
+}
+
+/// A villager slain by the dead who came back for a few nights: seen only after dark, a fright and a chill to
+/// whoever meets it, and harmless to the world otherwise. Nobody can fight one; it finds rest on its own.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ghost {
+    pub id: Id,
+    /// the villager it was
+    pub was_id: Id,
+    /// their full name
+    pub name: String,
+    pub look: Look,
+    pub pos: Vec2,
+    pub facing: f64,
+    pub moving: bool,
+    pub phase: GhostPhase,
+    pub since_tick: i64,
+    /// the earliest tick it may rise again
+    pub rise_tick: i64,
+    /// nights still to walk; 0 until it first rises
+    pub nights_left: i64,
+    /// where it waits by day: by its grave, or where it fell when it has none
+    pub rest: Vec2,
+    /// where it fell
+    pub fell: Vec2,
+    /// the homes it haunts: its own first, then those of the ones it loved
+    pub haunts: Vec<String>,
+    /// the living it was close to, who grieve rather than run when they see it
+    pub close: Vec<Id>,
+    pub path: Vec<Vec2>,
+    pub repath_tick: i64,
+    /// lingering where it stands until this tick
+    pub linger_until_tick: i64,
+    /// the home it lingers at, whose sleepers it troubles
+    pub lingering_at: Option<String>,
+    pub next_haunt_tick: i64,
+    /// the living one it drifts after
+    pub target_id: Option<Id>,
+    /// leaves the living alone until this tick, after it has passed through someone
+    pub calm_until_tick: i64,
+    /// who has met it, and the tick they last did
+    pub seen: IndexMap<Id, i64>,
+    /// the last night it was seen, so the chronicle tells of it once a night
+    pub sighted_night: i64,
+    pub anim: AnimId,
+    pub anim_seq: i64,
+}
+
 /// A monster's plan to burn a house while the village sleeps.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1879,6 +1951,9 @@ pub struct SimState {
     /// the weather over the valley; see [`Weather`] and `systems::weather`
     #[serde(default, skip_serializing_if = "Weather::is_default")]
     pub weather: Weather,
+    /// villagers slain by the dead who walk again for a few nights, by id (`g<n>`); see [`Ghost`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub ghosts: Map<Ghost>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,

@@ -29,6 +29,22 @@ describe('view world', () => {
     expect([...world.entities.keys()]).toEqual(['c1']);
   });
 
+  it('knows a ghost, and shows it only while the server says it walks', () => {
+    const world = new ViewWorld();
+    const ghost: Entity = {
+      static: { ...entity('g9', 3).static, kind: 'ghost', look: { model: 'Knight', texture: null, hide: [], mainHand: null, offHand: null }, maxHp: 1 },
+      dyn: { ...entity('g9', 3).dyn, hp: 1, v: false, mh: null },
+    };
+    world.reset(snapshot(1, [entity('c1', 0), ghost]));
+    expect(world.isGhost('g9')).toBe(true);
+    expect(world.isGhost('c1') || world.isMonster('g9') || world.isVillager('g9')).toBe(false);
+    expect(world.entities.get('g9')?.visible).toBe(false);
+    world.apply({ t: 2, d: [{ id: 'g9', v: true }] });
+    expect(world.entities.get('g9')?.visible).toBe(true);
+    world.apply({ t: 3, del: ['g9'] });
+    expect(world.isGhost('g9')).toBe(false);
+  });
+
   it('keys graves by plot and character, a reused plot replacing its old grave', () => {
     const world = new ViewWorld();
     world.reset({ ...snapshot(1, []), graves: [{ plot: 0, characterId: 'c1', name: 'A', day: 1, cause: 'x' }] });

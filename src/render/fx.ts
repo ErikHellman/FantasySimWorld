@@ -33,6 +33,7 @@ export class Effects {
     hit: new THREE.MeshBasicMaterial({ color: 0xfff1b0, transparent: true, depthWrite: false }),
     blood: new THREE.MeshBasicMaterial({ color: 0xff6a5c, transparent: true, depthWrite: false }),
     dust: new THREE.MeshBasicMaterial({ color: 0xcdbb94, transparent: true, depthWrite: false }),
+    mist: new THREE.MeshBasicMaterial({ color: 0xcfe6ff, transparent: true, depthWrite: false }),
   };
 
   constructor(private readonly assets: Assets) {
@@ -45,6 +46,11 @@ export class Effects {
     mesh.position.set(x, y, z);
     this.group.add(mesh);
     this.bursts.push({ mesh, age: 0, life, grow });
+  }
+
+  /** A ring of pale mist on the ground, where a ghost comes or goes. */
+  mist(x: number, y: number, z: number): void {
+    this.burst(x, y + 0.08, z, this.materials.mist, 3.5, 1.8);
   }
 
   handle(event: WireEvent, heightAt: (x: number, z: number) => number, isMonster: (id: string) => boolean): void {
