@@ -2,14 +2,14 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
 import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
 
-export type { CharacterDetail, RelationRow, RosterEntry } from '../generated/api';
+export type { CharacterDetail, Detail, MonsterDetail, RelationRow, RosterEntry } from '../generated/api';
 
 export interface AudioSlotStatus {
   id: string;
@@ -75,7 +75,8 @@ export const ui = {
   founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
   selectedId: signal<string | null>(null),
-  detail: signal<CharacterDetail | null>(null),
+  /** the inspector for whoever is selected: a villager, or one of the dead */
+  detail: signal<Detail | null>(null),
   chronicle: signal<ChronicleEntry[]>([]),
   /** older chronicle entries exist on the server */
   chronicleMore: signal(true),

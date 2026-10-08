@@ -918,6 +918,20 @@ impl Character {
     }
 }
 
+/// Where one of the dead came from. Kept for the viewer's card; nothing in the world reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MonsterOrigin {
+    Graveyard,
+    Ruins,
+    /// called up by a necromancer
+    Summoned,
+    /// raised by a villager reading what they should not
+    Raised,
+    /// a villager who gave themself to the dark
+    Turned,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MonsterPhase {
@@ -972,6 +986,22 @@ pub struct Monster {
     /// the house this monster means to set on fire
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arson: Option<Arson>,
+    // What follows is history for the viewer's card and changes nothing in the world. Saves from before it was kept
+    // load with the defaults: an unknown origin and no tally.
+    /// the tick it rose; unknown for one from an older save
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rose_tick: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<MonsterOrigin>,
+    /// the villager who raised it, for `MonsterOrigin::Raised`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raised_by: Option<Id>,
+    /// villagers it has slain
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub kills: i64,
+    /// blows it has landed on a villager
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub blows: i64,
 }
 
 /// A monster's plan to burn a house while the village sleeps.
