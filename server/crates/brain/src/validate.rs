@@ -327,6 +327,23 @@ fn item(value: Option<&Value>) -> Option<ItemId> {
     }
 }
 
+/// The commission the model named, by the words of its label ("room", "wagon", "strongbox"), else
+/// the first affordable; `None` when there is nothing to pay for.
+pub fn resolve_commission(state: &SimState, c: &Character, value: Option<&Value>) -> Option<economy::Commission> {
+    let options = economy::affordable(state, c);
+    let text = norm(value);
+    let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+    let mut best: Option<(usize, &economy::Commission)> = None;
+    for option in &options {
+        let label = norm_str(&option.label());
+        let hits = words.iter().filter(|w| label.contains(*w)).count();
+        if hits > 0 && best.is_none_or(|(b, _)| hits > b) {
+            best = Some((hits, option));
+        }
+    }
+    best.map(|(_, o)| o.clone()).or_else(|| options.first().cloned())
+}
+
 /// The loot within reach the model named, by the words of its label ("coins", "trinket", the place),
 /// else the nearest; `None` when there is none within reach.
 pub fn resolve_loot(state: &SimState, c: &Character, value: Option<&Value>) -> Option<String> {
@@ -401,7 +418,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
             }
             // A child has nothing to give, never raises a hand and does no work on the world; the sim would
             // refuse it too.
-            "give" | "brawl" | "attack" | "work_on" | "trade" if c.is_child() => {
+            "give" | "brawl" | "attack" | "work_on" | "trade" | "commission" if c.is_child() => {
                 decision.problems.push(format!("a child does not {}", call.name));
             }
             "work_on" => {
@@ -454,6 +471,10 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     }
                 }
             }
+            "commission" => match resolve_commission(state, c, args.get("what")) {
+                Some(choice) => decision.intents.push(intent(IntentAction::Commission { what: choice.key() })),
+                None => decision.problems.push(format!("nothing to pay for at \"{}\"", shown(args.get("what")))),
+            },
             "pick_up" => match resolve_loot(state, c, args.get("what")) {
                 Some(loot_id) => decision.intents.push(intent(IntentAction::PickUp { loot_id })),
                 None => decision.problems.push(format!("nothing to pick up at \"{}\"", shown(args.get("what")))),

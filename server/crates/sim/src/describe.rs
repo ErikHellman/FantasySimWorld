@@ -5,7 +5,7 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, ItemId, Rite, SimState, WorldJob};
-use crate::systems::economy::loot_label;
+use crate::systems::economy::{Commission, loot_label};
 use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
 use crate::systems::world::describe_target;
@@ -79,6 +79,13 @@ fn doing(state: &SimState, c: &Character) -> String {
         }
         IntentAction::Talk { target_id, .. } => format!("going to talk to {}", name_of(state, target_id)),
         IntentAction::Give { target_id, .. } => format!("taking something to {}", name_of(state, target_id)),
+        IntentAction::Commission { what } => match Commission::parse(what, &c.home_id) {
+            Some(choice) if c.act.phase == ActPhase::Perform => {
+                format!("paying for {}", choice.label().replace("your", "their"))
+            }
+            Some(choice) => format!("off to the market to order {}", choice.label().replace("your", "their")),
+            None => "off to the market".into(),
+        },
         IntentAction::Trade { target_id, item, buy } => {
             let what = short_item(*item);
             if *buy {

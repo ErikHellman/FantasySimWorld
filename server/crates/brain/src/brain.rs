@@ -270,6 +270,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Attend { place_id } => format!("attend the ceremony at {place_id}"),
         IntentAction::WorldWork { job, target, .. } => format!("{} {target}", job.as_str()),
         IntentAction::PickUp { loot_id } => format!("pick up {loot_id}"),
+        IntentAction::Commission { what } => format!("commission {what}"),
         IntentAction::Trade { target_id, item, buy } => {
             format!(
                 "{} {} {} {}",

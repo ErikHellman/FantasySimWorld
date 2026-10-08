@@ -118,3 +118,50 @@ fn deals_within_reach_are_named_and_the_trade_tool_offered_only_then() {
     assert!(decision.intents.is_empty());
     assert!(decision.problems.iter().any(|p| p.contains("child")), "{:?}", decision.problems);
 }
+
+#[test]
+fn what_a_villager_can_pay_for_is_named_and_the_commission_tool_offered_only_then() {
+    use fsw_sim::data::economy::EXPAND_PRICE;
+    let mut state = create_test_state(1);
+    let id = fsw_sim::util::living(&state)
+        .find(|c| {
+            !c.is_child() && fsw_world::places::find_place(&c.home_id).unwrap().models[0].model.contains("home_A")
+        })
+        .map(|c| c.id.clone())
+        .expect("someone in a small cottage");
+    state.characters.get_mut(&id).unwrap().gold = 0;
+    let c = state.characters[&id].clone();
+    let prompt = decide_prompt(&state, &c, 1500, None);
+    assert!(!prompt.tools.iter().any(|t| t.name == "commission"), "penniless");
+    assert!(!prompt_text(&prompt).contains("(commission)"));
+
+    state.characters.get_mut(&id).unwrap().gold = EXPAND_PRICE;
+    let c = state.characters[&id].clone();
+    let prompt = decide_prompt(&state, &c, 1500, None);
+    let text = prompt_text(&prompt);
+    assert!(
+        text.contains(&format!("You could pay for (commission): a new room for your cottage ({EXPAND_PRICE} gold); ")),
+        "{text}"
+    );
+    assert!(text.contains("in your yard ("), "{text}");
+    assert!(prompt.tools.iter().any(|t| t.name == "commission"));
+
+    let decision = interpret_decision(&state, &c, &[call("commission", json!({"what": "the new room"}))]);
+    assert!(
+        matches!(&decision.intents[0].action, IntentAction::Commission { what } if what == "expand"),
+        "{:?}",
+        decision.intents
+    );
+    let decision = interpret_decision(&state, &c, &[call("commission", json!({"what": "a hay bale"}))]);
+    assert!(
+        matches!(&decision.intents[0].action, IntentAction::Commission { what } if what.ends_with(":haybale")),
+        "{:?}",
+        decision.intents
+    );
+
+    state.characters.get_mut(&id).unwrap().gold = 0;
+    let c = state.characters[&id].clone();
+    let decision = interpret_decision(&state, &c, &[call("commission", json!({"what": "a wagon"}))]);
+    assert!(decision.intents.is_empty());
+    assert!(decision.problems.iter().any(|p| p.contains("nothing to pay for")), "{:?}", decision.problems);
+}

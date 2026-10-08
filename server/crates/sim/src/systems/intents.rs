@@ -21,7 +21,9 @@ use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
-use crate::systems::economy::{buy_at_market, describe_gold, describe_goods, sell_to_market, trade_offer};
+use crate::systems::economy::{
+    Commission, buy_at_market, commission, describe_gold, describe_goods, sell_to_market, trade_offer,
+};
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
@@ -798,7 +800,6 @@ fn run_trade(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, buy: bool, 
         set_anim(c, AnimId::Interact, true);
         c.act.phase = ActPhase::Perform;
         c.act.until_tick = tick + seconds_to_ticks(1.6);
-        let name = first_name(c).to_owned();
         let (buyer, seller) = if buy { (id, target_id) } else { (target_id, id) };
         let offer = trade_offer(ctx.state, ctx.cr(buyer), ctx.cr(seller), item);
         let what = describe_item(item);
@@ -850,7 +851,6 @@ fn run_trade(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, buy: bool, 
                     format!("{target_name} would not buy {what} from me: {why}.")
                 };
                 ctx.remember(id, memory, 2.0, MemoryKind::Event, vec![target_id.into()]);
-                let _ = name;
                 if buy {
                     format!("{target_name} would not sell you {what}: {why}.")
                 } else {
@@ -878,6 +878,47 @@ fn run_trade(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, buy: bool, 
 fn capital_first(line: &str) -> String {
     let mut chars = line.chars();
     chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
+}
+
+/// Walks to the market and pays the village for something of one's own: a new room, or a thing for
+/// the yard. The coin goes into the chest and the project onto the village's list.
+fn run_commission(ctx: &mut Ctx, id: &str, what: &str) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(choice) = Commission::parse(what, &ctx.cr(id).home_id) else {
+        finish(ctx, id, "You could not think what you wanted to pay for.");
+        return;
+    };
+    let c = ctx.c(id);
+    match c.act.phase {
+        ActPhase::Start => {
+            if !travel_to(tick, &nav, c, get_place("market").door) {
+                finish(ctx, id, "You could not find a way to the market.");
+            }
+        }
+        ActPhase::Travel => {
+            if !travel(tick, c, None) {
+                return;
+            }
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + seconds_to_ticks(1.6);
+            set_anim(c, AnimId::Interact, true);
+        }
+        ActPhase::Perform => {
+            if tick < c.act.until_tick {
+                return;
+            }
+            set_anim(c, AnimId::Idle, false);
+            let label = choice.label();
+            let outcome = match commission(ctx, id, &choice) {
+                Ok(_) => format!("You paid {} for {label}; the village will build it.", describe_gold(choice.price())),
+                Err(why) => format!("You could not pay for {label}: {why}."),
+            };
+            finish(ctx, id, outcome);
+        }
+        ActPhase::Done => {}
+    }
 }
 
 /// Walks to something the dead left and picks it up: coins into the purse, a valuable into the pack.
@@ -1061,6 +1102,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             }
             IntentAction::Talk { target_id, opener, tone } => run_talk(ctx, &id, target_id, *tone, opener),
             IntentAction::PickUp { loot_id } => run_pick_up(ctx, &id, loot_id),
+            IntentAction::Commission { what } => run_commission(ctx, &id, what),
             IntentAction::Trade { target_id, item, buy } => {
                 run_trade(ctx, &id, target_id, *item, *buy, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
             }

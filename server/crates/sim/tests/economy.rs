@@ -48,8 +48,16 @@ fn set_intent(sim: &mut Sim, id: &str, action: IntentAction) {
     sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents: vec![Intent::new(action, IntentSource::Llm)] });
 }
 
+/// Takes everyone's coin, so nobody pays the village for anything while the test looks elsewhere.
+fn penniless(sim: &mut Sim) {
+    for c in sim.state.characters.values_mut() {
+        c.gold = 0;
+    }
+}
+
+/// The chronicle's lines about the passing trader (paying for building is a `Trade` line too).
 fn trade_lines(state: &SimState) -> usize {
-    state.chronicle.iter().filter(|e| e.kind == ChronicleKind::Trade).count()
+    state.chronicle.iter().filter(|e| e.kind == ChronicleKind::Trade && e.text.starts_with("A passing trader")).count()
 }
 
 #[test]
@@ -150,6 +158,7 @@ fn shopping_costs_coin_and_bare_stalls_sell_nothing() {
 #[test]
 fn the_trader_comes_once_a_day_buys_the_surplus_and_pays_the_chest() {
     let mut sim = quiet(4);
+    penniless(&mut sim);
     // Ore, which nothing the village builds yet spends, so the builders leave the piles alone.
     let reserve = material_reserve("market");
     stock(&mut sim.state, "market", Resource::Ore, reserve + 15);
@@ -185,6 +194,7 @@ fn the_trader_comes_once_a_day_buys_the_surplus_and_pays_the_chest() {
 #[test]
 fn carriers_are_paid_for_what_they_put_down_while_the_chest_holds_anything() {
     let mut sim = quiet(5);
+    penniless(&mut sim);
     let id = "c1".to_owned();
     let gold = sim.state.characters[&id].gold;
     sim.state.characters.get_mut(&id).unwrap().carried.add(Resource::Wood, 4, i64::MAX);
@@ -507,5 +517,195 @@ mod trade {
         let c1 = &sim.state.characters["c1"];
         assert!(!matches!(c1.intent.as_ref().map(|i| &i.action), Some(IntentAction::Trade { .. })), "{:?}", c1.intent);
         assert!(trade_options(&sim.state, &sim.state.characters[&child]).is_empty());
+    }
+}
+
+mod sponsor {
+    //! Paying the village for a bigger house, or something for the yard.
+
+    use super::*;
+    use fsw_sim::data::economy::{BUILD_WAGE, EXPAND_PRICE, YARD_KINDS, yard_price};
+    use fsw_sim::state::{BuildingStage, ProjectKind, PropStage, WorldObject};
+    use fsw_sim::systems::economy::{Commission, affordable};
+    use fsw_sim::systems::world::{beds_of, building_id, project};
+    use fsw_world::places::{PadKind, find_pad, find_place, pads};
+
+    /// Stocks the stores so the builders want for nothing, and keeps the dead away.
+    fn stocked(seed: u32) -> Sim {
+        let mut sim = quiet(seed);
+        stock(&mut sim.state, "lumber_camp", Resource::Wood, 40);
+        stock(&mut sim.state, "mine", Resource::Stone, 20);
+        stock(&mut sim.state, "mine", Resource::Ore, 4);
+        // Nobody else has the coin to get in first.
+        for c in sim.state.characters.values_mut() {
+            c.gold = 0;
+        }
+        sim
+    }
+
+    fn small_cottage_dweller(state: &SimState) -> String {
+        living(state)
+            .find(|c| !c.is_child() && find_place(&c.home_id).unwrap().models[0].model.contains("home_A"))
+            .map(|c| c.id.clone())
+            .expect("someone in a small cottage")
+    }
+
+    #[test]
+    fn a_villager_with_enough_gold_pays_for_a_bigger_cottage() {
+        let mut sim = stocked(16);
+        let id = small_cottage_dweller(&sim.state);
+        let home = sim.state.characters[&id].home_id.clone();
+        sim.state.characters.get_mut(&id).unwrap().gold = EXPAND_PRICE + 20;
+        let options = affordable(&sim.state, &sim.state.characters[&id]);
+        assert_eq!(options.first(), Some(&Commission::Expand { home_id: home.clone() }), "{options:?}");
+        assert!(options.len() > 1, "and things for the yard: {options:?}");
+        let purse = sim.state.economy.purse;
+        let sponsored = |s: &SimState| s.projects.iter().any(|p| p.sponsor.as_deref() == Some(id.as_str()));
+        assert!(run_until(&mut sim, 2 * TICKS_PER_DAY, sponsored) < 2 * TICKS_PER_DAY, "nothing was paid for");
+        let p = sim.state.projects.iter().find(|p| p.sponsor.is_some()).unwrap().clone();
+        assert!(p.price > 0);
+        assert_eq!(sim.state.characters[&id].gold, EXPAND_PRICE + 20 - p.price);
+        assert!(sim.state.economy.purse >= purse + p.price - 20, "the chest took the coin");
+        let line = sim
+            .state
+            .chronicle
+            .iter()
+            .find(|e| e.kind == ChronicleKind::Trade && e.text.contains("paid for by"))
+            .unwrap();
+        assert!(line.text.starts_with("The village takes on "), "{}", line.text);
+        assert!(sim.state.characters[&id].memories.iter().any(|m| m.text.starts_with("Paid ")));
+        // It is built, and the builders are paid when it is done.
+        let before: i64 = living(&sim.state).map(|c| c.gold).sum();
+        let done = |s: &SimState| project(s, &p.id).is_none();
+        assert!(run_until(&mut sim, 10 * TICKS_PER_DAY, done) < 10 * TICKS_PER_DAY, "never finished");
+        match p.kind {
+            ProjectKind::Expand => {
+                assert!(matches!(
+                    sim.state.objects.get(&building_id(&home)),
+                    Some(WorldObject::Building { stage: BuildingStage::Expanded, .. })
+                ));
+                assert_eq!(beds_of(&sim.state, &home), 3);
+            }
+            ProjectKind::Construct => {
+                let built = sim.state.objects.values().find_map(|o| match o {
+                    WorldObject::Built { stage: PropStage::Whole, spec, .. }
+                        if spec.pad.as_deref() == Some(p.target.as_str()) =>
+                    {
+                        Some(spec.clone())
+                    }
+                    _ => None,
+                });
+                let spec = built.expect("the thing stands on the pad");
+                assert!(p.target.starts_with(&format!("{home}/")), "on the sponsor's own pad: {}", p.target);
+                let (bundle, model) = match p.pad_kind.unwrap() {
+                    PadKind::Wagon => ("halloween", "wagon"),
+                    PadKind::Haybale => ("halloween", "haybale"),
+                    PadKind::Scarecrow => ("halloween", "scarecrow"),
+                    PadKind::Chest => ("dungeon", "chest_gold"),
+                    PadKind::Barrel => ("dungeon", "barrel_large"),
+                    other => panic!("not a yard thing: {other:?}"),
+                };
+                assert_eq!((spec.bundle.as_str(), spec.model.as_str()), (bundle, model));
+            }
+            other => panic!("{other:?}"),
+        }
+        let after: i64 = living(&sim.state).map(|c| c.gold).sum();
+        assert!(after >= before, "the builders were paid their {BUILD_WAGE}: {before} -> {after}");
+    }
+
+    #[test]
+    fn a_yard_thing_is_built_on_the_sponsors_own_pad_for_its_price() {
+        let mut sim = stocked(17);
+        let id = small_cottage_dweller(&sim.state);
+        let home = sim.state.characters[&id].home_id.clone();
+        // Enough for the yard, not for a room.
+        sim.state.characters.get_mut(&id).unwrap().gold = EXPAND_PRICE - 1;
+        let options = affordable(&sim.state, &sim.state.characters[&id]);
+        assert!(!options.iter().any(|o| matches!(o, Commission::Expand { .. })));
+        assert!(
+            options
+                .iter()
+                .all(|o| matches!(o, Commission::Yard { pad_id, .. } if pad_id.starts_with(&format!("{home}/")))),
+            "{options:?}"
+        );
+        let pad = pads().into_iter().find(|p| p.id.starts_with(&format!("{home}/"))).unwrap();
+        let kind = YARD_KINDS.into_iter().find(|k| pad.kinds.contains(k)).unwrap();
+        let choice = Commission::Yard { pad_id: pad.id.clone(), kind };
+        assert_eq!(Commission::parse(&choice.key(), &home), Some(choice.clone()));
+        set_intent(&mut sim, &id, IntentAction::Commission { what: choice.key() });
+        let paid = |s: &SimState| s.projects.iter().any(|p| p.sponsor.as_deref() == Some(id.as_str()));
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 2, paid) < TICKS_PER_DAY / 2, "never got to the market");
+        let p = sim.state.projects.iter().find(|p| p.sponsor.is_some()).unwrap().clone();
+        assert_eq!(
+            (p.kind, p.target.as_str(), p.pad_kind, p.price),
+            (ProjectKind::Construct, pad.id.as_str(), Some(kind), yard_price(kind))
+        );
+        assert_eq!(sim.state.characters[&id].gold, EXPAND_PRICE - 1 - yard_price(kind));
+        assert!(sim.state.characters[&id].outcome.starts_with("You paid "), "{}", sim.state.characters[&id].outcome);
+        assert!(find_pad(&pad.id).is_some());
+        // A second order for the same pad is refused: it is taken.
+        assert!(!affordable(&sim.state, &sim.state.characters[&id]).contains(&choice));
+    }
+
+    #[test]
+    fn the_model_cannot_order_what_the_villager_cannot_afford_nor_when_the_village_is_busy() {
+        let mut sim = stocked(18);
+        let id = small_cottage_dweller(&sim.state);
+        let home = sim.state.characters[&id].home_id.clone();
+        sim.state.characters.get_mut(&id).unwrap().gold = 1;
+        set_intent(&mut sim, &id, IntentAction::Commission { what: "expand".into() });
+        sim.step();
+        sim.step();
+        assert!(!matches!(
+            sim.state.characters[&id].intent.as_ref().map(|i| &i.action),
+            Some(IntentAction::Commission { .. })
+        ));
+        assert!(sim.state.projects.iter().all(|p| p.sponsor.is_none()));
+        // With the coin but the village's hands full, the daily look passes the sponsor over.
+        sim.state.characters.get_mut(&id).unwrap().gold = EXPAND_PRICE;
+        for n in 0..fsw_sim::systems::world::MAX_PROJECTS {
+            let target = format!("b:home_{}", 7 + n);
+            let mut cost = fsw_sim::state::Store::default();
+            cost.add(Resource::Wood, 1, i64::MAX);
+            let pid = sim.state.new_id("j:");
+            sim.state.projects.push(fsw_sim::state::Project {
+                id: pid,
+                kind: ProjectKind::Expand,
+                target,
+                cost: cost.clone(),
+                delivered: cost,
+                need: 1_000_000.0,
+                work: 0.0,
+                since_tick: sim.state.tick,
+                helpers: Vec::new(),
+                sponsor: None,
+                price: 0,
+                pad_kind: None,
+            });
+        }
+        run_until(&mut sim, 2 * TICKS_PER_DAY, |_| false);
+        assert!(
+            sim.state.projects.iter().all(|p| p.sponsor.is_none()),
+            "{:?}",
+            sim.state.projects.iter().map(|p| &p.target).collect::<Vec<_>>()
+        );
+        assert!(sim.state.characters[&id].gold >= EXPAND_PRICE, "nothing was paid; wages may have come in");
+        let _ = home;
+    }
+
+    #[test]
+    fn every_yard_thing_has_a_model_in_the_manifest() {
+        for kind in YARD_KINDS {
+            let (bundle, model) = match kind {
+                PadKind::Wagon => ("halloween", "wagon"),
+                PadKind::Haybale => ("halloween", "haybale"),
+                PadKind::Scarecrow => ("halloween", "scarecrow"),
+                PadKind::Chest => ("dungeon", "chest_gold"),
+                PadKind::Barrel => ("dungeon", "barrel_large"),
+                other => panic!("not a yard thing: {other:?}"),
+            };
+            assert!(fsw_world::assets::model_bounds(bundle, model).is_some(), "{bundle}/{model}");
+            assert!(yard_price(kind) > 0);
+        }
     }
 }

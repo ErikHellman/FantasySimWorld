@@ -353,6 +353,17 @@ fn targets_line(state: &SimState, c: &Character) -> String {
     format!("Things you could work on nearby (work_on): {}.", items.join("; "))
 }
 
+/// What the villager could pay the village to build for them. Empty when nothing, so the prompt reads
+/// as it did.
+fn afford_line(state: &SimState, c: &Character) -> String {
+    let options = economy::affordable(state, c);
+    if options.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = options.iter().map(|o| format!("{} ({} gold)", o.label(), o.price())).collect();
+    format!("You could pay for (commission): {}.", items.join("; "))
+}
+
 /// The deals open with the neighbours within reach, at most four. Empty when there are none, so the
 /// prompt reads as it did.
 fn trade_line(state: &SimState, c: &Character) -> String {
@@ -715,6 +726,10 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if !trades.is_empty() {
         tools.push(TOOLS.trade.clone());
     }
+    let afford = afford_line(state, c);
+    if !afford.is_empty() {
+        tools.push(TOOLS.commission.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -770,6 +785,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
             section(2, targets),
             section(2, loot),
             section(2, trades),
+            section(3, afford),
             section(
                 5,
                 if far.len() > 5 {

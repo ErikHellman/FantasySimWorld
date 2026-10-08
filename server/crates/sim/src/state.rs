@@ -5,7 +5,7 @@
 
 use fsw_core::Vec2;
 pub use fsw_world::places::ActivityId;
-use fsw_world::places::Obstacle;
+use fsw_world::places::{Obstacle, PadKind};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -663,6 +663,11 @@ pub enum IntentAction {
         item: ItemId,
         buy: bool,
     },
+    /// walks to the market and pays for something of their own: `what` is a `Commission` key
+    /// (`systems::economy`)
+    Commission {
+        what: String,
+    },
 }
 
 /// Work that changes the world; see `systems::world` and `data::jobs`.
@@ -719,6 +724,7 @@ impl IntentAction {
             Self::WorldWork { .. } => "world_work",
             Self::PickUp { .. } => "pick_up",
             Self::Trade { .. } => "trade",
+            Self::Commission { .. } => "commission",
         }
     }
 
@@ -1164,6 +1170,14 @@ pub struct Project {
     pub since_tick: i64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub helpers: Vec<Id>,
+    /// the villager who paid for it, and what they paid into the chest; the village's own projects have neither
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sponsor: Option<Id>,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub price: i64,
+    /// what a sponsored `Construct` puts up; the village's own are chosen by the project's id
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad_kind: Option<PadKind>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

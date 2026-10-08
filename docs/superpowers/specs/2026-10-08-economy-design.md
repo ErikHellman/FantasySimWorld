@@ -46,7 +46,12 @@ The routines do all of the above without a model. The prompt header names what a
 
 ## Measured
 
-To be filled from `cargo run --release -p fsw-sim --bin soak -- 60 <seed> --json` on seeds 1 to 3 once the whole of this is built.
+Headless, `cargo run --release -p fsw-sim --bin soak -- 60 <seed> --json` on seeds 1 to 3, routines only, in the village the sim invents for itself:
+
+- The chest never runs dry for long: wages and stall purchases drain it by the first week, the trader fills it again as the camp and the mine pass their reserves, and from the second week on the sponsors' payments keep it between 30 and 50 gold at day 60. The trader comes with something to buy on 26 to 44 of the 60 days.
+- Nobody is penniless at day 60. The median purse holds 33, 70 and 190 gold in the three seeds; the richest villager, a stall keeper, 691 in one of them. Villagers hold 8 to 16 valuables between them, waiting to be sold.
+- Everything that can be paid for is paid for: all four small cottages have their new room and 15 or 16 of the 16 yard pads are built up by day 60, 18 commissions a seed. After that the coin has nowhere to go but the stalls.
+- Population and deaths stay in the bands the dynamic-world design measured: 12 or 13 alive at day 60 after 7 to 11 deaths. The twenty-day test in `crates/sim/tests/sim.rs` keeps its bands, and a 60-day run takes 45 to 56 seconds.
 
 ## Left out on purpose
 
@@ -55,3 +60,4 @@ To be filled from `cargo run --release -p fsw-sim --bin soak -- 60 <seed> --json
 - No third pad by a cottage: the ground behind one is not known to be walkable.
 - Loot is not on the nav grid and is not a `WorldObject`: it blocks nothing and changes no map.
 - Children keep no coin, never trade or commission, and may pick up what they find.
+- Once a villager's cottage has its room and their yard is full, their coin has nowhere to go: no second room, no shop of their own, nothing to buy but the stalls' goods. Riches pile up in a few purses by the second month.

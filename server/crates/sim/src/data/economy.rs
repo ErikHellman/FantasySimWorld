@@ -1,7 +1,7 @@
 //! Prices, wages and what everyone starts with: every number of the coin economy in one place.
 //! See `systems::economy` for how coin moves.
 
-use fsw_world::places::ActivityId;
+use fsw_world::places::{ActivityId, PadKind};
 
 use crate::data::classes::ClassId;
 use crate::state::{ItemId, Resource};
@@ -106,3 +106,22 @@ pub const LOOT_COINS_LEAST: i64 = 2;
 pub const TRADE_REACH: f64 = 12.0;
 /// A seller this hungry keeps a meal back.
 pub const SELLER_KEEPS_FOOD_BELOW: f64 = 40.0;
+
+/// What a villager pays the village to make their small cottage bigger.
+pub const EXPAND_PRICE: i64 = 40;
+/// What each thing for the yard costs its sponsor.
+pub fn yard_price(kind: PadKind) -> i64 {
+    match kind {
+        PadKind::Wagon => 18,
+        PadKind::Chest => 20,
+        PadKind::Barrel => 10,
+        PadKind::Scarecrow => 8,
+        PadKind::Haybale => 6,
+        PadKind::Fence | PadKind::LogStack | PadKind::Bench | PadKind::Crate | PadKind::Planter => 0,
+    }
+}
+/// The things a villager may pay for in their own yard; the rest are the village's to put up.
+pub const YARD_KINDS: [PadKind; 5] =
+    [PadKind::Wagon, PadKind::Chest, PadKind::Barrel, PadKind::Scarecrow, PadKind::Haybale];
+/// What the chest pays each builder when a sponsored project is done.
+pub const BUILD_WAGE: i64 = 3;

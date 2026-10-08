@@ -212,10 +212,27 @@ pub enum PadKind {
     Bench,
     Crate,
     Planter,
+    /// the things a villager pays for in their own yard
+    Wagon,
+    Haybale,
+    Scarecrow,
+    Chest,
+    Barrel,
 }
 
 impl PadKind {
-    pub const ALL: [PadKind; 5] = [Self::Fence, Self::LogStack, Self::Bench, Self::Crate, Self::Planter];
+    pub const ALL: [PadKind; 10] = [
+        Self::Fence,
+        Self::LogStack,
+        Self::Bench,
+        Self::Crate,
+        Self::Planter,
+        Self::Wagon,
+        Self::Haybale,
+        Self::Scarecrow,
+        Self::Chest,
+        Self::Barrel,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -224,7 +241,16 @@ impl PadKind {
             Self::Bench => "bench",
             Self::Crate => "crate",
             Self::Planter => "planter",
+            Self::Wagon => "wagon",
+            Self::Haybale => "haybale",
+            Self::Scarecrow => "scarecrow",
+            Self::Chest => "chest",
+            Self::Barrel => "barrel",
         }
+    }
+
+    pub fn parse(text: &str) -> Option<PadKind> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
     }
 }
 
@@ -317,8 +343,18 @@ fn home(n: usize, name: &'static str, hex: [i32; 2], facing: f64, model: &'stati
             slot(&[Rest], -2.2, front - 0.7, 0.0).anim("sit_chair"),
         ],
         pads: vec![
-            pad(5.4, front - 2.4, 0.0, &[PadKind::LogStack, PadKind::Fence, PadKind::Crate]),
-            pad(-4.8, front - 3.6, 0.0, &[PadKind::Fence, PadKind::Planter, PadKind::LogStack]),
+            pad(
+                5.4,
+                front - 2.4,
+                0.0,
+                &[PadKind::LogStack, PadKind::Fence, PadKind::Crate, PadKind::Wagon, PadKind::Barrel, PadKind::Chest],
+            ),
+            pad(
+                -4.8,
+                front - 3.6,
+                0.0,
+                &[PadKind::Fence, PadKind::Planter, PadKind::LogStack, PadKind::Haybale, PadKind::Scarecrow],
+            ),
         ],
         ..PlaceDef::default()
     }

@@ -11,17 +11,25 @@ use fsw_core::math2d::dist;
 use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE};
 
+use fsw_world::places::{PadKind, find_place, pads};
+
 use crate::data::activities::ITEM_CAP;
 use crate::data::economy::{
-    LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100, MAX_WAGE_PER_DEPOSIT, SELLER_KEEPS_FOOD_BELOW,
-    TRADE_REACH, TRADER_HOUR, base_price, keeps, market_float, material_price, material_reserve, price,
+    BUILD_WAGE, EXPAND_PRICE, LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100,
+    MAX_WAGE_PER_DEPOSIT, SELLER_KEEPS_FOOD_BELOW, TRADE_REACH, TRADER_HOUR, YARD_KINDS, base_price, keeps,
+    market_float, material_price, material_reserve, price, yard_price,
 };
 use crate::state::{
     Character, ChronicleKind, ItemId, Loot, LootKind, MemoryKind, MonsterKind, Resource, SimState, StimulusKind, Store,
 };
+use crate::state::{Project, ProjectKind};
 use crate::systems::director::tick_at;
 use crate::systems::relationships::RUNG_GRUDGE;
 use crate::systems::world::STOCKPILES;
+use crate::systems::world::{
+    CONSTRUCT_WORK, EXPAND_WORK, MAX_PROJECTS, building_id, building_whole, new_project, pad_kind_cost, pad_kind_name,
+    pad_taken, project_label,
+};
 use crate::util::{Ctx, place_name_at};
 use crate::util::{adults, is_approachable, rel_or_default};
 
@@ -229,6 +237,152 @@ pub fn trade_options(state: &SimState, c: &Character) -> Vec<TradeOption> {
         }
     }
     options
+}
+
+/// Something a villager may pay the village to build for them: a new room for their cottage, or a
+/// thing for a pad in their yard.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Commission {
+    Expand { home_id: String },
+    Yard { pad_id: String, kind: PadKind },
+}
+
+impl Commission {
+    /// `expand` or `yard:<pad id>:<kind>`, as an intent carries it.
+    pub fn key(&self) -> String {
+        match self {
+            Self::Expand { .. } => "expand".into(),
+            Self::Yard { pad_id, kind } => format!("yard:{pad_id}:{}", kind.as_str()),
+        }
+    }
+
+    pub fn parse(key: &str, home_id: &str) -> Option<Commission> {
+        if key == "expand" {
+            return Some(Self::Expand { home_id: home_id.to_owned() });
+        }
+        let rest = key.strip_prefix("yard:")?;
+        let (pad_id, kind) = rest.rsplit_once(':')?;
+        Some(Self::Yard { pad_id: pad_id.to_owned(), kind: PadKind::parse(kind)? })
+    }
+
+    pub fn price(&self) -> i64 {
+        match self {
+            Self::Expand { .. } => EXPAND_PRICE,
+            Self::Yard { kind, .. } => yard_price(*kind),
+        }
+    }
+
+    /// "a new room for your cottage", "a wagon in your yard".
+    pub fn label(&self) -> String {
+        match self {
+            Self::Expand { .. } => "a new room for your cottage".into(),
+            Self::Yard { kind, .. } => format!("{} in your yard", pad_kind_name(*kind)),
+        }
+    }
+}
+
+/// What `c` could pay for right now, dearest first: a new room when their small cottage stands whole
+/// and nobody is building on it, then each thing for a free pad by their home they have the coin for.
+pub fn affordable(state: &SimState, c: &Character) -> Vec<Commission> {
+    let mut options = Vec::new();
+    if c.is_child() {
+        return options;
+    }
+    let Some(home) = find_place(&c.home_id) else { return options };
+    let small = home.models.first().is_some_and(|m| m.model.contains("home_A"));
+    let untouched = !state.objects.contains_key(&building_id(&home.id))
+        && !state.houses.contains_key(&home.id)
+        && building_whole(state, &home.id)
+        && !state.projects.iter().any(|p| p.target == building_id(&home.id));
+    if small && untouched && c.gold >= EXPAND_PRICE {
+        options.push(Commission::Expand { home_id: home.id.clone() });
+    }
+    for pad in pads() {
+        if !pad.id.starts_with(&format!("{}/", home.id)) || pad_taken(state, &pad.id) {
+            continue;
+        }
+        for kind in YARD_KINDS {
+            if pad.kinds.contains(&kind) && c.gold >= yard_price(kind) {
+                options.push(Commission::Yard { pad_id: pad.id.clone(), kind });
+            }
+        }
+    }
+    options
+}
+
+/// Pays for a commission and puts it on the village's list, if it still can be afforded and the
+/// village has hands to spare; returns the project, or why not.
+pub fn commission(ctx: &mut Ctx, id: &str, choice: &Commission) -> Result<String, &'static str> {
+    if !affordable(ctx.state, ctx.cr(id)).contains(choice) {
+        return Err("cannot afford that, or it is taken");
+    }
+    if ctx.state.projects.len() >= MAX_PROJECTS {
+        return Err("the village has its hands full");
+    }
+    let price = choice.price();
+    let (kind, target, cost, need, pad_kind) = match choice {
+        Commission::Expand { home_id } => {
+            let mut cost = Store::default();
+            cost.add(Resource::Wood, 20, i64::MAX);
+            cost.add(Resource::Stone, 10, i64::MAX);
+            (ProjectKind::Expand, building_id(home_id), cost, EXPAND_WORK, None)
+        }
+        Commission::Yard { pad_id, kind } => {
+            (ProjectKind::Construct, pad_id.clone(), pad_kind_cost(*kind), CONSTRUCT_WORK, Some(*kind))
+        }
+    };
+    let mut project = new_project(ctx.state, kind, target, cost, need);
+    project.sponsor = Some(id.to_owned());
+    project.price = price;
+    project.pad_kind = pad_kind;
+    ctx.c(id).gold -= price;
+    ctx.state.economy.purse += price;
+    let label = project_label(ctx.state, &project);
+    let project_id = project.id.clone();
+    ctx.chronicle(ChronicleKind::Trade, format!("The village takes on {label}."), vec![id.to_owned()]);
+    ctx.remember(
+        id,
+        format!("Paid {} for {}.", describe_gold(price), choice.label().replace("your", "my")),
+        5.0,
+        MemoryKind::Event,
+        Vec::new(),
+    );
+    ctx.state.projects.push(project);
+    Ok(project_id)
+}
+
+/// Once a day, when the village looks over what wants building: the first villager (in the roster's
+/// order) with something they can pay for pays for one of their options, chosen by their id and the
+/// day so every machine agrees. `taken` is how many of the day's slots are already spoken for.
+pub fn sponsored_project(ctx: &mut Ctx, taken: usize) {
+    if ctx.state.projects.len() + taken >= MAX_PROJECTS {
+        return;
+    }
+    let day = ctx.time.day;
+    let ids: Vec<String> = ctx.state.order.clone();
+    for id in ids {
+        let options = affordable(ctx.state, ctx.cr(&id));
+        if options.is_empty() {
+            continue;
+        }
+        let pick = (hash_string(&id) as usize + day as usize) % options.len();
+        let _ = commission(ctx, &id, &options[pick]);
+        return;
+    }
+}
+
+/// The chest pays each builder of a sponsored project when it is done.
+pub fn pay_builders(ctx: &mut Ctx, project: &Project) {
+    if project.sponsor.is_none() {
+        return;
+    }
+    for helper in &project.helpers {
+        if ctx.alive(helper) {
+            let mut purse = ctx.state.economy.purse;
+            pay(ctx.c(helper), &mut purse, BUILD_WAGE);
+            ctx.state.economy.purse = purse;
+        }
+    }
 }
 
 /// One of the dead has fallen: what it leaves is fixed by the monster and the tick, so every machine

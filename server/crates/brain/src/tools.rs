@@ -66,6 +66,7 @@ pub struct Tools {
     pub work_on: ToolDef,
     pub pick_up: ToolDef,
     pub trade: ToolDef,
+    pub commission: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -279,5 +280,15 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["person", "item", "deal"],
+    ),
+    commission: tool(
+        "commission",
+        "Go to the market and pay the village to build something of your own: a new room for your cottage, or a thing for your yard. Only what the message lists can be afforded.",
+        json!({
+            "what": { "type": "string", "description": "What to pay for, as the message names it." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["what"],
     ),
 });
