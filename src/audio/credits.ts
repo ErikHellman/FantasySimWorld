@@ -19,6 +19,7 @@ export const SOUND_CREDITS: readonly SoundCredit[] = [
   { title: 'RPG Sound Pack', author: 'artisticdude', license: 'CC0', url: 'https://opengameart.org/content/rpg-sound-pack' },
   { title: 'Dark Forest Theme', author: 'cynicmusic', license: 'CC0', url: 'https://opengameart.org/content/dark-forest-theme' },
   { title: 'Determined Pursuit', author: 'Emma_MA', license: 'CC0', url: 'https://opengameart.org/content/determined-pursuit-epic-orchestra-loop' },
+  { title: 'light rain and heavy rain', author: 'haruta', license: 'CC0', url: 'https://opengameart.org/content/light-rain-and-heavy-rain' },
   { title: 'Evil Approach', author: 'nene', license: 'CC0', url: 'https://opengameart.org/content/evil-approach' },
   { title: 'Fantasy: Lament for a Warrior\'s Soul', author: 'RandomMind', license: 'CC0', url: 'https://opengameart.org/content/fantasy-lament-for-a-warriors-soul' },
   { title: 'Fantasy: Rising Moon', author: 'RandomMind', license: 'CC0', url: 'https://opengameart.org/content/fantasy-rising-moon' },
