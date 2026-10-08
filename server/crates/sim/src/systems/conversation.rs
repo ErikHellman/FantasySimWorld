@@ -20,7 +20,9 @@ use crate::systems::relationships::{RelationDelta, adjust, apply_conversation, b
 use crate::util::{Ctx, bump_epoch, first_name, is_fighting, nearby_characters, place_name_at, rel, set_anim, their};
 
 pub const MAX_LINES: usize = 8;
-const TALK_DISTANCE: f64 = 2.2;
+/// How close the hailer walks before the talk begins: a comfortable distance short of standing on
+/// the other's toes.
+const TALK_DISTANCE: f64 = 2.5;
 const GESTURES: [AnimId; 3] = [AnimId::Interact, AnimId::IdleAlt, AnimId::Wave];
 
 fn hail_timeout() -> i64 {
@@ -472,13 +474,11 @@ pub fn update_conversations(ctx: &mut Ctx) {
                     ac.act.path = route_to(&nav, ac.pos, b_pos).unwrap_or_default();
                     ac.act.repath_tick = tick + seconds_to_ticks(1.0);
                 }
-                // Stop a comfortable distance short rather than standing on their toes.
-                if d > TALK_DISTANCE + 0.3 {
-                    let mut path = std::mem::take(&mut ac.act.path);
-                    advance(ac, &mut path, WALK_SPEED);
-                    ac.act.path = path;
-                    set_anim(ac, AnimId::Walk, false);
-                }
+                let mut path = std::mem::take(&mut ac.act.path);
+                advance(ac, &mut path, WALK_SPEED);
+                ac.act.path = path;
+                // The legs follow the body: with no route to walk, wait on the spot rather than walk on it.
+                set_anim(ac, if ac.moving { AnimId::Walk } else { AnimId::Idle }, false);
                 continue;
             }
             let ac = ctx.c(&a);
