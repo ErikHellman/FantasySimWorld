@@ -2,6 +2,7 @@
 
 pub mod arrivals;
 pub mod billboards;
+pub mod blocking;
 pub mod ceremonies;
 pub mod charm;
 pub mod children;
