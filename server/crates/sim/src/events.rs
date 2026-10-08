@@ -32,6 +32,18 @@ pub enum Projectile {
     Food,
 }
 
+/// How a blow ended for the one it was aimed at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitOutcome {
+    #[default]
+    Hit,
+    /// turned aside: a quarter of the damage
+    Blocked,
+    /// stepped out of: no damage at all
+    Dodged,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum SimEvent {
@@ -59,6 +71,8 @@ pub enum SimEvent {
         damage: f64,
         pos: Vec2,
         fatal: bool,
+        #[serde(default)]
+        outcome: HitOutcome,
     },
     Death {
         id: Id,

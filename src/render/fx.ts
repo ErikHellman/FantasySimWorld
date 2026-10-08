@@ -33,6 +33,7 @@ export class Effects {
     hit: new THREE.MeshBasicMaterial({ color: 0xfff1b0, transparent: true, depthWrite: false }),
     blood: new THREE.MeshBasicMaterial({ color: 0xff6a5c, transparent: true, depthWrite: false }),
     dust: new THREE.MeshBasicMaterial({ color: 0xcdbb94, transparent: true, depthWrite: false }),
+    spark: new THREE.MeshBasicMaterial({ color: 0xfffbe8, transparent: true, depthWrite: false }),
   };
 
   constructor(private readonly assets: Assets) {
@@ -65,7 +66,15 @@ export class Effects {
       this.projectiles.push({ object, from, to, age: 0, life: Math.max(0.12, distance / 38), arc: event.ranged === 'magic' ? 0 : distance * 0.04 });
     } else if (event.type === 'hit') {
       const y = heightAt(event.pos.x, event.pos.z);
-      this.burst(event.pos.x, y + 1.2, event.pos.z, isMonster(event.targetId) ? this.materials.hit : this.materials.blood, 2.2, 0.28);
+      if (event.outcome === 'blocked') {
+        // A quick bright flash where steel met steel.
+        this.burst(event.pos.x, y + 1.3, event.pos.z, this.materials.spark, 1.2, 0.16);
+      } else if (event.outcome === 'dodged') {
+        // A puff of dust where the defender's feet left the ground.
+        this.burst(event.pos.x, y + 0.08, event.pos.z, this.materials.dust, 2, 0.5);
+      } else {
+        this.burst(event.pos.x, y + 1.2, event.pos.z, isMonster(event.targetId) ? this.materials.hit : this.materials.blood, 2.2, 0.28);
+      }
     } else if (event.type === 'monster_spawn') {
       const y = heightAt(event.pos.x, event.pos.z);
       this.burst(event.pos.x, y + 0.08, event.pos.z, this.materials.dust, 4.5, 1.4);

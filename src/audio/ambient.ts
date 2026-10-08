@@ -75,8 +75,15 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
       else if (event.ranged && event.ranged !== 'food') engine.play('arrow_shot', volumeAt(event.from.x, event.from.z)); // an apple flies in silence
     } else if (event.type === 'hit') {
-      engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
-      if (isVillager(event.targetId)) engine.play('hurt', volumeAt(event.pos.x, event.pos.z) * 0.7);
+      const volume = volumeAt(event.pos.x, event.pos.z);
+      if (event.outcome === 'dodged') {
+        engine.play('dodge_whoosh', volume);
+      } else if (event.outcome === 'blocked') {
+        engine.play('block_clang', volume);
+      } else {
+        engine.play('sword_hit', volume);
+        if (isVillager(event.targetId)) engine.play('hurt', volume * 0.7);
+      }
     } else if (event.type === 'death') {
       engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'monster_spawn') {

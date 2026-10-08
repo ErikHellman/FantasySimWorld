@@ -273,6 +273,17 @@ pub enum Ranged {
     Food,
 }
 
+/// How a blow ended for the one it was aimed at.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HitOutcome {
+    Hit,
+    /// turned aside: a quarter of the damage
+    Blocked,
+    /// stepped out of: no damage
+    Dodged,
+}
+
 /// One spoken line, with everything a sink needs to show it or say it aloud.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -315,6 +326,10 @@ pub enum WireEvent {
         damage: f64,
         pos: Vec2,
         fatal: bool,
+        /// left out when the blow simply landed
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        outcome: Option<HitOutcome>,
     },
     Death {
         id: Id,
@@ -1264,6 +1279,7 @@ pub fn typescript() -> String {
         WorldReset,
         Emote,
         Ranged,
+        HitOutcome,
         Utterance,
         WireEvent,
         ChronicleKind,
@@ -1382,7 +1398,10 @@ mod tests {
             damage: 4.0,
             pos: Vec2 { x: 0.0, z: 0.0 },
             fatal: false,
+            outcome: None,
         };
-        assert!(serde_json::to_string(&hit).unwrap().contains(r#""attackerId":"c1""#));
+        let json = serde_json::to_string(&hit).unwrap();
+        assert!(json.contains(r#""attackerId":"c1""#));
+        assert!(!json.contains("outcome"), "a plain hit says nothing of how it ended");
     }
 }

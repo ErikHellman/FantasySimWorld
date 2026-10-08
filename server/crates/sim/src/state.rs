@@ -871,6 +871,9 @@ pub struct CombatState {
     /// attacker waiting for a spare / finish decision until this tick
     pub mercy_until_tick: i64,
     pub mercy_target_id: Option<Id>,
+    /// after a block or a dodge, no other until this tick
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub defend_ready_tick: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1193,6 +1196,9 @@ pub struct Monster {
     /// blows it has landed on a villager
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub blows: i64,
+    /// after a block or a dodge, no other until this tick
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub defend_ready_tick: i64,
 }
 
 /// A monster's plan to burn a house while the village sleeps.

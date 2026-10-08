@@ -33,8 +33,8 @@ use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
-    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Loot, LootKind, Placed, Ranged,
-    Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
+    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HitOutcome, House, HousePhase, Look, Loot, LootKind,
+    Placed, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -498,12 +498,17 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                 from: point(*from),
                 to: point(*to),
             }),
-            SimEvent::Hit { attacker_id, target_id, damage, pos, fatal } => result.push(WireEvent::Hit {
+            SimEvent::Hit { attacker_id, target_id, damage, pos, fatal, outcome } => result.push(WireEvent::Hit {
                 attacker_id: attacker_id.clone(),
                 target_id: target_id.clone(),
                 damage: js_round(damage * 10.0) / 10.0,
                 pos: point(*pos),
                 fatal: *fatal,
+                outcome: match outcome {
+                    fsw_sim::events::HitOutcome::Hit => None,
+                    fsw_sim::events::HitOutcome::Blocked => Some(HitOutcome::Blocked),
+                    fsw_sim::events::HitOutcome::Dodged => Some(HitOutcome::Dodged),
+                },
             }),
             SimEvent::Death { id, name, pos, monster } => result.push(WireEvent::Death {
                 id: id.clone(),

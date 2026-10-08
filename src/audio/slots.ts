@@ -24,6 +24,8 @@ export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'smithy', label: 'Hammer on anvil loop, when someone is at the forge', kind: 'ambient', gain: 0.7 },
   { id: 'campfire', label: 'Crackling fire loop, at the glade', kind: 'ambient', gain: 0.7 },
   { id: 'sword_hit', label: 'A weapon striking', kind: 'effect', gain: 0.8 },
+  { id: 'block_clang', label: 'A blow turned aside on steel', kind: 'effect', gain: 0.8 },
+  { id: 'dodge_whoosh', label: 'A blow that cuts only air', kind: 'effect', gain: 0.6 },
   { id: 'arrow_shot', label: 'A bow or crossbow loosing', kind: 'effect', gain: 0.7 },
   { id: 'magic_cast', label: 'A spell being cast', kind: 'effect', gain: 0.7 },
   { id: 'hurt', label: 'A villager crying out in pain', kind: 'effect', gain: 0.8 },

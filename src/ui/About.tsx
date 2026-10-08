@@ -29,8 +29,8 @@ export function AboutTechPanel() {
         <ul class="help-list">
           <li>
             <strong>Rust</strong>, on Tokio and Axum. The simulation moves the world forward 20 times a second: needs,
-            routines, walking, conversations, fights and fires. It is deterministic, so the same start and the same
-            commands always give the same village.
+            routines, walking, conversations, fights (with blocks and dodges) and fires. It is deterministic, so the
+            same start and the same commands always give the same village.
           </li>
           <li><strong>SQLite</strong> holds the world, its history and the settings, with Litestream for backups.</li>
           <li><strong>Server-sent events</strong> carry the world to each browser as one long-lived stream.</li>

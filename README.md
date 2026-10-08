@@ -36,7 +36,7 @@ The server migration is complete. The world, the language-model brain and every 
 Not yet done or not yet tried:
 
 - **Models**: the figures under [Connecting a language model](#connecting-a-language-model) are from one local model (`qwen/qwen3.6-35b-a3b` in LM Studio). The deployed game uses hosted models (the help's tech tour says which), but they have not been measured the same way; run the `probe` tool against yours.
-- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, orc raiders and large bosses, block and dodge.
+- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, orc raiders and large bosses.
 
 ## What you need
 

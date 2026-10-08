@@ -91,10 +91,12 @@ export const SOURCES = {
 
   blade: { title: '80 CC0 RPG SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-rpg-sfx', url: RPG_SFX, member: 'blade_03.ogg' },
   creatureDie: { title: '80 CC0 RPG SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-rpg-sfx', url: RPG_SFX, member: 'creature_die_01.ogg' },
+  clang: { title: '80 CC0 RPG SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-rpg-sfx', url: RPG_SFX, member: 'metal_02.ogg' },
   roar: { title: '80 CC0 RPG SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-rpg-sfx', url: RPG_SFX, member: 'creature_roar_03.ogg' },
   hurt: { title: '80 CC0 creature SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-creature-sfx', url: CREATURE_SFX, member: 'hurt_01.ogg' },
   groan: { title: '80 CC0 creature SFX', author: 'rubberduck', license: 'CC0', page: 'https://opengameart.org/content/80-cc0-creature-sfx', url: CREATURE_SFX, member: 'grunt_01.ogg' },
   swing: { title: 'RPG Sound Pack', author: 'artisticdude', license: 'CC0', page: 'https://opengameart.org/content/rpg-sound-pack', url: RPG_SOUND_PACK, member: 'RPG Sound Pack/battle/swing.wav' },
+  whoosh: { title: 'RPG Sound Pack', author: 'artisticdude', license: 'CC0', page: 'https://opengameart.org/content/rpg-sound-pack', url: RPG_SOUND_PACK, member: 'RPG Sound Pack/battle/swing3.wav' },
   magic: { title: 'RPG Sound Pack', author: 'artisticdude', license: 'CC0', page: 'https://opengameart.org/content/rpg-sound-pack', url: RPG_SOUND_PACK, member: 'RPG Sound Pack/battle/magic1.wav' },
 
   marketDay: randomMind('Medieval: Market Day', 'medieval-market-day', 'Market_Day.mp3'),
@@ -177,6 +179,8 @@ export const AMBIENT: readonly AmbientLoop[] = [
 /** Effect slots: short one-shots. */
 export const EFFECTS: readonly Effect[] = [
   { slot: 'sword_hit', source: 'blade' },
+  { slot: 'block_clang', source: 'clang' },
+  { slot: 'dodge_whoosh', source: 'whoosh' },
   { slot: 'arrow_shot', source: 'swing' },
   { slot: 'magic_cast', source: 'magic' },
   { slot: 'hurt', source: 'hurt' },

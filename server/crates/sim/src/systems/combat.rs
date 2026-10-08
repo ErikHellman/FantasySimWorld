@@ -1,13 +1,14 @@
 //! Fights: with the dead, brawls, and the rare duel to the death.
 
-use fsw_core::Vec2;
 use fsw_core::jsmath::js_round;
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::time::seconds_to_ticks;
+use fsw_core::{Vec2, vec2};
 
 use crate::data::anims::AnimId;
 use crate::data::classes::{FISTS, RUN_SPEED, Weapon, WeaponStyle};
-use crate::events::{Emote, Projectile, SimEvent};
+use crate::events::{Emote, HitOutcome, Projectile, SimEvent};
+use crate::nav::NavOverlay;
 use crate::state::{
     Act, ActPhase, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind,
     MonsterPhase, Quirk, StimulusKind,
@@ -20,7 +21,7 @@ use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
-    Ctx, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting, nearby_characters, place_name_at,
+    Body, Ctx, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting, nearby_characters, place_name_at,
     set_anim, their,
 };
 
@@ -37,6 +38,12 @@ const COWARD_PANIC: f64 = 0.5;
 pub const PANIC_MAX: f64 = 0.15;
 /// A villager the model told to stand runs at this share of the usual breaking point.
 pub const LAST_RESORT: f64 = 0.5;
+/// The most anyone turns aside or steps out of, whatever their skill.
+const DEFEND_CAP: f64 = 0.5;
+/// After a block or a dodge, this long before the next, so a flurry still gets through.
+const DEFEND_COOLDOWN_SECONDS: f64 = 0.6;
+/// How far a dodge steps.
+const DODGE_STEP: f64 = 1.2;
 const PANIC_LINES: [&str; 4] = [
     "I can't, I can't do this!",
     "Gods help me, I'm getting out of here!",
@@ -76,6 +83,152 @@ fn fresh(tick: i64) -> Act {
         until_tick: 0,
         repath_tick: 0,
         stuck: 0,
+    }
+}
+
+/// What sort of blow is coming, for the defender's chances.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blow {
+    Melee,
+    /// an arrow, a bolt or a spell: never blocked, dodged at half the chance
+    Ranged,
+    /// a boss's slam: never blocked, and its long windup makes it easier to dodge
+    Slam,
+}
+
+impl Blow {
+    pub fn of(style: WeaponStyle) -> Blow {
+        if style == WeaponStyle::Melee { Blow::Melee } else { Blow::Ranged }
+    }
+}
+
+/// What a defender brings to a blow.
+pub struct Guard {
+    /// the weapon's (or the monster's) own chances
+    pub block: f64,
+    pub dodge: f64,
+    /// a villager's nerve; the dead and the orcs have none to speak of
+    pub bravery: Option<f64>,
+    pub fighter: bool,
+    /// hit points left, as a share of the whole
+    pub hp_share: f64,
+}
+
+/// The chances of a block and of a dodge against this blow. Skill and nerve only sharpen a defence the weapon has.
+pub fn defend_chances(guard: &Guard, blow: Blow) -> (f64, f64) {
+    let skilled = |base: f64| {
+        if base <= 0.0 {
+            return 0.0;
+        }
+        let mut chance = base + guard.bravery.unwrap_or(0.0) * 0.1;
+        if guard.fighter {
+            chance += 0.08;
+        }
+        if guard.hp_share < 0.3 {
+            chance -= 0.1;
+        }
+        clamp(chance, 0.0, DEFEND_CAP)
+    };
+    let (block, dodge) = (skilled(guard.block), skilled(guard.dodge));
+    match blow {
+        Blow::Melee => (block, dodge),
+        Blow::Ranged => (0.0, dodge * 0.5),
+        Blow::Slam => (0.0, (dodge * 1.5).min(DEFEND_CAP)),
+    }
+}
+
+/// One draw for each defence with a chance, the block first; nothing is drawn for a defence there is not.
+fn roll_defence(ctx: &mut Ctx, (block, dodge): (f64, f64)) -> HitOutcome {
+    if block > 0.0 && ctx.chance(block) {
+        return HitOutcome::Blocked;
+    }
+    if dodge > 0.0 && ctx.chance(dodge) {
+        return HitOutcome::Dodged;
+    }
+    HitOutcome::Hit
+}
+
+/// Steps out of a blow from `from`: straight back, or to the side when back is not walkable. Returns the clip.
+fn step_aside(body: &mut impl Body, from: Vec2, nav: &NavOverlay) -> AnimId {
+    let pos = body.pos();
+    let d = dist(pos, from);
+    if d < 1e-6 {
+        return AnimId::DodgeBack;
+    }
+    let away = vec2((pos.x - from.x) / d, (pos.z - from.z) / d);
+    // Facing the attacker, the left hand is a quarter turn from `away`.
+    let left = vec2(-away.z, away.x);
+    let right = vec2(away.z, -away.x);
+    for (dir, anim) in [(away, AnimId::DodgeBack), (left, AnimId::DodgeLeft), (right, AnimId::DodgeRight)] {
+        let to = vec2(pos.x + dir.x * DODGE_STEP, pos.z + dir.z * DODGE_STEP);
+        if nav.is_walkable(to.x, to.z) && nav.line_of_walk(pos, to) {
+            body.set_pos(to);
+            return anim;
+        }
+    }
+    AnimId::DodgeBack
+}
+
+/// A villager in a fight, awake and between swings, may turn a blow aside or step out of it.
+pub fn villager_defends(ctx: &mut Ctx, id: &str, attacker_pos: Vec2, blow: Blow) -> HitOutcome {
+    let tick = ctx.tick();
+    let v = ctx.cr(id);
+    let in_a_fight = v.combat.target_id.is_some() && !v.asleep && !v.combat.yielded && v.inside.is_none();
+    if !in_a_fight || v.combat.hit_tick != 0 || tick < v.combat.defend_ready_tick {
+        return HitOutcome::Hit;
+    }
+    let weapon = weapon_of(v, v.combat.mode);
+    let guard = Guard {
+        block: weapon.block,
+        dodge: weapon.dodge,
+        bravery: Some(v.profile.bravery),
+        fighter: v.has(Quirk::Fighter),
+        hp_share: v.hp / max_hp(v),
+    };
+    let outcome = roll_defence(ctx, defend_chances(&guard, blow));
+    if outcome != HitOutcome::Hit {
+        let nav = ctx.state.nav.clone();
+        let v = ctx.c(id);
+        v.combat.defend_ready_tick = tick + seconds_to_ticks(DEFEND_COOLDOWN_SECONDS);
+        if outcome == HitOutcome::Dodged {
+            let anim = step_aside(v, attacker_pos, &nav);
+            v.act.path.clear();
+            set_anim(v, anim, true);
+        }
+    }
+    outcome
+}
+
+/// A monster that is chasing, between swings, may turn a blow aside or step out of it.
+pub fn monster_defends(ctx: &mut Ctx, id: &str, attacker_pos: Vec2, blow: Blow) -> HitOutcome {
+    let tick = ctx.tick();
+    let m = &ctx.state.monsters[id];
+    if m.phase != MonsterPhase::Chase || m.hit_tick != 0 || tick < m.defend_ready_tick {
+        return HitOutcome::Hit;
+    }
+    let def = m.kind.def();
+    let guard =
+        Guard { block: def.block, dodge: def.dodge, bravery: None, fighter: false, hp_share: m.hp / def.max_hp };
+    let outcome = roll_defence(ctx, defend_chances(&guard, blow));
+    if outcome != HitOutcome::Hit {
+        let nav = ctx.state.nav.clone();
+        let m = ctx.m(id);
+        m.defend_ready_tick = tick + seconds_to_ticks(DEFEND_COOLDOWN_SECONDS);
+        if outcome == HitOutcome::Dodged {
+            let anim = step_aside(m, attacker_pos, &nav);
+            m.path.clear();
+            set_anim(m, anim, true);
+        }
+    }
+    outcome
+}
+
+/// What a blow does once it has been turned aside: a quarter, but never nothing.
+fn after_defence(amount: i64, outcome: HitOutcome) -> i64 {
+    match outcome {
+        HitOutcome::Hit => amount,
+        HitOutcome::Blocked => (js_round(amount as f64 / 4.0) as i64).max(1),
+        HitOutcome::Dodged => 0,
     }
 }
 
@@ -183,6 +336,12 @@ fn panic(ctx: &mut Ctx, id: &str) {
 }
 
 pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &str) {
+    damage_monster_with(ctx, monster_id, amount, attacker, HitOutcome::Hit);
+}
+
+/// A blow on a monster, after its defence: `outcome` says whether it was blocked or dodged.
+pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &str, outcome: HitOutcome) {
+    let amount = after_defence(amount, outcome);
     let tick = ctx.tick();
     let attacker_pos = ctx.cr(attacker).pos;
     let current_pos = {
@@ -200,11 +359,16 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
         damage: amount as f64,
         pos,
         fatal,
+        outcome,
     });
+    if outcome == HitOutcome::Dodged {
+        return;
+    }
     let m = ctx.m(monster_id);
     if !fatal {
         if m.hit_tick == 0 {
-            set_anim(m, AnimId::Hit, true);
+            let anim = if outcome == HitOutcome::Blocked { AnimId::BlockHit } else { AnimId::Hit };
+            set_anim(m, anim, true);
         }
         if current_pos.is_none_or(|current| dist(m.pos, attacker_pos) < dist(m.pos, current)) {
             m.target_id = Some(attacker.to_owned());
@@ -280,6 +444,19 @@ pub struct Assailant {
 }
 
 pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant, mode: FightMode) {
+    damage_character_with(ctx, victim, amount, by, mode, HitOutcome::Hit);
+}
+
+/// A blow on a villager, after their defence: `outcome` says whether it was blocked or dodged.
+pub fn damage_character_with(
+    ctx: &mut Ctx,
+    victim: &str,
+    amount: i64,
+    by: Assailant,
+    mode: FightMode,
+    outcome: HitOutcome,
+) {
+    let amount = after_defence(amount, outcome);
     let tick = ctx.tick();
     let v = ctx.c(victim);
     let cap = max_hp(v);
@@ -289,7 +466,18 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     v.combat.last_hit_by_id = Some(by.id.clone());
     let fatal = v.hp <= 0.0;
     let pos = v.pos;
-    ctx.emit(SimEvent::Hit { attacker_id: by.id.clone(), target_id: victim.into(), damage: amount as f64, pos, fatal });
+    ctx.emit(SimEvent::Hit {
+        attacker_id: by.id.clone(),
+        target_id: victim.into(),
+        damage: amount as f64,
+        pos,
+        fatal,
+        outcome,
+    });
+    // Stepped clean out of it: nothing hurts, nothing to answer.
+    if outcome == HitOutcome::Dodged {
+        return;
+    }
 
     if fatal {
         let cause = match &by.character {
@@ -305,7 +493,8 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     }
     let v = ctx.c(victim);
     if v.combat.hit_tick == 0 {
-        set_anim(v, AnimId::Hit, true);
+        let anim = if outcome == HitOutcome::Blocked { AnimId::BlockHit } else { AnimId::Hit };
+        set_anim(v, anim, true);
     }
     if was_fresh {
         bump_epoch(v);
@@ -519,7 +708,8 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
             && dist(pos, m.pos) <= reach
         {
             let monster = m.id.clone();
-            damage_monster(ctx, &monster, damage, id);
+            let outcome = monster_defends(ctx, &monster, pos, Blow::of(weapon.style));
+            damage_monster_with(ctx, &monster, damage, id, outcome);
         }
         return;
     }
@@ -527,7 +717,9 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
     let v = ctx.cr(&victim);
     if v.inside.is_none() && dist(pos, v.pos) <= reach {
         let label = first_name(ctx.cr(id)).to_owned();
-        damage_character(ctx, &victim, damage, Assailant { id: id.into(), label, character: Some(id.into()) }, mode);
+        let outcome = villager_defends(ctx, &victim, pos, Blow::of(weapon.style));
+        let by = Assailant { id: id.into(), label, character: Some(id.into()) };
+        damage_character_with(ctx, &victim, damage, by, mode, outcome);
     }
 }
 

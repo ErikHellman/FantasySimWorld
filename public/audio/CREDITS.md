@@ -14,7 +14,7 @@ Some sounds were cut, mixed, levelled and re-encoded for the game.
 | [Nature Ambient Pack Vol 1: Pine Forest](https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1) | JC Sounds | CC BY 4.0 | forest |
 | [Nature Ambient Pack Vol 1: Torch Flame](https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1) | JC Sounds | CC BY 4.0 | smithy |
 | [Nature Ambient Pack Vol 1: Winter Wind](https://opengameart.org/content/jc-sounds-nature-ambient-pack-vol-1) | JC Sounds | CC BY 4.0 | wind |
-| [RPG Sound Pack](https://opengameart.org/content/rpg-sound-pack) | artisticdude | CC0 | arrow_shot, magic_cast |
+| [RPG Sound Pack](https://opengameart.org/content/rpg-sound-pack) | artisticdude | CC0 | dodge_whoosh, arrow_shot, magic_cast |
 | [Dark Forest Theme](https://opengameart.org/content/dark-forest-theme) | cynicmusic | CC0 | music: dark_forest |
 | [Determined Pursuit](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) | Emma_MA | CC0 | music: determined_pursuit |
 | [Evil Approach](https://opengameart.org/content/evil-approach) | nene | CC0 | music: evil_approach |
@@ -30,7 +30,7 @@ Some sounds were cut, mixed, levelled and re-encoded for the game.
 | [Medieval: Victory Theme](https://opengameart.org/content/medieval-victory-theme) | RandomMind | CC0 | music: sting_victory |
 | [100 CC0 metal and wood SFX](https://opengameart.org/content/100-cc0-metal-and-wood-sfx) | rubberduck | CC0 | smithy |
 | [80 CC0 creature SFX](https://opengameart.org/content/80-cc0-creature-sfx) | rubberduck | CC0 | hurt, death |
-| [80 CC0 RPG SFX](https://opengameart.org/content/80-cc0-rpg-sfx) | rubberduck | CC0 | sword_hit, monster_spawn, monster_death |
+| [80 CC0 RPG SFX](https://opengameart.org/content/80-cc0-rpg-sfx) | rubberduck | CC0 | sword_hit, block_clang, monster_spawn, monster_death |
 | [Peaceful Forest](https://opengameart.org/content/peaceful-forest) | Samza | CC0 | music: peaceful_forest |
 | [Blacksmith's Hammer](https://opengameart.org/content/blacksmiths-hammer) | VishwaJai | CC0 | smithy |
 | [Chickens demanding food](https://commons.wikimedia.org/wiki/File:Chickens_demanding_food.ogg) | alys (PDSounds) | Public domain | village_day |

@@ -127,6 +127,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
             yielded: false,
             mercy_until_tick: 0,
             mercy_target_id: None,
+            defend_ready_tick: 0,
         },
         epoch: 0,
         thought: String::new(),

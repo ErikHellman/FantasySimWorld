@@ -50,6 +50,10 @@ fn main() {
         for event in sim.step() {
             let key = match &event {
                 fsw_sim::SimEvent::ConversationStarted { tone, .. } => format!("conversation:{}", tone.as_str()),
+                fsw_sim::SimEvent::Hit { outcome: fsw_sim::events::HitOutcome::Blocked, .. } => {
+                    "hit:blocked".to_owned()
+                }
+                fsw_sim::SimEvent::Hit { outcome: fsw_sim::events::HitOutcome::Dodged, .. } => "hit:dodged".to_owned(),
                 fsw_sim::SimEvent::Death { monster, .. } => {
                     (if *monster { "death:monster" } else { "death:villager" }).to_owned()
                 }

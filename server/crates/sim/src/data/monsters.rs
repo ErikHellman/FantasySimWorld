@@ -33,6 +33,10 @@ pub struct MonsterDef {
     pub sight: f64,
     /// relative chance in an ordinary wave
     pub weight: f64,
+    /// the chance of turning a blow aside
+    pub block: f64,
+    /// the chance of stepping out of a blow
+    pub dodge: f64,
 }
 
 /// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks).
@@ -53,6 +57,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[Attack1hChop, Attack1hStab],
         sight: 18.0,
         weight: 5.0,
+        block: 0.0,
+        dodge: 0.0,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonWarrior,
@@ -70,6 +76,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[Attack1hChop, Attack1hSlice],
         sight: 18.0,
         weight: 3.0,
+        block: 0.3,
+        dodge: 0.0,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonRogue,
@@ -87,6 +95,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[AttackDualChop, AttackDualSlice],
         sight: 21.0,
         weight: 2.0,
+        block: 0.0,
+        dodge: 0.2,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonMage,
@@ -104,6 +114,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[MagicShoot],
         sight: 20.0,
         weight: 2.0,
+        block: 0.0,
+        dodge: 0.0,
     },
     MonsterDef {
         kind: MonsterKind::Necromancer,
@@ -121,6 +133,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[MagicShoot, MagicCast],
         sight: 23.0,
         weight: 0.0,
+        block: 0.0,
+        dodge: 0.0,
     },
 ];
 

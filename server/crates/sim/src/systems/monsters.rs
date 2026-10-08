@@ -9,9 +9,10 @@ use fsw_world::places::get_place;
 use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
 use crate::data::monsters::{MONSTERS, MonsterKind};
+use crate::events::HitOutcome;
 use crate::events::{Projectile, SimEvent};
 use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
-use crate::systems::combat::{Assailant, damage_character};
+use crate::systems::combat::{Assailant, Blow, damage_character_with, villager_defends};
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
 use crate::util::{Ctx, living, monster_ids, set_anim};
@@ -61,6 +62,7 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         raised_by: None,
         kills: 0,
         blows: 0,
+        defend_ready_tick: 0,
     };
     ctx.state.monsters.insert(id.clone(), monster);
     ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
@@ -196,12 +198,15 @@ pub fn update_monsters(ctx: &mut Ctx) {
                     && dist(ctx.state.characters[&victim].pos, monster_pos) <= reach
                 {
                     let damage = ctx.int_range(def.damage[0], def.damage[1]);
+                    let outcome = villager_defends(ctx, &victim, monster_pos, Blow::of(def.style));
                     let by = Assailant { id: id.clone(), label: def.label.into(), character: None };
-                    damage_character(ctx, &victim, damage, by, FightMode::Monster);
+                    damage_character_with(ctx, &victim, damage, by, FightMode::Monster, outcome);
                     // Its tally, for the viewer's card.
                     let slain = !ctx.state.characters.contains_key(&victim);
                     let monster = ctx.m(&id);
-                    monster.blows += 1;
+                    if outcome != HitOutcome::Dodged {
+                        monster.blows += 1;
+                    }
                     if slain {
                         monster.kills += 1;
                     }

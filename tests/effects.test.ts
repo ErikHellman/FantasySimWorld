@@ -14,6 +14,9 @@ const listener = { x: 0, z: 0, distance: 10 };
 const attack = (ranged: 'arrow' | 'bolt' | 'magic' | 'food'): WireEvent =>
   ({ type: 'attack', attackerId: 'c1', targetId: 'c2', ranged, from: { x: 0, z: 0 }, to: { x: 2, z: 0 } }) as WireEvent;
 
+const hit = (outcome?: 'blocked' | 'dodged'): WireEvent =>
+  ({ type: 'hit', attackerId: 'm1', targetId: 'c2', damage: 3, pos: { x: 1, z: 0 }, fatal: false, ...(outcome ? { outcome } : {}) }) as WireEvent;
+
 describe('effects', () => {
   it('plays a shot for an arrow and a bolt, and a spell for magic', () => {
     const { engine, played } = fakeEngine();
@@ -25,5 +28,11 @@ describe('effects', () => {
     const { engine, played } = fakeEngine();
     playEffects(engine, [attack('food')], () => true, listener);
     expect(played).toEqual([]);
+  });
+
+  it('cries out at a blow that lands, rings at a block and whooshes at a dodge', () => {
+    const { engine, played } = fakeEngine();
+    playEffects(engine, [hit(), hit('blocked'), hit('dodged')], () => true, listener);
+    expect(played).toEqual(['sword_hit', 'hurt', 'block_clang', 'dodge_whoosh']);
   });
 });
