@@ -3,10 +3,11 @@
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
+use fsw_sim::data::anims::AnimId;
 use fsw_sim::data::classes::ClassId;
 use fsw_sim::state::{
-    Bond, BondKind, FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, NewVillager, Pronouns,
-    Quirk, RelationLabel, TalkTone,
+    Bond, BondKind, ConvoPhase, FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, NewVillager,
+    Pronouns, Quirk, RelationLabel, TalkTone,
 };
 use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, max_hp, panic_chance, run_fight, start_fight};
 use fsw_sim::systems::death::kill_character;
@@ -464,6 +465,39 @@ fn conversations_wait_for_lines_then_fall_back_to_local_ones() {
     assert!(lines >= 3);
     let rowan = &w.sim.state.characters[&a];
     assert!(rowan.memories.iter().any(|m| m.kind == MemoryKind::Talk && m.subjects.contains(&b)));
+}
+
+#[test]
+fn a_talker_who_has_reached_their_partner_stops_walking_and_the_conversation_starts() {
+    let mut w = World::new(8);
+    w.sim.enqueue(Command::Tuning { tuning: TuningPatch { script_wait_ticks: Some(100), ..Default::default() } });
+    w.run(3);
+    let (a, b) = (w.who("Rowan"), w.who("Isolde"));
+    let epoch = w.sim.state.characters[&a].epoch;
+    let talk = Intent::new(
+        IntentAction::Talk { target_id: b.clone(), opener: "Walk with me, child.".into(), tone: TalkTone::Friendly },
+        IntentSource::Llm,
+    );
+    w.sim.enqueue(Command::SetIntents { id: a.clone(), epoch, intents: vec![talk] });
+    let hailing = |w: &World| w.sim.state.conversations.values().any(|c| c.a == a && c.phase == ConvoPhase::Hail);
+    w.run_until(6000, hailing);
+    assert!(hailing(&w), "Rowan never hailed Isolde");
+    // While hailing, the legs only move when the body does, and standing still means the talk begins:
+    // nobody walks on the spot for the fourteen seconds of the hail timeout.
+    let mut stood_still = 0;
+    for _ in 0..1000 {
+        if !hailing(&w) {
+            break;
+        }
+        w.run(1);
+        let rowan = &w.sim.state.characters[&a];
+        if !rowan.moving {
+            stood_still += 1;
+            assert_ne!(rowan.anim, AnimId::Walk, "walking on the spot after {stood_still} ticks");
+        }
+    }
+    assert!(!hailing(&w), "the hail never turned into a conversation");
+    assert!(stood_still <= 2, "stood still for {stood_still} ticks before the conversation started");
 }
 
 /// Puts a villager of middling nerve in a model-ordered stand against a skeleton at the given share of
