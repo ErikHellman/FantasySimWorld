@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
-import { actions, closeSheet, ui, type CharacterDetail, type MonsterDetail, type RelationRow } from './store';
+import { actions, closeSheet, ui, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -141,6 +141,22 @@ function MonsterCard({ d }: { d: MonsterDetail }) {
   );
 }
 
+/** The card of a ghost: who it was, how they died, and how long it will walk. It cannot be fought, so no health. */
+function GhostCard({ d }: { d: GhostDetail }) {
+  const nights = d.nightsLeft === 1 ? 'This is its last night.' : `It will walk ${d.nightsLeft} more nights.`;
+  return (
+    <>
+      <h2>{d.name}</h2>
+      <p class="subtitle">ghost · {d.cause ? `${d.cause}, day ${d.diedDay}` : `died on day ${d.diedDay}`}</p>
+      <p class="status">{d.status}</p>
+      <div class="tab-body">
+        <p>Seen only after dark. It frightens whoever meets it, and its touch leaves them cold and weak, but it cannot kill and cannot be fought.</p>
+        {d.nightsLeft > 0 && <p class="muted">{nights} Then it will find rest.</p>}
+      </div>
+    </>
+  );
+}
+
 function VillagerCard({ d }: { d: CharacterDetail }) {
   const [tab, setTab] = useState<Tab>('about');
   return (
@@ -170,7 +186,7 @@ export function Inspector() {
     <aside class="panel inspector">
       {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
       <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
-      {d.kind === 'monster' ? <MonsterCard d={d} /> : <VillagerCard d={d} />}
+      {d.kind === 'monster' ? <MonsterCard d={d} /> : d.kind === 'ghost' ? <GhostCard d={d} /> : <VillagerCard d={d} />}
     </aside>
   );
 }

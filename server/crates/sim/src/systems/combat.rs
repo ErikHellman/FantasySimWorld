@@ -16,6 +16,7 @@ use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, free_grave_plot, kill_character};
 use crate::systems::economy::drop_loot;
+use crate::systems::ghosts;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::relationships::{RelationDelta, adjust};
@@ -345,7 +346,16 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
             Some(_) => format!("killed by {}", by.label),
             None => format!("slain by a {} at {}", by.label, place_name_at(pos)),
         };
+        // Some of those the dead cut down do not rest at once; see `systems::ghosts`.
+        let ghost = (mode == FightMode::Monster
+            && by.character.is_none()
+            && !ctx.cr(victim).is_child()
+            && ghosts::returns(ctx.state.seed, victim))
+        .then(|| ghosts::Haunt::of(ctx, victim));
         kill_character(ctx, victim, &cause, by.character.as_deref());
+        if let Some(haunt) = ghost {
+            ghosts::bind(ctx, haunt);
+        }
         return;
     }
 

@@ -17,9 +17,9 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
-/// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
+/// Character, monster, ghost, corpse and conversation ids (`c1`, `m7`, `g9`, …).
 pub type Id = String;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq)]
@@ -64,6 +64,8 @@ pub enum EntityKind {
     Villager,
     Monster,
     Corpse,
+    /// a villager slain by the dead, walking again for a few nights; drawn see-through, and seen only by night
+    Ghost,
 }
 
 /// How a character or monster is drawn (the sim's `Look`).
@@ -868,6 +870,25 @@ pub struct MonsterDetail {
     pub damage: [u32; 2],
 }
 
+/// The inspector for a ghost, every label rendered on the server.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GhostDetail {
+    pub id: Id,
+    /// the full name of the villager it was
+    pub name: String,
+    /// the villager it was
+    pub was_id: Id,
+    /// the day they died
+    pub died_day: u32,
+    /// how they died, e.g. "slain by a Skeleton Warrior at the green"
+    pub cause: String,
+    /// what it is doing now, e.g. "Haunting the village near the well"
+    pub status: String,
+    /// nights it still has to walk, counting tonight; 0 before it first rises
+    pub nights_left: u32,
+}
+
 /// What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -875,6 +896,7 @@ pub enum Detail {
     // Boxed so the enum stays small whichever card is the bigger one.
     Villager(Box<CharacterDetail>),
     Monster(Box<MonsterDetail>),
+    Ghost(Box<GhostDetail>),
 }
 
 /// What a site is: a place's building, or something the village put up on a pad.
@@ -1316,6 +1338,7 @@ pub fn typescript() -> String {
         CharacterDetail,
         NamedId,
         MonsterDetail,
+        GhostDetail,
         Detail,
         SiteKind,
         SiteNeed,

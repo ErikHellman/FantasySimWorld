@@ -10,8 +10,8 @@ use fsw_world::places::nearest_place;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
-    Character, ChronicleEntry, ChronicleKind, Id, IntentAction, Memory, MemoryKind, Monster, MonsterPhase, Pronouns,
-    Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
+    Character, ChronicleEntry, ChronicleKind, Ghost, Id, IntentAction, Memory, MemoryKind, Monster, MonsterPhase,
+    Pronouns, Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
 };
 
 pub const MEMORY_CAP: usize = 140;
@@ -257,6 +257,7 @@ macro_rules! body {
 }
 body!(Character);
 body!(Monster);
+body!(Ghost);
 
 pub fn set_anim(entity: &mut impl Body, anim: AnimId, restart: bool) {
     let (current, seq) = entity.anim_mut();

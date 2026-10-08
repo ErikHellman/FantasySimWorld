@@ -14,6 +14,7 @@ pub mod dragon;
 pub mod economy;
 pub mod fire;
 pub mod founding;
+pub mod ghosts;
 pub mod intents;
 pub mod monsters;
 pub mod movement;

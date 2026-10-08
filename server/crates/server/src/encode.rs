@@ -2,10 +2,10 @@
 //! at the `ts-sim-reference` tag): what each entity looks like on the wire, how a tick's changes
 //! become a `tick` frame, and which sim events viewers get.
 //!
-//! - Ids: villagers and monsters keep their sim ids; a corpse is
+//! - Ids: villagers, monsters and ghosts keep their sim ids; a corpse is
 //!   `corpse:<id of the dead>` (it appears in the tick its villager leaves).
 //! - Order: villagers in `state.order`, monsters in insertion order, corpses in
-//!   array order; `add`, `del` and `d` follow it.
+//!   array order, then ghosts in insertion order; `add`, `del` and `d` follow it.
 //! - Quantising: positions and facing ×100 and hit points, rounded the
 //!   JavaScript way; diffs compare quantised values, so an idle entity sends nothing.
 //! - "At ease": weapons are put away while sitting or lying, and a work tool
@@ -19,13 +19,14 @@ use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
-    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, ItemId,
-    Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
+    ChronicleKind as SimChronicleKind, Corpse, Ghost, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
+    ItemId, Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
     VoiceProfile as SimVoice, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::built_fraction;
+use fsw_sim::systems::ghosts::{self, first_name_of};
 use fsw_sim::systems::world::{object_name, progress_of};
 use fsw_sim::util::{first_name, name_of};
 use fsw_world::places::{billboards, find_place, get_place};
@@ -161,6 +162,36 @@ pub fn corpse_dyn(corpse: &Corpse) -> Dyn {
     }
 }
 
+/// A ghost keeps the name and the look of the villager it was, and carries nothing. It has no health to show.
+pub fn ghost_static(ghost: &Ghost) -> EntityStatic {
+    EntityStatic {
+        id: ghost.id.clone(),
+        kind: EntityKind::Ghost,
+        name: first_name_of(ghost).to_owned(),
+        look: look(&ghost.look),
+        max_hp: 1.0,
+        hostile: false,
+        voice: None,
+    }
+}
+
+/// Seen only while it walks by night, and at its last dawn as it fades.
+pub fn ghost_dyn(ghost: &Ghost) -> Dyn {
+    Dyn {
+        p: [centi(ghost.pos.x), centi(ghost.pos.z)],
+        f: centi(ghost.facing),
+        a: (ghost.anim.as_str().to_owned(), ghost.anim_seq as u32),
+        hp: 1,
+        v: ghosts::visible(ghost),
+        mh: None,
+        oh: None,
+        act: None,
+        z: false,
+        // Its float above the ground is the client's doing; the sim keeps it on the ground.
+        y: None,
+    }
+}
+
 /// Every entity a viewer draws, in wire order.
 pub fn entities_of(state: &SimState) -> Vec<Entity> {
     let mut result = Vec::new();
@@ -174,6 +205,9 @@ pub fn entities_of(state: &SimState) -> Vec<Entity> {
     }
     for corpse in &state.corpses {
         result.push(Entity { fixed: corpse_static(corpse), state: corpse_dyn(corpse) });
+    }
+    for ghost in state.ghosts.values() {
+        result.push(Entity { fixed: ghost_static(ghost), state: ghost_dyn(ghost) });
     }
     result
 }
@@ -1037,6 +1071,38 @@ mod tests {
         assert_eq!((told[0].purse, told[0].food, told[0].gift), (74, 3, 0));
         assert!(chests(&tracker.frame(&sim.state, &[])).is_empty());
         assert_eq!(tracker.economy(), economy_of(&sim.state));
+    }
+
+    #[test]
+    fn a_ghost_is_its_villager_unarmed_and_shown_only_while_it_walks() {
+        use fsw_sim::state::GhostPhase;
+        use fsw_sim::systems::death::kill_character;
+        use fsw_sim::systems::ghosts::{Haunt, bind};
+        use fsw_sim::util::Ctx;
+
+        let mut sim = Sim::new(create_test_state(3));
+        let victim = sim.state.order[0].clone();
+        let looked = sim.state.characters[&victim].look.clone();
+        let mut tracker = Tracker::new(&sim.state);
+        let id = {
+            let mut events = Vec::new();
+            let mut ctx = Ctx::new(&mut sim.state, &mut events);
+            let haunt = Haunt::of(&ctx, &victim);
+            kill_character(&mut ctx, &victim, "slain by a Skeleton Warrior at the green", None);
+            bind(&mut ctx, haunt)
+        };
+        let frame = tracker.frame(&sim.state, &[]);
+        let ghost = frame.add.iter().find(|e| e.fixed.id == id).expect("the ghost is added");
+        assert_eq!(ghost.fixed.kind, EntityKind::Ghost);
+        assert!(!ghost.fixed.hostile);
+        assert_eq!(ghost.fixed.look.model, looked.model);
+        assert_eq!((ghost.fixed.look.main_hand.as_deref(), ghost.state.mh.as_deref()), (None, None));
+        assert!(!ghost.state.v, "unseen until it rises");
+
+        sim.state.ghosts.get_mut(&id).unwrap().phase = GhostPhase::Abroad;
+        let frame = tracker.frame(&sim.state, &[]);
+        let delta = frame.d.iter().find(|d| d.id == id).expect("a delta for the ghost");
+        assert_eq!(delta.v, Some(true));
     }
 
     #[test]

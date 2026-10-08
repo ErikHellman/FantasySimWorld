@@ -55,6 +55,7 @@ export class Effects {
       (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }),
     ),
     scorch: new THREE.MeshBasicMaterial({ color: 0xff8a1e, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+    mist: new THREE.MeshBasicMaterial({ color: 0xcfe6ff, transparent: true, depthWrite: false }),
   };
 
   constructor(private readonly assets: Assets) {
@@ -67,6 +68,11 @@ export class Effects {
     mesh.position.set(x, y, z);
     this.group.add(mesh);
     this.bursts.push({ mesh, age: 0, life, grow });
+  }
+
+  /** A ring of pale mist on the ground, where a ghost comes or goes. */
+  mist(x: number, y: number, z: number): void {
+    this.burst(x, y + 0.08, z, this.materials.mist, 3.5, 1.8);
   }
 
   /** A stream of fire from the dragon's mouth down to `to`, and a ring of flame where it lands. */
