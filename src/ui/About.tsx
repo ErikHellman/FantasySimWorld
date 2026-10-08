@@ -32,7 +32,7 @@ export function AboutTechPanel() {
             routines, walking, conversations, fights and fires. It is deterministic, so the same start and the same
             commands always give the same village.
           </li>
-          <li><strong>SQLite</strong> holds the world, its history and the accounts, with Litestream for backups.</li>
+          <li><strong>SQLite</strong> holds the world, its history and the settings, with Litestream for backups.</li>
           <li><strong>Server-sent events</strong> carry the world to each browser as one long-lived stream.</li>
           <li>It all runs as one container on <strong>Fly.io</strong>, in Stockholm.</li>
         </ul>

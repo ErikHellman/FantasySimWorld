@@ -25,16 +25,16 @@ The server migration is complete. The world, the language-model brain and every 
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
 - Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
+- The dead have cards: click one of them and the inspector shows its health, what it is after, where and how it rose, who it once was and how many villagers it has slain.
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
 - Ambient sound, effects and adaptive music.
-- A container image with Litestream backups and Fly.io settings, and a GitHub Actions workflow that deploys it when started by hand.
+- A container image with Litestream backups and Fly.io settings, deployed from a GitHub Actions workflow started by hand ([docs/deploy.md](docs/deploy.md)).
 
 Not yet done or not yet tried:
 
-- **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
-- **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
+- **Models**: the figures under [Connecting a language model](#connecting-a-language-model) are from one local model (`qwen/qwen3.6-35b-a3b` in LM Studio). The deployed game uses hosted models (the help's tech tour says which), but they have not been measured the same way; run the `probe` tool against yours.
 - **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, orc raiders and large bosses, block and dodge.
 
 ## What you need
@@ -75,11 +75,11 @@ set -a; . ./.env; set +a
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
-- Click a villager to follow them and open the inspector (profile, needs, plan, relationships, memories).
+- Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead to follow it and read its card instead.
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen and how the village works. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the dead, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
