@@ -34,6 +34,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::weather::{sheltering_from_hail, update_weather};
 use crate::systems::world::{MAX_PROJECTS, job_accepts, update_world};
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
@@ -73,6 +74,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
             }
         }
         IntentAction::Flee | IntentAction::Wait { .. } | IntentAction::Nap { .. } => true,
+        // Nor going in out of the weather: the weather itself sends people in.
+        IntentAction::Shelter => false,
         // Murder is the sim's own doing, never a decision handed in from outside.
         IntentAction::Stalk { .. } => false,
         // Nor is the bucket chain: the fire itself calls people to it.
@@ -117,9 +120,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
-    // Nobody talks their way out of the bucket chain, out of fetching a child home, or leaves a wedding or a
-    // funeral; only a fight or flight comes before those.
-    let bound = fighting_fire(ctx.cr(id)) || fetching(ctx.cr(id)) || attending(ctx.cr(id));
+    // Nobody talks their way out of the bucket chain, out of fetching a child home, out of shelter from the
+    // hail, or leaves a wedding or a funeral; only a fight or flight comes before those.
+    let c = ctx.cr(id);
+    let bound = fighting_fire(c) || fetching(c) || attending(c) || sheltering_from_hail(ctx.state, c);
     if bound && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
         return;
     }
@@ -365,6 +369,7 @@ impl Sim {
             ctx.chronicle(ChronicleKind::World, format!("Day {day} dawns over the valley."), Vec::new());
         }
 
+        update_weather(&mut ctx);
         update_director(&mut ctx);
         update_routine(&mut ctx);
         update_quirks(&mut ctx);

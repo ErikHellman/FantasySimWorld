@@ -1,4 +1,4 @@
-import type { Billboard, Ceremony, Dyn, DynDelta, Economy, Entity, EntityKind, Grave, House, Look, Loot, Snapshot, Stockpile, TickFrame, WorldObject } from '../generated/api';
+import type { Billboard, Ceremony, Dyn, DynDelta, Economy, Entity, EntityKind, Grave, House, Look, Loot, Snapshot, Stockpile, TickFrame, Weather, WorldObject } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -24,11 +24,13 @@ export interface ViewEntity {
   asleep: boolean;
   /** for a villager, the horse they ride; for a horse, who rides it */
   mount: string | null;
+  /** height above the ground, for one in the air (the dragon) */
+  alt: number;
 }
 
 const graveKey = (grave: Grave): string => `${grave.plot}:${grave.characterId}`;
 
-function decode(target: ViewEntity, dyn: Partial<Dyn>): void {
+function decode(target: ViewEntity, dyn: Partial<Dyn> | DynDelta): void {
   if (dyn.p) {
     target.x = dyn.p[0] / 100;
     target.z = dyn.p[1] / 100;
@@ -45,13 +47,15 @@ function decode(target: ViewEntity, dyn: Partial<Dyn>): void {
   if (dyn.act !== undefined) target.act = dyn.act;
   if (dyn.z !== undefined) target.asleep = dyn.z;
   if (dyn.mt !== undefined) target.mount = dyn.mt;
+  // Absent from a snapshot, or null in a delta: on the ground.
+  if (dyn.y !== undefined) target.alt = (dyn.y ?? 0) / 100;
 }
 
 function fromEntity(entity: Entity): ViewEntity {
   const s = entity.static;
   const view: ViewEntity = {
     id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile,
-    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, mount: null,
+    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, mount: null, alt: 0,
   };
   decode(view, entity.dyn);
   return view;
@@ -99,6 +103,10 @@ export class ViewWorld {
   readonly loot = new Map<string, Loot>();
   /** bumped when loot appears or goes */
   lootVersion = 0;
+  /** what the sky is doing */
+  weather: Weather = { kind: 'clear', intensity: 0, wind: 0, windDir: 0 };
+  /** bumped when the weather changes */
+  weatherVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -126,6 +134,8 @@ export class ViewWorld {
     this.loot.clear();
     for (const loot of snapshot.loot) this.loot.set(loot.id, loot);
     this.lootVersion++;
+    this.weather = snapshot.weather;
+    this.weatherVersion++;
   }
 
   /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
@@ -162,6 +172,9 @@ export class ViewWorld {
         if (event.loot.gone) this.loot.delete(event.loot.id);
         else this.loot.set(event.loot.id, event.loot);
         this.lootVersion++;
+      } else if (event.type === 'weather') {
+        this.weather = event.weather;
+        this.weatherVersion++;
       }
     }
   }

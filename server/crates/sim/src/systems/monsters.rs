@@ -1,4 +1,4 @@
-//! The walking dead: rising, roaming, chasing, striking, crumbling at dawn.
+//! The walking dead: rising, roaming, chasing, striking, crumbling at dawn. (The dragon is in `dragon`.)
 
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::rng;
@@ -12,6 +12,7 @@ use crate::data::monsters::{MONSTERS, MonsterKind};
 use crate::events::{Projectile, SimEvent};
 use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
 use crate::systems::combat::{Assailant, damage_character};
+use crate::systems::dragon::update_dragon;
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
 use crate::util::{Ctx, living, monster_ids, set_anim};
@@ -61,6 +62,8 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         raised_by: None,
         kills: 0,
         blows: 0,
+        alt: 0.0,
+        raid: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
     ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
@@ -154,6 +157,10 @@ pub fn update_monsters(ctx: &mut Ctx) {
     for id in monster_ids(ctx.state) {
         let Some(monster) = ctx.state.monsters.get_mut(&id) else { continue };
         let def = monster.kind.def();
+        if def.flies {
+            update_dragon(ctx, &id);
+            continue;
+        }
         monster.moving = false;
 
         if monster.phase == MonsterPhase::Dying {

@@ -10,6 +10,8 @@ const S4 = 'KayKit Mystery Monthly Series 4 (1.1)';
 const S5 = 'KayKit Mystery Monthly Series 5 (1.1)';
 const S6 = 'KayKit Mystery Monthly Series 6 (1.1)';
 
+const DRAGON = 'tools/blender/rigged/Dragon.glb';
+
 const ALL_COLOURS = ['blue', 'green', 'red', 'yellow'];
 const BLUE_ONLY_BUILDINGS = [
   'archeryrange', 'barracks', 'church', 'docks', 'lumbermill', 'mine', 'shrine', 'stables',
@@ -167,6 +169,8 @@ export const characters = [
     scale: 0.6,
   })),
   { id: 'Child_Farmer', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_A.glb`, scale: 0.6 },
+  // Made for this project with Blender (tools/blender/make_dragon.py); `local` paths are relative to the repo.
+  { id: 'Dragon', file: DRAGON, local: true, rig: 'dragon' },
 ];
 
 /** Extra textures that are not referenced by any model (recolours). */
@@ -268,4 +272,16 @@ const large = {
   borrow: { from: 'medium', exclude: /^Skeletons_/, seated: /^Sit_Chair_/, drawnAt: 0.7 },
 };
 
-export const rigs = [medium, large];
+// The dragon's own skeleton and clips, from the same file as its mesh. It plays nothing else.
+const dragon = {
+  id: 'dragon',
+  files: [
+    {
+      file: DRAGON,
+      local: true,
+      clips: ['Dragon_Fly', 'Dragon_Hover', 'Dragon_Breath', 'Dragon_Roar', 'Dragon_Hit', 'Dragon_Death'],
+    },
+  ],
+};
+
+export const rigs = [medium, large, dragon];

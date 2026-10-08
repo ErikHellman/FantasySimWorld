@@ -207,6 +207,7 @@ button.link { border: 0; background: none; padding: 0; font-weight: 700; text-de
 .clock-time { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .clock-day { font-weight: 800; color: var(--accent); }
 .clock-part { color: var(--muted); font-size: 12px; }
+.clock-weather { font-size: 12px; color: var(--muted); }
 .speeds { display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--panel-border); }
 .speeds button { border: 0; min-width: 34px; font-weight: 800; }
 .pills { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
@@ -402,7 +403,7 @@ button.big, a.button.big { font-size: 17px; padding: 10px 26px; border-radius: 1
 @keyframes pulse { 50% { opacity: 0.6; } }
 
 @media (max-width: 760px) {
-  .brand, .clock-part { display: none; }
+  .brand, .clock-part, .clock-weather-word { display: none; }
   .roster { width: 170px; }
   .inspector { top: auto; bottom: calc(10px + var(--chat-h, 0px)); max-height: calc(55% - var(--chat-h, 0px) / 2); }
   .chronicle { display: none; }

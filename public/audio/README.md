@@ -9,12 +9,12 @@ as Ogg Opus with an MP3 fallback for browsers that cannot decode Ogg.
 
 Ambient slots are seamless loops; the mixer fades them in and out by where the
 camera is looking, how far it is zoomed out, the time of day and what the
-villagers are doing.
+villagers are doing, and the weather.
 
 | File name        | What it is                                             |
 | ---------------- | ------------------------------------------------------ |
 | `birds_day`      | Birdsong, daytime loop                                 |
-| `wind`           | Soft wind loop, heard most when zoomed out             |
+| `wind`           | Wind loop, heard most when zoomed out and in a wind    |
 | `forest`         | Forest loop (leaves, distant birds), near the trees    |
 | `river`          | Running water loop, near the river                     |
 | `shore`          | Lapping water loop, near the lake                      |
@@ -23,6 +23,8 @@ villagers are doing.
 | `tavern`         | Tavern chatter loop, when people are at the tables     |
 | `smithy`         | Hammer on anvil loop, when someone is at the forge     |
 | `campfire`       | Crackling fire loop, at the forest glade               |
+| `rain`           | Rain loop, louder the harder it rains                  |
+| `hail`           | Hail drumming loop, while it hails                     |
 
 Effect slots are short one-shots, played with a little random pitch variation.
 

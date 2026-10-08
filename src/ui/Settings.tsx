@@ -9,7 +9,7 @@ type Toggle = 'ambientOn' | 'effectsOn' | 'musicOn';
 type Volume = 'ambient' | 'effects' | 'music';
 
 const CATEGORIES: readonly { on: Toggle; volume: Volume; label: string; hint: string }[] = [
-  { on: 'ambientOn', volume: 'ambient', label: 'Ambience', hint: 'Birds, wind, water, the village and the tavern, by where the camera looks' },
+  { on: 'ambientOn', volume: 'ambient', label: 'Ambience', hint: 'Birds, wind, rain, water, the village and the tavern, by where the camera looks and the weather' },
   { on: 'effectsOn', volume: 'effects', label: 'Effects', hint: 'Blows, spells, cries and the alarm bell' },
   { on: 'musicOn', volume: 'music', label: 'Music', hint: 'Background music that follows what you are watching' },
 ];

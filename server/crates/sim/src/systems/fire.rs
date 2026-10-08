@@ -31,6 +31,7 @@ use crate::systems::death::{detach, kill_character};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::relationships::{RelationDelta, adjust};
+use crate::systems::weather::wetness;
 use crate::systems::world::{
     building_id, building_whole, drop_object, place_model, position_of, prop_name, put_object,
 };
@@ -44,10 +45,19 @@ const COOLDOWN_TICKS: i64 = 6 * TICKS_PER_DAY;
 const LIGHT_SECONDS: f64 = 4.0;
 /// How far the fire has taken hold when it is discovered.
 const START_FIRE: f64 = 20.0;
+/// The dragon's breath sets the roof alight from above: it has further to go, and the village is hiding
+/// from the dragon while it does.
+const ROOF_FIRE: f64 = 8.0;
 /// How much the fire grows each game minute, whatever anyone does: a steady part, and a part that rises
 /// with the fire itself, so a blaze that is not being beaten back soon gets out of hand.
 const GROWTH_PER_MINUTE: f64 = 1.0;
 const GROWTH_PER_FIRE: f64 = 0.02;
+/// Weather (`systems::weather`): at full strength rain or hail takes this share off a fire's growth and
+/// knocks it back this much more each game minute, so a downpour can drown a small fire; a full gale
+/// adds this share to its growth.
+const RAIN_DAMPING: f64 = 0.6;
+const RAIN_DROWNING: f64 = 0.8;
+const WIND_FANNING: f64 = 0.5;
 /// How much one bucket of water knocks it back.
 const BUCKET: f64 = 3.0;
 const FILL_SECONDS: f64 = 2.0;
@@ -472,6 +482,15 @@ pub fn ignite(ctx: &mut Ctx, place_id: &str) {
 
 /// A home catches, set alight by a villager or (`None`) by the dead.
 pub fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
+    light_home(ctx, place_id, arsonist, false);
+}
+
+/// A home catches under the dragon's breath.
+pub fn ignite_from_above(ctx: &mut Ctx, place_id: &str) {
+    light_home(ctx, place_id, None, true);
+}
+
+fn light_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>, dragon: bool) {
     let tick = ctx.tick();
     let Some(place) = find_place(place_id) else { return };
     if ctx.state.houses.contains_key(place_id) {
@@ -479,7 +498,13 @@ pub fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
     }
     ctx.state.houses.insert(
         place_id.to_owned(),
-        House { phase: HousePhase::Burning, fire: START_FIRE, built: 0.0, since_tick: tick, helpers: Vec::new() },
+        House {
+            phase: HousePhase::Burning,
+            fire: if dragon { ROOF_FIRE } else { START_FIRE },
+            built: 0.0,
+            since_tick: tick,
+            helpers: Vec::new(),
+        },
     );
     ctx.state.director.last_fire_tick = tick;
 
@@ -506,11 +531,12 @@ pub fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
         ctx.emit(SimEvent::Emote { id: crier.clone(), emote: Emote::Alert });
     }
     if arsonist.is_none() {
-        ctx.chronicle(
-            ChronicleKind::Fire,
-            format!("While the village slept, the dead set fire to {}.", place.name),
-            ids_with(residents(ctx.state, place_id), place_id),
-        );
+        let text = if dragon {
+            format!("The dragon set fire to {}.", place.name)
+        } else {
+            format!("While the village slept, the dead set fire to {}.", place.name)
+        };
+        ctx.chronicle(ChronicleKind::Fire, text, ids_with(residents(ctx.state, place_id), place_id));
     }
     arson_consequences(ctx, place_id, arsonist);
     ctx.emit(SimEvent::SavePoint { reason: "fire".into() });
@@ -688,11 +714,12 @@ fn put_out(ctx: &mut Ctx, site: &str) {
         drop_object(ctx.state, site);
     }
     let name = site_name(site);
-    ctx.chronicle(
-        ChronicleKind::Fire,
-        format!("The fire at {name} is out. {} carried the water that saved it.", names(ctx.state, &helpers)),
-        ids_with(helpers.clone(), site),
-    );
+    let text = if helpers.is_empty() {
+        format!("The rain has put out the fire at {name}.")
+    } else {
+        format!("The fire at {name} is out. {} carried the water that saved it.", names(ctx.state, &helpers))
+    };
+    ctx.chronicle(ChronicleKind::Fire, text, ids_with(helpers.clone(), site));
     for id in &helpers {
         let others: Vec<Id> = helpers.iter().filter(|other| *other != id).cloned().collect();
         for other in &others {
@@ -851,11 +878,17 @@ pub fn update_fire(ctx: &mut Ctx) {
     }
     let tick = ctx.tick();
     if tick % TICKS_PER_GAME_MINUTE == 0 {
+        let (wet, wind) = (wetness(ctx.state), ctx.state.weather.wind);
+        let pace = (1.0 + WIND_FANNING * wind) * (1.0 - RAIN_DAMPING * wet);
         for site in &sites {
             let Some(level) = fire_of(ctx.state, site) else { continue };
-            let grown = level + GROWTH_PER_MINUTE + level * GROWTH_PER_FIRE;
+            let grown = level + (GROWTH_PER_MINUTE + level * GROWTH_PER_FIRE) * pace - RAIN_DROWNING * wet;
             if grown >= 100.0 {
                 burn_down(ctx, site);
+                continue;
+            }
+            if grown <= 0.0 {
+                put_out(ctx, site);
                 continue;
             }
             if is_home_site(site) {

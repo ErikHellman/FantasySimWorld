@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 12;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -136,14 +136,18 @@ z: boolean,
 /**
  * for a villager, the horse they ride; for a horse, who rides it
  */
-mt?: string | null, };
+mt?: string | null, 
+/**
+ * height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
+ */
+y?: number, };
 
 export type Entity = { static: EntityStatic, dyn: Dyn, };
 
 /**
  * The fields of [`Dyn`] that changed this tick; absent means unchanged.
  */
-export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, mt?: string | null, };
+export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, mt?: string | null, y?: number | null, };
 
 /**
  * One `tick` event per sim tick. Empty lists are left out.
@@ -209,7 +213,11 @@ economy: Economy,
 /**
  * what the dead left lying about
  */
-loot: Array<Loot>, };
+loot: Array<Loot>, 
+/**
+ * what the sky is doing
+ */
+weather: Weather, };
 
 export type WorldReset = { 
 /**
@@ -219,7 +227,7 @@ reason: string, };
 
 export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift" | "music";
 
-export type Ranged = "arrow" | "bolt" | "magic" | "food";
+export type Ranged = "arrow" | "bolt" | "magic" | "food" | "fire";
 
 /**
  * One spoken line, with everything a sink needs to show it or say it aloud.
@@ -241,7 +249,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -394,6 +402,25 @@ gone: boolean, };
 
 export type LootKind = "coins" | "trinket" | "relic";
 
+export type WeatherKind = "clear" | "rain" | "wind" | "hail";
+
+/**
+ * What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+ */
+export type Weather = { kind: WeatherKind, 
+/**
+ * how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+ */
+intensity: number, 
+/**
+ * the wind, whatever the kind, 0..100 in steps of 5
+ */
+wind: number, 
+/**
+ * the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+ */
+windDir: number, };
+
 /**
  * Raw materials in a villager's arms.
  */
@@ -420,7 +447,15 @@ export type Status = { llm: LlmStatus, viewers: number, speed: number,
 /**
  * the world is held at 1x because the model has a backlog
  */
-throttled: boolean, population: number, monsters: number, alarm: boolean, 
+throttled: boolean, population: number, 
+/**
+ * the dead abroad
+ */
+monsters: number, 
+/**
+ * the dragon is over the valley
+ */
+dragon: boolean, alarm: boolean, 
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
@@ -546,6 +581,10 @@ was: string | null,
  * does not crumble at dawn
  */
 lasting: boolean, 
+/**
+ * one of the walking dead (false for the dragon)
+ */
+undead: boolean, 
 /**
  * villagers it has slain
  */

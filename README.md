@@ -21,6 +21,7 @@ The server migration is complete. The world, the language-model brain and every 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
 - A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
 - Children: four or five live in the village from the day it is founded, and lovers who stay together have more. Children play, get into trouble (pinched food, a thrown apple, a hidden tool, a tall tale, a wander into the wilds at dusk, now and then a fire), never fight, and come of age after about a month as adults with a trade of their own ([the design](docs/superpowers/specs/2026-10-08-children-design.md)).
+- Weather: clear skies, rain, wind and hail come and go. Each villager takes it their own way (some love the rain, some hate it), which shows in their mood; those who hate the rain go indoors when it pours, and hail, which hurts, sends everyone running for cover. Rain helps keep a fire down and wind fans it ([the design](docs/superpowers/specs/2026-10-08-weather-design.md)).
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
@@ -45,7 +46,7 @@ Not yet done or not yet tried:
 - **Node.js 22** and **pnpm 10** (`corepack enable` picks the version in `package.json`), for the web client.
 - **Rust 1.88 or newer** (stable), for the server.
 - A browser with WebGPU or WebGL 2.
-- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props), and the KayKit collection (rebuilding the models).
+- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props and the dragon), and the KayKit collection (rebuilding the models).
 
 ## Run
 
@@ -82,7 +83,7 @@ set -a; . ./.env; set +a
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, animals, the dead and their ghosts, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, animals, the weather, the dead and their ghosts, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
@@ -253,7 +254,7 @@ Other tools:
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
-| `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
+| `tools` | Asset and audio builds, Blender prop and dragon generators, mock model endpoint, stream probe, world dump for the golden fixtures |
 | `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, casting, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store), `testing` (the original cast, for tests) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
@@ -284,6 +285,12 @@ The pets, farm animals and birds are made the same way, into `tools/blender/out_
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_animals.py
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/render_animals_preview.py
+```
+
+The dragon is made the same way, in the KayKit style, with its own skeleton and six animations (flying, hovering, breathing fire, roaring, being hit and falling). The script writes `tools/blender/rigged/Dragon.glb`, and `pnpm assets` turns it into a character and a rig of its own (`dragon` in `tools/assets/asset-list.mjs`). The sim times the dragon's clips by that rig, since the medium rig has none of them.
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_dragon.py
 ```
 
 ## Working on the code

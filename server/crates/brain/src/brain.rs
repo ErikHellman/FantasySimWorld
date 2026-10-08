@@ -24,6 +24,7 @@ use fsw_sim::state::{
 use fsw_sim::systems::billboards::{advice_for, advice_label, has_read, reading, shown};
 use fsw_sim::systems::ceremonies::{attending, speakers};
 use fsw_sim::systems::fire::fighting_fire;
+use fsw_sim::systems::weather::sheltering_from_hail;
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
 use fsw_world::places::{billboards, get_place};
 use parking_lot::Mutex;
@@ -268,6 +269,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
             FightMode::Lethal => format!("lethal {}", name_of(state, target_id)),
         },
         IntentAction::Flee => "flee".into(),
+        IntentAction::Shelter => "shelter from the weather".into(),
         IntentAction::Wait { .. } => "wait".into(),
         IntentAction::Nap { .. } => "nap".into(),
         IntentAction::Stalk { target_id } => format!("stalk {}", name_of(state, target_id)),
@@ -757,10 +759,11 @@ impl Brain {
                         || c.convo_id.is_some()
                         || c.combat.yielded
                         || c.combat.mercy_until_tick > 0
-                        // On the bucket chain, or at a wedding or a funeral, there is nothing to decide: the
-                        // sim keeps them at it.
+                        // On the bucket chain, at a wedding or a funeral, or in out of the hail, there is
+                        // nothing to decide: the sim keeps them at it.
                         || fighting_fire(c)
                         || attending(c)
+                        || sheltering_from_hail(state, c)
                     {
                         continue;
                     }

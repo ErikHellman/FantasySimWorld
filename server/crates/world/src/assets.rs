@@ -11,7 +11,7 @@ use serde::Deserialize;
 pub struct AssetManifest {
     pub bundles: HashMap<String, BundleEntry>,
     pub characters: HashMap<String, CharacterAssetEntry>,
-    /// rig id -> its clip file; every rig carries the same clip names
+    /// rig id -> its clip file; every rig a villager may wear carries the same clip names (the dragon's has its own)
     pub rigs: HashMap<String, Rig>,
 }
 

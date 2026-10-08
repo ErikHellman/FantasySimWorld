@@ -1,5 +1,5 @@
 import { isNight } from '../core/time';
-import type { AmbientCounts, House, WireEvent } from '../generated/api';
+import type { AmbientCounts, House, Weather, WireEvent } from '../generated/api';
 import { worldMap } from '../world/map';
 import { findPlace, getPlace } from '../world/places';
 import type { AudioEngine } from './engine';
@@ -44,22 +44,32 @@ function blaze(houses: readonly House[], listener: Listener): number {
 /**
  * Decides how loud each ambient loop is from where the camera is looking, how
  * far it is zoomed out, the time of day, what the villagers are doing (the
- * server's counts, from `status`) and whether a house is on fire.
+ * server's counts, from `status`), whether a house is on fire, and the weather.
  */
-export function ambientLevels(counts: AmbientCounts, hour: number, listener: Listener, houses: readonly House[] = []): Record<string, number> {
+export function ambientLevels(
+  counts: AmbientCounts, hour: number, listener: Listener, houses: readonly House[] = [], weather: Weather | null = null,
+): Record<string, number> {
   const closeness = Math.max(0.25, Math.min(1, 1.35 - listener.distance / 130));
+  const strength = (weather?.intensity ?? 0) / 100;
+  const hail = weather?.kind === 'hail' ? strength : 0;
+  // Hail comes with rain around it; and rain quiets the birds and sends the village indoors.
+  const rain = Math.max(weather?.kind === 'rain' ? strength : 0, hail * 0.6);
+  const wet = Math.max(rain, hail);
+  const gust = (weather?.wind ?? 0) / 100;
   const dark = isNight(hour) ? 1 : hour > 19.5 ? (hour - 19.5) / 1.5 : hour < 6.5 ? (6.5 - hour) / 1 : 0;
   const day = 1 - Math.min(1, dark);
   const awake = counts.awake;
   const atTavern = counts.eating + counts.drinking;
   return {
-    birds_day: day * 0.8 * (0.5 + 0.5 * near(nearest(forestCells, listener.x, listener.z), 60)),
-    wind: 0.25 + 0.5 * (1 - closeness),
+    birds_day: day * 0.8 * (0.5 + 0.5 * near(nearest(forestCells, listener.x, listener.z), 60)) * (1 - 0.85 * wet),
+    wind: Math.min(1, 0.25 + 0.5 * (1 - closeness) + 0.75 * gust),
+    rain: rain * (0.7 + 0.3 * closeness),
+    hail: hail * (0.6 + 0.4 * closeness),
     forest: near(nearest(forestCells, listener.x, listener.z), 30) * closeness * (0.6 + 0.4 * day),
     river: near(nearest(riverCells, listener.x, listener.z), 32) * closeness,
     shore: near(nearest(lakeCells, listener.x, listener.z), 30) * closeness,
     crickets_night: Math.min(1, dark) * 0.9,
-    village_day: day * near(placeDistance('green', listener), 70) * Math.min(1, awake / 8) * closeness,
+    village_day: day * near(placeDistance('green', listener), 70) * Math.min(1, awake / 8) * closeness * (1 - 0.6 * wet),
     tavern: near(placeDistance('tavern', listener), 32) * Math.min(1, atTavern / 3) * closeness,
     smithy: near(placeDistance('smithy', listener), 32) * Math.min(1, counts.smithing) * closeness,
     // The crackle of the glade's campfire is also the sound of a house burning.
@@ -72,7 +82,9 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
   const volumeAt = (x: number, z: number): number => near(Math.hypot(x - listener.x, z - listener.z), 30 + listener.distance);
   for (const event of events) {
     if (event.type === 'attack') {
-      if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
+      // The dragon's breath has the rush of a spell, only louder.
+      if (event.ranged === 'fire') engine.play('magic_cast', Math.min(1, volumeAt(event.to.x, event.to.z) * 1.5));
+      else if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
       else if (event.ranged && event.ranged !== 'food') engine.play('arrow_shot', volumeAt(event.from.x, event.from.z)); // an apple flies in silence
     } else if (event.type === 'hit') {
       engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
@@ -81,7 +93,7 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'monster_spawn') {
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
-    } else if (event.type === 'speech' && event.loud && (event.text.startsWith('To arms') || event.text.startsWith('Fire!'))) {
+    } else if (event.type === 'speech' && event.loud && /^(To arms|Fire!|A dragon!)/.test(event.text)) {
       engine.play('alarm', 0.9);
     } else if (event.type === 'ceremony' && event.ceremony.kind === 'wedding' && event.ceremony.phase === 'rite') {
       // The same church bells as the alarm, rung for a happier reason.

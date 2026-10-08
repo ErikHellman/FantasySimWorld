@@ -25,6 +25,7 @@ use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::music::talent;
 use crate::systems::quirks::{NAP_HOURS, NAP_NOTE, STUDY_NOTE};
 use crate::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, brawl_unlocked, lethal_unlocked};
+use crate::systems::weather::{SHELTER_RAIN, rain_drives_in};
 use crate::systems::world::{building_id, job_accepts, job_for_block};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, openness, rel, rel_or_default};
 
@@ -434,6 +435,12 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     }
     let block = c.plan[index as usize].clone();
     let remaining = minutes_until_next_block(&c.plan, index, hour);
+    // Those who hate the rain keep out of it, except to eat, sleep or keep watch.
+    if !matches!(block.activity, ActivityId::Sleep | ActivityId::Eat | ActivityId::Watch)
+        && rain_drives_in(ctx.state, c, SHELTER_RAIN)
+    {
+        return Some(Intent::new(IntentAction::Shelter, IntentSource::Routine));
+    }
     if block.activity == ActivityId::Sleep {
         let minutes = (((24.0 - hour) % 24.0) * 60.0 + first_hour * 60.0).max(60.0);
         return Some(act(ActivityId::Sleep, Some(minutes), None));

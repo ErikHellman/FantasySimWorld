@@ -12,7 +12,7 @@ use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     Animal, Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory,
-    MonsterPhase, Pronouns, Relationship, Rite, SimState, TalkTone,
+    MonsterPhase, Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
 };
 use fsw_sim::systems::animals;
 use fsw_sim::systems::charm;
@@ -22,6 +22,7 @@ use fsw_sim::systems::fire;
 use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::weather;
 use fsw_sim::systems::world;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
@@ -73,14 +74,14 @@ fn assemble(sections: Vec<Section>, max_tokens: usize) -> String {
 
 const WORLD: &str = "You are the mind of one villager in a small fantasy village in a valley. You decide what this one person says and intends to do; the world carries it out (walking, working and fighting happen on their own).
 
-The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Death is permanent.
+The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Once in a long while, by day, a dragon comes over the hills and sets homes alight; only bows, crossbows and magic reach it in the air. Death is permanent.
 
 How to play:
 - Stay in character. Act from your personality, needs, relationships and memories, not from what would be nice. People here hold grudges, flirt, gossip, sulk, forgive, lie and get things wrong.
 - Answer only by calling the tools you are given. No narration.
 - Anything said aloud is one or two short sentences in your own voice, with no stage directions and no quotation marks.
 - A \"thought\" is one private sentence in the first person.
-- Only name people, animals and places that appear in the message. The village is small: nobody lives here but the people and animals named, and the only monsters are the walking dead.";
+- Only name people, animals and places that appear in the message. The village is small: nobody lives here but the people and animals named, and the only monsters are the walking dead and, very rarely, a dragon.";
 
 /// From here a character's spite shows in the prompts; below it, it only shows in what they do.
 const SPITEFUL: f64 = 0.5;
@@ -483,11 +484,15 @@ fn header(state: &SimState, c: &Character) -> String {
     }
     inventory.push_str(&format!(", and {} gold", c.gold));
     let monsters: Vec<_> = state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).collect();
-    let danger = if monsters.is_empty() {
+    let dragon = monsters.iter().find(|m| m.kind.def().flies);
+    let dead: Vec<_> = monsters.iter().filter(|m| m.kind.def().undead).collect();
+    let danger = if let Some(dragon) = dragon {
+        format!("A dragon is burning the village, {} paces from you.", js_round(dist(dragon.pos, c.pos)))
+    } else if dead.is_empty() {
         "All is quiet: there are no monsters about.".to_owned()
     } else {
-        let nearest = monsters.iter().map(|m| dist(m.pos, c.pos)).fold(f64::INFINITY, f64::min);
-        format!("The dead are abroad: {} of them, the nearest {} paces from you.", monsters.len(), js_round(nearest))
+        let nearest = dead.iter().map(|m| dist(m.pos, c.pos)).fold(f64::INFINITY, f64::min);
+        format!("The dead are abroad: {} of them, the nearest {} paces from you.", dead.len(), js_round(nearest))
     };
     let mut lines = vec![
         format!(
@@ -506,6 +511,7 @@ fn header(state: &SimState, c: &Character) -> String {
         ),
         danger,
     ];
+    lines.extend(weather_line(state, c));
     lines.extend(music_line(c));
     lines.extend(animal_lines(state, c));
     lines.extend(fire_lines(state, c));
@@ -599,6 +605,30 @@ pub fn name_pet_prompt(state: &SimState, me: &Character, pet: &Animal) -> Prompt
     ];
     let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
     Prompt { messages: as_character(me, user), tools: vec![TOOLS.name_pet.clone()], max_calls: 1 }
+}
+
+/// What the sky is doing, and how this character takes it; nothing under a clear sky, so a fair day costs
+/// no room.
+fn weather_line(state: &SimState, c: &Character) -> Option<String> {
+    let w = &state.weather;
+    if w.kind == WeatherKind::Clear || w.intensity < 0.1 {
+        return None;
+    }
+    let sky = match w.kind {
+        WeatherKind::Rain if w.intensity < 0.5 => "A light rain is falling.",
+        WeatherKind::Rain => "Rain is pouring down.",
+        WeatherKind::Wind if w.intensity < 0.7 => "A stiff wind is blowing.",
+        WeatherKind::Wind => "A gale is blowing.",
+        _ => "Hail is pelting down: it hurts to be out in it, and everyone is running indoors.",
+    };
+    let feeling = match (w.kind, weather::taste(c).of(w.kind)) {
+        (WeatherKind::Rain, 1) => " You love the rain.",
+        (WeatherKind::Rain, -1) => " You hate being out in the rain.",
+        (WeatherKind::Wind, 1) => " You love a good wind.",
+        (WeatherKind::Wind, -1) => " You hate the wind.",
+        _ => "",
+    };
+    Some(format!("{sky}{feeling}"))
 }
 
 /// What this character sings or plays, and how well, for those with a talent; empty for the rest.
@@ -964,6 +994,11 @@ pub fn react_prompt(state: &SimState, c: &Character) -> Prompt {
                 _ => "at range with a bow".to_owned(),
             }
         ),
+        if weapon.style == WeaponStyle::Melee && monsters.iter().any(|m| m.kind.def().flies) {
+            "The dragon is in the air, out of reach of your weapon.".to_owned()
+        } else {
+            String::new()
+        },
         "Decide now: fight, or flee to your home. One tool call. If you shout something, keep it to a few words."
             .to_owned(),
     ];
@@ -1129,7 +1164,7 @@ fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
 
 const SCENE: &str = "You write short, natural conversations between two villagers in a small fantasy village, as a playwright would. Each speaks in their own voice and acts from their own personality, mood, memories and feelings about the other. Conversations may go badly: people can be cold, evasive, jealous, angry or hurt. Not every talk ends warmly, and a romantic approach is only welcomed if the other person feels the same.
 
-Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. The village is small: nobody lives here but the people named in the message, and the only monsters are the walking dead that rise from the graveyard at night. Answer only by calling the conversation tool.";
+Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. The village is small: nobody lives here but the people named in the message, and the only monsters are the walking dead that rise from the graveyard at night and, very rarely, a dragon that comes by day. Answer only by calling the conversation tool.";
 
 /// One call that writes the rest of a conversation for both speakers.
 pub fn conversation_prompt(

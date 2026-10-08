@@ -36,7 +36,7 @@ The valley has animals: a herd and hens at the windmill farm, ducks on the lake 
   - The header says where a villager's pet is and which horse they ride.
   - The decision prompt lists the animals within 22 paces (pets and horses by name, a neighbour's unnamed pet by its keeper's, the rest by kind) and offers `pet` only then.
   - `name_pet_prompt` asks for a name with the one tool `name_pet`, as a `name` request in the log; `tools/mock-llm.mjs` answers both.
-- **The wire** (protocol 10):
+- **The wire** (protocol 12):
   - Animals are the entity kind `animal`, after the villagers, the dead, the bodies and the ghosts, with the model in `look` and an empty name unless a pet or a horse.
   - `Dyn.mt` is the horse a villager rides, or a horse's rider.
   - `GET /api/animals/{id}` and `Detail::Animal` carry the card.

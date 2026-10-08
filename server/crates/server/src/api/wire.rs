@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// Character, monster, ghost, animal, corpse and conversation ids (`c1`, `m7`, `g9`, `a3`, …).
 pub type Id = String;
@@ -134,6 +134,10 @@ pub struct Dyn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub mt: Option<String>,
+    /// height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -178,6 +182,9 @@ pub struct DynDelta {
     #[serde(default, with = "present", skip_serializing_if = "Option::is_none")]
     #[ts(as = "Option<Option<String>>", optional)]
     pub mt: Option<Option<String>>,
+    #[serde(default, with = "present", skip_serializing_if = "Option::is_none")]
+    #[ts(as = "Option<Option<i32>>", optional)]
+    pub y: Option<Option<i32>>,
 }
 
 /// A delta field that is present (possibly as `null`) reads as `Some(_)`; a missing one as `None`.
@@ -246,6 +253,8 @@ pub struct Snapshot {
     pub economy: Economy,
     /// what the dead left lying about
     pub loot: Vec<Loot>,
+    /// what the sky is doing
+    pub weather: Weather,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -283,6 +292,8 @@ pub enum Ranged {
     Magic,
     /// an apple thrown by a child
     Food,
+    /// the dragon's breath, from its mouth to the ground
+    Fire,
 }
 
 /// One spoken line, with everything a sink needs to show it or say it aloud.
@@ -373,6 +384,32 @@ pub enum WireEvent {
     Loot {
         loot: Loot,
     },
+    /// the weather changed, or grew or eased
+    Weather {
+        weather: Weather,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherKind {
+    Clear,
+    Rain,
+    Wind,
+    Hail,
+}
+
+/// What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+    pub intensity: u8,
+    /// the wind, whatever the kind, 0..100 in steps of 5
+    pub wind: u8,
+    /// the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+    pub wind_dir: u16,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -661,7 +698,10 @@ pub struct Status {
     /// the world is held at 1x because the model has a backlog
     pub throttled: bool,
     pub population: u32,
+    /// the dead abroad
     pub monsters: u32,
+    /// the dragon is over the valley
+    pub dragon: bool,
     pub alarm: bool,
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
@@ -858,6 +898,8 @@ pub struct MonsterDetail {
     pub was: Option<String>,
     /// does not crumble at dawn
     pub lasting: bool,
+    /// one of the walking dead (false for the dragon)
+    pub undead: bool,
     /// villagers it has slain
     pub kills: u32,
     /// blows it has landed on a villager
@@ -1338,6 +1380,8 @@ pub fn typescript() -> String {
         Economy,
         Loot,
         LootKind,
+        WeatherKind,
+        Weather,
         Goods,
         LlmState,
         LlmStatus,

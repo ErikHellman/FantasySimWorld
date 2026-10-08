@@ -625,6 +625,8 @@ pub enum IntentAction {
         mode: FightMode,
     },
     Flee,
+    /// goes home (or to the tavern) out of the weather and stays in until it passes; see `systems::weather`
+    Shelter,
     Wait {
         minutes: f64,
     },
@@ -727,6 +729,7 @@ impl IntentAction {
             Self::Give { .. } => "give",
             Self::Fight { .. } => "fight",
             Self::Flee => "flee",
+            Self::Shelter => "shelter",
             Self::Wait { .. } => "wait",
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
@@ -849,6 +852,8 @@ pub enum StimulusKind {
     Music,
     /// something the dead left lying where they fell
     Loot,
+    /// the weather turning, for those who care for it or mind it, and hail on their heads
+    Weather,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -1161,6 +1166,8 @@ pub enum MonsterOrigin {
     Raised,
     /// a villager who gave themself to the dark
     Turned,
+    /// the dragon, out of the sky
+    Sky,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1233,6 +1240,48 @@ pub struct Monster {
     /// blows it has landed on a villager
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub blows: i64,
+    /// how high above the ground it flies, in metres; only the dragon leaves the ground
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub alt: f64,
+    /// the dragon's plan for its visit
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raid: Option<Raid>,
+}
+
+/// Where the dragon is in its visit: flying in at a home, hanging over the village, or flying off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RaidPhase {
+    Strafe,
+    Hover,
+    Leave,
+}
+
+/// The dragon's visit: the homes it means to burn, in order, and where it leaves the valley.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Raid {
+    pub phase: RaidPhase,
+    /// home place ids, in the order it goes for them
+    pub targets: Vec<String>,
+    /// how many of `targets` it has already been to
+    pub done: usize,
+    /// what it hangs over between passes
+    pub hover: Vec2,
+    /// where it flies off to, off the map
+    pub exit: Vec2,
+    /// when it next breathes on someone below, while it hovers
+    pub next_breath_tick: i64,
+    /// when it moves on from hovering, if nobody is shooting at it
+    pub until_tick: i64,
+    /// the latest it stays to fight those shooting at it
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_tick: i64,
+    /// where the breath under way lands, and the home it sets alight (if it is a pass)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim: Option<Vec2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim_home: Option<String>,
 }
 
 /// One of the valley's animals: a beast of the farm, a bird, or a villager's dog or cat. See
@@ -1881,6 +1930,12 @@ pub struct Director {
     /// when the village next looks over what wants building
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_project_tick: i64,
+    /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_dragon_tick: i64,
+    /// the alarm was raised for the dragon, not the dead
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub alarm_dragon: bool,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -1904,6 +1959,87 @@ pub struct Tuning {
     pub script_wait_ticks: i64,
     /// ticks an attacker waits for a spare / finish decision
     pub mercy_wait_ticks: i64,
+}
+
+/// What the sky is doing; see `systems::weather`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherKind {
+    #[default]
+    Clear,
+    Rain,
+    Wind,
+    Hail,
+}
+
+impl WeatherKind {
+    pub const ALL: [WeatherKind; 4] = [Self::Clear, Self::Rain, Self::Wind, Self::Hail];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Clear => "clear",
+            Self::Rain => "rain",
+            Self::Wind => "wind",
+            Self::Hail => "hail",
+        }
+    }
+
+    /// Water falling from the sky, which keeps fires down.
+    pub fn wet(self) -> bool {
+        matches!(self, Self::Rain | Self::Hail)
+    }
+}
+
+/// A stretch of one kind of weather, as rolled: how hard it comes on, the wind with it, and when it ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spell {
+    pub kind: WeatherKind,
+    /// how hard it rains, hails or blows at its height, 0..1
+    pub strength: f64,
+    /// the wind that comes with it, 0..1
+    pub wind: f64,
+    /// the way the wind blows toward, in radians from +x toward +z
+    pub wind_dir: f64,
+    pub until_tick: i64,
+}
+
+/// The weather over the valley. It moves toward the current spell a little each game minute, so rain
+/// comes on and dies away rather than starting and stopping; a change of kind lets the old one die
+/// away first. A world that has never seen weather is clear and calm, and is left out of a save.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// how hard it is raining, hailing or blowing right now, 0..1; 0 under a clear sky
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub intensity: f64,
+    /// what `intensity` is moving toward
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub target: f64,
+    /// the wind right now, 0..1, whatever the kind
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind_target: f64,
+    /// the way the wind blows toward, in radians from +x toward +z
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind_dir: f64,
+    /// the tick the current kind set in
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub since_tick: i64,
+    /// when the current spell ends and the next is rolled; 0 before the first
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub until_tick: i64,
+    /// the spell waiting for the current kind to die away
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<Spell>,
+}
+
+impl Weather {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1959,6 +2095,9 @@ pub struct SimState {
     pub animals: Map<Animal>,
     #[serde(default, skip_serializing_if = "Fauna::is_default")]
     pub fauna: Fauna,
+    /// the weather over the valley; see [`Weather`] and `systems::weather`
+    #[serde(default, skip_serializing_if = "Weather::is_default")]
+    pub weather: Weather,
     /// villagers slain by the dead who walk again for a few nights, by id (`g<n>`); see [`Ghost`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub ghosts: Map<Ghost>,
