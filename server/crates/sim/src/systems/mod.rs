@@ -19,3 +19,4 @@ pub mod perception;
 pub mod quirks;
 pub mod relationships;
 pub mod routine;
+pub mod world;

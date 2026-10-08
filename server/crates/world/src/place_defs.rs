@@ -203,6 +203,45 @@ fn building(model: &str, x: f64, z: f64) -> Option<BuildingDef> {
     Some(BuildingDef { model: model.into(), at: Some([x, z]), scale: None, rot: None })
 }
 
+/// What the village may put up on a pad.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PadKind {
+    Fence,
+    LogStack,
+    Bench,
+    Crate,
+    Planter,
+}
+
+impl PadKind {
+    pub const ALL: [PadKind; 5] = [Self::Fence, Self::LogStack, Self::Bench, Self::Crate, Self::Planter];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fence => "fence",
+            Self::LogStack => "log_stack",
+            Self::Bench => "bench",
+            Self::Crate => "crate",
+            Self::Planter => "planter",
+        }
+    }
+}
+
+/// A spot inside a place's clearing where the village may build something small later. Pads are the
+/// server's business only: what stands on one reaches the client with its own placement.
+#[derive(Clone, Debug)]
+pub struct PadDef {
+    pub at: [f64; 2],
+    /// turn in degrees, as a prop's
+    pub rot: f64,
+    pub kinds: &'static [PadKind],
+}
+
+const fn pad(x: f64, z: f64, rot: f64, kinds: &'static [PadKind]) -> PadDef {
+    PadDef { at: [x, z], rot, kinds }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PlaceDef {
     pub id: String,
@@ -227,6 +266,8 @@ pub struct PlaceDef {
     pub grave_plots: Vec<[f64; 2]>,
     pub spawn_points: Vec<[f64; 2]>,
     pub billboards: Vec<BillboardDef>,
+    /// where the village may build small things
+    pub pads: Vec<PadDef>,
 }
 
 fn seats_around(cx: f64, cz: f64, r: f64, activities: &[ActivityId]) -> Vec<SlotDef> {
@@ -275,6 +316,10 @@ fn home(n: usize, name: &'static str, hex: [i32; 2], facing: f64, model: &'stati
             slot(&[Rest], -3.0, front - 0.7, 0.0).anim("sit_chair"),
             slot(&[Rest], -2.2, front - 0.7, 0.0).anim("sit_chair"),
         ],
+        pads: vec![
+            pad(5.4, front - 2.4, 0.0, &[PadKind::LogStack, PadKind::Fence, PadKind::Crate]),
+            pad(-4.8, front - 3.6, 0.0, &[PadKind::Fence, PadKind::Planter, PadKind::LogStack]),
+        ],
         ..PlaceDef::default()
     }
 }
@@ -321,6 +366,10 @@ pub fn place_defs() -> Vec<PlaceDef> {
             facing: 0.0,
             offset: Some([-1.0, 1.5]),
             clear: Some(9.0),
+            pads: vec![
+                pad(-6.2, 0.4, 90.0, &[PadKind::Bench, PadKind::Planter]),
+                pad(3.4, -4.6, 0.0, &[PadKind::Bench, PadKind::Planter]),
+            ],
             props: vec![
                 prop("hex/building_well_blue", 0.0, 0.0).scale(4.2).block(1.9),
                 prop("halloween/bench", -4.2, 1.5).rot(90.0).block(0.0),
@@ -354,6 +403,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
             building: building("hex/building_market_yellow", 0.0, -2.6),
             door: Some([0.0, 4.0]),
             clear: Some(10.0),
+            pads: vec![pad(-5.8, 6.8, 10.0, &[PadKind::Crate]), pad(5.2, 6.6, -10.0, &[PadKind::Crate])],
             props: vec![
                 prop("props/crate_carrots", -4.6, 3.4).rot(8.0),
                 prop("props/crate_tomatoes", -2.4, 3.6).rot(-4.0),
@@ -462,6 +512,10 @@ pub fn place_defs() -> Vec<PlaceDef> {
             building: building("hex/building_windmill_blue", -2.0, -2.5),
             door: Some([-2.0, 1.8]),
             clear: Some(10.0),
+            pads: vec![
+                pad(-6.6, 6.2, 0.0, &[PadKind::Fence, PadKind::Crate]),
+                pad(6.4, -4.6, 0.0, &[PadKind::Crate, PadKind::Fence]),
+            ],
             props: [
                 [-3.3, -1.1, 1.1, 3.3]
                     .into_iter()
@@ -506,6 +560,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
             building: building("hex/building_lumbermill_blue", 0.0, -2.5),
             door: Some([0.0, 3.6]),
             clear: Some(9.5),
+            pads: vec![pad(-5.9, -5.5, 20.0, &[PadKind::LogStack]), pad(-2.9, 8.5, -30.0, &[PadKind::LogStack])],
             props: vec![
                 prop("resource/Wood_Log_Stack", -4.6, 4.4).rot(20.0),
                 prop("props/log_stacks", 5.0, 3.2).rot(-30.0),

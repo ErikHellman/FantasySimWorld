@@ -4,9 +4,8 @@ use fsw_core::jsmath::js_hypot;
 use fsw_core::math2d::{dist, facing_to, turn_toward};
 use fsw_core::time::TICK_SECONDS;
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::is_walkable;
-use fsw_world::pathfind::find_path;
 
+use crate::nav::NavOverlay;
 use crate::state::{MonsterPhase, SimState};
 use crate::util::Body;
 
@@ -15,11 +14,11 @@ const TURN_RATE: f64 = 9.0;
 const BODY_RADIUS: f64 = 0.55;
 
 /// Route to a point; an empty path means "already there", `None` means unreachable.
-pub fn route_to(from: Vec2, to: Vec2) -> Option<Vec<Vec2>> {
+pub fn route_to(nav: &NavOverlay, from: Vec2, to: Vec2) -> Option<Vec<Vec2>> {
     if dist(from, to) < 0.05 {
         return Some(Vec::new());
     }
-    find_path(from, to)
+    nav.find_path(from, to)
 }
 
 pub fn face(mover: &mut impl Body, target: Vec2) {
@@ -78,6 +77,7 @@ enum BodyRef {
 /// Nudges moving bodies apart so walkers do not pass through each other.
 /// Bodies are pushed in order, each seeing the others' positions as already updated.
 pub fn separate(state: &mut SimState) {
+    let nav = state.nav.clone();
     let mut bodies = Vec::new();
     for id in &state.order {
         if let Some((index, _, c)) = state.characters.get_full(id)
@@ -122,7 +122,7 @@ pub fn separate(state: &mut SimState) {
         }
         let x = pos.x + push_x;
         let z = pos.z + push_z;
-        if is_walkable(x, z) {
+        if nav.is_walkable(x, z) {
             match mover {
                 BodyRef::Character(i) => state.characters[i].pos = vec2(x, z),
                 BodyRef::Monster(i) => state.monsters[i].pos = vec2(x, z),

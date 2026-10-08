@@ -349,8 +349,9 @@ fn a_funeral_is_held_the_next_morning_for_everyone_who_died_since_the_last() {
     );
     let trust_before = w.state().characters[&kael].relationships[&isolde].trust;
 
-    // The rite waits for the village to gather, children and all, so it may run past ten.
-    w.run_to(5, 10.4);
+    // The officiant may have been at the far end of the valley when the village was called, so the
+    // rite can start as late as the grace allows; by ten the dead are in the ground either way.
+    w.run_to(5, 10.0);
     let rowan = w.who("Rowan");
     assert!(w.said(&rowan).len() >= 3, "the officiant said {:?}", w.said(&rowan));
     assert!(w.said(&kael).iter().any(|t| t.contains("Sylvi")), "the widower said nothing: {:?}", w.said(&kael));

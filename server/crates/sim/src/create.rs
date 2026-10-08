@@ -44,11 +44,16 @@ pub fn create_state(seed: u32) -> SimState {
             newcomer_draft: None,
             newcomer_deadline_tick: 0,
             awaiting_funeral: Vec::new(),
+            next_project_tick: 0,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
         houses: Default::default(),
         ceremony: None,
+        objects: Default::default(),
+        stockpiles: Default::default(),
+        projects: Vec::new(),
+        nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {
         tick: 0,

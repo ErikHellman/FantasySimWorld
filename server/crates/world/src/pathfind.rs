@@ -10,7 +10,7 @@ use fsw_core::Vec2;
 use fsw_core::jsmath::js_hypot;
 use serde::Serialize;
 
-use crate::navgrid::{cell_center, cell_index, line_of_walk, nav_grid, nearest_walkable};
+use crate::navgrid::{cell_center, cell_index, line_of_walk_on, nav_grid, nearest_walkable_on};
 
 pub use crate::navgrid::CELL;
 
@@ -109,22 +109,33 @@ pub struct Route {
 
 /// Waypoints from (but not including) `from` to the reachable point nearest `to`, or `None` when there is no route.
 pub fn find_path(from: Vec2, to: Vec2) -> Option<Vec<Vec2>> {
-    let route = find_route(from, to)?;
-    Some(if route.direct { route.cells } else { smooth(route.start, &route.cells) })
+    find_path_on(&nav_grid().cost, from, to)
+}
+
+/// [`find_path`] against any cost slice of the grid's shape (the sim's copy with its changes applied).
+pub fn find_path_on(cost: &[f32], from: Vec2, to: Vec2) -> Option<Vec<Vec2>> {
+    let route = find_route_on(cost, from, to)?;
+    Some(if route.direct { route.cells } else { smooth(cost, route.start, &route.cells) })
 }
 
 /// The A* part of [`find_path`], unsmoothed.
 pub fn find_route(from: Vec2, to: Vec2) -> Option<Route> {
-    let start = nearest_walkable(from, ENDPOINT_RADIUS)?;
-    let goal = nearest_walkable(to, ENDPOINT_RADIUS)?;
+    find_route_on(&nav_grid().cost, from, to)
+}
+
+/// [`find_route`] against any cost slice of the grid's shape.
+pub fn find_route_on(cost: &[f32], from: Vec2, to: Vec2) -> Option<Route> {
+    let start = nearest_walkable_on(cost, from, ENDPOINT_RADIUS)?;
+    let goal = nearest_walkable_on(cost, to, ENDPOINT_RADIUS)?;
     let start_index = cell_index(start.x, start.z)?;
     let goal_index = cell_index(goal.x, goal.z)?;
-    if start_index == goal_index || line_of_walk(start, goal) {
+    if start_index == goal_index || line_of_walk_on(cost, start, goal) {
         return Some(Route { start, cells: vec![goal], direct: true });
     }
 
     let grid = nav_grid();
-    let (width, height, cost) = (grid.width, grid.height, &grid.cost);
+    let (width, height) = (grid.width, grid.height);
+    debug_assert_eq!(cost.len(), width * height, "a cost slice must have the grid's shape");
     let goal_x = (goal_index % width) as f64;
     let goal_z = (goal_index / width) as f64;
     let heuristic = |index: usize| {
@@ -201,7 +212,7 @@ pub fn find_route(from: Vec2, to: Vec2) -> Option<Route> {
 }
 
 /// Drops waypoints that can be skipped in a straight walkable line.
-fn smooth(start: Vec2, cells: &[Vec2]) -> Vec<Vec2> {
+fn smooth(cost: &[f32], start: Vec2, cells: &[Vec2]) -> Vec<Vec2> {
     let mut result = Vec::new();
     let mut anchor = start;
     let mut i = 0;
@@ -210,7 +221,7 @@ fn smooth(start: Vec2, cells: &[Vec2]) -> Vec<Vec2> {
         let mut furthest = i;
         let limit = (cells.len() - 1).min(i + 40);
         for j in (i + 1..=limit).rev() {
-            if line_of_walk(anchor, cells[j]) {
+            if line_of_walk_on(cost, anchor, cells[j]) {
                 furthest = j;
                 break;
             }

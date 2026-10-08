@@ -11,7 +11,6 @@ use fsw_core::jsmath::{cos, sin, utf16_truncate};
 use fsw_core::math2d::{dist, facing_to, rotate};
 use fsw_core::time::{TICKS_PER_DAY, minutes_to_ticks};
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{ActivityId, Place, get_place};
 
 use crate::data::anims::AnimId;
@@ -390,7 +389,7 @@ fn spot_for(state: &SimState, ceremony: &Ceremony, id: &str) -> Vec2 {
         [cos(angle) * radius, sin(angle) * radius]
     };
     let spot = from_centre(place, centre, local);
-    nearest_walkable(spot, 5).unwrap_or(place.door)
+    state.nav.nearest_walkable(spot, 5).unwrap_or(place.door)
 }
 
 fn is_principal(ceremony: &Ceremony, id: &str) -> bool {
@@ -488,6 +487,7 @@ fn muster(ctx: &mut Ctx) {
     let Some(ceremony) = ctx.state.ceremony.clone() else { return };
     let place = get_place(&ceremony.place_id);
     let (what, _) = describe_rite(ctx.state, &ceremony);
+    let nav = ctx.state.nav.clone();
     for (i, id) in living_ids(ctx.state).iter().enumerate() {
         let Some(c) = ctx.state.characters.get(id) else { continue };
         if (tick + i as i64 * 3) % 10 != 0
@@ -503,7 +503,7 @@ fn muster(ctx: &mut Ctx) {
         let c = ctx.c(id);
         let was_asleep = c.asleep;
         if c.asleep || c.inside.is_some() {
-            leave_building(c);
+            leave_building(&nav, c);
         }
         c.tool = None;
         c.queue.clear();
@@ -541,7 +541,8 @@ pub fn run_attend(ctx: &mut Ctx, id: &str, place_id: &str) {
     match c.act.phase {
         ActPhase::Start => {
             let spot = spot_for(ctx.state, &ceremony, id);
-            if !travel_to(tick, ctx.c(id), spot) {
+            let nav = ctx.state.nav.clone();
+            if !travel_to(tick, &nav, ctx.c(id), spot) {
                 finish(ctx, id, "You could not get there.");
             }
         }

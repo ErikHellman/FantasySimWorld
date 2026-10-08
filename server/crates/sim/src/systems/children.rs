@@ -23,7 +23,7 @@ use crate::state::{
 };
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::death::detach;
-use crate::systems::fire::{fighting_fire, ignite_by, residents};
+use crate::systems::fire::{fighting_fire, ignite_home};
 use crate::systems::founding::{Blueprint, ChildSeed};
 use crate::systems::intents::{finish, fresh_act, give, leave_building, travel};
 use crate::systems::movement::route_to;
@@ -342,6 +342,7 @@ fn come_of_age(ctx: &mut Ctx, id: &str) {
     let tick = ctx.tick();
     let day = ctx.time.day;
     detach(ctx, id);
+    let nav = ctx.state.nav.clone();
     let c = ctx.c(id);
     let parents = c.child.take().map_or(Vec::new(), |child| child.parents);
     let def = c.class_id.def();
@@ -349,7 +350,7 @@ fn come_of_age(ctx: &mut Ctx, id: &str) {
     // morning. Anyone awake is given a fresh start now.
     let sleeping = c.asleep && c.inside.is_some();
     if !sleeping && c.inside.is_some() {
-        leave_building(c);
+        leave_building(&nav, c);
     }
     c.look = Look {
         model: def.model.into(),
@@ -754,9 +755,10 @@ pub fn run_fetch(ctx: &mut Ctx, id: &str, target_id: &str) {
         return;
     };
     let (target_pos, safe) = (target.pos, target.inside.is_some());
+    let nav = ctx.state.nav.clone();
     let c = ctx.c(id);
     if c.act.phase == ActPhase::Start {
-        leave_building(c);
+        leave_building(&nav, c);
         c.act.phase = ActPhase::Travel;
         c.act.since_tick = tick;
         c.act.until_tick = tick + minutes_to_ticks(60.0);
@@ -810,7 +812,7 @@ pub fn run_fetch(ctx: &mut Ctx, id: &str, target_id: &str) {
         return;
     }
     if c.act.path.is_empty() || tick >= c.act.repath_tick {
-        c.act.path = route_to(c.pos, target_pos).unwrap_or_default();
+        c.act.path = route_to(&nav, c.pos, target_pos).unwrap_or_default();
         c.act.repath_tick = tick + seconds_to_ticks(1.5);
     }
     travel(tick, c, Some(RUN_SPEED));
@@ -850,20 +852,9 @@ fn play_with_fire(ctx: &mut Ctx, id: &str) {
     }
     let name = first_name(c).to_owned();
     let house = get_place(&target).name;
-    ignite_by(ctx, &target, format!("{name} set fire to {house}, playing with a flint by the door."));
-    for resident in residents(ctx.state, &target) {
-        if !ctx.alive(&resident) || resident == id {
-            continue;
-        }
-        adjust(ctx, &resident, id, RelationDelta { grievance: 20.0, affinity: -6.0, ..Default::default() });
-        ctx.remember(
-            &resident,
-            format!("{name} set my home on fire, playing with a flint."),
-            8.0,
-            MemoryKind::Event,
-            vec![id.into()],
-        );
-    }
+    // Arson is arson: the chronicle names the child, and those whose home it was and those who saw it hold
+    // it against them (capped, as all anger at a child is).
+    ignite_home(ctx, &target, Some(id));
     ctx.remember(
         id,
         format!("I only wanted to see the sparks. {house} caught, and everyone came running."),

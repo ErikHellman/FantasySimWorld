@@ -11,8 +11,8 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | Crate (directory) | What it holds | Depends on |
 | --- | --- | --- |
 | `fsw-core` (`crates/core`) | `jsmath`, the seeded RNG, game time, 2D maths | nothing of ours |
-| `fsw-world` (`crates/world`) | The static world: hex map, places, scatter, nav grid, A* | core |
-| `fsw-sim` (`crates/sim`) | The 20 Hz simulation: state, commands, events, the systems | core, world |
+| `fsw-world` (`crates/world`) | The static world: hex map, places (with their building pads), scatter, nav grid, A* | core |
+| `fsw-sim` (`crates/sim`) | The 20 Hz simulation: state, commands, events, the systems, the nav overlay for a world that changes | core, world |
 | `fsw-brain` (`crates/brain`) | The model client, queue, governor, prompts, retrieval, tools, validation | core, world, sim |
 | `fsw-server` (`crates/server`) | HTTP (axum), the event stream, guest seats and the admin's token, the SQLite store, the tasks that run it all | all of the above |
 | `fsw-testing` (`crates/testing`) | The hand-written cast of the TypeScript game, for tests only (`create_test_state`, `admit`) | sim, world |
@@ -39,13 +39,14 @@ A given seed and command stream must produce the same world on every machine (x8
 - Ordered maps are `IndexMap`, removed from with `shift_remove`, never `swap_remove`. Sorts are stable (`sort_by`).
 - Text lengths and caps count UTF-16 code units (`encode_utf16()`) and never split a surrogate pair, as the saves and prompts expect.
 - Systems reach characters by id through `Ctx` (`ctx.c(id)`). `rel()` creates relationship records and is for the sim only; readers outside it use `rel_or_default` and `lethal_unlocked_read`, which never write.
-- `Sim::step` runs commands, then the day roll-over (relationships, ceremonies, then children's birthdays and births), then the systems in a fixed order (director, routine, quirks, children, intents, conversations, monsters, fire, ceremonies, perception, separation, needs). Changing that order changes every world.
+- `Sim::step` runs commands, then the day roll-over (relationships, ceremonies, then children's birthdays and births), then the systems in a fixed order (director, routine, quirks, children, intents, conversations, monsters, fire, ceremonies, world, perception, separation, needs). Changing that order changes every world.
+- `SimState.objects` (what differs from the map) is changed only through `put_object` and `drop_object` in `systems/world.rs`, which refresh `SimState.nav`, the walkability overlay. The overlay is a cache: `#[serde(skip)]`, equal to every other overlay, rebuilt on load, and `None` while nothing has changed, so an untouched world keeps the static grid. Every path and walkability check in the sim goes through it (`nav::*`, `NavOverlay`), never through `fsw_world::navgrid` directly.
 
 The tests that hold this in place: `crates/sim/tests/sim.rs` (determinism through a save round trip, invariants, a 20-day run, the 200-day soak under `--ignored`), `drama.rs`, and `save_fixtures.rs`.
 
 ## Formats that must not drift
 
-- **Saves**: `SimState` serialises to the exact JSON shape of the old browser saves, so `crates/sim/tests/fixtures/export-day-*.json` must keep loading, and server exports stay importable. A breaking change needs a new `SAVE_VERSION` (`crates/sim/src/state.rs`) and a way to read the old one.
+- **Saves**: `SimState` serialises to the exact JSON shape of the old browser saves, so `crates/sim/tests/fixtures/export-day-*.json` must keep loading, and server exports stay importable. A breaking change needs a new `SAVE_VERSION` (`crates/sim/src/state.rs`) and a way to read the old one. Fields added since (`objects`, `stockpiles`, `projects`, `carried`, …) are `#[serde(default, skip_serializing_if = …)]`, so they vanish from a save when empty; follow that for new ones.
 - **Wire types** live in `crates/server/src/api/wire.rs` (camelCase on the wire, exported with ts-rs). After a change, run `cargo run --bin export-api` and commit `src/generated/api.ts` with it; a test fails otherwise. Bump `PROTOCOL_VERSION` when an older client cannot read the new shape.
 - **Stream frames**: after changing `encode.rs`, run `cargo run --bin export-frames` and commit `tests/fixtures/server-frames.json` (at the repository root), which the client's tests replay.
 - **The world**: `crates/world/tests/golden/*.json` come from the TypeScript world (`bun tools/dump-world.ts`, from the repository root). Nav costs and paths must match exactly. A layout change goes into `src/world` and `crates/world` together.

@@ -1,4 +1,4 @@
-import type { Billboard, Ceremony, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, TickFrame } from '../generated/api';
+import type { Billboard, Ceremony, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, Stockpile, TickFrame, WorldObject } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -55,7 +55,8 @@ function fromEntity(entity: Entity): ViewEntity {
 }
 
 /**
- * The world as this viewer has been told it: entities, graves, billboards, houses and the ceremony, kept up to
+ * The world as this viewer has been told it: entities, graves, billboards, houses, the ceremony, what differs
+ * from the map and the stockpiles, kept up to
  * date by applying each tick frame in order. Everything else (roster, chronicle,
  * voices) goes to the HUD store.
  */
@@ -79,6 +80,14 @@ export class ViewWorld {
   ceremony: Ceremony | null = null;
   /** bumped when the ceremony changes */
   ceremonyVersion = 0;
+  /** everything that differs from the map (felled trees, mined rocks, ...), by object id */
+  readonly worldObjects = new Map<string, WorldObject>();
+  /** bumped when a world object changes */
+  worldObjectsVersion = 0;
+  /** the materials kept at each place that holds any, by place id */
+  readonly stockpiles = new Map<string, Stockpile>();
+  /** bumped when a stockpile changes */
+  stockpilesVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -95,6 +104,12 @@ export class ViewWorld {
     this.housesVersion++;
     this.ceremony = snapshot.ceremony;
     this.ceremonyVersion++;
+    this.worldObjects.clear();
+    for (const object of snapshot.worldObjects) this.worldObjects.set(object.id, object);
+    this.worldObjectsVersion++;
+    this.stockpiles.clear();
+    for (const pile of snapshot.stockpiles) this.stockpiles.set(pile.place, pile);
+    this.stockpilesVersion++;
   }
 
   /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
@@ -115,6 +130,15 @@ export class ViewWorld {
       } else if (event.type === 'ceremony') {
         this.ceremony = event.ceremony.phase === 'over' ? null : event.ceremony;
         this.ceremonyVersion++;
+      } else if (event.type === 'world_object') {
+        if (event.object.stage === 'intact') this.worldObjects.delete(event.object.id);
+        else this.worldObjects.set(event.object.id, event.object);
+        this.worldObjectsVersion++;
+      } else if (event.type === 'stockpile') {
+        const pile = event.stockpile;
+        if (pile.wood + pile.stone + pile.ore === 0) this.stockpiles.delete(pile.place);
+        else this.stockpiles.set(pile.place, pile);
+        this.stockpilesVersion++;
       }
     }
   }

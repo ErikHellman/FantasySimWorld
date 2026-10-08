@@ -532,6 +532,7 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
 /// Drives a character whose intent is to fight.
 pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, source: IntentSource) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let c = ctx.cr(id);
     let weapon = weapon_of(c, mode);
 
@@ -620,7 +621,7 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
     let d = dist(c.pos, target_pos);
     if d > weapon.range {
         if c.act.path.is_empty() || tick >= c.act.repath_tick {
-            let route = route_to(c.pos, target_pos);
+            let route = route_to(&nav, c.pos, target_pos);
             c.act.repath_tick = tick + seconds_to_ticks(0.6);
             let Some(route) = route else {
                 c.act.stuck += 1;

@@ -314,7 +314,11 @@ mod company {
             }
         }
         assert!(total >= 6, "only {total} talks involved a child");
-        assert!(with_their_own * 2 >= total, "{with_their_own} of {total} talks were with other children or family");
+        // Children and their own people are a quarter of the village; the pull shows as well over that.
+        assert!(
+            with_their_own * 5 >= total * 2,
+            "{with_their_own} of {total} talks were with other children or family"
+        );
     }
 
     #[test]

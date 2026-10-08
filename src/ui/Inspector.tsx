@@ -58,6 +58,9 @@ function About({ d }: { d: CharacterDetail }) {
       <Meter label="Company" value={d.needs.social} />
       <p class="muted inventory">
         Carrying: {d.inventory.food} food · {d.inventory.potion} potion{d.inventory.potion === 1 ? '' : 's'} · {d.inventory.gift} gift{d.inventory.gift === 1 ? '' : 's'}
+        {d.carried.wood > 0 && ` · ${d.carried.wood} wood`}
+        {d.carried.stone > 0 && ` · ${d.carried.stone} stone`}
+        {d.carried.ore > 0 && ` · ${d.carried.ore} ore`}
         {d.kills > 0 && ` · ${d.kills} monster${d.kills === 1 ? '' : 's'} destroyed`}
       </p>
       <p class="muted inventory">

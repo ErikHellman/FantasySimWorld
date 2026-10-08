@@ -10,7 +10,7 @@ use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
     ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
-    SimState,
+    SimState, WorldJob,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
@@ -29,6 +29,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::world::{job_accepts, update_world};
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -75,6 +76,11 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Fetch { .. } => false,
         // Nor a wedding or a funeral: the village is called to them.
         IntentAction::Attend { .. } => false,
+        // Carrying materials follows from gathering them; the rest needs a target that takes the job.
+        // A child does no work on the world, whoever asks.
+        IntentAction::WorldWork { job, target, .. } => {
+            !ctx.cr(id).is_child() && *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
+        }
     }
 }
 
@@ -116,9 +122,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
     }
     detach(ctx, id);
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let c = ctx.c(id);
     if c.asleep {
-        leave_building(c);
+        leave_building(&nav, c);
     }
     c.tool = None;
     c.combat.target_id = None;
@@ -296,8 +303,10 @@ pub struct Sim {
 }
 
 impl Sim {
-    /// A running sim from a state, new or saved.
-    pub fn new(state: SimState) -> Self {
+    /// A running sim from a state, new or saved. The walkability overlay is derived from the state,
+    /// so it is built here rather than saved.
+    pub fn new(mut state: SimState) -> Self {
+        crate::nav::refresh(&mut state);
         Self { state, pending: Vec::new() }
     }
 
@@ -343,6 +352,7 @@ impl Sim {
         update_monsters(&mut ctx);
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
+        update_world(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

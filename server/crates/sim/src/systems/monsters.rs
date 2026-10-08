@@ -4,7 +4,6 @@ use fsw_core::math2d::{clamp, dist};
 use fsw_core::rng;
 use fsw_core::time::seconds_to_ticks;
 use fsw_core::{Vec2, vec2};
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::get_place;
 
 use crate::data::anims::AnimId;
@@ -79,6 +78,7 @@ fn lie_low(ctx: &mut Ctx, id: &str) -> bool {
         return false;
     }
     let lair = get_place("ruins").door;
+    let nav = ctx.state.nav.clone();
     let monster = ctx.m(id);
     monster.target_id = None;
     monster.phase = MonsterPhase::Roam;
@@ -88,7 +88,7 @@ fn lie_low(ctx: &mut Ctx, id: &str) -> bool {
         return true;
     }
     if monster.path.is_empty() || tick >= monster.repath_tick {
-        monster.path = route_to(monster.pos, lair).unwrap_or_default();
+        monster.path = route_to(&nav, monster.pos, lair).unwrap_or_default();
         monster.repath_tick = tick + seconds_to_ticks(5.0);
     }
     let mut path = std::mem::take(&mut monster.path);
@@ -142,6 +142,7 @@ fn id_number(id: &str) -> i64 {
 
 pub fn update_monsters(ctx: &mut Ctx) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let daylight = ctx.time.hour >= 5.6 && ctx.time.hour < 19.4;
     let mut crumbled = 0;
 
@@ -230,7 +231,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
                 }
                 let x = pos.x + ctx.range(-3.0, 3.0);
                 let z = pos.z + ctx.range(-3.0, 3.0);
-                if let Some(spot) = nearest_walkable(vec2(x, z), 4) {
+                if let Some(spot) = ctx.state.nav.nearest_walkable(vec2(x, z), 4) {
                     spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
                     summoned = true;
                 }
@@ -251,7 +252,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
             let d = dist(monster.pos, target_pos);
             if d > def.range * 0.9 {
                 if monster.path.is_empty() || tick >= monster.repath_tick {
-                    monster.path = route_to(monster.pos, target_pos).unwrap_or_default();
+                    monster.path = route_to(&nav, monster.pos, target_pos).unwrap_or_default();
                     monster.repath_tick = tick + seconds_to_ticks(0.7);
                 }
                 let mut path = std::mem::take(&mut monster.path);
@@ -299,9 +300,9 @@ pub fn update_monsters(ctx: &mut Ctx) {
             let place = get_place(ROAM_TARGETS[ctx.pick_index(ROAM_TARGETS.len())]);
             let x = place.door.x + ctx.range(-7.0, 7.0);
             let z = place.door.z + ctx.range(-7.0, 7.0);
-            let goal = nearest_walkable(vec2(x, z), 8);
+            let goal = nav.nearest_walkable(vec2(x, z), 8);
             let pos = ctx.state.monsters[&id].pos;
-            let path = goal.and_then(|goal| route_to(pos, goal)).unwrap_or_default();
+            let path = goal.and_then(|goal| route_to(&nav, pos, goal)).unwrap_or_default();
             let wait = 3.0 + ctx.next_float() * 4.0;
             let monster = ctx.m(&id);
             monster.path = path;

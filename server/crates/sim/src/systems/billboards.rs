@@ -69,6 +69,13 @@ pub fn reading(c: &Character) -> Option<usize> {
     billboards().iter().position(|board| board.slot_ids.iter().any(|id| id == slot))
 }
 
+/// The mark a reader keeps of a board's text. Someone pulled away from a board (a child to fetch, a fire,
+/// a wedding) keeps the mark too, so they do not read the same thing twice that day.
+pub fn read_mark(state: &SimState, index: usize) -> (String, u32) {
+    let board: &Billboard = billboards()[index];
+    (board.id.clone(), hash_string(&shown(state, index).text))
+}
+
 /// Whether someone has already read (and reacted to) what the board shows now.
 pub fn has_read(state: &SimState, c: &Character, index: usize) -> bool {
     let board = billboards()[index];

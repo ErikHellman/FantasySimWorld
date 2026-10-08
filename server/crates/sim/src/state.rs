@@ -5,12 +5,14 @@
 
 use fsw_core::Vec2;
 pub use fsw_world::places::ActivityId;
+use fsw_world::places::Obstacle;
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::data::anims::AnimId;
 pub use crate::data::classes::ClassId;
 pub use crate::data::monsters::MonsterKind;
+pub use crate::nav::NavOverlay;
 
 pub const SAVE_VERSION: u32 = 1;
 
@@ -321,6 +323,111 @@ impl Inventory {
     }
 }
 
+/// Raw materials: what felling, mining and taking things apart yield, and what building costs. They
+/// are counted, not carried as items, and move between villagers' arms and the village's stockpiles.
+/// Coin, when it comes, is one more variant here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Resource {
+    Wood,
+    Stone,
+    Ore,
+}
+
+impl Resource {
+    pub const ALL: [Resource; 3] = [Self::Wood, Self::Stone, Self::Ore];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wood => "wood",
+            Self::Stone => "stone",
+            Self::Ore => "ore",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.as_str() == text)
+    }
+
+    /// "3 logs of wood", "1 block of stone", "2 lumps of ore".
+    pub fn label(self, count: i64) -> String {
+        let unit = match (self, count) {
+            (Self::Wood, 1) => "log",
+            (Self::Wood, _) => "logs",
+            (Self::Stone, 1) => "block",
+            (Self::Stone, _) => "blocks",
+            (Self::Ore, 1) => "lump",
+            (Self::Ore, _) => "lumps",
+        };
+        format!("{count} {unit} of {}", self.as_str())
+    }
+}
+
+/// A count of each material, in a villager's arms or a stockpile. Zero counts are not kept, so an
+/// empty store serialises to nothing and is left out of saves.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Store(IndexMap<Resource, i64>);
+
+impl Store {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, resource: Resource) -> i64 {
+        self.0.get(&resource).copied().unwrap_or(0)
+    }
+
+    /// Everything in it, in a fixed order.
+    pub fn iter(&self) -> impl Iterator<Item = (Resource, i64)> + '_ {
+        Resource::ALL.into_iter().filter(|&r| self.get(r) > 0).map(|r| (r, self.get(r)))
+    }
+
+    pub fn total(&self) -> i64 {
+        self.0.values().sum()
+    }
+
+    /// Adds up to `count`, no more than `room` in all; returns how many went in.
+    pub fn add(&mut self, resource: Resource, count: i64, room: i64) -> i64 {
+        let added = count.min(room).max(0);
+        if added > 0 {
+            *self.0.entry(resource).or_insert(0) += added;
+        }
+        added
+    }
+
+    /// Takes up to `count`; returns how many came out.
+    pub fn take(&mut self, resource: Resource, count: i64) -> i64 {
+        let have = self.get(resource);
+        let taken = count.min(have).max(0);
+        if taken > 0 {
+            if taken == have {
+                self.0.shift_remove(&resource);
+            } else {
+                self.0[&resource] -= taken;
+            }
+        }
+        taken
+    }
+
+    /// Whether it holds at least everything in `cost`.
+    pub fn has_all(&self, cost: &Store) -> bool {
+        cost.iter().all(|(r, n)| self.get(r) >= n)
+    }
+
+    /// "3 logs of wood and 1 block of stone".
+    pub fn describe(&self) -> String {
+        let parts: Vec<String> = self.iter().map(|(r, n)| r.label(n)).collect();
+        match parts.len() {
+            0 => "nothing".into(),
+            1 => parts[0].clone(),
+            n => format!("{} and {}", parts[..n - 1].join(", "), parts[n - 1]),
+        }
+    }
+}
+
+/// How much a villager carries in all.
+pub const CARRY_CAP: i64 = 6;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RelationLabel {
     #[serde(rename = "stranger")]
@@ -491,6 +598,51 @@ pub enum IntentAction {
     Attend {
         place_id: String,
     },
+    /// changes the world: fells a tree, mines a rock, digs, mows, takes something apart, sets it alight,
+    /// builds, or carries materials to where they are kept. `target` is an object id, a hex id, a project
+    /// id or a stockpile's place id, as the job needs
+    WorldWork {
+        job: WorldJob,
+        target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<f64>,
+    },
+}
+
+/// Work that changes the world; see `systems::world` and `data::jobs`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldJob {
+    Fell,
+    Mine,
+    Dig,
+    Mow,
+    Dismantle,
+    Burn,
+    Build,
+    Deliver,
+}
+
+impl WorldJob {
+    pub const ALL: [WorldJob; 8] =
+        [Self::Fell, Self::Mine, Self::Dig, Self::Mow, Self::Dismantle, Self::Burn, Self::Build, Self::Deliver];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fell => "fell",
+            Self::Mine => "mine",
+            Self::Dig => "dig",
+            Self::Mow => "mow",
+            Self::Dismantle => "dismantle",
+            Self::Burn => "burn",
+            Self::Build => "build",
+            Self::Deliver => "deliver",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
 }
 
 impl IntentAction {
@@ -508,6 +660,7 @@ impl IntentAction {
             Self::FightFire { .. } => "fight_fire",
             Self::Fetch { .. } => "fetch",
             Self::Attend { .. } => "attend",
+            Self::WorldWork { .. } => "world_work",
         }
     }
 
@@ -673,6 +826,9 @@ pub struct Character {
     pub hp: f64,
     pub needs: Needs,
     pub inventory: Inventory,
+    /// raw materials in their arms, on the way to a stockpile or a building site
+    #[serde(default, skip_serializing_if = "Store::is_empty")]
+    pub carried: Store,
 
     pub plan: Vec<PlanBlock>,
     pub plan_day: i64,
@@ -707,6 +863,9 @@ pub struct Character {
     pub combat: CombatState,
     /// bumped whenever the situation changes enough to invalidate a pending decision
     pub epoch: i64,
+    /// the tick this character last set something alight; 0 for the innocent
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_arson_tick: i64,
     pub thought: String,
     /// what came of the last intent, for the next decision
     pub outcome: String,
@@ -837,6 +996,254 @@ pub struct House {
     pub since_tick: i64,
     /// who carried water (while burning) or worked on it (while in ruins)
     pub helpers: Vec<Id>,
+}
+
+/// A tree's life after someone takes an axe to it. A standing tree with no entry is the map's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TreeStage {
+    /// still up, being felled (`work` counts the swings)
+    Standing,
+    /// coming down: a second and a half of leaning over
+    Falling,
+    Stump,
+    Sapling,
+    Young,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RockStage {
+    /// still there, being mined
+    Whole,
+    MinedOut,
+}
+
+/// A prop's life: whole, taken apart, alight, burnt to ash, or gone altogether.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropStage {
+    Whole,
+    Pieces,
+    Burning,
+    Ash,
+    Gone,
+}
+
+/// What a village builds on a cleared plot: the same thing again, or a bigger one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildTarget {
+    Same,
+    Expand,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "stage", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum BuildingStage {
+    Whole,
+    Burning,
+    Ruin,
+    Dismantled,
+    Raising { target: BuildTarget },
+    Expanded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroundStage {
+    Dug,
+    Mown,
+}
+
+/// Where and what something the village built is, so it can be drawn and walked around.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltSpec {
+    pub bundle: String,
+    pub model: String,
+    pub x: f64,
+    pub z: f64,
+    pub rotation: f64,
+    pub scale: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footprint: Option<Obstacle>,
+    /// the pad it stands on (`"{place}/{index}"`), for things built on one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad: Option<String>,
+}
+
+/// What the village is building: a building raised again, a prop put back, a home made bigger, or
+/// something new on a pad. Materials are carried to it, then hands are put to it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    /// `j:<n>`
+    pub id: String,
+    pub kind: ProjectKind,
+    /// the object worked on (`b:<place>`, `p:<place>:<index>`), or for `Construct` the pad id
+    pub target: String,
+    pub cost: Store,
+    #[serde(default, skip_serializing_if = "Store::is_empty")]
+    pub delivered: Store,
+    /// villager-minutes of work it takes, and how many have been put in
+    pub need: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub work: f64,
+    pub since_tick: i64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub helpers: Vec<Id>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectKind {
+    Raise,
+    Restore,
+    Expand,
+    Construct,
+}
+
+/// Something in the world that differs from the static map: a tree someone felled, a rock mined
+/// out, a prop taken apart or burnt, a building not as it was built, ground dug or mown, or a
+/// thing the village put up. Keyed in `SimState.objects` by `s:<scatter index>`, `p:<place>:<model
+/// index>`, `b:<place>`, `h:<col>,<row>` or `n:<n>`. An entry is removed when the thing is as the
+/// map has it again, so a world nobody has changed holds none.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum WorldObject {
+    Tree {
+        stage: TreeStage,
+        since_tick: i64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        work: f64,
+    },
+    Rock {
+        stage: RockStage,
+        since_tick: i64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        work: f64,
+    },
+    Prop {
+        stage: PropStage,
+        since_tick: i64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        work: f64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fire: f64,
+    },
+    Building {
+        #[serde(flatten)]
+        stage: BuildingStage,
+        since_tick: i64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        work: f64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fire: f64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        helpers: Vec<Id>,
+    },
+    Ground {
+        stage: GroundStage,
+        since_tick: i64,
+    },
+    Built {
+        stage: PropStage,
+        since_tick: i64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        work: f64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        fire: f64,
+        spec: BuiltSpec,
+    },
+}
+
+impl WorldObject {
+    /// The tick the current stage began.
+    pub fn since_tick(&self) -> i64 {
+        match self {
+            Self::Tree { since_tick, .. }
+            | Self::Rock { since_tick, .. }
+            | Self::Prop { since_tick, .. }
+            | Self::Building { since_tick, .. }
+            | Self::Ground { since_tick, .. }
+            | Self::Built { since_tick, .. } => *since_tick,
+        }
+    }
+
+    /// Villager-minutes of work put into whatever is being done to it; ground takes none.
+    pub fn work(&self) -> f64 {
+        match self {
+            Self::Tree { work, .. }
+            | Self::Rock { work, .. }
+            | Self::Prop { work, .. }
+            | Self::Building { work, .. }
+            | Self::Built { work, .. } => *work,
+            Self::Ground { .. } => 0.0,
+        }
+    }
+
+    pub fn work_mut(&mut self) -> Option<&mut f64> {
+        match self {
+            Self::Tree { work, .. }
+            | Self::Rock { work, .. }
+            | Self::Prop { work, .. }
+            | Self::Building { work, .. }
+            | Self::Built { work, .. } => Some(work),
+            Self::Ground { .. } => None,
+        }
+    }
+
+    /// How far a fire has taken hold of it, 0..100; 0 for anything not alight.
+    pub fn fire(&self) -> f64 {
+        match self {
+            Self::Prop { fire, .. } | Self::Building { fire, .. } | Self::Built { fire, .. } => *fire,
+            Self::Tree { .. } | Self::Rock { .. } | Self::Ground { .. } => 0.0,
+        }
+    }
+
+    pub fn fire_mut(&mut self) -> Option<&mut f64> {
+        match self {
+            Self::Prop { fire, .. } | Self::Building { fire, .. } | Self::Built { fire, .. } => Some(fire),
+            Self::Tree { .. } | Self::Rock { .. } | Self::Ground { .. } => None,
+        }
+    }
+
+    /// The stage as the wire and the chronicle name it.
+    pub fn stage_name(&self) -> &'static str {
+        match self {
+            Self::Tree { stage, .. } => match stage {
+                TreeStage::Standing => "standing",
+                TreeStage::Falling => "falling",
+                TreeStage::Stump => "stump",
+                TreeStage::Sapling => "sapling",
+                TreeStage::Young => "young",
+            },
+            Self::Rock { stage, .. } => match stage {
+                RockStage::Whole => "whole",
+                RockStage::MinedOut => "mined_out",
+            },
+            Self::Prop { stage, .. } | Self::Built { stage, .. } => match stage {
+                PropStage::Whole => "whole",
+                PropStage::Pieces => "pieces",
+                PropStage::Burning => "burning",
+                PropStage::Ash => "ash",
+                PropStage::Gone => "gone",
+            },
+            Self::Building { stage, .. } => match stage {
+                BuildingStage::Whole => "whole",
+                BuildingStage::Burning => "burning",
+                BuildingStage::Ruin => "ruin",
+                BuildingStage::Dismantled => "dismantled",
+                BuildingStage::Raising { .. } => "raising",
+                BuildingStage::Expanded => "expanded",
+            },
+            Self::Ground { stage, .. } => match stage {
+                GroundStage::Dug => "dug",
+                GroundStage::Mown => "mown",
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1041,6 +1448,9 @@ pub struct Director {
     /// tick the last child was born; births are spaced out
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub last_birth_tick: i64,
+    /// when the village next looks over what wants building
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_project_tick: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -1096,6 +1506,18 @@ pub struct SimState {
     /// the wedding or funeral the village has arranged, if any; one at a time
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ceremony: Option<Ceremony>,
+    /// what differs from the static map, by object id; see [`WorldObject`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub objects: IndexMap<String, WorldObject>,
+    /// place id -> the materials kept there; see `systems::world::STOCKPILES`
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub stockpiles: IndexMap<String, Store>,
+    /// what the village is building; see [`Project`]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<Project>,
+    /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
+    #[serde(skip)]
+    pub nav: NavOverlay,
 }
 
 /// What a ceremony is for: a couple to be wed, or the dead to be buried.

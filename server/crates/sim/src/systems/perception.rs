@@ -168,9 +168,10 @@ pub fn update_perception(ctx: &mut Ctx) {
         let responder = !c.is_child() && c.profile.bravery >= RESPONDER_BRAVERY && c.hp > max_hp(c) * 0.4;
         if responder {
             let Some(target) = nearest_monster(&monsters, c, ALARM_RANGE).cloned() else { continue };
+            let nav = ctx.state.nav.clone();
             let c = ctx.c(id);
             if c.asleep || c.inside.is_some() {
-                leave_building(c);
+                leave_building(&nav, c);
             }
             if !has_recent_stimulus(c, StimulusKind::Alarm, tick - minutes_to_ticks(30.0), None) {
                 let text =

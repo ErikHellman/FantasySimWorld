@@ -7,6 +7,7 @@ use fsw_world::places::get_place;
 use crate::data::anims::AnimId;
 use crate::events::{Emote, SimEvent};
 use crate::state::{ChronicleKind, Corpse, DeadRecord, Grave, MemoryKind, Quirk, StimulusKind};
+use crate::systems::billboards::{read_mark, reading};
 use crate::systems::ceremonies;
 use crate::systems::combat::witnesses;
 use crate::systems::conversation::abort_conversation;
@@ -19,6 +20,11 @@ const CORPSE_MINUTES: f64 = 50.0;
 pub fn detach(ctx: &mut Ctx, id: &str) {
     if let Some(convo) = ctx.cr(id).convo_id.clone() {
         abort_conversation(ctx, &convo);
+    }
+    // A reader pulled away from a board has still seen it.
+    if let Some(index) = reading(ctx.cr(id)) {
+        let (board_id, hash) = read_mark(ctx.state, index);
+        ctx.c(id).boards_read.insert(board_id, hash);
     }
     if let Some(slot) = ctx.cr(id).slot_id.clone() {
         if ctx.state.slots.get(&slot).map(String::as_str) == Some(id) {

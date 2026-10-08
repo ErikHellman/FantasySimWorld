@@ -18,6 +18,7 @@ use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::world;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
 
@@ -327,6 +328,26 @@ fn offered_to(c: &Character) -> Vec<ActivityId> {
     }
 }
 
+/// The most things a prompt offers to work on.
+const TARGETS_NAMED: usize = 6;
+
+/// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
+/// when nothing is within reach.
+fn targets_line(state: &SimState, c: &Character) -> String {
+    let targets = world::nearby_targets(state, c.pos, TARGETS_NAMED);
+    if targets.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = targets
+        .iter()
+        .map(|t| {
+            let jobs: Vec<&str> = t.jobs.iter().map(|job| job.as_str()).collect();
+            format!("{} ({})", t.label, jobs.join(" or "))
+        })
+        .collect();
+    format!("Things you could work on nearby (work_on): {}.", items.join("; "))
+}
+
 /// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
 /// over to it while a house lies in ruins.
 fn activity_list(c: &Character) -> String {
@@ -415,6 +436,7 @@ fn header(state: &SimState, c: &Character) -> String {
     ];
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
+    lines.extend(materials_lines(state, c));
     lines.join("\n")
 }
 
@@ -424,6 +446,27 @@ fn when_held(state: &SimState, ceremony: &Ceremony) -> (&'static str, String) {
     let then = game_time(ceremony.start_tick);
     let day = if then.day == now.day { "today" } else { "tomorrow" };
     (day, format_clock(then.minute_of_day))
+}
+
+/// What this character carries in their arms and what the village has put by, when there is any of
+/// either. Empty for a village that has gathered nothing, so older prompts read as they did.
+fn materials_lines(state: &SimState, c: &Character) -> Vec<String> {
+    let mut lines = Vec::new();
+    if !c.carried.is_empty() {
+        lines.push(format!("You are carrying {}.", c.carried.describe()));
+    }
+    let piles: Vec<String> = state
+        .stockpiles
+        .iter()
+        .filter(|(_, store)| !store.is_empty())
+        .filter_map(|(place_id, store)| {
+            find_place(place_id).map(|place| format!("{} holds {}", place.name, store.describe()))
+        })
+        .collect();
+    if !piles.is_empty() {
+        lines.push(format!("The village's stores: {}.", piles.join("; ")));
+    }
+    lines
 }
 
 /// The wedding or funeral the village has arranged, as this character sees it. Empty when there is none.
@@ -588,6 +631,11 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if killable {
         tools.push(TOOLS.attack.clone());
     }
+    // A child is offered no work on the world: no felling, mining, or fire.
+    let targets = if c.is_child() { String::new() } else { targets_line(state, c) };
+    if !targets.is_empty() {
+        tools.push(TOOLS.work_on.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -640,6 +688,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
                 },
             ),
             section(2, plan_line(c, time.hour)),
+            section(2, targets),
             section(
                 5,
                 if far.len() > 5 {
@@ -1281,6 +1330,17 @@ mod tests {
         assert_eq!(prompt.max_calls, 3);
         // Reading the state for a prompt never changes it.
         assert_eq!(state, world());
+    }
+
+    #[test]
+    fn decide_prompts_offer_the_things_within_reach_to_work_on() {
+        let state = world();
+        let c = &state.characters["c1"];
+        let prompt = decide_prompt(&state, c, 1500, None);
+        let text = prompt_text(&prompt);
+        assert!(text.contains("Things you could work on nearby (work_on):"), "{text}");
+        assert!(text.contains("(dismantle or burn)"), "{text}");
+        assert!(prompt.tools.iter().any(|t| t.name == "work_on"));
     }
 
     #[test]

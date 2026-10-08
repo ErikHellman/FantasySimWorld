@@ -4,11 +4,12 @@
 use fsw_core::jsmath::{js_hypot, utf16_len, utf16_truncate};
 use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
-    PlanBlock, SimState, TalkTone,
+    PlanBlock, SimState, TalkTone, WorldJob,
 };
 use fsw_sim::systems::ceremonies;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
+use fsw_sim::systems::world::{self, gather_target};
 use fsw_sim::util::{first_name, living};
 use fsw_world::places::{ActivityId, Place, places};
 use serde_json::{Map as JsonMap, Value};
@@ -348,9 +349,15 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                 Some(activity) if c.is_child() && !ActivityId::CHILD_OFFERED.contains(&activity) => {
                     decision.problems.push(format!("a child does not {}", activity.as_str()));
                 }
-                Some(activity) => {
-                    decision.intents.push(intent(IntentAction::Activity { activity, place_id: None, minutes: None }))
-                }
+                // Chopping wood and mining mean a real tree or rock when there is one within reach.
+                Some(activity) => match real_work(state, c, activity) {
+                    Some(action) => decision.intents.push(intent(action)),
+                    None => decision.intents.push(intent(IntentAction::Activity {
+                        activity,
+                        place_id: None,
+                        minutes: None,
+                    })),
+                },
                 None => decision.problems.push(format!("unknown activity \"{}\"", shown(args.get("activity")))),
             },
             "talk_to" => {
@@ -371,9 +378,29 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     (None, _) => decision.problems.push(format!("unknown person \"{}\"", shown(args.get("person")))),
                 }
             }
-            // A child has nothing to give and never raises a hand; the sim would refuse it too.
-            "give" | "brawl" | "attack" if c.is_child() => {
+            // A child has nothing to give, never raises a hand and does no work on the world; the sim would
+            // refuse it too.
+            "give" | "brawl" | "attack" | "work_on" if c.is_child() => {
                 decision.problems.push(format!("a child does not {}", call.name));
+            }
+            "work_on" => {
+                let job = norm(args.get("job"));
+                let job =
+                    WorldJob::parse(&job).or_else(|| JOB_ALIASES.iter().find(|(a, _)| *a == job).map(|(_, j)| *j));
+                match job {
+                    None => decision.problems.push(format!("unknown job \"{}\"", shown(args.get("job")))),
+                    Some(WorldJob::Deliver) => decision.problems.push("carrying is not chosen; it follows".into()),
+                    Some(job) => match resolve_target(state, c, job, args.get("target")) {
+                        Some(target) => {
+                            decision.intents.push(intent(IntentAction::WorldWork { job, target, minutes: None }))
+                        }
+                        None => decision.problems.push(format!(
+                            "nothing to {} at \"{}\"",
+                            job.as_str(),
+                            shown(args.get("target"))
+                        )),
+                    },
+                }
             }
             "give" => {
                 let person = resolve_person(state, args.get("person"), Some(&c.id));
@@ -440,6 +467,83 @@ pub struct Plan {
 }
 
 /// A plan hour: a number, a numeric string, or "13:30".
+const JOB_ALIASES: &[(&str, WorldJob)] = &[
+    ("chop", WorldJob::Fell),
+    ("cut down", WorldJob::Fell),
+    ("cut", WorldJob::Fell),
+    ("quarry", WorldJob::Mine),
+    ("break", WorldJob::Mine),
+    ("shovel", WorldJob::Dig),
+    ("scythe", WorldJob::Mow),
+    ("cut grass", WorldJob::Mow),
+    ("take apart", WorldJob::Dismantle),
+    ("disassemble", WorldJob::Dismantle),
+    ("demolish", WorldJob::Dismantle),
+    ("tear down", WorldJob::Dismantle),
+    ("torch", WorldJob::Burn),
+    ("set fire", WorldJob::Burn),
+    ("light", WorldJob::Burn),
+    ("arson", WorldJob::Burn),
+];
+
+/// What a `work_on` target names, among the things within reach: a tree or rock (the nearest), the
+/// ground (underfoot, or the nearest that will take a spade), a building by its place's name, or a prop by
+/// its name and place. `None` when nothing within reach fits.
+pub fn resolve_target(state: &SimState, c: &Character, job: WorldJob, value: Option<&Value>) -> Option<String> {
+    let text = norm(value);
+    match job {
+        WorldJob::Fell | WorldJob::Mine => world::nearest_target(state, c.pos, job),
+        WorldJob::Dig | WorldJob::Mow => world::ground_near(state, c.pos, job),
+        WorldJob::Dismantle | WorldJob::Burn => {
+            let targets = world::nearby_targets(state, c.pos, 24);
+            let fits = |t: &world::WorkTarget| t.jobs.contains(&job);
+            // The exact label first, then a prop word plus a place, then a place name alone (its building).
+            if let Some(t) = targets.iter().find(|t| fits(t) && norm_str(&t.label) == text) {
+                return Some(t.id.clone());
+            }
+            let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+            let mut best: Option<(usize, &world::WorkTarget)> = None;
+            for t in targets.iter().filter(|t| fits(t)) {
+                let label = norm_str(&t.label);
+                let hits = words.iter().filter(|w| label.contains(*w)).count();
+                if hits > 0 && best.is_none_or(|(b, _)| hits > b) {
+                    best = Some((hits, t));
+                }
+            }
+            if let Some((_, t)) = best {
+                return Some(t.id.clone());
+            }
+            let place = resolve_place(c, value)?;
+            let id = format!("b:{}", place.id);
+            targets.iter().any(|t| fits(t) && t.id == id).then_some(id)
+        }
+        WorldJob::Build => {
+            let targets = world::nearby_targets(state, c.pos, 24);
+            let builds: Vec<&world::WorkTarget> =
+                targets.iter().filter(|t| t.jobs.contains(&WorldJob::Build)).collect();
+            let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+            builds
+                .iter()
+                .find(|t| words.iter().any(|w| norm_str(&t.label).contains(w)))
+                .or(builds.first())
+                .map(|t| t.id.clone())
+        }
+        WorldJob::Deliver => None,
+    }
+}
+
+/// The world work a chosen activity stands for, when the world offers it: felling the nearest standing tree
+/// for `chop_wood`, mining the nearest whole rock for `mine`. `None` leaves the slot activity as it is.
+fn real_work(state: &SimState, c: &Character, activity: ActivityId) -> Option<IntentAction> {
+    let job = match activity {
+        ActivityId::ChopWood => WorldJob::Fell,
+        ActivityId::Mine => WorldJob::Mine,
+        _ => return None,
+    };
+    let target = gather_target(state, c.pos, job)?;
+    Some(IntentAction::WorldWork { job, target, minutes: None })
+}
+
 fn plan_hour(value: Option<&Value>) -> Option<f64> {
     match value? {
         Value::Number(n) => n.as_f64(),
@@ -598,6 +702,49 @@ mod tests {
         };
         state.houses.insert("home_1".into(), ruin);
         assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), Some(ActivityId::Rebuild));
+    }
+
+    #[test]
+    fn chopping_wood_means_a_real_tree_when_one_stands_within_reach() {
+        let state = create_test_state(1);
+        let me = &state.characters["c3"];
+        let decision = interpret_decision(&state, me, &[call("do_activity", json!({"activity": "chop wood"}))]);
+        match &decision.intents[0].action {
+            IntentAction::WorldWork { job: WorldJob::Fell, target, .. } => {
+                assert!(target.starts_with("s:"), "{target}");
+                assert!(fsw_sim::systems::world::job_accepts(&state, WorldJob::Fell, target));
+            }
+            other => panic!("expected felling, got {other:?}"),
+        }
+        let decision = interpret_decision(&state, me, &[call("do_activity", json!({"activity": "farm"}))]);
+        assert!(matches!(decision.intents[0].action, IntentAction::Activity { activity: ActivityId::Farm, .. }));
+    }
+
+    #[test]
+    fn work_on_names_the_things_within_reach() {
+        let state = create_test_state(1);
+        let me = &state.characters["c1"];
+        // c1's home is the red cottage; its bench and barrel are within reach, as is the house itself.
+        let home = me.home_id.clone();
+        let fell = interpret_decision(&state, me, &[call("work_on", json!({"job": "chop", "target": "that tree"}))]);
+        assert!(
+            matches!(&fell.intents[0].action, IntentAction::WorldWork { job: WorldJob::Fell, target, .. } if target.starts_with("s:"))
+        );
+        let burn = interpret_decision(&state, me, &[call("work_on", json!({"job": "burn", "target": "home"}))]);
+        match &burn.intents[0].action {
+            IntentAction::WorldWork { job: WorldJob::Burn, target, .. } => assert_eq!(*target, format!("b:{home}")),
+            other => panic!("{other:?}"),
+        }
+        let apart =
+            interpret_decision(&state, me, &[call("work_on", json!({"job": "dismantle", "target": "the barrel"}))]);
+        assert!(
+            matches!(&apart.intents[0].action, IntentAction::WorldWork { job: WorldJob::Dismantle, target, .. } if target.starts_with(&format!("p:{home}:")))
+        );
+        let nothing = interpret_decision(&state, me, &[call("work_on", json!({"job": "burn", "target": "the moon"}))]);
+        assert!(nothing.intents.is_empty() && !nothing.problems.is_empty());
+        let carry =
+            interpret_decision(&state, me, &[call("work_on", json!({"job": "deliver", "target": "lumber camp"}))]);
+        assert!(carry.intents.is_empty());
     }
 
     #[test]
