@@ -19,7 +19,7 @@ const KIND_ICON: Record<string, string> = {
 
 const MOOD_ICON: Record<string, string> = { ok: '', fight: '⚔️', sleep: '💤', talk: '💬', hurt: '🩹' };
 
-/** Follows a villager picked from a list; on a phone the pane goes away so they can be watched. */
+/** Follows a villager (or looks at a site) picked from a list; on a phone the pane goes away so it can be watched. */
 const follow = (id: string): void => {
   actions.select(id);
   if (ui.mobile.value) closeSheet();
@@ -132,6 +132,7 @@ export function Chronicle() {
       <ol>
         {entries.map((entry) => {
           const time = gameTime(entry.tick);
+          // The people a line names come first; a line about a building alone opens the building's page.
           const id = entry.ids[0];
           return (
             <li class={`chron ${entry.kind}`} key={`${entry.tick}:${entry.text}`}>

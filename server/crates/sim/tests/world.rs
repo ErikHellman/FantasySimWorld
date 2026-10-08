@@ -575,6 +575,11 @@ fn a_building_taken_down_is_raised_again_when_the_stores_allow() {
     let lines: Vec<&str> = sim.state.chronicle.iter().map(|e| e.text.as_str()).collect();
     assert!(lines.iter().any(|l| l.contains("takes on raising the smithy")), "{lines:?}");
     assert!(lines.iter().any(|l| l.contains("stands again, raised by")), "{lines:?}");
+    // Both lines carry the smithy's id, after the helpers, for the smithy's own page.
+    let about_smithy: Vec<_> =
+        sim.state.chronicle.iter().filter(|e| e.ids.last().map(String::as_str) == Some("b:smithy")).collect();
+    assert_eq!(about_smithy.len(), 2, "{lines:?}");
+    assert!(about_smithy[1].ids.len() > 1, "the raisers come first: {:?}", about_smithy[1].ids);
     // The timber came out of the stores.
     assert!(wood_at(&sim.state, "lumber_camp") + wood_at(&sim.state, "market") < 40 + 20);
 }
@@ -655,6 +660,10 @@ fn timber_to_spare_goes_into_something_new_on_a_pad() {
         let pad = pads().into_iter().find(|p| Some(p.id.as_str()) == spec.pad.as_deref()).expect("built on a pad");
         assert_eq!((spec.x, spec.z), (pad.pos.x, pad.pos.z));
         assert!(!spec.model.is_empty());
+        // The chronicle line is about the new thing and the building whose pad it stands on.
+        let put_up = sim.state.chronicle.iter().find(|e| e.text.contains(" put up ")).expect("a line about it");
+        let place = pad.id.split('/').next().unwrap();
+        assert!(put_up.ids.contains(id) && put_up.ids.contains(&building_id(place)), "{:?}", put_up.ids);
     }
     assert!(sim.state.projects.len() <= MAX_PROJECTS);
     assert!(wood_at(&sim.state, "lumber_camp") < 50);

@@ -33,19 +33,21 @@ pub enum ActivityId {
     Rebuild,
     /// a child's game on the green, at the docks or by the farm; no slot, like strolling
     Play,
+    /// singing or playing an instrument in public, mostly outside the tavern; no slot, a spot of its own
+    Perform,
 }
 
 impl ActivityId {
-    pub const ALL: [ActivityId; 22] = [
+    pub const ALL: [ActivityId; 23] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
-        Brew, Mourn, Stroll, ReadBoard, Rebuild, Play,
+        Brew, Mourn, Stroll, ReadBoard, Rebuild, Play, Perform,
     ];
 
     /// What a mind may always choose: everything but reading a billboard, which only the routine sends people
     /// to, and rebuilding, which is only there to choose while a house lies in ruins.
-    pub const OFFERED: [ActivityId; 20] = [
+    pub const OFFERED: [ActivityId; 21] = [
         Eat, Drink, Sleep, Rest, Smith, Farm, ChopWood, Fish, Mine, Trade, Shop, Pray, Train, Forage, Watch, Relax,
-        Brew, Mourn, Stroll, Play,
+        Brew, Mourn, Stroll, Play, Perform,
     ];
 
     /// What a child may choose: meals, rest, play and the few things that need no trade or weapon.
@@ -75,6 +77,7 @@ impl ActivityId {
             ReadBoard => "read_board",
             Rebuild => "rebuild",
             Play => "play",
+            Perform => "perform",
         }
     }
 

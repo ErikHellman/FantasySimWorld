@@ -153,6 +153,16 @@ export class Marks {
     for (const [id, handles] of this.grass) if (!seen.has(id)) for (const handle of handles) this.builder.setVisible(handle, true);
   }
 
+  /** The thing the village built that a ray hits, as its object id (`n:<n>`) and distance, or null. */
+  pick(raycaster: THREE.Raycaster): { id: string; distance: number } | null {
+    const hit = raycaster.intersectObjects([...this.built.values()], true)[0];
+    if (!hit) return null;
+    let object: THREE.Object3D | null = hit.object;
+    while (object && object.parent !== this.group) object = object.parent;
+    for (const [id, model] of this.built) if (model === object) return { id, distance: hit.distance };
+    return null;
+  }
+
   private markFor(object: WorldObject): string {
     switch (object.stage) {
       case 'pieces':

@@ -6,7 +6,8 @@
 //!
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
-//! `roster` (a list of [`RosterEntry`]), `detail` [`Detail`], `brainlog` [`BrainLogRecord`] (admins only),
+//! `roster` (a list of [`RosterEntry`]), `detail` [`Detail`], `site` [`SiteDetail`],
+//! `brainlog` [`BrainLogRecord`] (admins only),
 //! `world_reset` [`WorldReset`], `chat_welcome` [`ChatWelcome`], `chat` [`ChatMessage`], `chat_you` [`ChatYou`],
 //! `guest_end` [`GuestEnd`] (guests only, the last event on their stream).
 //! Event ids are `"<bootId>:<tick>"`.
@@ -16,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -258,6 +259,8 @@ pub enum Emote {
     Laugh,
     BrokenHeart,
     Gift,
+    /// a note over someone singing or playing
+    Music,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -860,6 +863,69 @@ pub enum Detail {
     Monster(Box<MonsterDetail>),
 }
 
+/// What a site is: a place's building, or something the village put up on a pad.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SiteKind {
+    Building,
+    Built,
+}
+
+/// One material a project calls for, and how much of it has been carried to the site.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct SiteNeed {
+    /// `wood`, `stone` or `ore`
+    pub resource: String,
+    pub delivered: u32,
+    pub needed: u32,
+}
+
+/// The work the village has taken on at a site.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct SiteProject {
+    /// "raising the smithy", "a fence by the red cottage"
+    pub label: String,
+    pub helpers: Vec<NamedId>,
+    pub needs: Vec<SiteNeed>,
+    /// how far the hands-on work has got, in percent
+    pub progress: u8,
+}
+
+/// The page for a building or something the village built (a site: `b:<place>` or `n:<n>`), with every
+/// label already rendered. Sent as the `site` event to the viewer watching it, and by `GET /api/sites/{id}`.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteDetail {
+    pub id: Id,
+    pub kind: SiteKind,
+    /// "The Gilded Tankard", "a bench near the village green"
+    pub name: String,
+    /// the place it is, or stands near
+    pub place_id: Id,
+    pub place_name: String,
+    pub description: String,
+    /// as [`WorldObject::stage`]; `whole` for a building that is as the map has it
+    pub stage: String,
+    /// the tick the stage began; 0 for a building nobody has touched
+    #[ts(type = "number")]
+    pub since_tick: u64,
+    /// how far the work on it has got, in percent
+    pub progress: u8,
+    /// how far a fire has taken hold of it, 0..100
+    pub fire: u8,
+    /// how many may sleep there; homes only
+    pub beds: Option<u32>,
+    /// who lives there; homes only
+    pub residents: Vec<NamedId>,
+    /// the villagers at the place right now
+    pub present: Vec<NamedId>,
+    pub project: Option<SiteProject>,
+    /// the materials kept there, for a stockpile that holds any
+    pub stockpile: Option<Goods>,
+    /// chronicle lines about it, newest first, at most 20
+    pub history: Vec<ChronicleEntry>,
+}
+
 // ---------------------------------------------------------------------------
 // Brain log (admins)
 // ---------------------------------------------------------------------------
@@ -982,11 +1048,12 @@ pub struct ChatRename {
 // REST
 // ---------------------------------------------------------------------------
 
-/// `POST /api/watch`: which character's `detail` this viewer (one tab) receives.
+/// `POST /api/watch`: which character's `detail`, or which site's `site`, this viewer (one tab) receives.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct WatchRequest {
     /// random per tab
     pub viewer: String,
+    /// a villager id (`c7`) or a site id (`b:<place>`, `n:<n>`)
     pub id: Option<Id>,
 }
 
@@ -1236,6 +1303,10 @@ pub fn typescript() -> String {
         NamedId,
         MonsterDetail,
         Detail,
+        SiteKind,
+        SiteNeed,
+        SiteProject,
+        SiteDetail,
         RequestKind,
         LogStatus,
         BrainLogRecord,
@@ -1263,7 +1334,7 @@ pub fn typescript() -> String {
         "/** Payload of each named event on `GET /api/stream`. */\n\
          export type StreamEvents = {\n  \
          hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
-         detail: Detail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
+         detail: Detail;\n  site: SiteDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
          chat_welcome: ChatWelcome;\n  chat: ChatMessage;\n  chat_you: ChatYou;\n  guest_end: GuestEnd;\n};\n",
     );
     out

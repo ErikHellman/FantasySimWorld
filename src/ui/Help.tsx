@@ -49,8 +49,8 @@ export function HelpPanel() {
               <Control keys={['Two fingers up or down']}>Tilt, from low over the ground to straight down</Control>
               <Control keys={['Tap']}>
                 {phone
-                  ? 'Tap a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them; tap the “Following” chip for their page'
-                  : 'Tap a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them and open their page'}
+                  ? 'Tap a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them; tap the “Following” chip for their page. Tap a building or something the village built for its page'
+                  : 'Tap a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them and open their page. Tap a building or something the village built for its page'}
               </Control>
             </dl>
           </>
@@ -69,7 +69,8 @@ export function HelpPanel() {
             <h3>Following someone</h3>
             <dl class="controls">
               <Control keys={['Click']}>Click a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them and open their page</Control>
-              <Control keys={['Esc']}>Stop following and close their page (or close an open window)</Control>
+              <Control keys={['Click']}>Click a building, or something the village built, for its page: who lives and is there, the work on it and its history</Control>
+              <Control keys={['Esc']}>Stop following and close the page (or close an open window)</Control>
             </dl>
           </>
         )}
@@ -95,6 +96,7 @@ export function HelpPanel() {
             <li><strong>Following</strong>: the chip above the tabs names the villager the camera follows. Tap it for their page, ✕ to let them go.</li>
             <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
             <li><strong>One of the dead</strong>: follow it for a card with its health, what it is after, where it rose and who it has slain.</li>
+            <li><strong>A building's page</strong>: tap a building, or something the village built, for its condition, who lives and is there, the work on it and its history.</li>
             {banner}
           </ul>
         ) : (
@@ -104,6 +106,7 @@ export function HelpPanel() {
           <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
           <li><strong>One of the dead</strong> (right, when you follow it): its health, what it is after, where and how it rose, who it once was, and how many villagers it has slain.</li>
+          <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
         </ul>
@@ -114,6 +117,7 @@ export function HelpPanel() {
           <li>A day lasts 24 minutes at normal speed: one game minute is one second.</li>
           <li>Villagers keep to a plan for the day: work, meals, rest and time with others. They grow hungry, tired and lonely, and see to it.</li>
           <li>Children live here too. They play, get into mischief (a pinched apple, a tall tale, a wander toward the graveyard at dusk) and never fight. After about a month they come of age and take up a trade. Couples who stay together have more of them.</li>
+          <li>Some villagers sing or play, mostly of an evening outside the tavern. Whoever is idle nearby stops to listen, and a good tune leaves them heartened for a few hours: slower to tire, quicker to heal and a little braver. A poor one draws heckles.</li>
           <li>They talk, and every conversation shifts how they feel about each other. Friendships, rivalries and love grow from it; grudges can end in a fight.</li>
           <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>

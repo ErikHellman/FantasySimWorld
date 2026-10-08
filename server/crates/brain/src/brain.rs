@@ -268,6 +268,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::FightFire { place_id } => format!("fight the fire at {place_id}"),
         IntentAction::Fetch { target_id } => format!("bring {} home", name_of(state, target_id)),
         IntentAction::Attend { place_id } => format!("attend the ceremony at {place_id}"),
+        IntentAction::Listen { performer_id } => format!("listen to {}", name_of(state, performer_id)),
         IntentAction::WorldWork { job, target, .. } => format!("{} {target}", job.as_str()),
         IntentAction::PickUp { loot_id } => format!("pick up {loot_id}"),
         IntentAction::Commission { what } => format!("commission {what}"),

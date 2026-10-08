@@ -53,6 +53,7 @@ pub fn create_state(seed: u32) -> SimState {
         objects: Default::default(),
         stockpiles: Default::default(),
         projects: Vec::new(),
+        performances: Vec::new(),
         economy: Default::default(),
         loot: Default::default(),
         nav: Default::default(),

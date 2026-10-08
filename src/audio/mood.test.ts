@@ -3,7 +3,7 @@ import type { WireEvent } from '../generated/api';
 import { MOOD_TIMING, MoodTracker, timeOfDayMood, type MusicScene } from './mood';
 
 const camera = { x: 0, z: 0, distance: 40 };
-const calm: MusicScene = { hour: 12, alarm: false, monstersNear: 0, selectedMood: null, ceremony: null };
+const calm: MusicScene = { hour: 12, alarm: false, monstersNear: 0, selectedMood: null, ceremony: null, performanceNear: false };
 
 const hit = (x: number, attackerId = 'm1', targetId = 'v1'): WireEvent => ({ type: 'hit', attackerId, targetId, damage: 3, pos: { x, z: 0 }, fatal: false });
 const death = (x: number, id: string, monster: boolean): WireEvent => ({ type: 'death', id, name: id, pos: { x, z: 0 }, monster });
@@ -25,6 +25,14 @@ describe('MoodTracker', () => {
     expect(tracker.update(calm, 0)).toBe('day');
     expect(tracker.update({ ...calm, hour: 19 }, 1)).toBe('evening');
     expect(tracker.update({ ...calm, hour: 23 }, 2)).toBe('night');
+  });
+
+  it('plays along with a villager making music in view, unless there is danger', () => {
+    const tracker = new MoodTracker();
+    expect(tracker.update({ ...calm, performanceNear: true }, 0)).toBe('performance');
+    expect(tracker.update({ ...calm, hour: 23, performanceNear: true }, 1)).toBe('performance');
+    expect(tracker.update({ ...calm, performanceNear: true, monstersNear: 1 }, 2)).toBe('tension');
+    expect(tracker.update(calm, 100)).toBe('day');
   });
 
   it('turns tense on the alarm or monsters nearby, and holds it for a while', () => {

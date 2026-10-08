@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { ambientLevels, playEffects } from './audio/ambient';
 import { AudioEngine } from './audio/engine';
-import { MoodTracker } from './audio/mood';
+import { MoodTracker, inView } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
@@ -20,8 +20,9 @@ import { SpeechBus } from './speech/speechBus';
 import { App } from './ui/App';
 import { watchLayout } from './ui/layout';
 import {
-  actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse, setStockpile, setWorldObject, ui,
+  actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, isSiteId,
+  loadAudioSettings, loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse,
+  setStockpile, setWorldObject, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -143,26 +144,40 @@ async function start(): Promise<void> {
   const listener = (): { x: number; z: number; distance: number } => ({ x: view.rig.target.x, z: view.rig.target.z, distance: view.rig.distance });
   let ambient: AmbientCounts = { awake: 0, eating: 0, drinking: 0, smithing: 0, relaxing: 0 };
 
+  /** Follows a villager, or looks at a site (a building or something built); null lets go of either. */
   const select = (id: string | null): void => {
     ui.selectedId.value = id;
     ui.detail.value = null;
-    view.selectedId = id;
-    view.follow(id);
-    // The stream pushes this viewer's detail from now on; fetch it once so the inspector opens at once.
+    ui.site.value = null;
+    // A site stands still: nothing to follow, and no label to mark.
+    const villager = id !== null && !isSiteId(id) ? id : null;
+    view.selectedId = villager;
+    view.follow(villager);
+    // The stream pushes this viewer's page from now on; fetch it once so it opens at once.
     void api.watch({ viewer, id }).catch((error) => console.warn('watch', error));
-    if (id) {
+    if (!id) return;
+    const letGo = (): void => {
+      if (ui.selectedId.value === id) select(null);
+    };
+    if (isSiteId(id)) {
+      api.site(id).then((site) => {
+        if (ui.selectedId.value === id) ui.site.value = site;
+      }, letGo);
+    } else {
       const fetched: Promise<Detail> = world.isMonster(id)
         ? api.monster(id).then((detail) => ({ kind: 'monster', ...detail }))
         : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));
-      fetched.then(
-        (detail) => {
-          if (ui.selectedId.value === id) ui.detail.value = detail;
-        },
-        () => {
-          if (ui.selectedId.value === id) select(null);
-        },
-      );
+      fetched.then((detail) => {
+        if (ui.selectedId.value === id) ui.detail.value = detail;
+      }, letGo);
     }
+  };
+  /** Whether the selected thing is no longer in the world: a villager gone, or a built thing taken away. */
+  const selectionGone = (): boolean => {
+    const id = ui.selectedId.value;
+    if (!id) return false;
+    if (id.startsWith('n:')) return !world.worldObjects.has(id);
+    return !isSiteId(id) && !world.entities.has(id);
   };
 
   /** Effects are left out when a backlog is applied at once; speech and the chronicle are not. */
@@ -176,7 +191,11 @@ async function start(): Promise<void> {
       else if (event.type === 'ceremony') setCeremony(event.ceremony);
       else if (event.type === 'stockpile') setStockpile(event.stockpile);
       else if (event.type === 'economy') setEconomy(event.economy);
-      else if (event.type === 'world_object') setWorldObject(event.object);
+      else if (event.type === 'world_object') {
+        setWorldObject(event.object);
+        // A built thing that is gone has no page; the server stops sending one too.
+        if (event.object.id === ui.selectedId.value && event.object.stage === 'gone') select(null);
+      }
     }
     speech.handle(events);
     if (!fast) {
@@ -189,7 +208,7 @@ async function start(): Promise<void> {
     onTick: (frame, fast) => {
       world.apply(frame);
       dispatch(frame.ev ?? [], fast);
-      if (ui.selectedId.value && !world.entities.has(ui.selectedId.value)) select(null);
+      if (selectionGone()) select(null);
     },
   });
   const setSpeed = (speed: number, throttled: boolean): void => {
@@ -213,7 +232,7 @@ async function start(): Promise<void> {
       fromSnapshot(snapshot);
       setSpeed(snapshot.speed, false);
       view.sync(world, []);
-      if (ui.selectedId.value && !world.entities.has(ui.selectedId.value)) select(null);
+      if (selectionGone()) select(null);
       if (ui.loading.value) ui.loading.value = null;
     },
     tick: (frame) => playback.push(frame),
@@ -225,6 +244,9 @@ async function start(): Promise<void> {
     roster: (roster) => (ui.roster.value = roster),
     detail: (detail) => {
       if (detail.id === ui.selectedId.value) ui.detail.value = detail;
+    },
+    site: (site) => {
+      if (site.id === ui.selectedId.value) ui.site.value = site;
     },
     brainlog: (record) => addBrainLog([record]),
     worldReset: () => location.reload(),
@@ -277,13 +299,15 @@ async function start(): Promise<void> {
   const updateMusic = (hour: number): void => {
     const spot = listener();
     let monstersNear = 0;
+    let performanceNear = false;
     for (const entity of world.entities.values()) {
       if (entity.kind === 'monster' && entity.hp > 0 && Math.hypot(entity.x - spot.x, entity.z - spot.z) < MONSTERS_NEAR) monstersNear++;
+      if (entity.kind === 'villager' && entity.visible && entity.act === 'perform' && inView(entity.x, entity.z, spot)) performanceNear = true;
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
     const ceremony = ui.ceremony.value;
-    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase } };
+    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
     audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);

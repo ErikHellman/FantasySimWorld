@@ -3,7 +3,7 @@
 //!
 //! A new connection gets `hello`, then either a replay of the ticks it missed
 //! (a `Last-Event-ID` from this boot within the replay ring) or a `snapshot`,
-//! then the current `status`, `roster`, the `detail` it watches and the chat
+//! then the current `status`, `roster`, the `detail` (or `site`) it watches and the chat
 //! (`chat_welcome`); after that, every `tick` and whatever changes. Event ids
 //! are `"<bootId>:<tick>"`. A guest's stream ends with `guest_end` when they leave or another
 //! tab of theirs takes the stream over.
@@ -26,7 +26,7 @@ use crate::api::wire::{GuestEnd, GuestEndReason, Hello, PROTOCOL_VERSION, Role, 
 use crate::auth::Viewer;
 use crate::auth::guest::still_valid;
 use crate::chat::{ChatKey, ChatOut};
-use crate::digest::{chronicle_tail, is_alarm, roster_of};
+use crate::digest::{chronicle_tail, is_alarm, is_site_id, roster_of};
 use crate::encode::grave_of;
 use crate::world_task::{Core, Outgoing, World};
 
@@ -142,6 +142,11 @@ fn to_json(value: &impl serde::Serialize) -> String {
     serde_json::to_string(value).expect("wire types always serialise")
 }
 
+/// The event a watched id's page goes out as: a villager's `detail`, or a site's `site`.
+fn detail_event(id: &str) -> &'static str {
+    if is_site_id(id) { "site" } else { "detail" }
+}
+
 fn watched(world: &World, viewer: &str) -> Option<String> {
     world.watches.lock().get(viewer).and_then(|watch| watch.id.clone())
 }
@@ -204,7 +209,7 @@ pub async fn stream(
         if let Some(id) = watched(&world, &viewer_id) {
             let detail = world.details.lock().get(&id).cloned();
             if let Some(detail) = detail {
-                yield Ok(Event::default().event("detail").data(&*detail));
+                yield Ok(Event::default().event(detail_event(&id)).data(&*detail));
                 last_detail = Some(detail);
             }
         }
@@ -275,7 +280,7 @@ pub async fn stream(
                 Ok(Outgoing::Detail { id, json }) => {
                     let fresh = last_detail.as_ref().is_none_or(|last| **last != *json);
                     if fresh && watched(&world, &viewer_id).as_deref() == Some(id.as_str()) {
-                        yield Ok(Event::default().event("detail").data(&*json));
+                        yield Ok(Event::default().event(detail_event(&id)).data(&*json));
                         last_detail = Some(json);
                     }
                 }

@@ -330,6 +330,9 @@ fn a_villager_who_sets_fire_to_the_tavern_musters_the_village_and_is_held_to_bla
         fire_lines(&sim.state)
     );
     assert!(sim.state.characters["c1"].last_arson_tick > 0);
+    // The line names the arsonist first and the tavern after, for the tavern's own page.
+    let arson = sim.state.chronicle.iter().find(|e| e.text.contains("set fire to The Gilded Tankard")).unwrap();
+    assert_eq!(arson.ids, ["c1", "b:tavern"]);
     // The village comes running; the one who lit it does not.
     for _ in 0..200 {
         sim.step();

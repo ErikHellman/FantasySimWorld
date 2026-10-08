@@ -1,7 +1,7 @@
 import type { CeremonyKind, CeremonyPhase, Mood as RosterMood, WireEvent } from '../generated/api';
 
 /** What the background music is about. */
-export type MusicMood = 'day' | 'evening' | 'night' | 'tension' | 'battle' | 'grief' | 'celebration';
+export type MusicMood = 'day' | 'evening' | 'night' | 'tension' | 'battle' | 'grief' | 'celebration' | 'performance';
 /** A short phrase played over the music when something ends. */
 export type Sting = 'victory' | 'defeat';
 
@@ -23,6 +23,8 @@ export interface MusicScene {
   selectedMood: RosterMood | null;
   /** the wedding or funeral the village has arranged, if any */
   ceremony: { kind: CeremonyKind; phase: CeremonyPhase } | null;
+  /** a villager is singing or playing where the camera looks */
+  performanceNear: boolean;
 }
 
 /** Seconds. */
@@ -62,9 +64,10 @@ export function timeOfDayMood(hour: number): 'day' | 'evening' | 'night' {
  * Follows what the viewer is watching (the camera's surroundings and the
  * selected villager) and picks the music for it. In order of precedence:
  * a fight in view, grief after a death in view or at a funeral, a wedding's
- * rite and feast, danger nearby (the alarm, or monsters around), then the time
- * of day. Battle and tension are held for a while so the music does not
- * flicker between them.
+ * rite and feast, danger nearby (the alarm, or monsters around), a villager
+ * making music in view (the minstrel pieces stand in for what they play),
+ * then the time of day. Battle and tension are held for a while so the music
+ * does not flicker between them.
  *
  * `now` is in seconds on any steady clock.
  */
@@ -113,6 +116,7 @@ export class MoodTracker {
     else if (now < this.griefUntil || burying(scene)) next = 'grief';
     else if (celebrating(scene)) next = 'celebration';
     else if (scene.alarm || scene.monstersNear > 0 || (this.current === 'tension' && now < this.tensionUntil)) next = 'tension';
+    else if (scene.performanceNear) next = 'performance';
     else next = timeOfDayMood(scene.hour);
 
     if (next === 'battle' && this.current !== 'battle') {
