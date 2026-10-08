@@ -1154,6 +1154,8 @@ pub enum MonsterOrigin {
     Raised,
     /// a villager who gave themself to the dark
     Turned,
+    /// the dragon, out of the sky
+    Sky,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1226,6 +1228,48 @@ pub struct Monster {
     /// blows it has landed on a villager
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub blows: i64,
+    /// how high above the ground it flies, in metres; only the dragon leaves the ground
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub alt: f64,
+    /// the dragon's plan for its visit
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raid: Option<Raid>,
+}
+
+/// Where the dragon is in its visit: flying in at a home, hanging over the village, or flying off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RaidPhase {
+    Strafe,
+    Hover,
+    Leave,
+}
+
+/// The dragon's visit: the homes it means to burn, in order, and where it leaves the valley.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Raid {
+    pub phase: RaidPhase,
+    /// home place ids, in the order it goes for them
+    pub targets: Vec<String>,
+    /// how many of `targets` it has already been to
+    pub done: usize,
+    /// what it hangs over between passes
+    pub hover: Vec2,
+    /// where it flies off to, off the map
+    pub exit: Vec2,
+    /// when it next breathes on someone below, while it hovers
+    pub next_breath_tick: i64,
+    /// when it moves on from hovering, if nobody is shooting at it
+    pub until_tick: i64,
+    /// the latest it stays to fight those shooting at it
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_tick: i64,
+    /// where the breath under way lands, and the home it sets alight (if it is a pass)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim: Option<Vec2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim_home: Option<String>,
 }
 
 /// Where a ghost is in its few nights among the living. See `systems::ghosts`.
@@ -1794,6 +1838,12 @@ pub struct Director {
     /// when the village next looks over what wants building
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_project_tick: i64,
+    /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_dragon_tick: i64,
+    /// the alarm was raised for the dragon, not the dead
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub alarm_dragon: bool,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.

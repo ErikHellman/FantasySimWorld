@@ -404,6 +404,9 @@ fn cannot_begin(state: &SimState, ceremony: &Ceremony) -> Option<&'static str> {
     if burning(state).is_some() {
         return Some("a house is burning");
     }
+    if state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && m.kind.def().flies) {
+        return Some("a dragon is over the village");
+    }
     let centre = centre_of(state, ceremony);
     let lair = get_place("ruins").door;
     let abroad = state.monsters.values().any(|m| {

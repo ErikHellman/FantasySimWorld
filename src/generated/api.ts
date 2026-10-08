@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -132,14 +132,18 @@ act: string | null,
 /**
  * asleep
  */
-z: boolean, };
+z: boolean, 
+/**
+ * height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
+ */
+y?: number, };
 
 export type Entity = { static: EntityStatic, dyn: Dyn, };
 
 /**
  * The fields of [`Dyn`] that changed this tick; absent means unchanged.
  */
-export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, };
+export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, y?: number | null, };
 
 /**
  * One `tick` event per sim tick. Empty lists are left out.
@@ -219,7 +223,7 @@ reason: string, };
 
 export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift" | "music";
 
-export type Ranged = "arrow" | "bolt" | "magic" | "food";
+export type Ranged = "arrow" | "bolt" | "magic" | "food" | "fire";
 
 /**
  * One spoken line, with everything a sink needs to show it or say it aloud.
@@ -439,7 +443,15 @@ export type Status = { llm: LlmStatus, viewers: number, speed: number,
 /**
  * the world is held at 1x because the model has a backlog
  */
-throttled: boolean, population: number, monsters: number, alarm: boolean, 
+throttled: boolean, population: number, 
+/**
+ * the dead abroad
+ */
+monsters: number, 
+/**
+ * the dragon is over the valley
+ */
+dragon: boolean, alarm: boolean, 
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
@@ -565,6 +577,10 @@ was: string | null,
  * does not crumble at dawn
  */
 lasting: boolean, 
+/**
+ * one of the walking dead (false for the dragon)
+ */
+undead: boolean, 
 /**
  * villagers it has slain
  */

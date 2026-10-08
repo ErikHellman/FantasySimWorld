@@ -192,7 +192,7 @@ export class WorldView {
     for (const event of events) {
       if (event.type === 'speech') continue; // spoken lines reach the overlay through the speech bus
       if (event.type === 'emote') this.overlay.emote(event.id, event.emote);
-      else this.effects.handle(event, this.heightAt, (id) => world.isMonster(id));
+      else this.effects.handle(event, this.heightAt, (id) => world.isMonster(id), (id) => this.actors.get(id)?.view.mouth() ?? null);
     }
   }
 
@@ -313,7 +313,7 @@ export class WorldView {
   follow(id: string | null): void {
     this.rig.setFollow(id ? () => {
       const actor = this.actors.get(id);
-      return actor ? { x: actor.view.root.position.x, z: actor.view.root.position.z } : null;
+      return actor ? { x: actor.view.root.position.x, z: actor.view.root.position.z, lift: actor.entity.alt } : null;
     } : null);
   }
 }

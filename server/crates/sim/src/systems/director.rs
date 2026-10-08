@@ -8,6 +8,7 @@ use fsw_world::places::{ActivityId, get_place};
 use crate::events::SimEvent;
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind, MonsterOrigin};
 use crate::systems::arrivals::arrive;
+use crate::systems::dragon;
 use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
 use crate::util::{Ctx, adult_count, first_name, join_names, living};
@@ -150,6 +151,8 @@ pub fn update_director(ctx: &mut Ctx) {
     if ctx.state.director.founding {
         return;
     }
+
+    dragon::update_schedule(ctx);
 
     if tick >= ctx.state.director.next_wave_tick {
         let dark = !(4.0..19.5).contains(&hour);

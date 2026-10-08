@@ -88,8 +88,9 @@ pub fn separate(state: &mut SimState) {
             bodies.push(BodyRef::Character(index));
         }
     }
+    // The dragon flies over everyone's heads.
     for (index, m) in state.monsters.values().enumerate() {
-        if m.phase != MonsterPhase::Dying {
+        if m.phase != MonsterPhase::Dying && !m.kind.def().flies {
             bodies.push(BodyRef::Monster(index));
         }
     }

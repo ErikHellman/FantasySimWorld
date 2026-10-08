@@ -1,4 +1,4 @@
-//! The walking dead.
+//! The walking dead, and the dragon.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ pub enum MonsterKind {
     SkeletonRogue,
     SkeletonMage,
     Necromancer,
+    /// Not one of the dead: a rare raider from the sky, by day. See `systems::dragon`.
+    Dragon,
 }
 
 pub struct MonsterDef {
@@ -33,10 +35,14 @@ pub struct MonsterDef {
     pub sight: f64,
     /// relative chance in an ordinary wave
     pub weight: f64,
+    /// one of the walking dead: crumbles at dawn, burns houses only while the village sleeps
+    pub undead: bool,
+    /// keeps to the air, out of reach of a blade
+    pub flies: bool,
 }
 
 /// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks).
-pub static MONSTERS: [MonsterDef; 5] = [
+pub static MONSTERS: [MonsterDef; 6] = [
     MonsterDef {
         kind: MonsterKind::SkeletonMinion,
         label: "skeleton",
@@ -53,6 +59,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[Attack1hChop, Attack1hStab],
         sight: 18.0,
         weight: 5.0,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonWarrior,
@@ -70,6 +78,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[Attack1hChop, Attack1hSlice],
         sight: 18.0,
         weight: 3.0,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonRogue,
@@ -87,6 +97,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[AttackDualChop, AttackDualSlice],
         sight: 21.0,
         weight: 2.0,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonMage,
@@ -104,6 +116,8 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[MagicShoot],
         sight: 20.0,
         weight: 2.0,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::Necromancer,
@@ -121,6 +135,28 @@ pub static MONSTERS: [MonsterDef; 5] = [
         attack_anims: &[MagicShoot, MagicCast],
         sight: 23.0,
         weight: 0.0,
+        undead: true,
+        flies: false,
+    },
+    // Its "attack" is the breath: `damage` burns everyone in the open within `range` of where it lands.
+    MonsterDef {
+        kind: MonsterKind::Dragon,
+        label: "dragon",
+        model: "Dragon",
+        texture: None,
+        main_hand: None,
+        off_hand: None,
+        max_hp: 1200.0,
+        damage: [30, 50],
+        range: 7.0,
+        interval: 8.0,
+        speed: 11.0,
+        style: WeaponStyle::Magic,
+        attack_anims: &[DragonBreath],
+        sight: 40.0,
+        weight: 0.0,
+        undead: false,
+        flies: true,
     },
 ];
 

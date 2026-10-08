@@ -22,6 +22,13 @@ const DRAG_TILT_SPEED = 0.004; // radians per pixel, for right-drag and two-fing
  * On a touch screen: one finger pans, two fingers pinch to zoom, twist to rotate and drag up and down to tilt.
  * Optionally follows a moving point.
  */
+/** A point the camera follows, and how high above the ground it is. */
+export interface Followed {
+  x: number;
+  z: number;
+  lift?: number;
+}
+
 export class CameraRig {
   readonly camera = new THREE.PerspectiveCamera(FOV, 1, 1, 900);
   readonly target = new THREE.Vector3();
@@ -40,7 +47,7 @@ export class CameraRig {
   private drag: { button: number; moved: number; multi: boolean } | null = null;
   /** the first two fingers as the camera last read them; null until a second finger is down */
   private pair: FingerPair | null = null;
-  private follow: (() => { x: number; z: number } | null) | null = null;
+  private follow: (() => Followed | null) | null = null;
   private readonly raycaster = new THREE.Raycaster();
   private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private size = { width: 1, height: 1 };
@@ -69,7 +76,7 @@ export class CameraRig {
   }
 
   /** Follow a moving point until the user pans; pass null to stop. */
-  setFollow(getPosition: (() => { x: number; z: number } | null) | null): void {
+  setFollow(getPosition: (() => Followed | null) | null): void {
     this.follow = getPosition;
   }
 
@@ -198,7 +205,10 @@ export class CameraRig {
 
     const followed = this.follow?.();
     if (this.follow && !followed) this.follow = null;
-    if (followed) this.goalTarget.set(followed.x, 0, followed.z);
+    // Something in the air (the dragon) is looked at up there, not at its shadow; the view settles back to the
+    // ground when it lands or the follow ends.
+    if (followed) this.goalTarget.set(followed.x, followed.lift ?? 0, followed.z);
+    else this.goalTarget.y = 0;
 
     this.goalTarget.x = clamp(this.goalTarget.x, worldMap.minX, worldMap.maxX);
     this.goalTarget.z = clamp(this.goalTarget.z, worldMap.minZ, worldMap.maxZ);

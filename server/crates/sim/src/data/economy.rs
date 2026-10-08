@@ -101,6 +101,8 @@ pub const LOOT_NOTHING_OF_100: u32 = 45;
 pub const LOOT_COINS_OF_100: u32 = 45;
 /// Coins from a skeleton: this many, plus up to four more.
 pub const LOOT_COINS_LEAST: i64 = 2;
+/// The least the dragon's hoard holds (up to ten more).
+pub const DRAGON_HOARD: i64 = 25;
 
 /// How far a villager looks for a neighbour to buy from or sell to.
 pub const TRADE_REACH: f64 = 12.0;

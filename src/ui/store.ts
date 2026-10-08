@@ -73,6 +73,7 @@ export const ui = {
   viewers: signal(0),
   population: signal(0),
   monsters: signal(0),
+  dragon: signal(false),
   alarm: signal(false),
   /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
   founding: signal<Founding | null>(null),
@@ -185,6 +186,7 @@ export function fromStatus(status: Status): void {
   ui.throttled.value = status.throttled;
   ui.population.value = status.population;
   ui.monsters.value = status.monsters;
+  ui.dragon.value = status.dragon;
   ui.alarm.value = status.alarm;
   ui.founding.value = status.founding;
 }
