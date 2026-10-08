@@ -3,6 +3,7 @@
 pub mod animals;
 pub mod arrivals;
 pub mod billboards;
+pub mod blocking;
 pub mod ceremonies;
 pub mod charm;
 pub mod children;
@@ -13,6 +14,7 @@ pub mod director;
 pub mod economy;
 pub mod fire;
 pub mod founding;
+pub mod ghosts;
 pub mod intents;
 pub mod monsters;
 pub mod movement;

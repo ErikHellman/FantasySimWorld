@@ -333,9 +333,10 @@ pub fn update_animals(ctx: &mut Ctx) {
     let tick = ctx.tick();
     let ids: Vec<Id> = ctx.state.animals.keys().cloned().collect();
     for (index, id) in ids.iter().enumerate() {
-        step_off(ctx.state, &nav, id);
+        step_off(ctx.state, &nav, id, false);
         if (tick + index as i64) % STRIDE == 0 {
             step(ctx, &nav, &threats, id);
+            step_off(ctx.state, &nav, id, true);
         }
     }
     nudge(ctx.state, &nav);
@@ -526,8 +527,9 @@ pub fn pet_to_fuss(state: &SimState, id: &str) -> Option<Id> {
         .map(|a| a.id.clone())
 }
 
-/// The village may have built where an animal stood: it steps off onto open ground at once.
-fn step_off(state: &mut SimState, nav: &NavOverlay, id: &str) {
+/// Off blocked ground at once: where the village has built on an animal (which then finds a new way), or where a
+/// stride cut a corner (which then carries on along its path).
+fn step_off(state: &mut SimState, nav: &NavOverlay, id: &str, keep_path: bool) {
     let animal = state.animals.get_mut(id).expect("animal");
     if animal.rider.is_some() || animal.flight.is_some() || nav.is_walkable(animal.pos.x, animal.pos.z) {
         return;
@@ -535,20 +537,16 @@ fn step_off(state: &mut SimState, nav: &NavOverlay, id: &str) {
     if let Some(open) = nav.nearest_walkable(animal.pos, 3) {
         animal.pos = open;
     }
-    animal.path.clear();
+    if !keep_path {
+        animal.path.clear();
+    }
 }
 
-/// Walks a stride along the animal's path, never onto ground that has been built over since the path was found:
-/// it stops short instead and finds a new way. True once the path is done.
-fn walk(animal: &mut Animal, nav: &NavOverlay, speed: f64) -> bool {
-    let before = animal.pos;
+/// Walks a stride along the animal's path; true once the path is done. A stride that lands on blocked ground (built
+/// over since the path was found, or a corner the path cuts) is put right by `step_off` straight after.
+fn walk(animal: &mut Animal, speed: f64) -> bool {
     let mut path = std::mem::take(&mut animal.path);
     let done = advance(animal, &mut path, speed * STRIDE_F);
-    if !nav.is_walkable(animal.pos.x, animal.pos.z) {
-        animal.pos = before;
-        animal.path.clear();
-        return true;
-    }
     animal.path = path;
     done
 }
@@ -596,7 +594,7 @@ fn step(ctx: &mut Ctx, nav: &NavOverlay, threats: &[Vec2], id: &str) {
         if def.flies {
             fly(animal, speed);
         } else {
-            walk(animal, nav, speed);
+            walk(animal, speed);
             animal.anim = if animal.moving { AnimalAnim::Run } else { def.pause };
         }
         return;
@@ -682,7 +680,7 @@ fn graze(ctx: &mut Ctx, nav: &NavOverlay, id: &str, asleep: bool) {
 
     let animal = ctx.state.animals.get_mut(id).expect("animal");
     if !animal.path.is_empty() {
-        let done = walk(animal, nav, def.walk);
+        let done = walk(animal, def.walk);
         animal.anim = AnimalAnim::Walk;
         if done {
             let pause = if asleep { 60.0 } else { 4.0 + roll(ctx.state) * 12.0 };
@@ -737,7 +735,7 @@ fn bird(ctx: &mut Ctx, nav: &NavOverlay, id: &str, asleep: bool) {
         return;
     }
     if !animal.path.is_empty() {
-        walk(animal, nav, def.walk);
+        walk(animal, def.walk);
         animal.anim = AnimalAnim::Walk;
         return;
     }
@@ -806,7 +804,7 @@ fn keep_to_owner(ctx: &mut Ctx, nav: &NavOverlay, id: &str, asleep: bool) {
     }
     // The path ends on its keeper; it stops short of that, at their heels, on the next tick.
     let speed = if d > CATCH_UP { def.run } else { def.walk };
-    walk(animal, nav, speed);
+    walk(animal, speed);
     animal.anim = if speed > def.walk { AnimalAnim::Run } else { AnimalAnim::Walk };
 }
 

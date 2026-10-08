@@ -22,10 +22,10 @@ The valley has animals: a herd and hens at the windmill farm, ducks on the lake 
   - `IntentAction::Pet`, `ActivityId::Tend`, `AnimId::Ride` (the idle clip), `Command::NameAnimal` and `SimEvent::PetAdopted`.
   - Everything is left out of a save while empty, so older saves load and the fixtures round-trip.
 - **Data** (`server/crates/sim/src/data/animals.rs`): each species' models, paces, haunt, wandering radius and names; the founding's numbers; and the riding pace.
-- **The system** (`server/crates/sim/src/systems/animals.rs`, `update_animals` after `update_monsters`):
+- **The system** (`server/crates/sim/src/systems/animals.rs`, `update_animals` after `update_monsters` and `update_ghosts`):
   - **Animals keep apart from the villagers' story.** They draw only from `fauna.rng`, never from the villagers' generator, take no part in `separate`, and nudge only themselves out of the way. A world goes on as it would without them, except where a villager deals with one.
   - **Each animal moves every fourth tick (`STRIDE`), on a tick of its own**, by four ticks' worth. A ridden horse moves with its rider every tick.
-  - **They avoid blocked ground.** An animal never steps onto ground built over since its path was found, and steps off at once if something is built where it stands.
+  - **They keep off blocked ground.** An animal that finds itself on it (built over where it stood, or a corner its path cut) steps off onto open ground in the same tick.
 - **Villagers**:
   - `Tend` is run in `systems/intents.rs` like `Play`, with no slot. `tending_spot` and `hold_still` choose the animal and keep it still.
   - `run_pet` follows the pattern of picking up loot.
@@ -36,8 +36,8 @@ The valley has animals: a herd and hens at the windmill farm, ducks on the lake 
   - The header says where a villager's pet is and which horse they ride.
   - The decision prompt lists the animals within 22 paces (pets and horses by name, a neighbour's unnamed pet by its keeper's, the rest by kind) and offers `pet` only then.
   - `name_pet_prompt` asks for a name with the one tool `name_pet`, as a `name` request in the log; `tools/mock-llm.mjs` answers both.
-- **The wire** (protocol 9):
-  - Animals are the entity kind `animal`, after the villagers, the dead and the bodies, with the model in `look` and an empty name unless a pet or a horse.
+- **The wire** (protocol 10):
+  - Animals are the entity kind `animal`, after the villagers, the dead, the bodies and the ghosts, with the model in `look` and an empty name unless a pet or a horse.
   - `Dyn.mt` is the horse a villager rides, or a horse's rider.
   - `GET /api/animals/{id}` and `Detail::Animal` carry the card.
 - **The client**:

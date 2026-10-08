@@ -336,26 +336,29 @@ mod company {
 
     #[test]
     fn children_mostly_keep_company_with_other_children_and_their_own_people() {
-        let mut sim = Sim::new(create_test_state(2));
-        let kids: Vec<String> = children(&sim.state).map(|c| c.id.clone()).collect();
+        // Pooled over a few villages: two days of one village is too few talks to tell a pull from luck.
         let (mut with_their_own, mut total) = (0, 0);
-        for _ in 0..TICKS_PER_DAY * 2 {
-            for event in sim.step() {
-                let SimEvent::ConversationStarted { a, b, .. } = event else { continue };
-                let (child, other) = if kids.contains(&a) {
-                    (&a, &b)
-                } else if kids.contains(&b) {
-                    (&b, &a)
-                } else {
-                    continue;
-                };
-                total += 1;
-                let own = kids.contains(other)
-                    || sim.state.characters[child].child.as_ref().is_some_and(|k| k.parents.contains(other));
-                with_their_own += own as i32;
+        for seed in 1..=4 {
+            let mut sim = Sim::new(create_test_state(seed));
+            let kids: Vec<String> = children(&sim.state).map(|c| c.id.clone()).collect();
+            for _ in 0..TICKS_PER_DAY * 2 {
+                for event in sim.step() {
+                    let SimEvent::ConversationStarted { a, b, .. } = event else { continue };
+                    let (child, other) = if kids.contains(&a) {
+                        (&a, &b)
+                    } else if kids.contains(&b) {
+                        (&b, &a)
+                    } else {
+                        continue;
+                    };
+                    total += 1;
+                    let own = kids.contains(other)
+                        || sim.state.characters[child].child.as_ref().is_some_and(|k| k.parents.contains(other));
+                    with_their_own += own as i32;
+                }
             }
         }
-        assert!(total >= 6, "only {total} talks involved a child");
+        assert!(total >= 24, "only {total} talks involved a child");
         // Children and their own people are a quarter of the village; the pull shows as well over that.
         assert!(
             with_their_own * 5 >= total * 2,
@@ -794,8 +797,10 @@ mod mischief {
         side_by_side(&mut sim, &moss, &rowan, "green");
         // Wide awake, so the evening's nap does not keep Moss in.
         sim.state.characters.get_mut(&moss).unwrap().needs.energy = 100.0;
-        // Rowan has the evening free and the raids hold off. Rowan, a parent or someone nearer may be the one to go
-        // after Moss, depending on how the day went.
+        // Rowan raises Moss for the test (the cast gives Moss nobody), so someone will go after Moss whichever way
+        // they slip off. Rowan has the evening free and the raids hold off; Rowan or someone nearer may be the one to
+        // go after Moss, depending on how the day went.
+        sim.state.characters.get_mut(&moss).unwrap().child.as_mut().unwrap().parents = vec![rowan.clone()];
         sim.state.director.next_wave_tick = sim.state.tick + TICKS_PER_DAY;
         let mut wandered = false;
         let mut fetcher = None;

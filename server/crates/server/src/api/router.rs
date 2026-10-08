@@ -44,6 +44,7 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/watch", post(world::watch))
         .route("/characters/{id}", get(world::character))
         .route("/monsters/{id}", get(world::monster))
+        .route("/ghosts/{id}", get(world::ghost))
         .route("/animals/{id}", get(world::animal))
         .route("/sites/{id}", get(world::site))
         .route("/chronicle", get(world::chronicle))

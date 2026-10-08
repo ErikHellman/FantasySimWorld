@@ -153,6 +153,8 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         mount: None,
         mounting: None,
         heartened_until_tick: 0,
+        passing: None,
+        sidestep: None,
     }
 }
 

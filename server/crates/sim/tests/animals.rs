@@ -342,8 +342,9 @@ fn a_villager_rides_a_free_horse_on_a_long_trip_and_it_waits_then_goes_home() {
     assert!(rode, "the rider got on the horse");
     assert!(ridden < walked, "riding ({ridden} ticks) beats walking ({walked})");
 
-    // Got down at the end, and the horse waits there for them while they bide a while.
-    set_intent(&mut sim, &rider, IntentAction::Wait { minutes: 240.0 });
+    // Got down at the end, and the horse waits there for them while they bide there into the night, so they do not
+    // ride it off again.
+    set_intent(&mut sim, &rider, IntentAction::Wait { minutes: 900.0 });
     for _ in 0..40 {
         sim.step();
     }

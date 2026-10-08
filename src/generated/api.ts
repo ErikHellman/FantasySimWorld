@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -55,7 +55,7 @@ speed: number, protocolVersion: number,
  */
 worldHash: string, viewers: number, role: Role, };
 
-export type EntityKind = "villager" | "monster" | "corpse" | "animal";
+export type EntityKind = "villager" | "monster" | "corpse" | "ghost" | "animal";
 
 /**
  * How a character or monster is drawn (the sim's `Look`).
@@ -589,9 +589,38 @@ rider: NamedId | null,
 yields: string | null, };
 
 /**
+ * The inspector for a ghost, every label rendered on the server.
+ */
+export type GhostDetail = { id: string, 
+/**
+ * the full name of the villager it was
+ */
+name: string, 
+/**
+ * the villager it was
+ */
+wasId: string, 
+/**
+ * the day they died
+ */
+diedDay: number, 
+/**
+ * how they died, e.g. "slain by a Skeleton Warrior at the green"
+ */
+cause: string, 
+/**
+ * what it is doing now, e.g. "Haunting the village near the well"
+ */
+status: string, 
+/**
+ * nights it still has to walk, counting tonight; 0 before it first rises
+ */
+nightsLeft: number, };
+
+/**
  * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
  */
-export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail | { "kind": "animal" } & AnimalDetail;
+export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail | { "kind": "ghost" } & GhostDetail | { "kind": "animal" } & AnimalDetail;
 
 /**
  * What a site is: a place's building, or something the village put up on a pad.

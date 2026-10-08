@@ -9,9 +9,9 @@ use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, Animal, AnimalAnim, Character, HousePhase, IntentAction, MemoryKind as SimMemoryKind, Monster,
-    MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, RelationLabel as SimLabel, Resource, SimState,
-    WorldObject as SimWorldObject,
+    ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
+    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, RelationLabel as SimLabel, Resource,
+    SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
@@ -22,9 +22,9 @@ use fsw_sim::util::{first_name, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
-    AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, Goods, Inventory, LlmStatus,
-    Memory, MemoryKind, MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry,
-    SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
+    AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory,
+    LlmStatus, Memory, MemoryKind, MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow,
+    RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 
@@ -178,6 +178,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<Detail> {
     character_detail_of(state, id)
         .map(|detail| Detail::Villager(Box::new(detail)))
         .or_else(|| monster_detail_of(state, id).map(|detail| Detail::Monster(Box::new(detail))))
+        .or_else(|| ghost_detail_of(state, id).map(|detail| Detail::Ghost(Box::new(detail))))
         .or_else(|| animal_detail_of(state, id).map(|detail| Detail::Animal(Box::new(detail))))
 }
 
@@ -226,6 +227,31 @@ fn animal_status(state: &SimState, a: &Animal) -> String {
         _ if def.nocturnal => format!("Keeping watch over {place}"),
         _ => format!("Idling near {place}"),
     }
+}
+
+/// The card of a ghost: who it was, how they died, and what it is about.
+pub fn ghost_detail_of(state: &SimState, id: &str) -> Option<GhostDetail> {
+    let ghost = state.ghosts.get(id)?;
+    let dead = state.dead.get(&ghost.was_id);
+    let here = place_name_at(ghost.pos);
+    let status = match ghost.phase {
+        GhostPhase::Waiting => "Lying in the grave, but not at rest".to_owned(),
+        GhostPhase::Resting => "Waiting by the grave for nightfall".to_owned(),
+        GhostPhase::Fading => "Finding rest at last".to_owned(),
+        GhostPhase::Abroad => match ghost.target_id.as_deref().and_then(|t| state.characters.get(t)) {
+            Some(c) => format!("Drifting after {} near {here}", first_name(c)),
+            None => format!("Haunting the village near {here}"),
+        },
+    };
+    Some(GhostDetail {
+        id: ghost.id.clone(),
+        name: ghost.name.clone(),
+        was_id: ghost.was_id.clone(),
+        died_day: dead.map_or(0, |d| d.day.max(0) as u32),
+        cause: dead.map(|d| d.cause.clone()).unwrap_or_default(),
+        status,
+        nights_left: ghost.nights_left.max(0) as u32,
+    })
 }
 
 /// The card of one of the dead, with its state and what it has done rendered as text.

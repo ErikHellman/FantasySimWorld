@@ -166,6 +166,8 @@ async function start(): Promise<void> {
     } else {
       const fetched: Promise<Detail> = world.isMonster(id)
         ? api.monster(id).then((detail) => ({ kind: 'monster', ...detail }))
+        : world.isGhost(id)
+          ? api.ghost(id).then((detail) => ({ kind: 'ghost', ...detail }))
         : world.isAnimal(id)
           ? api.animal(id).then((detail) => ({ kind: 'animal', ...detail }))
           : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));

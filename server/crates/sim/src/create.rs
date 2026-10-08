@@ -58,6 +58,7 @@ pub fn create_state(seed: u32) -> SimState {
         loot: Default::default(),
         animals: Default::default(),
         fauna: Default::default(),
+        ghosts: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

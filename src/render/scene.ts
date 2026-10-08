@@ -30,6 +30,8 @@ interface Actor {
   view: ActorView;
   /** the entity as last synced (the view world updates it in place) */
   entity: ViewEntity;
+  /** whether it was in sight after the last sync */
+  shown: boolean;
 }
 
 interface Beast {
@@ -47,6 +49,8 @@ export class WorldView {
   readonly overlay: Overlay;
   private readonly actors = new Map<string, Actor>();
   private readonly animals = new Map<string, Beast>();
+  /** ghosts the world has let go of, fading where they stood */
+  private readonly departed: ActorView[] = [];
   private readonly graves = new Map<string, THREE.Object3D>();
   private gravesVersion = -1;
   private readonly billboards: Billboards;
@@ -142,18 +146,31 @@ export class WorldView {
         continue;
       }
       let actor = this.actors.get(entity.id);
+      const ghost = entity.kind === 'ghost';
       if (!actor) {
-        const view = new ActorView(this.assets, entity.look);
+        const view = new ActorView(this.assets, entity.look, ghost ? { shimmer: this.quality.ghostShimmer } : null);
         this.actorGroup.add(view.root);
-        actor = { view, entity };
+        actor = { view, entity, shown: entity.visible };
         this.actors.set(entity.id, actor);
       }
+      // A ghost comes and goes in a breath of mist.
+      if (ghost && entity.visible !== actor.shown && this.quality.ghostShimmer) {
+        this.effects.mist(entity.x, this.heightAt(entity.x, entity.z), entity.z);
+      }
+      actor.shown = entity.visible;
       actor.entity = entity;
       actor.view.sync(entity);
     }
     for (const [id, actor] of this.actors) {
       if (!world.entities.has(id)) {
-        actor.view.dispose();
+        if (actor.entity.kind === 'ghost' && actor.shown) {
+          const { x, z } = actor.entity;
+          if (this.quality.ghostShimmer) this.effects.mist(x, this.heightAt(x, z), z);
+          actor.view.leave();
+          this.departed.push(actor.view);
+        } else {
+          actor.view.dispose();
+        }
         this.actors.delete(id);
       }
     }
@@ -236,6 +253,14 @@ export class WorldView {
     this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.viewProjection, camera.coordinateSystem, camera.reversedDepth);
 
+    for (let i = this.departed.length - 1; i >= 0; i--) {
+      const view = this.departed[i] as ActorView;
+      view.update(simDt, alpha, this.heightAt, this.frustum);
+      if (view.faded) {
+        view.dispose();
+        this.departed.splice(i, 1);
+      }
+    }
     const labels: LabelState[] = [];
     // Animals first: a rider sits on the seat of a horse already in place.
     const target = this.rig.target;
@@ -248,7 +273,7 @@ export class WorldView {
       if (!entity.name) continue;
       labels.push({
         id, name: entity.name, x: position.x, y: position.y + beast.view.height + 0.25, z: position.z, visible: entity.visible,
-        hp: 1, hurt: false, hostile: false, selected: id === this.selectedId, asleep: entity.asleep,
+        hp: 1, hurt: false, hostile: false, ghost: false, selected: id === this.selectedId, asleep: entity.asleep,
       });
     }
     for (const [id, actor] of this.actors) {
@@ -274,6 +299,7 @@ export class WorldView {
         hp: entity.hp / entity.maxHp,
         hurt: entity.hp < entity.maxHp * 0.97,
         hostile: entity.hostile,
+        ghost: entity.kind === 'ghost',
         selected: id === this.selectedId,
         asleep: entity.asleep,
       });

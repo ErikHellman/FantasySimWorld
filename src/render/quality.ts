@@ -33,6 +33,8 @@ export interface QualitySettings {
   animalMotion: number;
   /** hens, ducks, birds, cats and dogs cast shadows too */
   smallAnimalShadows: boolean;
+  /** ghosts bob and flicker, and come and go in a ring of mist */
+  ghostShimmer: boolean;
 }
 
 /** What `pickQuality` looks at; passed in so the choice can be tested without a browser. */
@@ -67,13 +69,13 @@ export function qualitySettings(quality: Quality, devicePixelRatio: number): Qua
   if (quality === 'high') {
     return {
       quality, pixelRatio: Math.min(devicePixelRatio, 2), antialias: true, shadowMapSize: 2048, shadowRange: 70, lamps: 6,
-      frameSeconds: 0, groundCoverStep: 1, billboardPixels: 300, adaptive: false, fireFlames: 16, fireSmoke: 8, treeSway: true, fireSites: 2,
+      frameSeconds: 0, groundCoverStep: 1, billboardPixels: 300, adaptive: false, fireFlames: 16, fireSmoke: 8, treeSway: true, fireSites: 2, ghostShimmer: true,
       animalMotion: 160, smallAnimalShadows: true,
     };
   }
   return {
     quality, pixelRatio: Math.min(devicePixelRatio, 1.5), antialias: devicePixelRatio < 2, shadowMapSize: 1024, shadowRange: 45, lamps: 3,
-    frameSeconds: 1 / 30, groundCoverStep: 2, billboardPixels: 150, adaptive: true, fireFlames: 7, fireSmoke: 0, treeSway: false, fireSites: 1,
+    frameSeconds: 1 / 30, groundCoverStep: 2, billboardPixels: 150, adaptive: true, fireFlames: 7, fireSmoke: 0, treeSway: false, fireSites: 1, ghostShimmer: false,
     animalMotion: 70, smallAnimalShadows: false,
   };
 }

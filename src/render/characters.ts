@@ -44,6 +44,20 @@ function turnZ(angle: number): THREE.Quaternion {
   return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
 }
 
+/** How solid a ghost is at most, and the pale glow it gives off. */
+const GHOST_OPACITY = 0.42;
+const GHOST_GLOW = 0x5d7fa8;
+/** How long a ghost takes to come into sight or fade from it, in seconds. */
+const GHOST_FADE_SECONDS = 1.6;
+/** How high a ghost floats above the ground, and how far it bobs. */
+const GHOST_LIFT = 0.18;
+const GHOST_BOB = 0.1;
+
+/** How a ghost is drawn: see-through, glowing a little, and (where the machine can spare it) bobbing and flickering. */
+export interface GhostStyle {
+  shimmer: boolean;
+}
+
 export type ActorLook = Look;
 
 /** What the view needs from an entity each tick. */
@@ -94,8 +108,14 @@ export class ActorView {
   private readonly seat = new THREE.Vector3();
   private seatFacing = 0;
   private seated = false;
+  /** a ghost's own see-through materials, so the villagers who share its texture stay solid */
+  private readonly ghostMaterials: THREE.MeshLambertMaterial[] = [];
+  /** how far a ghost has come into sight, 0..1, and where it is heading */
+  private ghostFade = 0;
+  private ghostShown = false;
+  private ghostTime = Math.random() * 10;
 
-  constructor(private readonly assets: Assets, look: ActorLook) {
+  constructor(private readonly assets: Assets, look: ActorLook, private readonly ghost: GhostStyle | null = null) {
     const template = assets.character(look.model);
     this.height = template.height;
     this.rig = template.rig;
@@ -113,6 +133,10 @@ export class ActorView {
         mesh.receiveShadow = false;
         mesh.frustumCulled = false; // skinned bounds are the bind pose; update() culls the whole model instead
         if (look.hide.includes(mesh.name)) mesh.visible = false;
+        if (ghost) {
+          mesh.castShadow = false;
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => this.ghostly(m)) : this.ghostly(mesh.material);
+        }
       }
       // Cloning gives every part of the body its own skeleton over the same bones; one is enough to update and upload.
       // (A clone keeps its template's list of inverses, which tells parts of one skin from parts of another.)
@@ -149,6 +173,28 @@ export class ActorView {
     this.seated = seat !== null;
     if (seat) this.seat.copy(seat);
     this.seatFacing = facing;
+  }
+
+  /** A see-through copy of a material, for a ghost. */
+  private ghostly(material: THREE.Material): THREE.MeshLambertMaterial {
+    const source = material as THREE.MeshLambertMaterial;
+    const copy = new THREE.MeshLambertMaterial({ map: source.map ?? null, color: source.color?.clone() ?? new THREE.Color(0xffffff) });
+    copy.transparent = true;
+    copy.depthWrite = false;
+    copy.opacity = 0;
+    copy.emissive.setHex(GHOST_GLOW);
+    this.ghostMaterials.push(copy);
+    return copy;
+  }
+
+  /** True once a ghost that has been taken away has faded from sight, and can be disposed of. */
+  get faded(): boolean {
+    return this.ghost !== null && !this.ghostShown && this.ghostFade <= 0;
+  }
+
+  /** A ghost the world no longer holds fades out where it stands. */
+  leave(): void {
+    this.ghostShown = false;
   }
 
   /** Puts a weapon or tool model in a hand (null empties it). */
@@ -213,7 +259,13 @@ export class ActorView {
   sync(snapshot: ActorSnapshot): void {
     this.prev = this.fresh ? { x: snapshot.x, z: snapshot.z, facing: snapshot.facing } : this.next;
     this.next = { x: snapshot.x, z: snapshot.z, facing: snapshot.facing };
-    this.root.visible = snapshot.visible;
+    if (this.ghost) {
+      // A ghost fades in and out instead of popping; `update` hides it once it has faded.
+      this.ghostShown = snapshot.visible;
+      if (snapshot.visible) this.root.visible = true;
+    } else {
+      this.root.visible = snapshot.visible;
+    }
     this.hold('r', snapshot.mainHand);
     this.hold('l', snapshot.offHand);
     if (snapshot.anim !== this.anim || snapshot.animSeq !== this.animSeq) {
@@ -227,6 +279,7 @@ export class ActorView {
 
   /** Called every frame; alpha is how far we are between the last two ticks. */
   update(dt: number, alpha: number, heightAt: (x: number, z: number) => number, frustum: THREE.Frustum): void {
+    if (this.ghost) this.haunt(dt);
     if (!this.root.visible) return;
     const x = this.seated ? this.seat.x : lerp(this.prev.x, this.next.x, alpha);
     const z = this.seated ? this.seat.z : lerp(this.prev.z, this.next.z, alpha);
@@ -251,12 +304,31 @@ export class ActorView {
       const weight = sitting?.isRunning() ? sitting.getEffectiveWeight() : 0;
       this.model.position.copy(this.seatShift).multiplyScalar(weight);
     }
+    if (this.ghost) {
+      const bob = this.ghost.shimmer ? Math.sin(this.ghostTime * 1.7) * GHOST_BOB : 0;
+      this.model.position.y = GHOST_LIFT + bob;
+    }
+  }
+
+  /** A ghost's fade and flicker, run every frame even while it is out of sight, so it can finish fading. */
+  private haunt(dt: number): void {
+    this.ghostTime += dt;
+    const step = dt / GHOST_FADE_SECONDS;
+    this.ghostFade = Math.max(0, Math.min(1, this.ghostFade + (this.ghostShown ? step : -step)));
+    if (this.ghostFade <= 0 && !this.ghostShown) {
+      this.root.visible = false;
+      return;
+    }
+    const flicker = this.ghost?.shimmer ? 0.85 + 0.15 * Math.sin(this.ghostTime * 5.3) * Math.sin(this.ghostTime * 2.1) : 1;
+    const opacity = GHOST_OPACITY * this.ghostFade * flicker;
+    for (const material of this.ghostMaterials) material.opacity = opacity;
   }
 
   dispose(): void {
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.model);
     for (const skeleton of this.skeletons.values()) skeleton.dispose();
+    for (const material of this.ghostMaterials) material.dispose();
     this.root.removeFromParent();
   }
 }

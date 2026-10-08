@@ -34,6 +34,8 @@ export interface LabelState {
   /** show the health bar */
   hurt: boolean;
   hostile: boolean;
+  /** a ghost: a pale label */
+  ghost: boolean;
   selected: boolean;
   /** asleep out in the open: a lasting 💤 instead of a passing emote */
   asleep: boolean;
@@ -144,6 +146,7 @@ export class Overlay {
       label.root.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
       label.root.classList.toggle('selected', state.selected);
       label.root.classList.toggle('hostile', state.hostile);
+      label.root.classList.toggle('ghost', state.ghost);
 
       const showName = state.selected || (cameraDistance < this.nameDistance && !state.hostile);
       label.name.style.display = showName ? '' : 'none';

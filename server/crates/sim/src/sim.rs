@@ -14,6 +14,7 @@ use crate::state::{
 };
 use crate::systems::animals::{self, update_animals};
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::blocking::update_blocking;
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
@@ -23,6 +24,7 @@ use crate::systems::director::update_director;
 use crate::systems::economy::{Commission, affordable, update_economy};
 use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
+use crate::systems::ghosts::update_ghosts;
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
@@ -371,12 +373,14 @@ impl Sim {
         update_music(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
+        update_ghosts(&mut ctx);
         update_animals(&mut ctx);
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);
+        update_blocking(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);
         events
