@@ -5,7 +5,7 @@ import { MoodTracker } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
-import type { AmbientCounts, WireEvent } from './generated/api';
+import type { AmbientCounts, Detail, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
 import { GuestQueue } from './net/guestQueue';
 import { Playback } from './net/playback';
@@ -151,7 +151,10 @@ async function start(): Promise<void> {
     // The stream pushes this viewer's detail from now on; fetch it once so the inspector opens at once.
     void api.watch({ viewer, id }).catch((error) => console.warn('watch', error));
     if (id) {
-      api.character(id).then(
+      const fetched: Promise<Detail> = world.isMonster(id)
+        ? api.monster(id).then((detail) => ({ kind: 'monster', ...detail }))
+        : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));
+      fetched.then(
         (detail) => {
           if (ui.selectedId.value === id) ui.detail.value = detail;
         },

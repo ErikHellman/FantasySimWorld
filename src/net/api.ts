@@ -1,6 +1,6 @@
 import type {
   ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
-  HealthReport, LlmSettingsView, LlmTestResult, Me, NewWorldRequest, SpeedRequest, WatchRequest,
+  HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, SpeedRequest, WatchRequest,
 } from '../generated/api';
 
 /** A failed request: the HTTP status, the server's `ApiError` message, and its `Retry-After`, if it sent one. */
@@ -42,6 +42,8 @@ export const api = {
   logout: () => request<void>('POST', '/api/logout'),
   watch: (body: WatchRequest) => request<void>('POST', '/api/watch', body),
   character: (id: string) => request<CharacterDetail>('GET', `/api/characters/${encodeURIComponent(id)}`),
+  /** the card of one of the dead */
+  monster: (id: string) => request<MonsterDetail>('GET', `/api/monsters/${encodeURIComponent(id)}`),
   /** says something in the viewers' chat; it comes back on the stream */
   chat: (body: ChatPost) => request<void>('POST', '/api/chat', body),
   /** takes a chat name, if nobody connected has it */

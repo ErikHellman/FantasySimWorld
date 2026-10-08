@@ -21,16 +21,16 @@ use tokio::sync::oneshot;
 
 use crate::AppState;
 use crate::api::wire::{
-    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, NewWorldRequest, SpeedRequest,
-    WatchRequest,
+    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, MonsterDetail, NewWorldRequest,
+    SpeedRequest, WatchRequest,
 };
 use crate::api::{ApiFailure, error};
-use crate::digest::detail_of;
+use crate::digest::{character_detail_of, detail_of, monster_detail_of};
 use crate::encode::sim_tone;
 use crate::store::{SnapshotReason, now_ms};
 use crate::world_task::{Outgoing, SPEEDS, Watch, WorldInput};
 
-/// `POST /api/watch`: the character whose `detail` this tab receives.
+/// `POST /api/watch`: the character (or one of the dead) whose `detail` this tab receives.
 pub async fn watch(State(app): State<Arc<AppState>>, Json(body): Json<WatchRequest>) -> Response {
     if body.viewer.is_empty() || body.viewer.len() > 64 {
         return error(StatusCode::BAD_REQUEST, "viewer is required");
@@ -58,9 +58,20 @@ pub async fn character(
     Path(id): Path<String>,
 ) -> Result<Json<CharacterDetail>, ApiFailure> {
     let core = app.world.core.read();
-    detail_of(&core.sim.state, &id)
+    character_detail_of(&core.sim.state, &id)
         .map(Json)
         .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such villager".into()))
+}
+
+/// `GET /api/monsters/{id}`: the card of one of the dead.
+pub async fn monster(
+    State(app): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<MonsterDetail>, ApiFailure> {
+    let core = app.world.core.read();
+    monster_detail_of(&core.sim.state, &id)
+        .map(Json)
+        .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such monster".into()))
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`: history from the database, oldest first.
