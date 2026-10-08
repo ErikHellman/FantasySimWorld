@@ -96,6 +96,7 @@ export function HelpPanel() {
             <li><strong>Following</strong>: the chip above the tabs names the villager the camera follows. Tap it for their page, ✕ to let them go.</li>
             <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
             <li><strong>One of the dead</strong>: follow it for a card with its health, what it is after, where it rose and who it has slain.</li>
+            <li><strong>A ghost</strong>: follow it for a card with who it was, how they died and how many nights it has left.</li>
             <li><strong>A building's page</strong>: tap a building, or something the village built, for its condition, who lives and is there, the work on it and its history.</li>
             {banner}
           </ul>
@@ -106,6 +107,7 @@ export function HelpPanel() {
           <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
           <li><strong>One of the dead</strong> (right, when you follow it): its health, what it is after, where and how it rose, who it once was, and how many villagers it has slain.</li>
+          <li><strong>A ghost</strong> (right, when you follow it): who it was, how they died, what it is about and how many nights it has left.</li>
           <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
@@ -122,12 +124,13 @@ export function HelpPanel() {
           <li>Anyone who stands in a villager's way hears about it: politely from most, sharply from the hot-tempered, and with a shout from someone who already has a grudge. They step aside if they can. A sharp word is remembered on both sides.</li>
           <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>
+          <li>About one in three of those the dead cut down comes back as a ghost: the same person, pale and see-through, seen only after dark. For two or three nights it drifts between its grave, its home and the homes of those it loved, keeping them from their sleep. Whoever meets it in the dark runs, or stands their ground, or grieves if they loved them; its touch leaves them cold and weak but never kills. Nobody can fight a ghost. Then it finds rest and is seen no more.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>
           <li>Coin: the village chest pays villagers for what they put down at the stores and sell at the market, and they spend it there or on one another's goods. Once a day a trader buys the surplus and refills the chest. The dead drop coin and trinkets that villagers pick up, and a villager who has saved enough pays for a bigger cottage or something for the yard. A meal and a bed are always free.</li>
           <li>Five big billboards stand around the village, each with a new slogan every morning. Now and then a villager stops to read one and says what they think: some laugh, some scoff, and the gloomier notices unsettle the timid. Villagers take the boards to heart: one that urges them to pray, eat, rest, train, shop, get to work or be friendly sends some of its readers off to do just that, most often those it cheered.</li>
           <li>Some villagers have ways of their own: a drunk who picks fights, a gossip who makes up stories, a bully, a coward, someone who naps on the grass when there is work to do, and worse. Not everyone is what they seem.</li>
-          <li>Death is for good: the fallen get a grave. When a bed stands empty, a newcomer sooner or later arrives on the road, with a story of their own.</li>
+          <li>Death is for good: the fallen get a grave, and a ghost only lingers a few nights. When a bed stands empty, a newcomer sooner or later arrives on the road, with a story of their own.</li>
           <li>With a language model connected the villagers make their own choices and plans; without one they follow their routines. Either way the world goes on.</li>
         </ul>
 
