@@ -90,6 +90,9 @@ pub enum Command {
         say: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thought: Option<String>,
+        /// whether they go and do what the board urges; `None` leaves it to chance, as without a model
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        follow: Option<bool>,
     },
     /// One more founder for a village still being settled; ignored once it is founded or when the
     /// first name is taken.

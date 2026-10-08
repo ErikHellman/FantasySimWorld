@@ -240,6 +240,7 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
                 "description": "laugh: it amuses you. love: it moves or cheers you. scoff: you think little of it. annoyed: it irritates you. uneasy: it unsettles you.",
             },
             "say": { "type": "string", "description": "Optional. What you mutter or say aloud about it: one short sentence in your own voice, no quotation marks." },
+            "follow": { "type": "boolean", "description": "Optional, only when the board urges something. true: you go and do it now. false: you do not." },
             "thought": thought(),
         }),
         &["reaction"],

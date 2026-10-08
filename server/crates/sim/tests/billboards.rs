@@ -118,6 +118,7 @@ fn a_reaction_from_the_model_replaces_the_stock_one() {
         reaction: BoardReaction::Annoyed,
         say: Some("  Who paints\nthese things?  ".into()),
         thought: Some("Someone wastes good paint.".into()),
+        follow: None,
     });
     let reader = id.clone();
     w.run_until(1000, move |w| w.sim.state.characters[&reader].intent.is_none());
@@ -133,9 +134,87 @@ fn a_reaction_from_the_model_replaces_the_stock_one() {
         reaction: BoardReaction::Laugh,
         say: Some("Ha!".into()),
         thought: None,
+        follow: None,
     });
     w.run_until(5, |_| false);
     assert_eq!(w.lines_from(&id).len(), 1);
+}
+
+/// Puts `text` up on the green's board, sends Rowan to read it, and answers for the model with `reaction` and
+/// `follow` once Rowan stands there. Returns the world once Rowan has finished at the board, and Rowan's id.
+fn read_with(text: &str, reaction: BoardReaction, follow: Option<bool>) -> (World, String) {
+    let mut w = World::new(3);
+    w.sim.enqueue(Command::Tuning { tuning: TuningPatch { script_wait_ticks: Some(400), ..Default::default() } });
+    w.sim.enqueue(Command::SetBillboard {
+        board_id: "green_board".into(),
+        notice: Some(BoardNotice { text: text.into(), tone: BoardTone::Wholesome }),
+    });
+    w.run_until(3, |_| false);
+    let id = w.who("Rowan");
+    w.send_to_read(&id);
+    let reader = id.clone();
+    w.run_until(4000, move |w| w.started_reading(&reader));
+    assert!(w.started_reading(&id), "never got to the board");
+    w.sim.enqueue(Command::BillboardReaction {
+        id: id.clone(),
+        board_id: "green_board".into(),
+        reaction,
+        say: None,
+        thought: None,
+        follow,
+    });
+    let reader = id.clone();
+    w.run_until(1000, move |w| {
+        !w.sim.state.characters[&reader].intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::ReadBoard))
+    });
+    (w, id)
+}
+
+#[test]
+fn a_reader_who_takes_the_advice_goes_and_does_it() {
+    let (w, id) = read_with("Pray at the shrine today!", BoardReaction::Love, Some(true));
+    let c = &w.sim.state.characters[&id];
+    let next = c.intent.as_ref().or(c.queue.first()).expect("something to do next");
+    assert!(next.is_activity(ActivityId::Pray), "{next:?}");
+    let memory = c.memories.iter().find(|m| m.text.starts_with("Read the billboard")).expect("a memory of it");
+    assert!(memory.text.ends_with("It cheered me up. I decided to pray or meditate in quiet."), "{}", memory.text);
+}
+
+#[test]
+fn the_advice_can_be_turned_down() {
+    let (w, id) = read_with("Pray at the shrine today!", BoardReaction::Love, Some(false));
+    let c = &w.sim.state.characters[&id];
+    assert!(!c.intent.iter().chain(&c.queue).any(|i| i.is_activity(ActivityId::Pray)));
+    assert!(c.memories.iter().any(|m| m.text.ends_with("It cheered me up.")));
+
+    // Without a model's word it is left to chance, and the annoyed never take a board's advice.
+    let (w, id) = read_with("Pray at the shrine today!", BoardReaction::Annoyed, None);
+    let c = &w.sim.state.characters[&id];
+    assert!(!c.intent.iter().chain(&c.queue).any(|i| i.is_activity(ActivityId::Pray)));
+}
+
+#[test]
+fn a_reader_urged_to_rest_goes_home_to_do_it() {
+    let (w, id) = read_with("Take a nap. You've earned it.", BoardReaction::Love, Some(true));
+    let c = &w.sim.state.characters[&id];
+    let next = c.intent.as_ref().or(c.queue.first()).expect("something to do next");
+    let IntentAction::Activity { activity: ActivityId::Rest, place_id, .. } = &next.action else {
+        panic!("{next:?}");
+    };
+    assert_eq!(place_id.as_ref(), Some(&c.home_id));
+}
+
+#[test]
+fn some_villagers_follow_the_slogans_on_their_own() {
+    let mut sim = Sim::new(create_test_state(5));
+    for _ in 0..TICKS_PER_DAY * 3 {
+        sim.step();
+    }
+    let followed = living(&sim.state)
+        .flat_map(|c| &c.memories)
+        .filter(|m| m.text.starts_with("Read the billboard") && m.text.contains(" I decided to "))
+        .count();
+    assert!(followed >= 1, "nobody took a board's advice in three days");
 }
 
 #[test]

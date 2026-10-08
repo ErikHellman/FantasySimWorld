@@ -1,51 +1,105 @@
 //! What the billboards say when nobody has put anything else up, and what people say back.
 
+use fsw_world::places::ActivityId::{self, *};
+
+use self::Advice::*;
 use crate::state::BoardReaction::{self, *};
 use crate::state::BoardTone::{self, *};
 
-/// The slogans the boards cycle through, one a day each. Every one fits in 70 UTF-16 units.
-pub static DECK: [(&str, BoardTone); 40] = [
-    ("Believe in yourself. The skeletons don't.", Uplifting),
-    ("Monday: survived by 97% of villagers.", Absurd),
-    ("Buy one loaf, get one loaf. Same price!", Pushy),
-    ("Have you prayed today? The dead have.", Ominous),
-    ("Wave to a neighbour. They might wave back.", Wholesome),
-    ("Hard work pays. Eventually. Maybe.", Uplifting),
-    ("Lost: one sheep. Answers to 'Dinner'.", Absurd),
-    ("Swords! Slightly used! Mostly unbloodied!", Pushy),
-    ("Lock your door tonight. No reason.", Ominous),
-    ("You are someone's favourite villager.", Wholesome),
-    ("Today is a gift. Tomorrow is a rumour.", Uplifting),
-    ("This billboard is load-bearing. Do not lean.", Absurd),
-    ("The Gilded Tankard: our ale is legally drinkable.", Pushy),
-    ("The graveyard is hiring. Positions are permanent.", Ominous),
-    ("Drink water. Ale does not count.", Wholesome),
-    ("Dream big. Dig deep. Mind the mine shaft.", Uplifting),
-    ("Ask your healer if leeches are right for you.", Absurd),
-    ("Fresh fish! Freshness not guaranteed after noon.", Pushy),
-    ("Count your neighbours. Then count them again.", Ominous),
-    ("Hug a farmer. They grew your lunch.", Wholesome),
-    ("Every hero started as a villager with a stick.", Uplifting),
-    ("Warning: the river is wet.", Absurd),
-    ("New boots? Your feet deserve it. Your purse disagrees.", Pushy),
-    ("Something in the mine misses you.", Ominous),
-    ("Be kind. Everyone is fighting a skeleton.", Wholesome),
-    ("You miss every sword swing you never take.", Uplifting),
-    ("Free hugs. Ogres excluded.", Absurd),
-    ("Limited offer: a free nap with every pillow.", Pushy),
-    ("The nights grow longer. So do the teeth.", Ominous),
-    ("The sun came up again. Well done, everyone.", Wholesome),
-    ("Rise and shine! The chickens already did.", Uplifting),
-    ("Village idiot wanted. Apply within.", Absurd),
-    ("Insure your cottage against dragons today!", Pushy),
-    ("Do not feed the skeletons. They have no stomachs.", Ominous),
-    ("Somebody out there thinks your soup is great.", Wholesome),
-    ("Be the hammer, not the anvil. Unless you're the smith.", Uplifting),
-    ("Reading this sign counts as exercise.", Absurd),
-    ("Tired of walking? Try sitting down. Ask us how.", Pushy),
-    ("Sleep well. We'll be watching.", Ominous),
-    ("Rest when you need to. The fields will wait.", Wholesome),
+/// What a board urges on whoever reads it, which some of them go and do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Advice {
+    /// An activity (resting is done at home)
+    Do(ActivityId),
+    /// Whatever the reader's own work is
+    Work,
+    /// A friendly word with someone nearby
+    Mingle,
+}
+
+/// The slogans the boards cycle through, one a day each, with what each one urges on its readers (if anything).
+/// Every one fits in 70 UTF-16 units.
+pub static DECK: [(&str, BoardTone, Option<Advice>); 40] = [
+    ("Believe in yourself. The skeletons don't.", Uplifting, Some(Do(Train))),
+    ("Monday: survived by 97% of villagers.", Absurd, None),
+    ("Buy one loaf, get one loaf. Same price!", Pushy, Some(Do(Shop))),
+    ("Have you prayed today? The dead have.", Ominous, Some(Do(Pray))),
+    ("Wave to a neighbour. They might wave back.", Wholesome, Some(Mingle)),
+    ("Hard work pays. Eventually. Maybe.", Uplifting, Some(Work)),
+    ("Lost: one sheep. Answers to 'Dinner'.", Absurd, None),
+    ("Swords! Slightly used! Mostly unbloodied!", Pushy, Some(Do(Train))),
+    ("Lock your door tonight. No reason.", Ominous, Some(Do(Rest))),
+    ("You are someone's favourite villager.", Wholesome, Some(Mingle)),
+    ("Today is a gift. Tomorrow is a rumour.", Uplifting, None),
+    ("This billboard is load-bearing. Do not lean.", Absurd, None),
+    ("The Gilded Tankard: our ale is legally drinkable.", Pushy, Some(Do(Drink))),
+    ("The graveyard is hiring. Positions are permanent.", Ominous, None),
+    ("Drink water. Ale does not count.", Wholesome, None),
+    ("Dream big. Dig deep. Mind the mine shaft.", Uplifting, Some(Do(Mine))),
+    ("Ask your healer if leeches are right for you.", Absurd, None),
+    ("Fresh fish! Freshness not guaranteed after noon.", Pushy, Some(Do(Shop))),
+    ("Count your neighbours. Then count them again.", Ominous, Some(Mingle)),
+    ("Hug a farmer. They grew your lunch.", Wholesome, Some(Mingle)),
+    ("Every hero started as a villager with a stick.", Uplifting, Some(Do(Train))),
+    ("Warning: the river is wet.", Absurd, None),
+    ("New boots? Your feet deserve it. Your purse disagrees.", Pushy, Some(Do(Shop))),
+    ("Something in the mine misses you.", Ominous, None),
+    ("Be kind. Everyone is fighting a skeleton.", Wholesome, Some(Mingle)),
+    ("You miss every sword swing you never take.", Uplifting, Some(Do(Train))),
+    ("Free hugs. Ogres excluded.", Absurd, Some(Mingle)),
+    ("Limited offer: a free nap with every pillow.", Pushy, Some(Do(Rest))),
+    ("The nights grow longer. So do the teeth.", Ominous, Some(Do(Rest))),
+    ("The sun came up again. Well done, everyone.", Wholesome, None),
+    ("Rise and shine! The chickens already did.", Uplifting, Some(Work)),
+    ("Village idiot wanted. Apply within.", Absurd, None),
+    ("Insure your cottage against dragons today!", Pushy, None),
+    ("Do not feed the skeletons. They have no stomachs.", Ominous, None),
+    ("Somebody out there thinks your soup is great.", Wholesome, Some(Do(Eat))),
+    ("Be the hammer, not the anvil. Unless you're the smith.", Uplifting, Some(Work)),
+    ("Reading this sign counts as exercise.", Absurd, None),
+    ("Tired of walking? Try sitting down. Ask us how.", Pushy, Some(Do(Rest))),
+    ("Sleep well. We'll be watching.", Ominous, Some(Do(Pray))),
+    ("Rest when you need to. The fields will wait.", Wholesome, Some(Do(Rest))),
 ];
+
+/// Words in a notice put up from outside that urge something. The first word of the notice that is one of these,
+/// or one of these with a plain ending ("praying", "meals"), decides.
+pub static ADVICE_WORDS: [(&str, Advice); 24] = [
+    ("pray", Do(Pray)),
+    ("temple", Do(Pray)),
+    ("shrine", Do(Pray)),
+    ("grave", Do(Mourn)),
+    ("eat", Do(Eat)),
+    ("meal", Do(Eat)),
+    ("supper", Do(Eat)),
+    ("soup", Do(Eat)),
+    ("ale", Do(Drink)),
+    ("drink", Do(Drink)),
+    ("tavern", Do(Drink)),
+    ("nap", Do(Rest)),
+    ("rest", Do(Rest)),
+    ("fish", Do(Fish)),
+    ("buy", Do(Shop)),
+    ("market", Do(Shop)),
+    ("shop", Do(Shop)),
+    ("train", Do(Train)),
+    ("sword", Do(Train)),
+    ("herb", Do(Forage)),
+    ("work", Work),
+    ("neighbour", Mingle),
+    ("friend", Mingle),
+    ("hug", Mingle),
+];
+
+/// What a notice put up from outside urges, read from its words.
+pub fn advice_in(text: &str) -> Option<Advice> {
+    const ENDINGS: [&str; 7] = ["", "s", "es", "ed", "ing", "er", "ers"];
+    text.split(|ch: char| !ch.is_alphanumeric()).map(str::to_lowercase).find_map(|word| {
+        ADVICE_WORDS.iter().find_map(|&(stem, advice)| {
+            word.strip_prefix(stem).is_some_and(|ending| ENDINGS.contains(&ending)).then_some(advice)
+        })
+    })
+}
 
 /// What people say when they have read a board, by how they took it.
 pub fn lines(reaction: BoardReaction) -> &'static [&'static str] {
@@ -91,10 +145,21 @@ mod tests {
 
     #[test]
     fn slogans_are_short_and_unique() {
-        for (text, _) in &DECK {
+        for (text, _, _) in &DECK {
             assert!(utf16_len(text) <= 70, "{text}");
         }
-        let unique: std::collections::HashSet<_> = DECK.iter().map(|(text, _)| text).collect();
+        let unique: std::collections::HashSet<_> = DECK.iter().map(|(text, _, _)| text).collect();
         assert_eq!(unique.len(), DECK.len());
+    }
+
+    #[test]
+    fn a_notice_urges_what_its_words_say() {
+        assert_eq!(advice_in("Pray at the shrine tonight!"), Some(Do(Pray)));
+        assert_eq!(advice_in("Hungry? Hot MEALS at the Gilded Tankard"), Some(Do(Eat)));
+        assert_eq!(advice_in("Be a good neighbour"), Some(Mingle));
+        assert_eq!(advice_in("Workers wanted"), Some(Work));
+        // Only whole words with a plain ending count.
+        assert_eq!(advice_in("Stay alert, restless souls"), None);
+        assert_eq!(advice_in("The river is wet."), None);
     }
 }

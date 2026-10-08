@@ -16,6 +16,13 @@ const CULL_MARGIN = 6;
 const HIPS_TRACK = 'hips.position';
 /** A seated body this close to the seat, in metres, is left where the clip puts it. */
 const SEAT_TOLERANCE = 0.02;
+/**
+ * Held models that were made to stand on the ground rather than to be gripped,
+ * and so must be turned end over end in the hand. A hand slot holds a tool with
+ * its head along +Y, as the axe, pickaxe and hammer are made; the shovel stands
+ * on its blade.
+ */
+const UPSIDE_DOWN_IN_HAND = new Set(['tools/shovel']);
 
 export type ActorLook = Look;
 
@@ -107,6 +114,7 @@ export class ActorView {
     if (!slot || !modelId) return;
     const [bundle, id] = modelId.includes('/') ? (modelId.split('/') as [string, string]) : ['weapons', modelId];
     const item = this.assets.model(bundle, id).clone();
+    if (UPSIDE_DOWN_IN_HAND.has(`${bundle}/${id}`)) item.rotateZ(Math.PI);
     item.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (mesh.isMesh) mesh.castShadow = true;
