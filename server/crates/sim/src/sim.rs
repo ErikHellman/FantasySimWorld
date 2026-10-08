@@ -280,7 +280,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
                 }
             }
         }
-        Command::BillboardReaction { id, board_id, reaction, say, thought } => {
+        Command::BillboardReaction { id, board_id, reaction, say, thought, follow } => {
             let Some(c) = ctx.state.characters.get(&id) else { return };
             let Some(index) = reading(c) else { return };
             if board_index(&board_id) != Some(index) || has_read(ctx.state, c, index) {
@@ -288,7 +288,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             }
             let say = say.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 160).to_owned());
             let thought = thought.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 240).to_owned());
-            let ticks = react(ctx, &id, index, reaction, say, thought);
+            let ticks = react(ctx, &id, index, reaction, say, thought, follow);
             let tick = ctx.tick();
             let c = ctx.c(&id);
             c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));

@@ -467,7 +467,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             match reading(reader) {
                 Some(index) if !has_read(ctx.state, reader, index) => {
                     let reaction = template_reaction(&reader.profile, shown(ctx.state, index).tone);
-                    let ticks = react(ctx, id, index, reaction, None, None);
+                    let ticks = react(ctx, id, index, reaction, None, None, None);
                     // Stay a moment for the line before moving on.
                     ctx.c(id).act.until_tick = tick + ticks.min(160);
                 }

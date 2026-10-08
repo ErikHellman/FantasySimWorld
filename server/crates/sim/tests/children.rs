@@ -604,7 +604,7 @@ mod mischief {
     use fsw_sim::commands::TuningPatch;
     use fsw_sim::events::Projectile;
     use fsw_sim::state::{ActPhase, Intent, IntentAction, IntentSource, Mischief, MischiefPlan, TalkTone};
-    use fsw_sim::util::{children, rel_or_default};
+    use fsw_sim::util::{children, first_name, living, rel_or_default};
     use fsw_sim::{Command, Sim, SimEvent};
     use fsw_testing::create_test_state;
     use fsw_world::places::{ActivityId, get_place};
@@ -792,10 +792,11 @@ mod mischief {
         run_to_hour(&mut sim, 18.0);
         plan(&mut sim, &moss, Mischief::WanderOff);
         side_by_side(&mut sim, &moss, &rowan, "green");
-        // Rowan has the evening free and the raids hold off.
+        // Rowan has the evening free and the raids hold off. Rowan, a parent or someone nearer may be the one to go
+        // after Moss, depending on how the day went.
         sim.state.director.next_wave_tick = sim.state.tick + TICKS_PER_DAY;
         let mut wandered = false;
-        let mut fetched = false;
+        let mut fetcher = None;
         for _ in 0..3000 {
             sim.step();
             let m = &sim.state.characters[&moss];
@@ -803,25 +804,31 @@ mod mischief {
             {
                 wandered = true;
             }
-            // Standing right beside Moss, Rowan may catch up within the tick; the chronicle sees it either way.
-            if matches!(&sim.state.characters[&rowan].intent, Some(Intent { action: IntentAction::Fetch { target_id }, .. }) if target_id == &moss)
-                || chronicled(&sim, "Rowan fetched Moss")
-            {
-                fetched = true;
-            }
-            if wandered && fetched && m.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Sleep)) {
+            // Standing right beside Moss, the fetcher may catch up within the tick; the chronicle sees it either way.
+            fetcher = fetcher.or_else(|| {
+                living(&sim.state)
+                    .find(|o| matches!(&o.intent, Some(Intent { action: IntentAction::Fetch { target_id }, .. }) if target_id == &moss))
+                    .map(|o| first_name(o).to_owned())
+            });
+            fetcher = fetcher.or_else(|| {
+                sim.state
+                    .chronicle
+                    .iter()
+                    .find_map(|e| e.text.split_once(" fetched Moss").map(|(who, _)| who.to_owned()))
+            });
+            if wandered && fetcher.is_some() && m.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Sleep)) {
                 break;
             }
         }
         assert!(wandered, "Moss never wandered off");
-        assert!(fetched, "nobody went after Moss");
+        let fetcher = fetcher.expect("nobody went after Moss");
         assert!(
             sim.state.characters[&moss].intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Sleep)),
             "{:?}",
             sim.state.characters[&moss].intent
         );
-        assert!(chronicled(&sim, "Rowan fetched Moss"), "{:?}", sim.state.chronicle.last());
-        assert!(sim.state.characters[&moss].memories.iter().any(|m| m.text.contains("Rowan")));
+        assert!(chronicled(&sim, &format!("{fetcher} fetched Moss")), "{:?}", sim.state.chronicle.last());
+        assert!(sim.state.characters[&moss].memories.iter().any(|m| m.text.contains(&fetcher)));
     }
 
     #[test]
