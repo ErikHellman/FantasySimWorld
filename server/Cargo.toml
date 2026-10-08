@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/world", "crates/sim", "crates/brain", "crates/server"]
+members = ["crates/core", "crates/world", "crates/sim", "crates/brain", "crates/server", "crates/testing"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,8 @@ fsw-core = { path = "crates/core" }
 fsw-world = { path = "crates/world" }
 fsw-sim = { path = "crates/sim" }
 fsw-brain = { path = "crates/brain" }
+# The authored cast of the TypeScript game, for tests only.
+fsw-testing = { path = "crates/testing" }
 serde = { version = "1", features = ["derive"] }
 # float_roundtrip: parse every f64 back to the exact bits JavaScript wrote (fixtures, saves).
 serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -2,10 +2,11 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, CreditOffer, CreditsState, Grave, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
   Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
+import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
 
 export type { CharacterDetail, RelationRow, RosterEntry } from '../generated/api';
@@ -41,7 +42,7 @@ const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
 export type Sheet = 'none' | 'villagers' | 'feed' | 'chat' | 'character' | 'menu';
 
 /** A window over the whole HUD: settings, help and the like. */
-export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech' | 'shop';
+export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech';
 
 /** What this browser remembers about the chat. */
 export interface ChatSettings {
@@ -58,8 +59,10 @@ export const ui = {
   quality: signal(''),
   /** who is watching; null until /api/me answers */
   me: signal<Me | null>(null),
-  /** when a guest's pass ends (ms since the epoch, by this browser's clock); null for everyone who signed in */
-  guestEndsAt: signal<number | null>(null),
+  /** waiting for a seat: this page's place in line (null before the server answers) and any trouble asking; null once seated */
+  line: signal<{ wait: GuestWait | null; problem: string | null } | null>(null),
+  /** why this guest's stream is over, once it is; the launch screen says so and offers to come back */
+  ended: signal<GuestEndReason | null>(null),
   connection: signal<ConnectionState>('connecting'),
   clock: signal({ day: 1, time: '06:00', part: 'early morning' }),
   /** the world's speed as the server runs it (0 = paused) */
@@ -68,6 +71,8 @@ export const ui = {
   population: signal(0),
   monsters: signal(0),
   alarm: signal(false),
+  /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
+  founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
   selectedId: signal<string | null>(null),
   detail: signal<CharacterDetail | null>(null),
@@ -79,6 +84,8 @@ export const ui = {
   billboards: signal<Billboard[]>([]),
   /** the homes that are burning or in ruins */
   houses: signal<House[]>([]),
+  /** the wedding or funeral the village has arranged, if any */
+  ceremony: signal<Ceremony | null>(null),
   /** the materials the village has put by, for the places that hold any */
   stockpiles: signal<Stockpile[]>([]),
   /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
@@ -102,8 +109,6 @@ export const ui = {
   chatView: signal<ChatView>('collapsed'),
   /** messages that arrived while the chat was not open */
   chatUnread: signal(0),
-  /** this viewer's credits and what they buy; null until the server says, and `perMinute` 0 when credits are off */
-  credits: signal<CreditsState | null>(null),
   /** the screen is phone-sized and gets the phone layout (see layout.ts) */
   mobile: signal(false),
   sheet: signal<Sheet>('none'),
@@ -112,14 +117,8 @@ export const ui = {
 };
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
-/** Watching without signing in: no chat, no credits, and only for a while. */
+/** Watching with a guest seat, as everyone but the admin does. */
 export const isGuest = (): boolean => ui.me.value?.role === 'guest';
-
-/** How long a guest has left, in words: whole minutes rounded up, so the last minute reads as such. */
-export function guestTimeLeft(ms: number): string {
-  if (ms < 60_000) return 'under a minute left';
-  return `${Math.ceil(ms / 60_000)} min left`;
-}
 
 /** Things the UI can ask the app to do; filled in by main.ts. */
 export interface UiActions {
@@ -131,8 +130,6 @@ export interface UiActions {
   sendChat(text: string): Promise<void>;
   /** resolves to the name as the server stored it */
   renameChat(name: string): Promise<string>;
-  /** spends credits on `offer`, aimed at the selected villager or where the camera looks; rejects with an `HttpError` the shop shows */
-  buy(offer: CreditOffer): Promise<void>;
 }
 
 export const actions: UiActions = {
@@ -142,7 +139,6 @@ export const actions: UiActions = {
   applyAudio: () => {},
   sendChat: () => Promise.resolve(),
   renameChat: (name) => Promise.resolve(name),
-  buy: () => Promise.resolve(),
 };
 
 let voiceId = 0;
@@ -160,6 +156,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.graves.value = snapshot.graves;
   ui.billboards.value = snapshot.billboards;
   ui.houses.value = snapshot.houses;
+  ui.ceremony.value = snapshot.ceremony;
   ui.stockpiles.value = snapshot.stockpiles;
   ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
@@ -176,6 +173,7 @@ export function fromStatus(status: Status): void {
   ui.population.value = status.population;
   ui.monsters.value = status.monsters;
   ui.alarm.value = status.alarm;
+  ui.founding.value = status.founding;
 }
 
 export function addChronicle(entry: ChronicleEntry): void {
@@ -191,6 +189,11 @@ export function addGrave(grave: Grave): void {
 export function setHouse(house: House): void {
   const others = ui.houses.value.filter((entry) => entry.id !== house.id);
   ui.houses.value = house.phase === 'intact' ? others : [...others, house];
+}
+
+/** A wedding or funeral was arranged, moved on, or is over. */
+export function setCeremony(ceremony: Ceremony): void {
+  ui.ceremony.value = ceremony.phase === 'over' ? null : ceremony;
 }
 
 /** A stockpile filled or emptied; one with nothing left is dropped. */
@@ -242,21 +245,6 @@ export function addChat(message: ChatMessage): void {
   ui.chat.value = [...ui.chat.value, message].slice(-CHAT_KEPT);
   // Comings and goings are there to read, not to call anyone back to the chat.
   if (message.kind === 'say' && !chatIsOpen()) ui.chatUnread.value++;
-}
-
-/** Whether credits are on and known, so the pill and the shop have something to show. */
-export const creditsOn = (): boolean => !isGuest() && (ui.credits.value?.perMinute ?? 0) > 0;
-
-export function setBalance(balance: number): void {
-  const credits = ui.credits.value;
-  if (credits && credits.balance !== balance) ui.credits.value = { ...credits, balance };
-}
-
-/** Why `offer` cannot be bought right now, or null when it can. */
-export function offerBlocked(offer: CreditOffer, balance: number, selectedId: string | null): string | null {
-  if (offer.target === 'character' && !selectedId) return 'Select a villager first.';
-  if (balance < offer.cost) return `You need ${offer.cost - balance} more.`;
-  return null;
 }
 
 /** Whether the chat's history is on screen: the chat sheet on a phone, the expanded strip on a wider screen. */

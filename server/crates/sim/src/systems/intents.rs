@@ -16,13 +16,13 @@ use crate::state::{
     MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
+use crate::systems::ceremonies::run_attend;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::systems::viewer_events::pray;
 use crate::systems::world::{deliver_next, run_world_work};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, rel, set_anim};
 
@@ -339,9 +339,6 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
         set_anim(c, anim, true);
-        if activity_id == ActivityId::Pray {
-            pray(ctx, id);
-        }
         if activity_id == ActivityId::ReadBoard {
             // With a model about, give it time to say how this person takes the board; the stock reaction
             // comes at the end either way if it does not answer.
@@ -832,6 +829,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
+            IntentAction::Attend { place_id } => run_attend(ctx, &id, place_id),
             IntentAction::WorldWork { job, target, minutes } => run_world_work(ctx, &id, *job, target, *minutes),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);

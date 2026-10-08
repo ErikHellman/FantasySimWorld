@@ -15,7 +15,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
-use crate::api::{chat, credits, llm, stream, world};
+use crate::api::{chat, llm, stream, world};
 use crate::auth;
 
 /// A save is a few hundred KB; a long-lived world stays well under this.
@@ -25,12 +25,8 @@ const STALE_AFTER: Duration = Duration::from_secs(5);
 
 pub fn router(app: Arc<AppState>) -> Router {
     let admin = Router::new()
-        .route("/allowlist", get(auth::allowlist::list).post(auth::allowlist::add).delete(auth::allowlist::remove))
-        .route("/attempts", get(auth::allowlist::attempts))
         .route("/speed", post(world::speed))
         .route("/billboards", post(world::billboard))
-        .route("/credits", get(credits::viewers))
-        .route("/credits/grant", post(credits::grant))
         .route("/world/new", post(world::new_world))
         .route("/world/import", post(world::import).layer(DefaultBodyLimit::max(IMPORT_LIMIT)))
         .route("/world/export", get(world::export))
@@ -40,18 +36,8 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/brain-log", get(llm::brain_log))
         .route_layer(middleware::from_fn(auth::middleware::require_admin));
 
-    // Taking part (chat, credits) and running the world is for people who signed in; guests
-    // get 403 here, and anything added to this group is closed to them too.
-    let members = Router::new()
-        .route("/chat", post(chat::post))
-        .route("/chat/name", post(chat::rename))
-        .route("/credits", get(credits::state))
-        .route("/credits/buy", post(credits::buy))
-        .route("/presence", post(credits::presence))
-        .nest("/admin", admin)
-        .route_layer(middleware::from_fn(auth::middleware::members_only));
-
-    // Layers run outside in: CSRF first, then the session, then the handler.
+    // Layers run outside in: CSRF first, then the viewer, then the handler. Everything but
+    // `/admin` is open to guests.
     let api = Router::new()
         .route("/stream", get(stream::stream))
         .route("/me", get(auth::me))
@@ -59,20 +45,19 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/characters/{id}", get(world::character))
         .route("/chronicle", get(world::chronicle))
         .route("/logout", post(auth::logout))
-        .merge(members)
+        .route("/chat", post(chat::post))
+        .route("/chat/name", post(chat::rename))
+        .nest("/admin", admin)
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::require_viewer))
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf));
 
     let sign_in = Router::new()
-        .route("/providers", get(auth::providers))
         .route("/token", get(auth::token::form).post(auth::token::login))
         .route(
             "/guest",
             post(auth::guest::ask).layer(middleware::from_fn_with_state(app.clone(), auth::middleware::csrf)),
         )
-        .route("/{provider}/start", get(auth::flow::start))
-        .route("/{provider}/callback", get(auth::flow::callback_get).post(auth::flow::callback_post))
         .layer(middleware::from_fn_with_state(app.clone(), auth::middleware::rate_limit));
 
     Router::new()

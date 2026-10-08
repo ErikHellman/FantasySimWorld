@@ -44,7 +44,7 @@ function harness(answers: (GuestAnswer | Error)[]) {
 
 describe('the line for a guest seat', () => {
   it('goes straight in when a seat is free', async () => {
-    const h = harness([{ kind: 'admitted', secondsLeft: 900 }]);
+    const h = harness([{ kind: 'admitted' }]);
     h.queue.start();
     await h.settle();
     expect(h.asked).toEqual([null]);
@@ -53,7 +53,7 @@ describe('the line for a guest seat', () => {
   });
 
   it('asks again with its ticket once a minute until a seat comes free', async () => {
-    const h = harness([queued(3), queued(1), { kind: 'admitted', secondsLeft: 900 }]);
+    const h = harness([queued(3), queued(1), { kind: 'admitted' }]);
     h.queue.start();
     await h.settle();
     expect(h.waits).toEqual([{ position: 3, seats: 25, nextAt: 61_000 }]);
@@ -95,7 +95,7 @@ describe('the line for a guest seat', () => {
   it('keeps its ticket for a reload, and starts from one', async () => {
     const kept: (string | null)[] = [];
     const queue = new GuestQueue({
-      ask: (ticket) => Promise.resolve(ticket === 'old' ? queued(4, 'old') : { kind: 'admitted', secondsLeft: 900 }),
+      ask: (ticket) => Promise.resolve(ticket === 'old' ? queued(4, 'old') : { kind: 'admitted' }),
       ticket: 'old',
       keep: (ticket) => kept.push(ticket),
       admitted: () => {},

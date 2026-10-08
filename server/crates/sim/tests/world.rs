@@ -5,10 +5,11 @@
 use fsw_core::math2d::dist;
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_core::vec2;
+use fsw_sim::Sim;
 use fsw_sim::state::{SimState, TreeStage, WorldObject};
 use fsw_sim::systems::world::{FALL_TICKS, SAPLING_DAYS, STUMP_DAYS, YOUNG_DAYS, fell_tree, scatter_id, tree_standing};
 use fsw_sim::util::Ctx;
-use fsw_sim::{Sim, create_state};
+use fsw_testing::create_test_state;
 use fsw_world::navgrid::{AGENT_RADIUS, nav_grid};
 use fsw_world::places::{get_place, obstacle_contains};
 use fsw_world::scatter::{is_tree, scatter};
@@ -45,7 +46,7 @@ fn walkable_cells(state: &SimState) -> usize {
 #[test]
 fn an_untouched_world_keeps_the_static_grid() {
     // The first hour of a new world: breakfast, before anyone has gone out to the woods.
-    let mut sim = Sim::new(create_state(3));
+    let mut sim = Sim::new(create_test_state(3));
     for _ in 0..600 {
         sim.step();
     }
@@ -58,7 +59,7 @@ fn an_untouched_world_keeps_the_static_grid() {
 
 #[test]
 fn a_felled_tree_frees_the_ground_round_it_but_for_the_stump() {
-    let mut sim = Sim::new(create_state(5));
+    let mut sim = Sim::new(create_test_state(5));
     let tree = trees_near("lumber_camp", 40.0)[0];
     let model = &scatter().models[tree];
     let trunk = scatter().obstacle_of_model(tree).unwrap();
@@ -108,7 +109,7 @@ fn a_felled_tree_frees_the_ground_round_it_but_for_the_stump() {
 
 #[test]
 fn a_stump_grows_back_into_a_tree_on_the_clock() {
-    let mut sim = Sim::new(create_state(5));
+    let mut sim = Sim::new(create_test_state(5));
     let tree = trees_near("glade", 40.0)[0];
     let id = scatter_id(tree);
     assert!(fell(&mut sim, tree));
@@ -146,7 +147,7 @@ fn a_stump_grows_back_into_a_tree_on_the_clock() {
 
 #[test]
 fn the_overlay_never_drifts_from_the_objects() {
-    let mut sim = Sim::new(create_state(11));
+    let mut sim = Sim::new(create_test_state(11));
     let trees = trees_near("lumber_camp", 60.0);
     for tick in 0..2000 {
         if tick % 150 == 0 {
@@ -165,7 +166,7 @@ fn the_overlay_never_drifts_from_the_objects() {
 
 #[test]
 fn felled_trees_survive_a_save_and_load() {
-    let mut sim = Sim::new(create_state(7));
+    let mut sim = Sim::new(create_test_state(7));
     let trees = trees_near("lumber_camp", 50.0);
     fell(&mut sim, trees[0]);
     for _ in 0..10 {
@@ -207,7 +208,7 @@ use fsw_sim::systems::world::{STOCKPILES, deposit, job_accepts, rock_whole, stoc
 use fsw_sim::util::living;
 
 fn quiet(seed: u32) -> Sim {
-    let mut sim = Sim::new(create_state(seed));
+    let mut sim = Sim::new(create_test_state(seed));
     sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
     sim
 }
@@ -333,7 +334,7 @@ fn carrying_is_the_sims_own_doing_and_the_arms_hold_only_so_much() {
 
 #[test]
 fn a_full_stockpile_overflows_to_the_market() {
-    let mut state = create_state(1);
+    let mut state = create_test_state(1);
     let (camp, _, cap) = STOCKPILES[0];
     assert_eq!(stockpile_for(Resource::Wood), camp);
     assert_eq!(stockpile_for(Resource::Ore), "mine");
@@ -377,7 +378,7 @@ fn only_the_right_things_can_be_touched() {
     assert!(!destroyable("b:green"), "the green has no building");
     assert!(destroyable(&ground_id(Hex { col: 3, row: 9 })));
     assert!(
-        !job_accepts(&create_state(1), WorldJob::Dig, &ground_id(Hex { col: 0, row: 0 })),
+        !job_accepts(&create_test_state(1), WorldJob::Dig, &ground_id(Hex { col: 0, row: 0 })),
         "the border is mountain"
     );
 }

@@ -1,7 +1,7 @@
-import type { Mood as RosterMood, WireEvent } from '../generated/api';
+import type { CeremonyKind, CeremonyPhase, Mood as RosterMood, WireEvent } from '../generated/api';
 
 /** What the background music is about. */
-export type MusicMood = 'day' | 'evening' | 'night' | 'tension' | 'battle' | 'grief';
+export type MusicMood = 'day' | 'evening' | 'night' | 'tension' | 'battle' | 'grief' | 'celebration';
 /** A short phrase played over the music when something ends. */
 export type Sting = 'victory' | 'defeat';
 
@@ -21,6 +21,8 @@ export interface MusicScene {
   monstersNear: number;
   /** the roster mood of the selected villager, if one is selected */
   selectedMood: RosterMood | null;
+  /** the wedding or funeral the village has arranged, if any */
+  ceremony: { kind: CeremonyKind; phase: CeremonyPhase } | null;
 }
 
 /** Seconds. */
@@ -40,6 +42,16 @@ export function inView(x: number, z: number, listener: Listener): boolean {
   return Math.hypot(x - listener.x, z - listener.z) <= 30 + listener.distance;
 }
 
+/** The village is at the graveside. */
+function burying(scene: MusicScene): boolean {
+  return scene.ceremony?.kind === 'funeral' && (scene.ceremony.phase === 'gathering' || scene.ceremony.phase === 'rite');
+}
+
+/** A couple are being married, or the feast is on. */
+function celebrating(scene: MusicScene): boolean {
+  return scene.ceremony?.kind === 'wedding' && (scene.ceremony.phase === 'rite' || scene.ceremony.phase === 'feast');
+}
+
 export function timeOfDayMood(hour: number): 'day' | 'evening' | 'night' {
   if (hour >= 6.5 && hour < 18) return 'day';
   if (hour >= 18 && hour < 21.5) return 'evening';
@@ -49,9 +61,10 @@ export function timeOfDayMood(hour: number): 'day' | 'evening' | 'night' {
 /**
  * Follows what the viewer is watching (the camera's surroundings and the
  * selected villager) and picks the music for it. In order of precedence:
- * a fight in view, grief after a death in view, danger nearby (the alarm, or
- * monsters around), then the time of day. Battle and tension are held for a
- * while so the music does not flicker between them.
+ * a fight in view, grief after a death in view or at a funeral, a wedding's
+ * rite and feast, danger nearby (the alarm, or monsters around), then the time
+ * of day. Battle and tension are held for a while so the music does not
+ * flicker between them.
  *
  * `now` is in seconds on any steady clock.
  */
@@ -97,7 +110,8 @@ export class MoodTracker {
     const fighting = now - this.lastBlow < MOOD_TIMING.battleAfter;
     let next: MusicMood;
     if (fighting || (this.current === 'battle' && now - this.battleSince < MOOD_TIMING.battleAtLeast)) next = 'battle';
-    else if (now < this.griefUntil) next = 'grief';
+    else if (now < this.griefUntil || burying(scene)) next = 'grief';
+    else if (celebrating(scene)) next = 'celebration';
     else if (scene.alarm || scene.monstersNear > 0 || (this.current === 'tension' && now < this.tensionUntil)) next = 'tension';
     else next = timeOfDayMood(scene.hour);
 

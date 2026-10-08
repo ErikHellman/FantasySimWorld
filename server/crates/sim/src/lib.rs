@@ -19,7 +19,7 @@ pub mod systems;
 pub mod util;
 
 pub use commands::Command;
-pub use create::{DEFAULT_SEED, create_state};
+pub use create::{DEFAULT_SEED, FOUNDERS, create_state};
 pub use events::SimEvent;
 pub use sim::Sim;
 pub use state::{SaveFile, SimState};

@@ -62,6 +62,7 @@ pub struct Tools {
     pub finish: ToolDef,
     pub reflection: ToolDef,
     pub billboard: ToolDef,
+    pub speech: ToolDef,
     pub work_on: ToolDef,
 }
 
@@ -214,6 +215,17 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             },
         }),
         &["summary", "insights"],
+    ),
+    speech: tool(
+        "speech",
+        "Write what you will say aloud at the ceremony.",
+        json!({
+            "text": {
+                "type": "string",
+                "description": "Two to four short sentences in your own voice, spoken to those gathered. No stage directions, no quotation marks."
+            }
+        }),
+        &["text"],
     ),
     billboard: tool(
         "react_to_billboard",

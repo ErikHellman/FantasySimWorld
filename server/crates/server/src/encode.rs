@@ -13,25 +13,26 @@
 
 use fsw_core::jsmath::js_round;
 use fsw_core::time::TICK_SECONDS;
+use fsw_core::time::{format_clock, game_time};
 use fsw_sim::data::anims::AnimId;
 use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
-    ActPhase, Character, ChronicleEntry as SimChronicleEntry, ChronicleKind as SimChronicleKind, Corpse,
-    Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, Look as SimLook, Monster, Resource, SimState,
-    VoiceProfile as SimVoice, WorldObject as SimWorldObject,
+    ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
+    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
+    Look as SimLook, Monster, Resource, Rite, SimState, VoiceProfile as SimVoice, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::fire::built_fraction;
 use fsw_sim::systems::world::{object_name, progress_of};
-use fsw_sim::util::first_name;
+use fsw_sim::util::{first_name, name_of};
 use fsw_world::places::{billboards, find_place, get_place};
 use indexmap::IndexMap;
 
 use crate::api::wire::{
-    Billboard, BillboardTone, ChronicleEntry, ChronicleKind, Dyn, DynDelta, Emote, Entity, EntityKind, EntityStatic,
-    Grave, House, HousePhase, Look, Placed, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent,
-    WorldObject, WorldObjectKind,
+    Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
+    Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Placed, Ranged, Stockpile, TickFrame,
+    Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -255,6 +256,32 @@ pub fn grave_of(grave: &SimGrave) -> Grave {
 }
 
 /// The homes that are burning or in ruins, as viewers are told of them.
+/// The ceremony the village has arranged, as viewers are told of it.
+pub fn ceremony_of(state: &SimState) -> Option<Ceremony> {
+    let ceremony = state.ceremony.as_ref()?;
+    let (kind, ids) = match &ceremony.rite {
+        Rite::Wedding { a, b } => (CeremonyKind::Wedding, vec![a.clone(), b.clone()]),
+        Rite::Funeral { dead } => (CeremonyKind::Funeral, dead.clone()),
+    };
+    let when = game_time(ceremony.start_tick);
+    Some(Ceremony {
+        id: ceremony.id.clone(),
+        kind,
+        phase: match ceremony.phase {
+            SimCeremonyPhase::Announced => CeremonyPhase::Announced,
+            SimCeremonyPhase::Gathering => CeremonyPhase::Gathering,
+            SimCeremonyPhase::Rite => CeremonyPhase::Rite,
+            SimCeremonyPhase::Feast => CeremonyPhase::Feast,
+        },
+        place_id: ceremony.place_id.clone(),
+        place_name: find_place(&ceremony.place_id).map_or(ceremony.place_id.clone(), |place| place.name.into()),
+        names: ids.iter().map(|id| name_of(state, id)).collect(),
+        ids,
+        day: when.day.max(0) as u32,
+        time: format_clock(when.minute_of_day),
+    })
+}
+
 pub fn houses_of(state: &SimState) -> Vec<House> {
     state
         .houses
@@ -459,6 +486,7 @@ pub struct Tracker {
     graves: Vec<String>,
     billboards: Vec<Billboard>,
     houses: Vec<House>,
+    ceremony: Option<Ceremony>,
     objects: Vec<WorldObject>,
     stockpiles: Vec<Stockpile>,
 }
@@ -475,6 +503,7 @@ impl Tracker {
         self.graves = state.graves.iter().map(grave_key).collect();
         self.billboards = billboards_of(state);
         self.houses = houses_of(state);
+        self.ceremony = ceremony_of(state);
         self.objects = objects_of(state);
         self.stockpiles = stockpiles_of(state);
     }
@@ -492,6 +521,11 @@ impl Tracker {
     /// What viewers have been told of the homes that do not stand whole (for a snapshot).
     pub fn houses(&self) -> Vec<House> {
         self.houses.clone()
+    }
+
+    /// What viewers have been told of the ceremony the village has arranged (for a snapshot).
+    pub fn ceremony(&self) -> Option<Ceremony> {
+        self.ceremony.clone()
     }
 
     /// What viewers have been told differs from the map (for a snapshot).
@@ -560,6 +594,19 @@ impl Tracker {
             }
             self.houses = now;
         }
+        // Nor a wedding or funeral being arranged, gathering, spoken, feasted and done with.
+        if !(state.ceremony.is_none() && self.ceremony.is_none()) {
+            let now = ceremony_of(state);
+            if now != self.ceremony {
+                let told = match (&now, &self.ceremony) {
+                    (Some(now), _) => now.clone(),
+                    (None, Some(before)) => Ceremony { phase: CeremonyPhase::Over, ..before.clone() },
+                    (None, None) => unreachable!("one of them is Some"),
+                };
+                frame.ev.push(WireEvent::Ceremony { ceremony: told });
+                self.ceremony = now;
+            }
+        }
         // Nor is a tree coming down, a rock mined out, or anything else done to the map.
         if !(state.objects.is_empty() && self.objects.is_empty()) {
             let now = objects_of(state);
@@ -600,11 +647,13 @@ impl Tracker {
 pub const FRAMES_FIXTURE: (u32, usize) = (99, 600);
 
 /// What the web client's tests replay through its view of the world: the
-/// snapshot of a fresh world, the frames of its first ticks, and the entities
-/// at the end (JSON; `cargo run --bin export-frames` writes it).
+/// snapshot of a fresh, empty world, the frames of its first ticks (the first of which founds the
+/// village from the sim's own lists), and the entities at the end (JSON; `cargo run --bin
+/// export-frames` writes it).
 pub fn frames_fixture() -> String {
     let (seed, ticks) = FRAMES_FIXTURE;
     let mut sim = fsw_sim::Sim::new(fsw_sim::create_state(seed));
+    sim.enqueue(fsw_sim::Command::FoundVillage);
     let mut tracker = Tracker::new(&sim.state);
     let start = sim.state.tick;
     let entities = tracker.entities();
@@ -629,11 +678,12 @@ pub fn frames_fixture() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::{Sim, create_state};
+    use fsw_sim::Sim;
+    use fsw_testing::create_test_state;
 
     #[test]
     fn deltas_rebuild_the_state_a_snapshot_would_show() {
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let mut client: IndexMap<String, Entity> =
             tracker.entities().into_iter().map(|e| (e.fixed.id.clone(), e)).collect();
@@ -666,7 +716,7 @@ mod tests {
 
     #[test]
     fn idle_ticks_send_nothing() {
-        let sim = Sim::new(create_state(3));
+        let sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let frame = tracker.frame(&sim.state, &[]);
         assert!(frame.add.is_empty() && frame.d.is_empty() && frame.del.is_empty());
@@ -674,7 +724,7 @@ mod tests {
 
     #[test]
     fn billboards_are_announced_when_they_change() {
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let count = |frame: &TickFrame| frame.ev.iter().filter(|e| matches!(e, WireEvent::Billboard { .. })).count();
         // An ordinary tick, then the next midnight, when every board turns to a new slogan.
@@ -699,7 +749,7 @@ mod tests {
     #[test]
     fn houses_are_announced_as_they_burn_fall_and_rise_again() {
         use fsw_sim::state::{House as SimHouse, HousePhase as SimPhase};
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let houses = |frame: &TickFrame| -> Vec<House> {
             frame
@@ -738,9 +788,60 @@ mod tests {
     }
 
     #[test]
+    fn a_ceremony_is_announced_as_it_is_arranged_moves_on_and_ends() {
+        use fsw_sim::state::{Ceremony as SimCeremony, CeremonyPhase as SimPhase, Rite};
+        let mut sim = Sim::new(fsw_testing::create_test_state(3));
+        let mut tracker = Tracker::new(&sim.state);
+        let ceremonies = |frame: &TickFrame| -> Vec<Ceremony> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Ceremony { ceremony } = e { Some(ceremony.clone()) } else { None })
+                .collect()
+        };
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+        assert!(tracker.ceremony().is_none());
+
+        let (a, b) = (sim.state.order[0].clone(), sim.state.order[1].clone());
+        sim.state.ceremony = Some(SimCeremony {
+            id: "y1".into(),
+            rite: Rite::Wedding { a: a.clone(), b: b.clone() },
+            place_id: "green".into(),
+            start_tick: fsw_sim::systems::director::tick_at(2, 14.0),
+            phase: SimPhase::Announced,
+            step: 0,
+            until_tick: 0,
+            officiant: sim.state.order[2].clone(),
+            speeches: Vec::new(),
+            attendees: Vec::new(),
+            slips: 0,
+        });
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told.len(), 1);
+        assert_eq!((told[0].kind, told[0].phase, told[0].day), (CeremonyKind::Wedding, CeremonyPhase::Announced, 2));
+        assert_eq!(told[0].time, "14:00");
+        assert_eq!(told[0].place_name, "the village green");
+        assert_eq!(told[0].ids, vec![a, b]);
+        assert_eq!(told[0].names.len(), 2);
+        assert_eq!(tracker.ceremony(), Some(told[0].clone()));
+        // Nothing changed: nothing said.
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+
+        sim.state.ceremony.as_mut().unwrap().phase = SimPhase::Gathering;
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told[0].phase, CeremonyPhase::Gathering);
+
+        sim.state.ceremony = None;
+        let told = ceremonies(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].id.as_str(), told[0].phase), ("y1", CeremonyPhase::Over));
+        assert!(tracker.ceremony().is_none());
+        assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+    }
+
+    #[test]
     fn world_objects_and_stockpiles_are_announced_as_they_change() {
         use fsw_sim::state::{Resource, RockStage, TreeStage, WorldObject as SimObject};
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         let mut tracker = Tracker::new(&sim.state);
         let objects = |frame: &TickFrame| -> Vec<WorldObject> {
             frame
@@ -812,7 +913,7 @@ mod tests {
 
     #[test]
     fn weapons_are_put_away_at_ease() {
-        let mut state = create_state(3);
+        let mut state = create_test_state(3);
         let id = state.order[0].clone();
         let c = state.characters.get_mut(&id).unwrap();
         c.anim = AnimId::SitChair;

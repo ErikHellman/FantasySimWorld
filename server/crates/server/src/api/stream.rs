@@ -5,8 +5,8 @@
 //! (a `Last-Event-ID` from this boot within the replay ring) or a `snapshot`,
 //! then the current `status`, `roster`, the `detail` it watches and the chat
 //! (`chat_welcome`); after that, every `tick` and whatever changes. Event ids
-//! are `"<bootId>:<tick>"`. A guest's stream ends with `guest_end` when their pass runs out,
-//! they leave, or another tab of theirs takes the stream over.
+//! are `"<bootId>:<tick>"`. A guest's stream ends with `guest_end` when they leave or another
+//! tab of theirs takes the stream over.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -23,7 +23,8 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::AppState;
 use crate::api::error;
 use crate::api::wire::{GuestEnd, GuestEndReason, Hello, PROTOCOL_VERSION, Role, Snapshot};
-use crate::auth::{Viewer, session};
+use crate::auth::Viewer;
+use crate::auth::guest::still_valid;
 use crate::chat::{ChatKey, ChatOut};
 use crate::digest::{chronicle_tail, is_alarm, roster_of};
 use crate::encode::grave_of;
@@ -31,7 +32,7 @@ use crate::world_task::{Core, Outgoing, World};
 
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 const RETRY: Duration = Duration::from_millis(500);
-/// How often an open stream checks that its session still exists (sign-out, allowlist removal).
+/// How often an open stream checks that its guest seat is still held.
 pub const SESSION_RECHECK: Duration = Duration::from_secs(60);
 
 /// Counts a viewer (and keeps their watch alive) for as long as their stream lives.
@@ -83,6 +84,7 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         voices: core.voices.iter().cloned().collect(),
         billboards: core.tracker.billboards(),
         houses: core.tracker.houses(),
+        ceremony: core.tracker.ceremony(),
         world_objects: core.tracker.world_objects(),
         stockpiles: core.tracker.stockpiles(),
     }
@@ -171,9 +173,6 @@ pub async fn stream(
         let _guard = guard;
         let is_guest = guest.is_some();
         let superseded = guest.as_ref().map(|g| g.superseded.clone()).unwrap_or_default();
-        let pass_ends = guest.as_ref().map_or_else(tokio::time::Instant::now, |g| g.ends.into());
-        let time_up = tokio::time::sleep_until(pass_ends);
-        tokio::pin!(time_up);
         let guest = guest;
         let chat_guard = chat_guard;
         let world = app.world.clone();
@@ -216,13 +215,12 @@ pub async fn stream(
             let item = tokio::select! {
                 () = app.shutdown.cancelled() => break,
                 _ = recheck.tick() => {
-                    if session::still_valid(&app, &viewer).await {
+                    if still_valid(&app, &viewer) {
                         continue;
                     }
-                    tracing::info!(event = "stream_signed_out", "session ended; closing the stream");
+                    tracing::info!(event = "stream_signed_out", "the seat is gone; closing the stream");
                     break;
                 }
-                () = &mut time_up, if is_guest => Next::GuestEnd(GuestEndReason::Time),
                 () = superseded.cancelled(), if is_guest => {
                     let held = guest.as_ref().is_some_and(|g| app.guests.holds(g.id, Instant::now()));
                     Next::GuestEnd(if held { GuestEndReason::Elsewhere } else { GuestEndReason::Left })
@@ -233,11 +231,6 @@ pub async fn stream(
             let item = match item {
                 Next::World(item) => item,
                 Next::GuestEnd(reason) => {
-                    if let Some(guest) = &guest
-                        && reason == GuestEndReason::Time
-                    {
-                        app.guests.end(guest.id);
-                    }
                     tracing::info!(event = "guest_stream_ended", ?reason);
                     yield Ok(Event::default().event("guest_end").data(to_json(&GuestEnd { reason })));
                     break;

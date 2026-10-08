@@ -1,6 +1,6 @@
 import { Fragment, type ComponentChildren } from 'preact';
 import { isTouchScreen } from './layout';
-import { isAdmin, isGuest, ui } from './store';
+import { isAdmin, ui } from './store';
 
 /** One control: the keys or mouse movement on the left, what it does on the right. */
 function Control({ keys, children }: { keys: readonly string[]; children: ComponentChildren }) {
@@ -33,15 +33,8 @@ export function HelpPanel() {
         <h2>How to watch the village</h2>
         <p>
           The village runs on the server around the clock, and everyone watching sees the same world. You look around,
-          follow the villagers and talk with the other people watching. Watching also earns you credits (the ✦ in the
-          top bar), which buy gifts, blessings and trouble for the village; the villagers will know who sent them.
+          follow the villagers and talk with the other people watching.
         </p>
-        {isGuest() && (
-          <p>
-            As a guest you can look around and read the chat for a quarter of an hour. Signing in lets you stay, talk
-            and earn credits.
-          </p>
-        )}
 
         {isTouchScreen() && (
           <>
@@ -101,7 +94,7 @@ export function HelpPanel() {
           </ul>
         ) : (
         <ul class="help-list">
-          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, monsters abroad 💀 and the graveyard 🪦 (click it to read the names). 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
+          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, monsters abroad 💀, the graveyard 🪦 (click it to read the names) and, once the village has gathered any, its stores of wood 🪵 and stone 🪨. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹.</li>
           <li><strong>Chronicle</strong> (bottom left): the village's news, newest first. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs and what they carry; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
@@ -115,6 +108,7 @@ export function HelpPanel() {
           <li>Villagers keep to a plan for the day: work, meals, rest and time with others. They grow hungry, tired and lonely, and see to it.</li>
           <li>Five big billboards stand around the village, each with a new slogan every morning. Now and then a villager stops to read one and says what they think: some laugh, some scoff, and the gloomier notices unsettle the timid.</li>
           <li>They talk, and every conversation shifts how they feel about each other. Friendships, rivalries and love grow from it; grudges can end in a fight.</li>
+          <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often.</li>
           <li>Some villagers have ways of their own: a drunk who picks fights, a gossip who makes up stories, a bully, a coward, someone who naps on the grass when there is work to do, and worse. Not everyone is what they seem.</li>
           <li>Death is for good: the fallen get a grave, and now and then a newcomer arrives in the valley.</li>

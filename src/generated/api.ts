@@ -1,36 +1,10 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export type Vec2 = { x: number, z: number, };
 
-export type Role = "admin" | "viewer" | "guest";
-
-/**
- * `GET /auth/providers`: how this server signs people in, for the login page (no session needed).
- */
-export type SignInOptions = { 
-/**
- * `AUTH_MODE=off`: no sign-in needed (local development)
- */
-open: boolean, 
-/**
- * `/auth/token` works (`AUTH_MODE=token`)
- */
-token: boolean, 
-/**
- * `/auth/{provider}/start` works for these, in the order `AUTH_PROVIDERS` lists them
- */
-providers: Array<SignInProvider>, 
-/**
- * `POST /auth/guest` works: people may watch for a while without signing in
- */
-guests: boolean, };
-
-/**
- * A sign-in provider, by the name it has in URLs, `AUTH_PROVIDERS` and the database.
- */
-export type SignInProvider = "google" | "apple" | "microsoft" | "linkedin" | "github" | "discord";
+export type Role = "admin" | "guest";
 
 /**
  * `POST /auth/guest`: asks for a guest seat.
@@ -44,7 +18,7 @@ ticket: string | null, };
 /**
  * The answer to `POST /auth/guest`. Asking again sooner than `retryAfterSeconds` answers 429.
  */
-export type GuestAnswer = { "kind": "admitted", secondsLeft: number, } | { "kind": "queued", ticket: string, 
+export type GuestAnswer = { "kind": "admitted" } | { "kind": "queued", ticket: string, 
 /**
  * 1 is next
  */
@@ -57,7 +31,7 @@ seats: number, retryAfterSeconds: number, };
 /**
  * Why a guest's stream ended.
  */
-export type GuestEndReason = "time" | "elsewhere" | "left";
+export type GuestEndReason = "elsewhere" | "left";
 
 /**
  * `guest_end`: the last event on a guest's stream; the browser should not reconnect.
@@ -213,6 +187,10 @@ billboards: Array<Billboard>,
  */
 houses: Array<House>, 
 /**
+ * the wedding or funeral the village has arranged, if any
+ */
+ceremony: Ceremony | null, 
+/**
  * everything that differs from the map: felled trees, mined rocks, things taken apart, built or burnt
  */
 worldObjects: Array<WorldObject>, 
@@ -251,7 +229,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire";
 
@@ -305,6 +283,31 @@ fire: number,
  * how far a ruin has been rebuilt, in percent
  */
 built: number, };
+
+export type CeremonyKind = "wedding" | "funeral";
+
+export type CeremonyPhase = "announced" | "gathering" | "rite" | "feast" | "over";
+
+/**
+ * A wedding or funeral the village has arranged, as viewers are told of it.
+ */
+export type Ceremony = { id: string, kind: CeremonyKind, phase: CeremonyPhase, 
+/**
+ * where the rite is held
+ */
+placeId: string, placeName: string, 
+/**
+ * the couple, or the dead
+ */
+ids: Array<string>, 
+/**
+ * their first names, in the same order
+ */
+names: Array<string>, 
+/**
+ * the game day and clock ("14:00") the rite begins
+ */
+day: number, time: string, };
 
 export type WorldObjectKind = "tree" | "rock" | "prop" | "building" | "ground" | "built";
 
@@ -366,6 +369,11 @@ export type LlmStatus = { state: LlmState, inFlight: number, queued: number, req
 export type AmbientCounts = { awake: number, eating: number, drinking: number, smithing: number, relaxing: number, };
 
 /**
+ * How far a new world's founding has come.
+ */
+export type Founding = { settled: number, total: number, };
+
+/**
  * Sent when it changes, at most once a second.
  */
 export type Status = { llm: LlmStatus, viewers: number, speed: number, 
@@ -376,7 +384,11 @@ throttled: boolean, population: number, monsters: number, alarm: boolean,
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
-part: string, ambient: AmbientCounts, };
+part: string, ambient: AmbientCounts, 
+/**
+ * the village is still being founded: how many of its founders have settled; `null` once it is
+ */
+founding: Founding | null, };
 
 export type Mood = "ok" | "fight" | "sleep" | "talk" | "hurt";
 
@@ -390,7 +402,7 @@ status: string,
  */
 hp: number, mood: Mood, partner: boolean, };
 
-export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family";
+export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family" | "spouse";
 
 export type RelationRow = { id: string, name: string, label: RelationLabel, affinity: number, attraction: number, grievance: number, 
 /**
@@ -427,13 +439,17 @@ carried: Goods, home: string,
 /**
  * that home has burned down and is not yet rebuilt
  */
-homeless: boolean, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+homeless: boolean, 
+/**
+ * the first name of the one they are married to
+ */
+spouse: string | null, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */
 memories: Array<Memory>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 
@@ -450,7 +466,7 @@ commands: Array<string>, };
 /**
  * What a line in the chat is.
  */
-export type ChatKind = "say" | "join" | "leave" | "event";
+export type ChatKind = "say" | "join" | "leave";
 
 /**
  * One line in the viewers' chat (`chat` on the stream, and the history in [`ChatWelcome`]).
@@ -516,108 +532,6 @@ export type ChatRename = {
 viewer: string, name: string, };
 
 /**
- * What an offer needs from the viewer who buys it.
- */
-export type CreditTarget = "none" | "character" | "point";
-
-/**
- * How the shop groups its offers.
- */
-export type CreditGroup = "gift" | "monster" | "blessing" | "threat";
-
-/**
- * One thing credits can buy.
- */
-export type CreditOffer = { 
-/**
- * what `POST /api/credits/buy` takes as `offer`
- */
-id: string, name: string, description: string, cost: number, target: CreditTarget, group: CreditGroup, };
-
-/**
- * `GET /api/credits?viewer=<tab>`: this viewer's credits and what they buy.
- */
-export type CreditsState = { balance: number, 
-/**
- * watching and prayer earn nothing past this
- */
-cap: number, 
-/**
- * credits for a minute of watching with the tab in front; 0 when credits are off
- */
-perMinute: number, 
-/**
- * seconds between the reports of watching the server expects (`POST /api/presence`)
- */
-beatSeconds: number, 
-/**
- * cheapest first within each group; empty when credits are off
- */
-offers: Array<CreditOffer>, };
-
-/**
- * The answer to `POST /api/presence` and `POST /api/credits/buy`: what the viewer has now.
- */
-export type CreditsBalance = { balance: number, };
-
-/**
- * `POST /api/presence`: this tab is in front and being watched. Sent every
- * [`CreditsState::beat_seconds`] while that is true; each one that arrives on time earns credits.
- */
-export type PresenceRequest = { 
-/**
- * random per tab, as in `?viewer=` on the stream
- */
-viewer: string, };
-
-/**
- * `POST /api/credits/buy`
- */
-export type BuyRequest = { 
-/**
- * random per tab, as in `?viewer=` on the stream
- */
-viewer: string, 
-/**
- * a [`CreditOffer::id`]
- */
-offer: string, 
-/**
- * for a [`CreditTarget::Character`] offer
- */
-characterId: string | null, 
-/**
- * for a [`CreditTarget::Point`] offer: world units
- */
-x: number | null, z: number | null, };
-
-/**
- * One row of `GET /api/admin/credits`: someone with the world open right now.
- */
-export type CreditViewer = { 
-/**
- * their chat name, which is also what `POST /api/admin/credits/grant` takes
- */
-name: string, balance: number, 
-/**
- * signed in with an account, so the balance is kept; false for a tab's balance held in memory
- */
-account: boolean, 
-/**
- * their tab is in front and reporting, so they are earning
- */
-watching: boolean, };
-
-/**
- * `POST /api/admin/credits/grant`: gives credits to someone with the world open, or to all of them.
- */
-export type CreditGrant = { 
-/**
- * a [`CreditViewer::name`]; `null` for everyone with the world open
- */
-name: string | null, amount: number, };
-
-/**
  * `POST /api/watch`: which character's `detail` this viewer (one tab) receives.
  */
 export type WatchRequest = { 
@@ -629,11 +543,7 @@ viewer: string, id: string | null, };
 /**
  * `GET /api/me`
  */
-export type Me = { email: string, displayName: string, role: Role, 
-/**
- * for a guest, the seconds left before their pass ends; `null` for everyone else
- */
-guestSecondsLeft: number | null, };
+export type Me = { role: Role, };
 
 /**
  * `GET /api/chronicle?before=<tick>&limit=<n>`
@@ -706,37 +616,6 @@ embedModel: string | null, embedApiKeySet: boolean, };
  * `POST /api/admin/llm/test`
  */
 export type LlmTestResult = { ok: boolean, message: string, };
-
-/**
- * `GET /api/admin/allowlist` rows.
- */
-export type AllowlistEntry = { email: string, role: Role, addedBy: string, 
-/**
- * ms since the epoch
- */
-addedAt: number, note: string, };
-
-/**
- * `POST /api/admin/allowlist`
- */
-export type AllowlistAdd = { email: string, role: Role, note: string, };
-
-/**
- * `GET /api/admin/attempts`: refused sign-ins, newest first.
- */
-export type AuthAttempt = { id: number, 
-/**
- * a [`SignInProvider`]'s name, such as "google" or "github"
- */
-provider: string, email: string, 
-/**
- * "not_allowlisted", "email_unverified" or "no_email"
- */
-outcome: string, 
-/**
- * ms since the epoch
- */
-at: number, };
 
 /**
  * `POST /api/admin/world/new`

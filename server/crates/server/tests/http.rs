@@ -8,8 +8,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use fsw_server::config::Config;
 use fsw_server::guests::GuestLimits;
+use fsw_server::store::SnapshotReason;
 use fsw_server::store::Store;
-use fsw_server::{AppState, brain_task, router, world_task};
+use fsw_server::{AppState, brain_task, digest, router, world_task};
 use http_body_util::BodyExt;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -41,7 +42,7 @@ async fn state_with(name: &str, settings: &[(&str, &str)]) -> (Arc<AppState>, Ca
     state_with_guests(name, settings, GuestLimits::default()).await
 }
 
-/// Like [`state_with`], with fewer guest seats or shorter passes than a real build has.
+/// Like [`state_with`], with a seat cap of the test's choosing.
 async fn state_with_guests(
     name: &str,
     settings: &[(&str, &str)],
@@ -56,8 +57,37 @@ async fn state_with_guests(
     let shutdown = CancellationToken::new();
     let store = Store::open(&config.data_dir).await.unwrap();
     let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
+    // A new world is empty until it is founded; these tests know the authored cast by name.
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    let founded = Box::new(fsw_testing::create_test_state(1));
+    let replace = world_task::WorldInput::Replace { state: founded, reason: SnapshotReason::NewWorld, reply };
+    world.inputs.send(replace).await.unwrap();
+    answer.await.unwrap().unwrap();
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
-    (AppState::new(config, world, store, brain, shutdown.clone()).unwrap(), shutdown, data)
+    (AppState::new(config, world, store, brain, shutdown.clone()), shutdown, data)
+}
+
+#[tokio::test]
+async fn a_fresh_world_reports_its_founding_in_the_status() {
+    let data = tempfile::tempdir().unwrap();
+    let vars = vec![
+        ("AUTH_TOKEN".to_string(), TOKEN.to_string()),
+        ("STATIC_DIR".to_string(), static_dir("founding").display().to_string()),
+        ("DATA_DIR".to_string(), data.path().display().to_string()),
+    ];
+    let config = Config::from_vars(vars).unwrap();
+    let shutdown = CancellationToken::new();
+    let store = Store::open(&config.data_dir).await.unwrap();
+    let (world, _task) = world_task::start(store.clone(), 1, shutdown.clone()).await.unwrap();
+    let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
+    let state = AppState::new(config, world, store, brain, shutdown.clone());
+    let _digest = digest::task::spawn(state.clone(), shutdown.clone());
+    let app = router(state);
+    let mut body = app.clone().oneshot(authed("/api/stream?viewer=tabF")).await.unwrap().into_body();
+    let seen = read_events(&mut body, |seen| seen.contains("event: status")).await;
+    assert!(seen.contains(r#""entities":[]"#), "{seen}");
+    assert_eq!(last_event(&seen, "status")["founding"], serde_json::json!({ "settled": 0, "total": 13 }));
+    shutdown.cancel();
 }
 
 fn get(uri: &str) -> Request<Body> {
@@ -93,9 +123,6 @@ async fn api_needs_the_token() {
     let response = app.clone().oneshot(authed("/api/me")).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert!(text(response).await.contains(r#""role":"admin""#));
-
-    let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":false,"token":true,"providers":[],"guests":true}"#);
 
     let response = app.oneshot(authed("/api/nothing-here")).await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -152,7 +179,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":6"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":7"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.
@@ -190,27 +217,31 @@ async fn static_files_are_cached_by_kind() {
 async fn token_holder_is_an_admin_and_mutations_need_json() {
     let (app, _, _data) = app("admin").await;
     let post = |content_type: &'static str, body: &'static str| {
-        Request::post("/api/admin/allowlist")
+        Request::post("/api/admin/billboards")
             .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
             .header(header::CONTENT_TYPE, content_type)
             .body(Body::from(body))
             .unwrap()
     };
-    let form = app.clone().oneshot(post("application/x-www-form-urlencoded", "email=a%40b.c&role=viewer")).await;
+    let form = app.clone().oneshot(post("application/x-www-form-urlencoded", "id=green_board&text=Hi")).await;
     assert_eq!(form.unwrap().status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
-    let added = app.clone().oneshot(post("application/json", r#"{"email":"Friend@Example.com","role":"viewer"}"#));
-    let added = added.await.unwrap();
-    assert_eq!(added.status(), StatusCode::OK);
-    assert_eq!(
-        text(added).await,
-        text(app.clone().oneshot(authed("/api/admin/allowlist")).await.unwrap()).await.trim_matches(['[', ']'])
-    );
-    let bad = app.clone().oneshot(post("application/json", r#"{"email":"nobody","role":"viewer"}"#)).await;
-    assert_eq!(bad.unwrap().status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(app.clone().oneshot(authed("/api/admin/attempts")).await.unwrap().status(), StatusCode::OK);
+    let posted = app.clone().oneshot(post("application/json", r#"{"id":"green_board","text":"Hi"}"#)).await.unwrap();
+    assert_eq!(posted.status(), StatusCode::NO_CONTENT);
+    assert_eq!(app.clone().oneshot(authed("/api/admin/health")).await.unwrap().status(), StatusCode::OK);
 
-    // Sign-in providers are off in token mode.
-    assert_eq!(app.clone().oneshot(get("/auth/google/start")).await.unwrap().status(), StatusCode::NOT_FOUND);
+    // A form on another site posting with the admin's cookie, and a foreign origin even with JSON, are refused.
+    let cross_site = |content_type: &'static str, body: &'static str| {
+        Request::post("/api/admin/speed")
+            .header(header::COOKIE, format!("fsw_token={TOKEN}"))
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::ORIGIN, "https://evil.example")
+            .body(Body::from(body))
+            .unwrap()
+    };
+    let form = cross_site("application/x-www-form-urlencoded", "speed=0");
+    assert_eq!(app.clone().oneshot(form).await.unwrap().status(), StatusCode::FORBIDDEN);
+    let json = cross_site("application/json", r#"{"speed":0}"#);
+    assert_eq!(app.clone().oneshot(json).await.unwrap().status(), StatusCode::FORBIDDEN);
 
     let logout = Request::post("/api/logout")
         .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
@@ -223,18 +254,25 @@ async fn token_holder_is_an_admin_and_mutations_need_json() {
 }
 
 #[tokio::test]
+async fn the_token_form_is_rate_limited_per_address() {
+    let (app, _, _data) = app("rate").await;
+    let mut statuses = Vec::new();
+    for _ in 0..40 {
+        statuses.push(app.clone().oneshot(get("/auth/token")).await.unwrap().status());
+    }
+    assert!(statuses[..30].iter().all(|s| *s == StatusCode::OK), "{statuses:?}");
+    assert_eq!(statuses[39], StatusCode::TOO_MANY_REQUESTS);
+    // The API is not affected.
+    assert_eq!(app.oneshot(authed("/api/me")).await.unwrap().status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn with_sign_in_off_everyone_is_an_admin() {
     let (app, _, _data) = app_with("off", &[("AUTH_MODE", "off")]).await;
     let me = app.clone().oneshot(get("/api/me")).await.unwrap();
     assert_eq!(me.status(), StatusCode::OK);
-    assert_eq!(
-        text(me).await,
-        r#"{"email":"","displayName":"Local developer","role":"admin","guestSecondsLeft":null}"#
-    );
-    assert_eq!(app.clone().oneshot(get("/api/admin/attempts")).await.unwrap().status(), StatusCode::OK);
-
-    let providers = app.clone().oneshot(get("/auth/providers")).await.unwrap();
-    assert_eq!(text(providers).await, r#"{"open":true,"token":false,"providers":[],"guests":false}"#);
+    assert_eq!(text(me).await, r#"{"role":"admin"}"#);
+    assert_eq!(app.clone().oneshot(get("/api/admin/health")).await.unwrap().status(), StatusCode::OK);
     assert_eq!(app.clone().oneshot(get("/auth/token")).await.unwrap().status(), StatusCode::NOT_FOUND);
 
     // The CSRF rule still holds.
@@ -583,189 +621,6 @@ async fn admins_put_text_on_a_billboard_and_every_viewer_sees_it() {
     assert!(seen.contains(r#""id":"green_board""#), "{seen}");
 }
 
-#[tokio::test]
-async fn watching_is_reported_by_tabs_with_an_open_stream() {
-    let (app, _, _data) = app("presence").await;
-    let report = || json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
-    let early = app.clone().oneshot(report()).await.unwrap();
-    assert_eq!(early.status(), StatusCode::CONFLICT);
-
-    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
-    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
-    // The first report starts the run; one right behind it is too soon to earn.
-    for _ in 0..2 {
-        let response = app.clone().oneshot(report()).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(text(response).await, r#"{"balance":0}"#);
-    }
-    let anonymous = json_request("POST", "/api/presence", r#"{"viewer":""}"#);
-    assert_eq!(app.clone().oneshot(anonymous).await.unwrap().status(), StatusCode::BAD_REQUEST);
-
-    let state = text(app.clone().oneshot(authed("/api/credits?viewer=tabA")).await.unwrap()).await;
-    let state: serde_json::Value = serde_json::from_str(&state).unwrap();
-    assert_eq!(
-        (&state["balance"], &state["cap"], &state["perMinute"], &state["beatSeconds"]),
-        (&0.into(), &400.into(), &2.into(), &30.into())
-    );
-    assert_eq!(state["offers"].as_array().unwrap().len(), 11);
-    assert_eq!(
-        state["offers"][0],
-        serde_json::json!({
-            "id": "food", "name": "Food", "description": "A meal in the villager's pack.",
-            "cost": 5, "target": "character", "group": "gift"
-        })
-    );
-}
-
-#[tokio::test]
-async fn credits_can_be_turned_off() {
-    let (app, _, _data) = app_with("credits-off", &[("AUTH_TOKEN", TOKEN), ("CREDITS_PER_MINUTE", "0")]).await;
-    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
-    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
-    let state = text(app.clone().oneshot(authed("/api/credits?viewer=tabA")).await.unwrap()).await;
-    assert!(state.contains(r#""perMinute":0"#) && state.contains(r#""offers":[]"#), "{state}");
-    let report = json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
-    assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::NOT_FOUND);
-    let buy = json_request("POST", "/api/credits/buy", r#"{"viewer":"tabA","offer":"raid"}"#);
-    assert_eq!(app.clone().oneshot(buy).await.unwrap().status(), StatusCode::NOT_FOUND);
-    assert_eq!(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap().status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn credits_buy_things_that_happen_in_the_world() {
-    use fsw_server::chat::ChatKey;
-
-    let (state, _, _data) = state_with("buy", &[("AUTH_TOKEN", TOKEN)]).await;
-    let app = router(state.clone());
-    let buy = |body: serde_json::Value| json_request("POST", "/api/credits/buy", &body.to_string());
-    let food = || serde_json::json!({"viewer": "tabA", "offer": "food", "characterId": "c1"});
-
-    // Nobody is known by a name before their stream is open.
-    assert_eq!(app.clone().oneshot(buy(food())).await.unwrap().status(), StatusCode::CONFLICT);
-    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA")).await.unwrap().into_body();
-    let seen = read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
-    let name = last_event(&seen, "chat_welcome")["you"].as_str().unwrap().to_owned();
-
-    let poor = app.clone().oneshot(buy(food())).await.unwrap();
-    assert_eq!(poor.status(), StatusCode::PAYMENT_REQUIRED);
-    let key = ChatKey::Tab("tabA".into());
-    state.credits.earn(&state.store, &key, 300, std::time::Instant::now()).await.unwrap();
-
-    // What cannot happen costs nothing.
-    let gone = app
-        .clone()
-        .oneshot(buy(serde_json::json!({"viewer": "tabA", "offer": "food", "characterId": "c99"})))
-        .await
-        .unwrap();
-    assert_eq!(gone.status(), StatusCode::CONFLICT);
-    assert_eq!(text(gone).await, r#"{"error":"That villager is no longer here."}"#);
-    let nowhere = buy(serde_json::json!({"viewer": "tabA", "offer": "skeleton_minion", "x": 1.0e9, "z": 0.0}));
-    assert_eq!(app.clone().oneshot(nowhere).await.unwrap().status(), StatusCode::CONFLICT);
-    let untargeted = buy(serde_json::json!({"viewer": "tabA", "offer": "food"}));
-    assert_eq!(app.clone().oneshot(untargeted).await.unwrap().status(), StatusCode::BAD_REQUEST);
-    let unknown = buy(serde_json::json!({"viewer": "tabA", "offer": "dragon"}));
-    assert_eq!(app.clone().oneshot(unknown).await.unwrap().status(), StatusCode::NOT_FOUND);
-
-    let bought = app.clone().oneshot(buy(food())).await.unwrap();
-    assert_eq!(bought.status(), StatusCode::OK);
-    assert_eq!(text(bought).await, r#"{"balance":295}"#);
-    // The chat says who did it, and so does the chronicle once the sim has applied it; either may come first.
-    let seen =
-        read_events(&mut a, |seen| seen.contains("sent Aldric some food.") && seen.contains("event: chat\n")).await;
-    let said = last_event(&seen, "chat");
-    assert_eq!(
-        (said["kind"].as_str(), said["author"].as_str(), said["text"].as_str()),
-        (Some("event"), Some(name.as_str()), Some("sent Aldric some food"))
-    );
-    assert!(seen.contains(&format!("{name} sent Aldric some food.")), "{seen}");
-
-    let green = fsw_world::places::get_place("green").door;
-    let skeleton = buy(serde_json::json!({"viewer": "tabA", "offer": "skeleton_warrior", "x": green.x, "z": green.z}));
-    assert_eq!(text(app.clone().oneshot(skeleton).await.unwrap()).await, r#"{"balance":255}"#);
-    read_events(&mut a, |seen| seen.contains("raised a skeleton warrior at the village green.")).await;
-    assert_eq!(state.world.core.read().sim.state.monsters.len(), 1);
-    assert_eq!(state.credits.owner(&state.store, &name).await.unwrap(), Some(key));
-
-    let potion = buy(serde_json::json!({"viewer": "tabA", "offer": "potion", "characterId": "c1"}));
-    assert_eq!(app.clone().oneshot(potion).await.unwrap().status(), StatusCode::OK);
-    // Three in a row is the most anyone may buy at once.
-    assert_eq!(app.clone().oneshot(buy(food())).await.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
-    let record: Vec<_> =
-        state.store.purchases().await.unwrap().into_iter().map(|p| (p.offer, p.cost, p.name)).collect();
-    assert_eq!(
-        record,
-        [
-            ("food".to_owned(), 5, name.clone()),
-            ("skeleton_warrior".to_owned(), 40, name.clone()),
-            ("potion".to_owned(), 8, name)
-        ]
-    );
-
-    // Nothing is sold while the world stands still.
-    let pause = json_request("POST", "/api/admin/speed", r#"{"speed":0}"#);
-    assert_eq!(app.clone().oneshot(pause).await.unwrap().status(), StatusCode::NO_CONTENT);
-    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB")).await.unwrap().into_body();
-    read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
-    // The world task takes the new speed at its next wake.
-    for _ in 0..100 {
-        if state.world.core.read().speed == 0 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let paused = buy(serde_json::json!({"viewer": "tabB", "offer": "raid"}));
-    let paused = app.clone().oneshot(paused).await.unwrap();
-    assert_eq!(
-        (paused.status(), text(paused).await.as_str()),
-        (StatusCode::CONFLICT, r#"{"error":"The world is paused."}"#)
-    );
-}
-
-#[tokio::test]
-async fn admins_give_credits_to_those_with_the_world_open() {
-    let (app, _, _data) = app("grant").await;
-    let grant = |body: serde_json::Value| json_request("POST", "/api/admin/credits/grant", &body.to_string());
-    let nobody = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 10}))).await.unwrap();
-    assert_eq!(nobody.status(), StatusCode::NOT_FOUND);
-
-    let mut a = app.clone().oneshot(authed("/api/stream?viewer=tabA&name=Ann")).await.unwrap().into_body();
-    let mut b = app.clone().oneshot(authed("/api/stream?viewer=tabB&name=Bob")).await.unwrap().into_body();
-    read_events(&mut a, |seen| seen.contains("event: chat_welcome")).await;
-    read_events(&mut b, |seen| seen.contains("event: chat_welcome")).await;
-    let report = json_request("POST", "/api/presence", r#"{"viewer":"tabA"}"#);
-    assert_eq!(app.clone().oneshot(report).await.unwrap().status(), StatusCode::OK);
-
-    let list = text(app.clone().oneshot(authed("/api/admin/credits")).await.unwrap()).await;
-    let list: serde_json::Value = serde_json::from_str(&list).unwrap();
-    assert_eq!(
-        list,
-        serde_json::json!([
-            {"name": "Ann", "balance": 0, "account": false, "watching": true},
-            {"name": "Bob", "balance": 0, "account": false, "watching": false},
-        ])
-    );
-
-    let one = app.clone().oneshot(grant(serde_json::json!({"name": "Bob", "amount": 50}))).await.unwrap();
-    assert_eq!(one.status(), StatusCode::OK);
-    // Past the cap is fine for a gift.
-    let all = app.clone().oneshot(grant(serde_json::json!({"name": null, "amount": 400}))).await.unwrap();
-    let all: serde_json::Value = serde_json::from_str(&text(all).await).unwrap();
-    assert_eq!((&all[0]["balance"], &all[1]["balance"]), (&400.into(), &450.into()));
-    let own = text(app.clone().oneshot(authed("/api/credits?viewer=tabB")).await.unwrap()).await;
-    assert!(own.contains(r#""balance":450"#), "{own}");
-
-    // The chat says so, which is how their pages learn of it.
-    let seen = read_events(&mut b, |seen| seen.contains("Everyone watching")).await;
-    assert!(seen.contains(r#""kind":"event","author":"Bob","text":"was given 50 credits""#), "{seen}");
-    assert!(seen.contains(r#""author":"Everyone watching","text":"was given 400 credits""#), "{seen}");
-
-    for bad in [serde_json::json!({"name": "Bob", "amount": 0}), serde_json::json!({"name": "Bob", "amount": 10001})] {
-        assert_eq!(app.clone().oneshot(grant(bad)).await.unwrap().status(), StatusCode::BAD_REQUEST);
-    }
-    let stranger = app.clone().oneshot(grant(serde_json::json!({"name": "Cyd", "amount": 5}))).await.unwrap();
-    assert_eq!(stranger.status(), StatusCode::NOT_FOUND);
-}
-
 // ---------------------------------------------------------------------------
 // Guests
 // ---------------------------------------------------------------------------
@@ -802,7 +657,7 @@ async fn ask_for_a_seat(app: &axum::Router, body: &str) -> (StatusCode, serde_js
 }
 
 #[tokio::test]
-async fn guests_watch_without_signing_in_but_only_watch() {
+async fn guests_watch_and_chat_without_signing_in_but_do_not_run_the_world() {
     let (app, _, _data) = app("guest").await;
     assert_eq!(app.clone().oneshot(get("/api/stream")).await.unwrap().status(), StatusCode::UNAUTHORIZED);
 
@@ -810,46 +665,56 @@ async fn guests_watch_without_signing_in_but_only_watch() {
     assert_eq!(response.status(), StatusCode::OK);
     let set_cookie = response.headers()[header::SET_COOKIE].to_str().unwrap().to_owned();
     assert!(set_cookie.starts_with("guest="), "{set_cookie}");
-    assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax") && set_cookie.contains("Max-Age=9"));
-    assert_eq!(text(response).await, r#"{"kind":"admitted","secondsLeft":900}"#);
+    assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax") && set_cookie.contains("Max-Age="));
+    assert_eq!(text(response).await, r#"{"kind":"admitted"}"#);
     let cookie = set_cookie.split(';').next().unwrap().to_owned();
 
     let me = app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap();
-    let me: serde_json::Value = serde_json::from_str(&text(me).await).unwrap();
-    assert_eq!(me["role"], "guest");
-    assert!((890..=900).contains(&me["guestSecondsLeft"].as_u64().unwrap()), "{me}");
+    assert_eq!(text(me).await, r#"{"role":"guest"}"#);
 
     let stream = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=tabG", &cookie, "")).await.unwrap();
     assert_eq!(stream.status(), StatusCode::OK);
     let mut body = stream.into_body();
     let seen = read_events(&mut body, |seen| seen.contains("event: chat_welcome")).await;
     assert!(seen.starts_with("event: hello\n") && seen.contains(r#""role":"guest"}"#), "{seen}");
-    assert_eq!(last_event(&seen, "chat_welcome")["you"], serde_json::Value::Null);
+    let name = last_event(&seen, "chat_welcome")["you"].clone();
+    assert!(name.is_string(), "a guest has a chat name: {seen}");
     let character = app.clone().oneshot(as_guest("GET", "/api/characters/c1", &cookie, "")).await.unwrap();
     assert_eq!(character.status(), StatusCode::OK);
     let watch = as_guest("POST", "/api/watch", &cookie, r#"{"viewer":"tabG","id":"c1"}"#);
     assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
 
-    // No chat, no credits, no admin.
-    for (method, uri, body) in [
-        ("POST", "/api/chat", r#"{"viewer":"tabG","text":"hello"}"#),
-        ("POST", "/api/chat/name", r#"{"viewer":"tabG","name":"Sneaky"}"#),
-        ("GET", "/api/credits?viewer=tabG", ""),
-        ("POST", "/api/presence", r#"{"viewer":"tabG"}"#),
-        ("POST", "/api/credits/buy", r#"{"viewer":"tabG","offer":"rain"}"#),
-        ("GET", "/api/admin/health", ""),
-        ("POST", "/api/admin/speed", r#"{"speed":0}"#),
-    ] {
+    // Guests talk, and pick their name.
+    let post = as_guest("POST", "/api/chat", &cookie, r#"{"viewer":"tabG","text":"hello"}"#);
+    assert_eq!(app.clone().oneshot(post).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let rename = as_guest("POST", "/api/chat/name", &cookie, r#"{"viewer":"tabG","name":"Sneaky"}"#);
+    let renamed = app.clone().oneshot(rename).await.unwrap();
+    assert_eq!(renamed.status(), StatusCode::OK);
+    assert_eq!(text(renamed).await, r#"{"name":"Sneaky"}"#);
+    // A second tab of the same browser shares the pass, and so the name.
+    let mut second =
+        app.clone().oneshot(as_guest("GET", "/api/stream?viewer=tabH", &cookie, "")).await.unwrap().into_body();
+    let seen = read_events(&mut second, |seen| seen.contains("event: chat_welcome")).await;
+    assert_eq!(last_event(&seen, "chat_welcome")["you"], "Sneaky");
+    // Another browser is someone else.
+    let (_, _, other) = ask_for_a_seat(&app, "{}").await;
+    let mut other_tab =
+        app.clone().oneshot(as_guest("GET", "/api/stream?viewer=tabX", &other, "")).await.unwrap().into_body();
+    let seen = read_events(&mut other_tab, |seen| seen.contains("event: chat_welcome")).await;
+    assert_ne!(last_event(&seen, "chat_welcome")["you"], "Sneaky");
+
+    // But running the world is for admins.
+    for (method, uri, body) in [("GET", "/api/admin/health", ""), ("POST", "/api/admin/speed", r#"{"speed":0}"#)] {
         let response = app.clone().oneshot(as_guest(method, uri, &cookie, body)).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
-        assert_eq!(text(response).await, r#"{"error":"guests can only watch"}"#);
+        assert_eq!(text(response).await, r#"{"error":"admins only"}"#);
     }
 
     // Leaving ends the stream and the pass, and clears the cookie.
     let logout = app.clone().oneshot(as_guest("POST", "/api/logout", &cookie, "{}")).await.unwrap();
     assert_eq!(logout.status(), StatusCode::NO_CONTENT);
     assert!(logout.headers()[header::SET_COOKIE].to_str().unwrap().starts_with("guest=; "));
-    let seen = read_events(&mut body, |seen| seen.contains("event: guest_end")).await;
+    let seen = read_events(&mut second, |seen| seen.contains("event: guest_end")).await;
     assert_eq!(last_event(&seen, "guest_end")["reason"], "left");
     let me = app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap();
     assert_eq!(me.status(), StatusCode::UNAUTHORIZED);
@@ -857,7 +722,7 @@ async fn guests_watch_without_signing_in_but_only_watch() {
 
 #[tokio::test]
 async fn guests_wait_in_line_when_the_seats_are_full() {
-    let (app, _, _data) = guest_app("guest-line", GuestLimits { seats: 1, session: Duration::from_secs(900) }).await;
+    let (app, _, _data) = guest_app("guest-line", GuestLimits { seats: 1 }).await;
     let (status, _, cookie) = ask_for_a_seat(&app, "{}").await;
     assert_eq!(status, StatusCode::OK);
     let _seated = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t1", &cookie, "")).await.unwrap();
@@ -888,25 +753,6 @@ async fn guests_wait_in_line_when_the_seats_are_full() {
 }
 
 #[tokio::test]
-async fn a_guest_stream_ends_when_the_pass_runs_out() {
-    let (app, _, _data) = guest_app("guest-time", GuestLimits { seats: 1, session: Duration::from_secs(1) }).await;
-    let (_, _, cookie) = ask_for_a_seat(&app, "{}").await;
-    let stream = app.clone().oneshot(as_guest("GET", "/api/stream?viewer=t1", &cookie, "")).await.unwrap();
-    let mut body = stream.into_body();
-    let seen = read_events(&mut body, |seen| seen.contains("event: guest_end")).await;
-    assert_eq!(last_event(&seen, "guest_end")["reason"], "time");
-    let end = tokio::time::timeout(Duration::from_secs(2), body.collect()).await;
-    assert!(end.is_ok(), "the stream ends after guest_end");
-    assert_eq!(
-        app.clone().oneshot(as_guest("GET", "/api/me", &cookie, "")).await.unwrap().status(),
-        StatusCode::UNAUTHORIZED
-    );
-    // The seat is free again.
-    let (_, answer, _) = ask_for_a_seat(&app, "{}").await;
-    assert_eq!(answer["kind"], "admitted");
-}
-
-#[tokio::test]
 async fn a_newer_tab_takes_the_guest_stream_over() {
     let (app, _, _data) = app("guest-tabs").await;
     let (_, _, cookie) = ask_for_a_seat(&app, "{}").await;
@@ -934,11 +780,14 @@ async fn signing_in_wins_over_a_guest_pass() {
 }
 
 #[tokio::test]
-async fn guests_are_off_without_seats_or_without_sign_in() {
-    let (app, _, _data) = guest_app("guest-none", GuestLimits { seats: 0, session: Duration::from_secs(900) }).await;
-    let providers = text(app.clone().oneshot(get("/auth/providers")).await.unwrap()).await;
-    assert!(providers.contains(r#""guests":false"#), "{providers}");
-    assert_eq!(ask_for_a_seat(&app, "{}").await.0, StatusCode::NOT_FOUND);
+async fn without_a_cap_everyone_is_seated_and_with_sign_in_off_nobody_needs_a_seat() {
+    let (app, _, _data) = guest_app("guest-uncapped", GuestLimits { seats: 0 }).await;
+    for _ in 0..3 {
+        let (status, answer, cookie) = ask_for_a_seat(&app, "{}").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(answer["kind"], "admitted");
+        assert!(cookie.starts_with("guest="), "{cookie}");
+    }
 
     let (app, _, _data) = app_with("guest-off", &[("AUTH_MODE", "off")]).await;
     assert_eq!(ask_for_a_seat(&app, "{}").await.0, StatusCode::NOT_FOUND);

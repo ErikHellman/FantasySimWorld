@@ -6,6 +6,7 @@ import { GROUND_COVER, scatter } from '../world/scatter';
 import type { Assets } from './assets';
 import { Billboards } from './billboards';
 import { CameraRig } from './camera';
+import { CeremonyDressing } from './ceremony';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
@@ -44,6 +45,8 @@ export class WorldView {
   private billboardsVersion = -1;
   private readonly structures: Structures;
   private housesVersion = -1;
+  private readonly dressing: CeremonyDressing;
+  private ceremonyVersion = -1;
   private readonly vegetation: Vegetation;
   private readonly marks: Marks;
   private readonly builder: SceneryBuilder;
@@ -93,7 +96,8 @@ export class WorldView {
     this.vegetation = new Vegetation(assets, scatter.models, this.heightAt, quality, parts);
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.structures = new Structures(assets, places, this.heightAt, quality);
-    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.dressing = new CeremonyDressing(assets, this.heightAt);
+    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -144,6 +148,10 @@ export class WorldView {
       this.structures.show(world.houses, world.worldObjects);
       this.vegetation.show(world.worldObjects);
       this.marks.show(world.worldObjects);
+    }
+    if (this.ceremonyVersion !== world.ceremonyVersion) {
+      this.ceremonyVersion = world.ceremonyVersion;
+      this.dressing.show(world.ceremony, world.graves);
     }
     // A prop or grass hidden in a baked chunk needs that chunk baked again: one chunk per tick, at most.
     this.builder.flush();

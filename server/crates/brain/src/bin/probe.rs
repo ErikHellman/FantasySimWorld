@@ -26,7 +26,7 @@ use fsw_sim::state::{
     Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, Stimulus, StimulusKind, TalkTone,
 };
 use fsw_sim::util::living_ids;
-use fsw_sim::{Sim, SimState, create_state};
+use fsw_sim::{Command, Sim, SimState, create_state};
 
 /// A world a few days in, mid-afternoon, so prompts carry memories and relationships.
 const WARM_UP_TICKS: usize = 28_800 * 2 + 9_600;
@@ -168,6 +168,7 @@ async fn main() -> ExitCode {
     };
 
     let mut sim = Sim::new(create_state(2024));
+    sim.enqueue(Command::FoundVillage);
     for _ in 0..WARM_UP_TICKS {
         sim.step();
     }

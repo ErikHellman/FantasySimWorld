@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time};
 use fsw_sim::util::living;
-use fsw_sim::{Sim, SimState, create_state};
+use fsw_sim::{Command, Sim, SimState, create_state};
 use serde_json::{Value, json};
 
 fn trace_line(state: &SimState) -> String {
@@ -37,7 +37,9 @@ fn main() {
     let flag = |name: &str| args.iter().any(|a| a == name);
     let (log, json_out, trace) = (flag("--log"), flag("--json"), flag("--trace"));
 
+    // The village the sim invents for itself, as a server without a model would have.
     let mut sim = Sim::new(create_state(seed));
+    sim.enqueue(Command::FoundVillage);
     let mut counts: BTreeMap<String, u64> = BTreeMap::new();
     let started = Instant::now();
     let mut chronicle_seen = sim.state.chronicle.len();

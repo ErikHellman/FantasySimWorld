@@ -11,7 +11,7 @@ const entity = (id: string, x: number): Entity => ({
 });
 
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
-  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], worldObjects: [], stockpiles: [],
+  tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], ceremony: null, worldObjects: [], stockpiles: [],
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -61,6 +61,22 @@ describe('view world', () => {
     world.apply({ t: 4, ev: [{ type: 'house', house: { ...house, phase: 'intact', fire: 0, built: 100 } }] });
     expect(world.houses.size).toBe(0);
     expect(world.housesVersion).toBe(version + 3);
+  });
+
+  it('keeps the ceremony the village has arranged, and forgets one that is over', () => {
+    const world = new ViewWorld();
+    const wedding = {
+      id: 'y1', kind: 'wedding' as const, phase: 'announced' as const, placeId: 'green', placeName: 'the village green',
+      ids: ['c1', 'c2'], names: ['Sylvi', 'Kael'], day: 5, time: '14:00',
+    };
+    world.reset({ ...snapshot(1, []), ceremony: wedding });
+    const version = world.ceremonyVersion;
+    expect(world.ceremony?.names).toEqual(['Sylvi', 'Kael']);
+    world.apply({ t: 2, ev: [{ type: 'ceremony', ceremony: { ...wedding, phase: 'rite' } }] });
+    expect(world.ceremony?.phase).toBe('rite');
+    world.apply({ t: 3, ev: [{ type: 'ceremony', ceremony: { ...wedding, phase: 'over' } }] });
+    expect(world.ceremony).toBeNull();
+    expect(world.ceremonyVersion).toBe(version + 2);
   });
 
   it('keeps what differs from the map and what the stockpiles hold, forgetting what is whole or empty again', () => {
