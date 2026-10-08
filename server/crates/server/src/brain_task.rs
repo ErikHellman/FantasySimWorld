@@ -54,6 +54,7 @@ fn kind(kind: Kind) -> RequestKind {
         Kind::Decide => RequestKind::Decide,
         Kind::PlanDay => RequestKind::PlanDay,
         Kind::Billboard => RequestKind::Billboard,
+        Kind::Ceremony => RequestKind::Ceremony,
         Kind::Reflect => RequestKind::Reflect,
     }
 }
@@ -337,6 +338,17 @@ mod tests {
     use super::*;
     use crate::store::testing;
 
+    /// A paused world with the test cast in it (a new world is empty until it is founded).
+    async fn founded(store: Store, shutdown: CancellationToken) -> (Arc<World>, tokio::task::JoinHandle<()>) {
+        let (world, task) = crate::world_task::start(store, 0, shutdown).await.unwrap();
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        let state = Box::new(fsw_testing::create_test_state(6));
+        let reason = crate::store::SnapshotReason::NewWorld;
+        world.inputs.send(WorldInput::Replace { state, reason, reply }).await.unwrap();
+        answer.await.unwrap().unwrap();
+        (world, task)
+    }
+
     fn remember_bonfire(world: &World) {
         let mut core = world.core.write();
         let c = core.sim.state.characters.values_mut().next().unwrap();
@@ -355,7 +367,7 @@ mod tests {
     async fn indexes_the_memories_of_the_living_once_and_keeps_them() {
         let (store, _dir) = testing::store().await;
         let shutdown = CancellationToken::new();
-        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        let (world, task) = founded(store.clone(), shutdown.clone()).await;
         remember_bonfire(&world);
         let endpoint = FakeTransport::new(|request: HttpRequest| {
             let count = request.json()["input"].as_array().map_or(0, Vec::len);
@@ -391,7 +403,7 @@ mod tests {
     async fn a_failing_endpoint_stores_nothing_and_counts_one_failure() {
         let (store, _dir) = testing::store().await;
         let shutdown = CancellationToken::new();
-        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        let (world, task) = founded(store.clone(), shutdown.clone()).await;
         remember_bonfire(&world);
         let (endpoint, index) = failing_index();
 
@@ -423,7 +435,7 @@ mod tests {
     async fn passes_while_the_embedder_rests_count_no_more_failures() {
         let (store, _dir) = testing::store().await;
         let shutdown = CancellationToken::new();
-        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        let (world, task) = founded(store.clone(), shutdown.clone()).await;
         remember_bonfire(&world);
         let (endpoint, index) = failing_index();
 
@@ -445,7 +457,7 @@ mod tests {
     async fn counts_the_cues_with_the_indexers_own_requests() {
         let (store, _dir) = testing::store().await;
         let shutdown = CancellationToken::new();
-        let (world, task) = crate::world_task::start(store.clone(), 0, shutdown.clone()).await.unwrap();
+        let (world, task) = founded(store.clone(), shutdown.clone()).await;
         remember_bonfire(&world);
         let endpoint = FakeTransport::new(|request: HttpRequest| {
             let count = request.json()["input"].as_array().map_or(0, Vec::len);

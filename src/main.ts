@@ -5,10 +5,10 @@ import { MoodTracker } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
-import type { AmbientCounts, GuestEndReason, WireEvent } from './generated/api';
+import type { AmbientCounts, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
+import { GuestQueue } from './net/guestQueue';
 import { Playback } from './net/playback';
-import { Heartbeat, tabIsWatched } from './net/presence';
 import { Stream, viewerId } from './net/stream';
 import { ViewWorld } from './net/viewWorld';
 import { Assets } from './render/assets';
@@ -19,11 +19,9 @@ import { FrameStats } from './render/stats';
 import { SpeechBus } from './speech/speechBus';
 import { App } from './ui/App';
 import { watchLayout } from './ui/layout';
-import { Login } from './ui/Login';
-import { NoAccess } from './ui/NoAccess';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, loadAudioSettings,
-  loadChatSettings, saveAudioSettings, saveChatSettings, setBalance, setBillboard, setClock, setHouse, ui,
+  loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setHouse, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
 
@@ -36,54 +34,73 @@ const SLOW_FRAME_MS = 40;
 const PIXEL_RATIO_STEP = 0.25;
 /** monsters this close to where the camera looks make the music tense */
 const MONSTERS_NEAR = 60;
-/** A guest's page gives up this long after their pass ends, in case the stream was down when the server ended it. */
-const GUEST_END_SLACK_MS = 5_000;
+const TICKET_KEY = 'fsw.guestTicket';
 
-/** The author of the chat line for an admin's gift to everyone (as the server writes it). */
-const EVERYONE = 'Everyone watching';
+/** The place in line from before a reload of this tab, if any. */
+function savedTicket(): string | null {
+  try {
+    return sessionStorage.getItem(TICKET_KEY);
+  } catch {
+    return null;
+  }
+}
 
-const here = (): string => location.pathname + location.search;
-const toLogin = (): void => location.replace(`/login?return_to=${encodeURIComponent(here())}`);
-/** Back to the launch screen, saying why the guest's visit ended. */
-const guestEnded = (reason: GuestEndReason): void =>
-  location.replace(`/login?ended=${reason}&return_to=${encodeURIComponent(here())}`);
+function keepTicket(ticket: string | null): void {
+  try {
+    if (ticket) sessionStorage.setItem(TICKET_KEY, ticket);
+    else sessionStorage.removeItem(TICKET_KEY);
+  } catch {
+    // Without storage a reload starts at the back of the line.
+  }
+}
+
+/**
+ * Who this browser is to the server. Without a cookie it asks for a guest seat and, while every seat is
+ * taken, waits in line on the launch screen; the server answers `/api/me` once the seat is given.
+ */
+async function whoAmI(): Promise<void> {
+  try {
+    ui.me.value = await api.me();
+    return;
+  } catch (error) {
+    if (!(error instanceof HttpError && error.status === 401)) throw error;
+  }
+  await new Promise<void>((resolve) => {
+    const queue = new GuestQueue({
+      ask: (ticket) => api.guest({ ticket }),
+      ticket: savedTicket(),
+      keep: keepTicket,
+      admitted: () => {
+        ui.line.value = null;
+        resolve();
+      },
+      waiting: (wait) => (ui.line.value = { wait, problem: null }),
+      failed: (problem) => (ui.line.value = { wait: ui.line.value?.wait ?? null, problem }),
+    });
+    queue.start();
+  });
+  ui.me.value = await api.me();
+}
 
 /** The world is drawn from the server's stream: this page only renders, plays sound and shows the HUD. */
 async function start(): Promise<void> {
   const root = document.getElementById('ui') as HTMLElement;
   watchLayout();
   const params = new URLSearchParams(location.search);
-  if (location.pathname === '/login') {
-    render(h(Login, { returnTo: params.get('return_to') ?? '/', error: params.get('error'), ended: params.get('ended') }), root);
-    return;
-  }
-  if (location.pathname === '/no-access') {
-    render(h(NoAccess, { email: params.get('email') }), root);
-    return;
-  }
-
+  const canvas = document.getElementById('world') as HTMLCanvasElement;
+  const overlay = document.getElementById('overlay') as HTMLElement;
+  // The launch screen is up from the start: it shows the line for a seat, then what is loading.
+  ui.loading.value = 'Finding you a seat…';
+  render(h(App, null), root);
   try {
-    ui.me.value = await api.me();
-  } catch (error) {
-    if (error instanceof HttpError && error.status === 401) return toLogin();
-    if (error instanceof HttpError && error.status === 403) return location.replace('/no-access');
+    await whoAmI();
+  } catch {
     ui.loading.value = 'The server is not answering. Is it running?';
-    render(h(App, null), root);
     setTimeout(() => location.reload(), 5000);
     return;
   }
-
-  // A guest watches for a while, then goes back to the launch screen; the server ends their stream on time.
-  const guest = ui.me.value.role === 'guest';
-  if (guest) {
-    const left = (ui.me.value.guestSecondsLeft ?? 0) * 1000;
-    ui.guestEndsAt.value = Date.now() + left;
-    setTimeout(() => guestEnded('time'), left + GUEST_END_SLACK_MS);
-  }
-
-  const canvas = document.getElementById('world') as HTMLCanvasElement;
-  const overlay = document.getElementById('overlay') as HTMLElement;
-  render(h(App, null), root);
+  ui.loading.value = 'Loading the valley…';
+  const guest = ui.me.value?.role === 'guest';
 
   // `?render=off` keeps everything but the drawing: for headless protocol tests, where software WebGL is far too slow.
   const quality = qualitySettings(pickQuality(thisDevice()), window.devicePixelRatio);
@@ -153,6 +170,7 @@ async function start(): Promise<void> {
       else if (event.type === 'grave') addGrave(event.grave);
       else if (event.type === 'billboard') setBillboard(event.billboard);
       else if (event.type === 'house') setHouse(event.house);
+      else if (event.type === 'ceremony') setCeremony(event.ceremony);
     }
     speech.handle(events);
     if (!fast) {
@@ -172,28 +190,6 @@ async function start(): Promise<void> {
     playback.speed = throttled ? Math.min(1, speed) : speed;
     audio.setPaused(speed === 0);
     speech.setRate(playback.speed);
-  };
-
-  // Credits: the server counts them; this page reports that it is being watched and shows the balance.
-  let heartbeat: Heartbeat | null = null;
-  const loadCredits = (): void => {
-    // Guests have no credits; the server would refuse them anyway.
-    if (guest) return;
-    api.credits(viewer).then(
-      (credits) => {
-        ui.credits.value = credits;
-        if (credits.perMinute > 0 && !heartbeat) {
-          heartbeat = new Heartbeat({
-            seconds: credits.beatSeconds,
-            watched: tabIsWatched,
-            report: () => api.presence({ viewer }).then((answer) => answer.balance),
-            balance: setBalance,
-          });
-          heartbeat.start();
-        }
-      },
-      (error) => console.warn('credits', error),
-    );
   };
 
   const stream = new Stream(viewer, {
@@ -226,22 +222,20 @@ async function start(): Promise<void> {
     },
     brainlog: (record) => addBrainLog([record]),
     worldReset: () => location.reload(),
-    // The welcome means the server knows this tab, which the credits routes need.
-    chatWelcome: (welcome) => {
-      fromChatWelcome(welcome);
-      loadCredits();
-    },
-    chat: (message) => {
-      addChat(message);
-      // The village's prayers, or an admin, may just have given this viewer credits.
-      if (message.kind === 'event' && (message.author === ui.chatName.value || message.author === EVERYONE)) loadCredits();
-    },
+    chatWelcome: (welcome) => fromChatWelcome(welcome),
+    chat: (message) => addChat(message),
     chatYou: (you) => (ui.chatName.value = you.name),
-    guestEnd: (end) => guestEnded(end.reason),
-    refused: (status) => (status === 401 ? toLogin() : location.replace('/no-access')),
+    // The seat went to another tab, or this one left: say so, and offer to come back.
+    guestEnd: (end) => (ui.ended.value = end.reason),
+    // The seat is gone (the server restarted, or it was given up): ask for one again, in line if need be.
+    refused: () => {
+      ui.line.value = { wait: null, problem: null };
+      whoAmI().then(() => stream.open(), () => setTimeout(() => location.reload(), 5000));
+    },
     connection: (state) => (ui.connection.value = state),
     // Each connection asks for the name this browser chose, so the chat says it joined under that name.
   }, () => loadChatSettings().name);
+  // A guest's seat is given up a minute after its stream closes, so a hidden tab keeps its stream to keep the seat.
   stream.suspendWhenHidden = !guest;
 
   view.rig.onClick = (event) => {
@@ -273,17 +267,6 @@ async function start(): Promise<void> {
     return you.name;
   };
 
-  actions.buy = async (offer) => {
-    const answer = await api.buy({
-      viewer,
-      offer: offer.id,
-      characterId: offer.target === 'character' ? ui.selectedId.value : null,
-      x: offer.target === 'point' ? view.rig.target.x : null,
-      z: offer.target === 'point' ? view.rig.target.z : null,
-    });
-    setBalance(answer.balance);
-  };
-
   const burning = (): boolean => ui.houses.value.some((house) => house.phase === 'burning');
   const updateMusic = (hour: number): void => {
     const spot = listener();
@@ -293,7 +276,9 @@ async function start(): Promise<void> {
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
-    audio.music.setMood(mood.update({ hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood }, seconds()));
+    const ceremony = ui.ceremony.value;
+    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase } };
+    audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);
     audio.music.update();
@@ -347,9 +332,9 @@ async function start(): Promise<void> {
 
   // For poking at the world from the browser console.
   (window as unknown as { __debug: unknown }).__debug = {
-    world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood, stats: () => stats.report(), heartbeat: () => heartbeat,
+    world, view, playback, stream, renderer: handle?.renderer, ui, actions, audio, mood, stats: () => stats.report(),
   };
-  console.info(`Fantasy Sim World: ${backend} backend, ${quality.quality} quality, watching as ${ui.me.value.role}`);
+  console.info(`Fantasy Sim World: ${backend} backend, ${quality.quality} quality, watching as ${ui.me.value?.role}`);
 }
 
 start().catch((error) => {

@@ -83,6 +83,9 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'speech' && event.loud && (event.text.startsWith('To arms') || event.text.startsWith('Fire!'))) {
       engine.play('alarm', 0.9);
+    } else if (event.type === 'ceremony' && event.ceremony.kind === 'wedding' && event.ceremony.phase === 'rite') {
+      // The same church bells as the alarm, rung for a happier reason.
+      engine.play('alarm', 0.9);
     }
   }
 }

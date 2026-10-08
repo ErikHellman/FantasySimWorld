@@ -4,6 +4,7 @@
 //! validation and orchestrator that connect a model to the village.
 
 pub mod brain;
+pub mod casting;
 pub mod governor;
 pub mod llm;
 pub mod prompts;

@@ -12,7 +12,8 @@ use fsw_sim::state::{
 };
 use fsw_sim::systems::billboards::{TEXT_CAP, clean_text, shown};
 use fsw_sim::util::{first_name, living};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::create_test_state;
 use fsw_world::places::billboards;
 
 struct World {
@@ -22,7 +23,7 @@ struct World {
 
 impl World {
     fn new(seed: u32) -> Self {
-        let mut sim = Sim::new(create_state(seed));
+        let mut sim = Sim::new(create_test_state(seed));
         // No small talk, so nobody is pulled into a chat on the way.
         sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
         Self { sim, events: Vec::new() }
@@ -198,7 +199,7 @@ fn text_is_cleaned_before_it_goes_up() {
 
 #[test]
 fn the_slogans_differ_between_boards_and_change_every_day() {
-    let mut state: SimState = create_state(11);
+    let mut state: SimState = create_test_state(11);
     let boards = billboards().len();
     let today: Vec<String> = (0..boards).map(|i| shown(&state, i).text).collect();
     assert_eq!(today.iter().collect::<HashSet<_>>().len(), boards);
@@ -210,7 +211,7 @@ fn the_slogans_differ_between_boards_and_change_every_day() {
 
 #[test]
 fn villagers_read_boards_on_their_own_but_never_the_same_text_twice() {
-    let mut sim = Sim::new(create_state(5));
+    let mut sim = Sim::new(create_test_state(5));
     let mut reads: Vec<(String, String, String)> = Vec::new();
     for _ in 0..TICKS_PER_DAY * 2 {
         for event in sim.step() {
@@ -228,7 +229,7 @@ fn villagers_read_boards_on_their_own_but_never_the_same_text_twice() {
 
 #[test]
 fn a_world_with_a_notice_up_survives_a_save_and_load() {
-    let mut sim = Sim::new(create_state(9));
+    let mut sim = Sim::new(create_test_state(9));
     sim.enqueue(Command::SetBillboard {
         board_id: "market_board".into(),
         notice: Some(BoardNotice { text: "Cheese! Now with holes!".into(), tone: BoardTone::Absurd }),

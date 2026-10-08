@@ -1,8 +1,9 @@
 //! Children: the authored five, how they are kept safe, and how they grow up.
 
+use fsw_sim::Sim;
 use fsw_sim::state::RelationLabel;
 use fsw_sim::util::{adult_count, children, living, rel_or_default};
-use fsw_sim::{Sim, create_state};
+use fsw_testing::create_test_state;
 
 fn by_first_name<'s>(state: &'s fsw_sim::state::SimState, name: &str) -> &'s fsw_sim::state::Character {
     living(state).find(|c| fsw_sim::util::first_name(c) == name).expect(name)
@@ -10,7 +11,7 @@ fn by_first_name<'s>(state: &'s fsw_sim::state::SimState, name: &str) -> &'s fsw
 
 #[test]
 fn the_village_starts_with_five_children_who_do_not_count_as_adults() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     assert_eq!(state.order.len(), 18);
     assert_eq!(adult_count(&state), 13);
     assert_eq!(state.director.population_target, 13);
@@ -31,7 +32,7 @@ fn the_village_starts_with_five_children_who_do_not_count_as_adults() {
 
 #[test]
 fn authored_children_are_kin_to_the_people_who_raise_them() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let (pip, aldric) = (by_first_name(&state, "Pip"), by_first_name(&state, "Aldric"));
     assert_eq!(pip.child.as_ref().unwrap().parents, vec![aldric.id.clone()]);
     assert_eq!(pip.home_id, aldric.home_id);
@@ -44,7 +45,7 @@ fn authored_children_are_kin_to_the_people_who_raise_them() {
 
 #[test]
 fn a_new_world_with_children_round_trips_through_a_save() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let json = serde_json::to_string(&state).unwrap();
     let back: fsw_sim::state::SimState = serde_json::from_str(&json).unwrap();
     assert_eq!(back, state);
@@ -59,7 +60,7 @@ fn a_child_plans_a_day_of_play_and_is_home_before_the_dead_rise() {
     use fsw_world::places::ActivityId;
     assert_eq!(ActivityId::parse("play"), Some(ActivityId::Play));
     assert!(ActivityId::OFFERED.contains(&ActivityId::Play));
-    let mut sim = Sim::new(create_state(1));
+    let mut sim = Sim::new(create_test_state(1));
     sim.step();
     for child in children(&sim.state) {
         let plan = &child.plan;
@@ -84,7 +85,7 @@ fn a_child_plans_a_day_of_play_and_is_home_before_the_dead_rise() {
 fn a_child_at_play_is_described_as_playing() {
     use fsw_sim::describe::describe_activity;
     use fsw_world::places::ActivityId;
-    let mut sim = Sim::new(create_state(1));
+    let mut sim = Sim::new(create_test_state(1));
     let mut seen = false;
     for _ in 0..fsw_core::time::TICKS_PER_DAY {
         sim.step();
@@ -115,13 +116,14 @@ mod protection {
     use fsw_sim::systems::monsters::{find_target, spawn_monster};
     use fsw_sim::systems::relationships::{RelationDelta, adjust};
     use fsw_sim::util::{Ctx, adults, children, open_to, rel, rel_or_default};
-    use fsw_sim::{Command, Sim, create_state};
+    use fsw_sim::{Command, Sim};
+    use fsw_testing::create_test_state;
 
     use super::by_first_name;
 
     #[test]
     fn a_child_has_half_the_hit_points_of_their_class() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let pip = by_first_name(&state, "Pip");
         assert_eq!(max_hp(pip), pip.class_id.def().max_hp * 0.5);
         assert_eq!(pip.hp, max_hp(pip));
@@ -131,7 +133,7 @@ mod protection {
 
     #[test]
     fn grievance_toward_or_from_a_child_never_reaches_the_ladder() {
-        let mut state = create_state(1);
+        let mut state = create_test_state(1);
         let (pip, garrick) = (by_first_name(&state, "Pip").id.clone(), by_first_name(&state, "Garrick").id.clone());
         let mut events = Vec::new();
         let mut ctx = Ctx::new(&mut state, &mut events);
@@ -148,7 +150,7 @@ mod protection {
 
     #[test]
     fn nobody_falls_for_a_child_and_a_child_falls_for_nobody() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let (moss, theron) = (by_first_name(&state, "Moss"), by_first_name(&state, "Theron"));
         assert!(!open_to(theron, moss));
         assert!(!open_to(moss, theron));
@@ -157,7 +159,7 @@ mod protection {
 
     #[test]
     fn a_fight_with_a_child_is_refused_however_the_ladder_stands() {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let (pip, garrick) =
             (by_first_name(&sim.state, "Pip").id.clone(), by_first_name(&sim.state, "Garrick").id.clone());
         // The ladder is forced open by hand, past the cap a real grievance would hit.
@@ -175,7 +177,7 @@ mod protection {
 
     #[test]
     fn a_command_cannot_put_a_child_to_work() {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let pip = by_first_name(&sim.state, "Pip").id.clone();
         let epoch = sim.state.characters[&pip].epoch;
         let work =
@@ -192,7 +194,7 @@ mod protection {
 
     #[test]
     fn the_dead_go_for_an_adult_before_a_child() {
-        let mut state = create_state(1);
+        let mut state = create_test_state(1);
         let (pip, aldric) = (by_first_name(&state, "Pip").id.clone(), by_first_name(&state, "Aldric").id.clone());
         let door = state.characters[&pip].pos;
         // Both stand in the open; the child is nearer the monster.
@@ -218,7 +220,7 @@ mod protection {
 
     #[test]
     fn children_never_fight_and_never_carry_water() {
-        let mut sim = Sim::new(create_state(3));
+        let mut sim = Sim::new(create_test_state(3));
         sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
         let kids: Vec<String> = children(&sim.state).map(|c| c.id.clone()).collect();
         let mut fought = false;
@@ -260,7 +262,7 @@ mod protection {
         use fsw_sim::data::anims::AnimId;
         use fsw_sim::state::ActPhase;
         use fsw_world::places::ActivityId;
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let mut seen = false;
         for _ in 0..TICKS_PER_DAY {
             sim.step();
@@ -285,13 +287,14 @@ mod company {
     use fsw_core::time::TICKS_PER_DAY;
     use fsw_sim::state::{Intent, IntentAction, IntentSource, TalkTone};
     use fsw_sim::util::children;
-    use fsw_sim::{Command, Sim, SimEvent, create_state};
+    use fsw_sim::{Command, Sim, SimEvent};
+    use fsw_testing::create_test_state;
 
     use super::by_first_name;
 
     #[test]
     fn children_mostly_keep_company_with_other_children_and_their_own_people() {
-        let mut sim = Sim::new(create_state(2));
+        let mut sim = Sim::new(create_test_state(2));
         let kids: Vec<String> = children(&sim.state).map(|c| c.id.clone()).collect();
         let (mut with_their_own, mut total) = (0, 0);
         for _ in 0..TICKS_PER_DAY * 2 {
@@ -316,7 +319,7 @@ mod company {
 
     #[test]
     fn a_hard_word_at_a_child_is_a_telling_off() {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let (garrick, tansy) =
             (by_first_name(&sim.state, "Garrick").id.clone(), by_first_name(&sim.state, "Tansy").id.clone());
         let epoch = sim.state.characters[&garrick].epoch;
@@ -343,8 +346,9 @@ mod company {
 
 mod growing_up {
     use fsw_core::time::TICKS_PER_DAY;
+    use fsw_sim::Sim;
     use fsw_sim::util::{adult_count, children};
-    use fsw_sim::{Sim, create_state};
+    use fsw_testing::create_test_state;
 
     use super::by_first_name;
 
@@ -356,7 +360,7 @@ mod growing_up {
 
     #[test]
     fn a_child_turns_a_year_older_every_three_days() {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let pip = by_first_name(&sim.state, "Pip").id.clone();
         assert_eq!(sim.state.characters[&pip].profile.age, 11);
         assert_eq!(sim.state.characters[&pip].child.as_ref().unwrap().next_birthday_day, 4);
@@ -377,7 +381,7 @@ mod growing_up {
 
     #[test]
     fn at_sixteen_a_child_comes_of_age_and_keeps_who_they_are() {
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let pip = by_first_name(&sim.state, "Pip").id.clone();
         let before = sim.state.characters[&pip].clone();
         {
@@ -386,14 +390,19 @@ mod growing_up {
             c.child.as_mut().unwrap().next_birthday_day = 2;
         }
         run_to_day(&mut sim, 2);
-        // The routine restarts everyone's sleep at the turn of the day; a few ticks later all is still again.
-        for _ in 0..10 {
+        // The routine restarts everyone's sleep at the turn of the day; whoever was out walks home. Within the
+        // hour all is still again.
+        for _ in 0..TICKS_PER_DAY / 24 {
+            let c = &sim.state.characters[&pip];
+            if c.asleep && c.inside.as_deref() == Some(c.home_id.as_str()) {
+                break;
+            }
             sim.step();
         }
         let grown = &sim.state.characters[&pip];
         assert!(!grown.is_child());
         assert_eq!(grown.profile.age, 16);
-        // It is midnight: they sleep on, in their own bed, and take up the day in the morning.
+        // It is night: they sleep in their own bed and take up the day in the morning.
         assert_eq!(grown.inside.as_deref(), Some(grown.home_id.as_str()), "{:?}", grown.intent);
         assert!(grown.asleep);
         assert_eq!(grown.profile.name, before.profile.name);
@@ -428,7 +437,7 @@ mod growing_up {
     #[test]
     fn a_grown_child_plans_an_adult_day() {
         use fsw_world::places::ActivityId;
-        let mut sim = Sim::new(create_state(1));
+        let mut sim = Sim::new(create_test_state(1));
         let pip = by_first_name(&sim.state, "Pip").id.clone();
         {
             let c = sim.state.characters.get_mut(&pip).unwrap();
@@ -449,11 +458,12 @@ mod growing_up {
 
 mod births {
     use fsw_core::time::TICKS_PER_DAY;
+    use fsw_sim::Sim;
     use fsw_sim::state::RelationLabel;
     use fsw_sim::systems::children::maybe_birth;
     use fsw_sim::systems::relationships::{become_lovers, break_up};
     use fsw_sim::util::{Ctx, children, rel, rel_or_default};
-    use fsw_sim::{Sim, create_state};
+    use fsw_testing::create_test_state;
 
     use super::by_first_name;
 
@@ -465,7 +475,7 @@ mod births {
 
     #[test]
     fn falling_in_love_records_when_and_parting_forgets_it() {
-        let mut state = create_state(1);
+        let mut state = create_test_state(1);
         let (mira, theron) = (by_first_name(&state, "Mira").id.clone(), by_first_name(&state, "Theron").id.clone());
         state.tick = 500;
         let mut events = Vec::new();
@@ -480,7 +490,7 @@ mod births {
 
     #[test]
     fn lovers_long_together_have_a_child_who_knows_them_both() {
-        let mut sim = Sim::new(create_state(5));
+        let mut sim = Sim::new(create_test_state(5));
         // The world is nine days old and the two have been together since its first morning.
         sim.state.tick = 9 * TICKS_PER_DAY;
         let (mira, theron) =
@@ -531,7 +541,7 @@ mod births {
 
     #[test]
     fn a_village_without_lovers_has_no_births() {
-        let mut sim = Sim::new(create_state(6));
+        let mut sim = Sim::new(create_test_state(6));
         let authored = children(&sim.state).count();
         run_days(&mut sim, 10);
         assert_eq!(sim.state.director.last_birth_tick, 0);
@@ -549,13 +559,14 @@ mod mischief {
     use fsw_sim::events::Projectile;
     use fsw_sim::state::{ActPhase, Intent, IntentAction, IntentSource, Mischief, MischiefPlan, TalkTone};
     use fsw_sim::util::{children, rel_or_default};
-    use fsw_sim::{Command, Sim, SimEvent, create_state};
+    use fsw_sim::{Command, Sim, SimEvent};
+    use fsw_testing::create_test_state;
     use fsw_world::places::{ActivityId, get_place};
 
     use super::by_first_name;
 
     fn quiet(seed: u32) -> Sim {
-        let mut sim = Sim::new(create_state(seed));
+        let mut sim = Sim::new(create_test_state(seed));
         sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
         sim
     }
@@ -796,5 +807,61 @@ mod mischief {
                 .any(|c| matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::FightFire { .. }))),
             "the village answers"
         );
+    }
+}
+
+// --- Founding ------------------------------------------------------------------
+
+mod founding {
+    use fsw_sim::util::{adult_count, adults, children};
+    use fsw_sim::{Command, Sim, create_state};
+    use fsw_testing::create_test_state;
+
+    #[test]
+    fn a_village_the_sim_founds_has_children_of_its_own() {
+        let mut sim = Sim::new(create_state(7));
+        sim.enqueue(Command::FoundVillage);
+        sim.step();
+        assert!(!sim.state.director.founding);
+        assert_eq!(adult_count(&sim.state), 13);
+        let kids: Vec<_> = children(&sim.state).collect();
+        assert!((4..=5).contains(&kids.len()), "{} children", kids.len());
+        let grown: Vec<String> = adults(&sim.state).map(|c| c.id.clone()).collect();
+        let mut foundlings = 0;
+        for child in &kids {
+            let parents = &child.child.as_ref().unwrap().parents;
+            assert!(
+                parents.len() <= 2 && parents.iter().all(|p| grown.contains(p)),
+                "{}: {parents:?}",
+                child.profile.name
+            );
+            assert!((6..=12).contains(&child.profile.age), "{}", child.profile.name);
+            assert!(child.look.model.starts_with("Child_"), "{}", child.look.model);
+            if let Some(parent) = parents.first() {
+                assert_eq!(
+                    child.home_id, sim.state.characters[parent].home_id,
+                    "{} lives with a parent",
+                    child.profile.name
+                );
+                assert!(child.relationships[parent].kin);
+                assert!(sim.state.characters[parent].relationships[&child.id].kin);
+            } else {
+                foundlings += 1;
+            }
+        }
+        assert_eq!(foundlings, 1, "one child the village raises");
+        assert!(sim.state.chronicle.iter().any(|e| e.text.starts_with("The village's children:")));
+        // Their first names are all different, and none is a grown-up's.
+        let mut firsts: Vec<&str> = sim.state.characters.values().map(fsw_sim::util::first_name).collect();
+        firsts.sort_unstable();
+        firsts.dedup();
+        assert_eq!(firsts.len(), sim.state.characters.len());
+    }
+
+    #[test]
+    fn the_test_cast_brings_its_own_children_and_gets_no_more() {
+        let state = create_test_state(1);
+        assert_eq!(children(&state).count(), 5);
+        assert_eq!(adult_count(&state), 13);
     }
 }

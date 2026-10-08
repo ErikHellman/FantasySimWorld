@@ -10,7 +10,8 @@ use fsw_sim::state::{Feeling, FightMode, Intent, IntentAction, IntentSource, Sim
 use fsw_sim::systems::charm::{JEALOUSY_CAP, stir_jealousy, work_charm};
 use fsw_sim::systems::relationships::{RUNG_FEUD, apply_conversation};
 use fsw_sim::util::{Ctx, chemistry, first_name, living, rel, rel_or_default};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::create_test_state;
 
 fn who(state: &SimState, name: &str) -> String {
     living(state).find(|c| first_name(c) == name).expect(name).id.clone()
@@ -18,7 +19,7 @@ fn who(state: &SimState, name: &str) -> String {
 
 /// A quiet world a few ticks in: no small talk, so nothing interrupts what a test sets up.
 fn quiet(seed: u32) -> Sim {
-    let mut sim = Sim::new(create_state(seed));
+    let mut sim = Sim::new(create_test_state(seed));
     sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
     for _ in 0..5 {
         sim.step();
@@ -44,7 +45,7 @@ fn grievance(state: &SimState, from: &str, to: &str) -> f64 {
 
 #[test]
 fn mira_is_a_charmer_and_the_rest_of_the_village_is_not() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     for c in living(&state) {
         let expected = if first_name(c) == "Mira" { 0.9 } else { 0.0 };
         assert_eq!(c.profile.allure, expected, "{}", c.profile.name);
@@ -53,7 +54,7 @@ fn mira_is_a_charmer_and_the_rest_of_the_village_is_not() {
 
 #[test]
 fn allure_is_left_out_of_saves_when_zero_and_read_as_zero_when_missing() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let json = serde_json::to_value(&state).unwrap();
     let profiles: Vec<&serde_json::Value> =
         json["characters"].as_object().unwrap().values().map(|c| &c["profile"]).collect();
@@ -103,7 +104,7 @@ fn a_charmer_flirts_for_sport_teases_those_who_want_her_and_is_rebuffed_by_those
 
 /// Romantic talks Mira started in two days of an ordinary village.
 fn mira_flirts(seed: u32, allure: f64) -> usize {
-    let mut sim = Sim::new(create_state(seed));
+    let mut sim = Sim::new(create_test_state(seed));
     let mira = who(&sim.state, "Mira");
     sim.state.characters.get_mut(&mira).unwrap().profile.allure = allure;
     let mut flirts = 0;

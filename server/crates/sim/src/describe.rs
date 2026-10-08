@@ -4,10 +4,10 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
-use crate::state::{ActPhase, Character, FightMode, IntentAction, SimState};
+use crate::state::{ActPhase, Character, FightMode, IntentAction, Rite, SimState};
 use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
-use crate::util::{name_of, place_name_at};
+use crate::util::{join_names, name_of, place_name_at};
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
     let doing = doing(state, c);
@@ -101,6 +101,29 @@ fn doing(state: &SimState, c: &Character) -> String {
             }
         }
         IntentAction::Fetch { target_id } => format!("fetching {} home", name_of(state, target_id)),
+        IntentAction::Attend { .. } => {
+            let there = c.act.phase == ActPhase::Perform;
+            match state.ceremony.as_ref().map(|ceremony| &ceremony.rite) {
+                Some(Rite::Wedding { a, b }) => {
+                    let (a, b) = (name_of(state, a), name_of(state, b));
+                    if there {
+                        format!("at the wedding of {a} and {b}")
+                    } else {
+                        "on the way to the wedding on the green".into()
+                    }
+                }
+                Some(Rite::Funeral { dead }) => {
+                    let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
+                    let names = join_names(&names);
+                    if there {
+                        format!("at the graveside for {names}")
+                    } else {
+                        format!("on the way to the funeral of {names}")
+                    }
+                }
+                None => "going to the ceremony".into(),
+            }
+        }
     }
 }
 

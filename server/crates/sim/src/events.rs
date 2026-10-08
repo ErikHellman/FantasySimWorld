@@ -74,6 +74,10 @@ pub enum SimEvent {
     Arrival {
         id: Id,
     },
+    /// A wedding or a funeral has been arranged; the brain may ask for its speeches.
+    CeremonyScheduled {
+        ceremony_id: Id,
+    },
     NewDay {
         day: i64,
     },
@@ -107,10 +111,10 @@ pub enum SimEvent {
         id: Id,
         board_id: String,
     },
-    /// A villager has spoken the name of one of the powers that watch the valley.
-    Prayer {
-        power: String,
-        character_id: Id,
+    /// An arrival is due and the sim would like the server to describe the newcomer; past
+    /// `deadline_tick` it invents one itself.
+    NewcomerWanted {
+        deadline_tick: i64,
     },
 }
 
@@ -126,6 +130,7 @@ impl SimEvent {
             Self::MonsterSpawn { .. } => "monster_spawn",
             Self::Chronicle { .. } => "chronicle",
             Self::Arrival { .. } => "arrival",
+            Self::CeremonyScheduled { .. } => "ceremony_scheduled",
             Self::NewDay { .. } => "new_day",
             Self::ConversationStarted { .. } => "conversation_started",
             Self::ConversationWaiting { .. } => "conversation_waiting",
@@ -134,7 +139,7 @@ impl SimEvent {
             Self::Woke { .. } => "woke",
             Self::SavePoint { .. } => "save_point",
             Self::BillboardRead { .. } => "billboard_read",
-            Self::Prayer { .. } => "prayer",
+            Self::NewcomerWanted { .. } => "newcomer_wanted",
         }
     }
 }

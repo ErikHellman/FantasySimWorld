@@ -126,11 +126,6 @@ impl<'a> Ctx<'a> {
     pub fn say(&mut self, speaker: &str, text: impl Into<String>, to: Option<&str>, loud: bool) -> i64 {
         let text = text.into();
         let duration_ticks = speech_ticks(&text);
-        if self.state.characters.contains_key(speaker) {
-            for power in self.state.powers.keys().filter(|name| mentions(&text, name)) {
-                self.events.push(SimEvent::Prayer { power: power.clone(), character_id: speaker.to_owned() });
-            }
-        }
         self.events.push(SimEvent::Speech {
             speaker_id: speaker.to_owned(),
             to_id: to.map(str::to_owned),
@@ -340,9 +335,10 @@ pub fn is_fighting(c: &Character) -> bool {
     matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Fight { .. } | IntentAction::Flee))
 }
 
-/// Free to be approached for a chat or a gift.
+/// Free to be approached for a chat or a gift. Nobody is drawn aside at a wedding or a funeral.
 pub fn is_approachable(c: &Character) -> bool {
-    is_present(c) && c.convo_id.is_none() && !is_fighting(c) && !c.combat.yielded
+    let attending = matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Attend { .. }));
+    is_present(c) && c.convo_id.is_none() && !is_fighting(c) && !c.combat.yielded && !attending
 }
 
 pub fn place_name_at(pos: Vec2) -> String {

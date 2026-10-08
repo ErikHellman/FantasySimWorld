@@ -6,6 +6,7 @@ use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone,
 };
+use fsw_sim::systems::ceremonies;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
 use fsw_sim::util::{first_name, living};
@@ -249,6 +250,17 @@ fn strip_spans(text: &str, open: char, close: char) -> String {
 
 /// Tidies a spoken line: no quotes, no stage directions, not too long.
 pub fn spoken(value: Option<&Value>) -> Option<String> {
+    tidy(value, MAX_SPOKEN)
+}
+
+/// The text of a ceremony speech from the `speech` call: tidied like any spoken line, but allowed to run
+/// longer. `None` when nothing usable was said.
+pub fn interpret_speech(calls: &[ToolCall]) -> Option<String> {
+    let call = calls.iter().find(|c| c.name == "speech")?;
+    tidy(call.args.get("text"), ceremonies::SPEECH_CAP)
+}
+
+fn tidy(value: Option<&Value>, max: usize) -> Option<String> {
     let Some(Value::String(text)) = value else { return None };
     let text = strip_spans(&strip_spans(text, '*', '*'), '(', ')');
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -256,10 +268,10 @@ pub fn spoken(value: Option<&Value>) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    if utf16_len(&text) <= MAX_SPOKEN {
+    if utf16_len(&text) <= max {
         return Some(text);
     }
-    let cut = utf16_truncate(&text, MAX_SPOKEN);
+    let cut = utf16_truncate(&text, max);
     let stop = [". ", "! ", "? "].iter().filter_map(|mark| cut.rfind(mark)).max();
     Some(match stop {
         Some(stop) if utf16_len(&cut[..stop]) > 60 => cut[..=stop].to_owned(),
@@ -549,7 +561,7 @@ pub fn reflection_relationships(state: &SimState, args: &JsonMap<String, Value>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::create_state;
+    use fsw_testing::create_test_state;
     use serde_json::json;
 
     fn call(name: &str, args: Value) -> ToolCall {
@@ -558,7 +570,7 @@ mod tests {
 
     #[test]
     fn resolves_people_places_and_activities_loosely() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let me = &state.characters["c1"];
         assert_eq!(resolve_person(&state, Some(&json!("Brenna")), None).unwrap().profile.name, "Brenna Ashdown");
         assert_eq!(resolve_person(&state, Some(&json!("brena")), None).unwrap().profile.name, "Brenna Ashdown");
@@ -574,7 +586,7 @@ mod tests {
         assert_eq!(resolve_activity(Some(&json!("read the billboard"))), None);
         assert_eq!(resolve_activity(Some(&json!("rebuild"))), None);
         // Rebuilding is only there to choose while a house lies in ruins.
-        let mut state = fsw_sim::create_state(1);
+        let mut state = create_test_state(1);
         assert_eq!(resolve_doable(&state, Some(&json!("rebuild"))), None);
         assert_eq!(resolve_doable(&state, Some(&json!("farm"))), Some(ActivityId::Farm));
         let ruin = fsw_sim::state::House {
@@ -599,7 +611,7 @@ mod tests {
 
     #[test]
     fn interprets_decisions_plans_and_conversations() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let me = &state.characters["c1"];
         let decision = interpret_decision(
             &state,

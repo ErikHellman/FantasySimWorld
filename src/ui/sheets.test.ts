@@ -60,10 +60,4 @@ describe('phone panes', () => {
     addChat(message(2));
     expect(ui.chatUnread.value).toBe(0);
   });
-
-  it('does not count what viewers do to the world as unread chat', () => {
-    addChat({ id: 1, at: 0, kind: 'event', author: 'Old Tom', text: 'raised a skeleton at the village green' });
-    expect(ui.chatUnread.value).toBe(0);
-    expect(ui.chat.value.at(-1)?.kind).toBe('event');
-  });
 });

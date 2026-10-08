@@ -6,7 +6,6 @@ use fsw_core::time::game_time;
 use fsw_world::places::{find_billboard, find_place};
 
 use crate::commands::Command;
-use crate::create::refresh_authored;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
@@ -14,12 +13,14 @@ use crate::state::{
     SimState,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
 use crate::systems::fire::{fighting_fire, update_fire};
+use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
@@ -28,7 +29,6 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
-use crate::systems::viewer_events;
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -73,6 +73,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::FightFire { .. } => false,
         // Nor is fetching a child home: whoever notices goes.
         IntentAction::Fetch { .. } => false,
+        // Nor a wedding or a funeral: the village is called to them.
+        IntentAction::Attend { .. } => false,
     }
 }
 
@@ -88,9 +90,9 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
-    // Nobody talks their way out of the bucket chain, or out of fetching a child home; only a fight or flight
-    // comes before either.
-    let bound = fighting_fire(ctx.cr(id)) || fetching(ctx.cr(id));
+    // Nobody talks their way out of the bucket chain, out of fetching a child home, or leaves a wedding or a
+    // funeral; only a fight or flight comes before those.
+    let bound = fighting_fire(ctx.cr(id)) || fetching(ctx.cr(id)) || attending(ctx.cr(id));
     if bound && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
         return;
     }
@@ -268,7 +270,22 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             let c = ctx.c(&id);
             c.act.until_tick = c.act.until_tick.min(tick + ticks.min(160));
         }
-        Command::ViewerEvent { by, event } => viewer_events::apply(ctx, &by, event),
+        Command::Settle(villager) => settle_villager(ctx, &villager),
+        Command::FoundVillage => fill_village(ctx),
+        Command::NewcomerDraft(villager) => {
+            if !first_name_taken(ctx.state, &villager.name) {
+                ctx.state.director.newcomer_draft = Some(villager);
+            }
+        }
+        Command::NewcomerLocal => {
+            // Only once asked: an unasked-for refusal must not shorten a future wait.
+            if ctx.state.director.newcomer_deadline_tick != 0 {
+                ctx.state.director.newcomer_deadline_tick = ctx.tick();
+            }
+        }
+        Command::CeremonySpeech { ceremony_id, speaker_id, text } => {
+            ceremonies::hold_speech(ctx, &ceremony_id, &speaker_id, text);
+        }
     }
 }
 
@@ -279,10 +296,8 @@ pub struct Sim {
 }
 
 impl Sim {
-    /// A running sim from a state, new or saved. Authored characters in a saved
-    /// world are brought up to date with the cast as it is written now.
-    pub fn new(mut state: SimState) -> Self {
-        refresh_authored(&mut state);
+    /// A running sim from a state, new or saved.
+    pub fn new(state: SimState) -> Self {
         Self { state, pending: Vec::new() }
     }
 
@@ -308,6 +323,7 @@ impl Sim {
 
         if ctx.time.day != previous_day {
             daily_relationships(&mut ctx);
+            ceremonies::daily(&mut ctx);
             daily_children(&mut ctx);
             let day = ctx.time.day;
             ctx.emit(SimEvent::NewDay { day });
@@ -326,6 +342,7 @@ impl Sim {
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
         update_fire(&mut ctx);
+        update_ceremonies(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

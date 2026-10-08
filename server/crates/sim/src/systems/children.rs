@@ -11,10 +11,9 @@ use fsw_world::places::{get_place, homes};
 
 use crate::data::activities::{ActivityKind, activity};
 use crate::data::anims::AnimId;
-use crate::data::cast::{CastEntry, ChildEntry};
 use crate::data::children::{
-    BIRTH_CHANCE, BIRTH_COOLDOWN_TICKS, BIRTHDAY_DAYS, CHILD_FIRST_NAMES, CHILD_TRAITS, COMING_OF_AGE,
-    LOVERS_BEFORE_CHILD_TICKS, MAX_CHILDREN, NEWBORN_AGE,
+    BIRTH_CHANCE, BIRTH_COOLDOWN_TICKS, BIRTHDAY_DAYS, CHILD_FIRST_NAMES, CHILD_LOOKS, CHILD_TRAITS, COMING_OF_AGE,
+    FOUNDING_CHILDREN, LOVERS_BEFORE_CHILD_TICKS, MAX_CHILDREN, NEWBORN_AGE,
 };
 use crate::data::classes::RUN_SPEED;
 use crate::events::{Emote, Projectile, SimEvent};
@@ -25,6 +24,7 @@ use crate::state::{
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::death::detach;
 use crate::systems::fire::{fighting_fire, ignite_by, residents};
+use crate::systems::founding::{Blueprint, ChildSeed};
 use crate::systems::intents::{finish, fresh_act, give, leave_building, travel};
 use crate::systems::movement::route_to;
 use crate::systems::quirks::{idle_enough, replace_intent};
@@ -107,19 +107,27 @@ pub fn maybe_birth(ctx: &mut Ctx) {
         .collect();
     for (a, b) in couples {
         if ctx.chance(BIRTH_CHANCE) {
-            let entry = child_of(ctx, &a, &b);
-            welcome_child(ctx, &entry, vec![a, b]);
+            let blueprint = child_of(ctx, &[a.clone(), b.clone()], NEWBORN_AGE);
+            welcome_child(ctx, &blueprint, vec![a, b], Welcome::Born);
             return;
         }
     }
 }
 
-/// A newborn's entry, made up the way a wanderer is: a name nobody living or dead
-/// has, a parent's surname and class, and a few traits.
-fn child_of(ctx: &mut Ctx, a: &str, b: &str) -> CastEntry {
-    let parent = if ctx.chance(0.5) { a } else { b };
-    let class_id = ctx.cr(parent).class_id;
-    let surname = ctx.cr(parent).profile.name.split(' ').nth(1).map(str::to_owned);
+/// A child made up from the lists, the way the sim invents a villager: a first name nobody living or
+/// dead has, a parent's surname and class where there is a parent, and a few traits. With no parents,
+/// a foundling of the glade with a class of their own.
+fn child_of(ctx: &mut Ctx, parents: &[Id], age: i64) -> Blueprint {
+    let parent = match parents {
+        [] => None,
+        [one] => Some(one.clone()),
+        [a, b, ..] => Some(if ctx.chance(0.5) { a.clone() } else { b.clone() }),
+    };
+    let class_id = match &parent {
+        Some(p) => ctx.cr(p).class_id,
+        None => CHILD_LOOKS[ctx.pick_index(CHILD_LOOKS.len())].class,
+    };
+    let surname = parent.as_ref().and_then(|p| ctx.cr(p).profile.name.split(' ').nth(1).map(str::to_owned));
     let used: Vec<String> = living(ctx.state)
         .map(|c| first_name(c).to_owned())
         .chain(ctx.state.dead.values().map(|d| d.name.split(' ').next().unwrap_or_default().to_owned()))
@@ -148,13 +156,20 @@ fn child_of(ctx: &mut Ctx, a: &str, b: &str) -> CastEntry {
     let sociability = clamp(ctx.next_float(), 0.3, 0.9);
     let mischief = ctx.range(0.2, 0.8);
     let pitch = ctx.range(1.2, 1.4);
-    let (a_name, b_name) = (first_name(ctx.cr(a)).to_owned(), first_name(ctx.cr(b)).to_owned());
-    CastEntry {
-        key: format!("child{}", ctx.state.next_id),
+    let parent_names: Vec<String> = parents.iter().map(|p| first_name(ctx.cr(p)).to_owned()).collect();
+    let backstory = match parent_names.as_slice() {
+        [] => {
+            "Found as a baby in a basket in the glade one morning, and raised by whoever had a bed and a bowl to spare."
+                .to_owned()
+        }
+        [one] => format!("{one}'s child, born in the village and underfoot ever since."),
+        both => format!("Born in the village to {}, and underfoot ever since.", crate::util::join_names(both)),
+    };
+    Blueprint {
         class_id,
         model: None,
-        texture: ctx.cr(parent).look.texture.clone(),
-        hide: None,
+        texture: parent.as_ref().and_then(|p| ctx.cr(p).look.texture.clone()),
+        hide: Vec::new(),
         main_hand: None,
         off_hand: None,
         home_id: None,
@@ -163,9 +178,9 @@ fn child_of(ctx: &mut Ctx, a: &str, b: &str) -> CastEntry {
         profile: Profile {
             name,
             pronouns,
-            age: NEWBORN_AGE,
+            age,
             occupation: "child".into(),
-            backstory: format!("Born in the village to {a_name} and {b_name}, and underfoot ever since."),
+            backstory,
             traits,
             goals: vec!["play all day".into(), "see what is past the bridge".into(), "be let in on a secret".into()],
             speech_style: "Short and breathless, full of questions.".into(),
@@ -179,15 +194,21 @@ fn child_of(ctx: &mut Ctx, a: &str, b: &str) -> CastEntry {
             voice: VoiceProfile { pitch, rate: 1.1, timbre: "small and piping".into() },
             secret: String::new(),
         },
-        bonds: Vec::new(),
         quirks: Vec::new(),
-        child: Some(ChildEntry { mischief, parents: Vec::new() }),
+        child: Some(ChildSeed { mischief, parents: Vec::new() }),
     }
+}
+
+/// How a child comes to the village: born in the night to a couple, or already here when the founding ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Welcome {
+    Born,
+    Founding,
 }
 
 /// A child joins the village the way a newcomer does: known to everyone, kin to
 /// the people who raise them, remembered and written into the chronicle.
-pub fn welcome_child(ctx: &mut Ctx, entry: &CastEntry, parents: Vec<Id>) -> Id {
+pub fn welcome_child(ctx: &mut Ctx, entry: &Blueprint, parents: Vec<Id>, welcome: Welcome) -> Id {
     let tick = ctx.tick();
     let day = ctx.time.day;
     let home = parents
@@ -195,10 +216,12 @@ pub fn welcome_child(ctx: &mut Ctx, entry: &CastEntry, parents: Vec<Id>) -> Id {
         .and_then(|p| ctx.state.characters.get(p))
         .map_or_else(|| free_home(ctx.state), |p| p.home_id.clone());
     let mut c = make_character(ctx.state, entry, &home);
-    c.arrived_tick = tick;
-    // Born at the turn of the day: indoors and asleep, not on the step for the dead to find.
-    c.inside = Some(home.clone());
-    c.asleep = true;
+    if welcome == Welcome::Born {
+        c.arrived_tick = tick;
+        // Born at the turn of the day: indoors and asleep, not on the step for the dead to find.
+        c.inside = Some(home.clone());
+        c.asleep = true;
+    }
     if let Some(child) = &mut c.child {
         child.parents = parents.clone();
         child.next_birthday_day = day + BIRTHDAY_DAYS;
@@ -226,6 +249,9 @@ pub fn welcome_child(ctx: &mut Ctx, entry: &CastEntry, parents: Vec<Id>) -> Id {
         back.label = label_for(&back, false);
         ctx.c(&other).relationships.insert(id.clone(), r);
         ctx.c(&id).relationships.insert(other.clone(), back);
+        if welcome == Welcome::Founding {
+            continue;
+        }
         let text = if parent {
             format!("Our child, {name}, was born today.")
         } else {
@@ -235,11 +261,57 @@ pub fn welcome_child(ctx: &mut Ctx, entry: &CastEntry, parents: Vec<Id>) -> Id {
         let stimulus = format!("A child has been born in the village: {name}, to {}.", join(&parent_names));
         ctx.stimulate(&other, StimulusKind::Family, stimulus, 1, Some(&id));
     }
-    ctx.chronicle(ChronicleKind::Social, format!("{} have a child: {name}.", join(&parent_names)), vec![id.clone()]);
     ctx.emit(SimEvent::Arrival { id: id.clone() });
-    ctx.emit(SimEvent::SavePoint { reason: "birth".into() });
-    ctx.state.director.last_birth_tick = tick;
+    if welcome == Welcome::Born {
+        ctx.chronicle(
+            ChronicleKind::Social,
+            format!("{} have a child: {name}.", join(&parent_names)),
+            vec![id.clone()],
+        );
+        ctx.emit(SimEvent::SavePoint { reason: "birth".into() });
+        ctx.state.director.last_birth_tick = tick;
+    }
     id
+}
+
+/// When the founding ends the village has its children: four or five, raised by its founders (couples
+/// first, then single parents) and one foundling the village raises. A cast that brings its own
+/// children already, as the test cast does, gets none, and the dice are not touched.
+pub fn found_children(ctx: &mut Ctx) {
+    let have = children(ctx.state).count();
+    if have >= FOUNDING_CHILDREN[1] as usize {
+        return;
+    }
+    let wanted = ctx.int_range(FOUNDING_CHILDREN[0], FOUNDING_CHILDREN[1]) as usize;
+    if have >= wanted {
+        return;
+    }
+    let founders: Vec<Id> = adults(ctx.state).map(|c| c.id.clone()).collect();
+    let mut couples: Vec<(Id, Id)> = adults(ctx.state)
+        .filter_map(|c| {
+            let partner = c.partner_id.clone()?;
+            let first = ctx.state.order.iter().position(|id| id == &c.id)
+                < ctx.state.order.iter().position(|id| id == &partner);
+            first.then(|| (c.id.clone(), partner))
+        })
+        .collect();
+    let mut names = Vec::new();
+    for n in have..wanted {
+        let foundling = n + 1 == wanted;
+        let parents: Vec<Id> = if foundling {
+            Vec::new()
+        } else if let Some((a, b)) = couples.pop() {
+            vec![a, b]
+        } else {
+            vec![founders[ctx.pick_index(founders.len())].clone()]
+        };
+        let age = ctx.int_range(6, 12);
+        let blueprint = child_of(ctx, &parents, age);
+        let id = welcome_child(ctx, &blueprint, parents, Welcome::Founding);
+        names.push(first_name(ctx.cr(&id)).to_owned());
+    }
+    let ids: Vec<Id> = children(ctx.state).map(|c| c.id.clone()).collect();
+    ctx.chronicle(ChronicleKind::Social, format!("The village's children: {}.", join(&names)), ids);
 }
 
 fn join(names: &[String]) -> String {

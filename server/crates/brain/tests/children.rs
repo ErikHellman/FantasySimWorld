@@ -4,11 +4,11 @@
 use fsw_brain::llm::types::ToolCall;
 use fsw_brain::prompts::{conversation_prompt, decide_prompt, plan_prompt, prompt_text};
 use fsw_brain::validate::interpret_decision;
-use fsw_sim::create_state;
 use fsw_sim::state::{
     Character, Conversation, ConversationLine, ConvoAuthor, ConvoPhase, Fallback, IntentAction, SimState, TalkTone,
 };
 use fsw_sim::util::living;
+use fsw_testing::create_test_state;
 use fsw_world::places::ActivityId;
 use serde_json::{Map, Value, json};
 
@@ -45,7 +45,7 @@ fn talk(state: &SimState, a: &str, b: &str, tone: TalkTone) -> Conversation {
 
 #[test]
 fn a_child_is_told_they_are_a_child_and_offered_a_childs_choices() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let pip = who(&state, "Pip");
     let prompt = decide_prompt(&state, pip, 1200, None);
     let text = prompt_text(&prompt);
@@ -63,7 +63,7 @@ fn a_child_is_told_they_are_a_child_and_offered_a_childs_choices() {
 
 #[test]
 fn a_whole_child_is_told_they_are_unhurt() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let pip = who(&state, "Pip");
     let text = prompt_text(&decide_prompt(&state, pip, 1200, None));
     assert!(text.contains("unhurt"), "{text}");
@@ -72,7 +72,7 @@ fn a_whole_child_is_told_they_are_unhurt() {
 
 #[test]
 fn a_child_sent_to_work_by_the_model_plays_instead() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let pip = who(&state, "Pip");
     let decision = interpret_decision(&state, pip, &[call("do_activity", json!({"activity": "smith"}))]);
     assert!(
@@ -88,7 +88,7 @@ fn a_child_sent_to_work_by_the_model_plays_instead() {
 
 #[test]
 fn a_grown_up_is_not_offered_play() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let aldric = who(&state, "Aldric");
     let text = prompt_text(&decide_prompt(&state, aldric, 1200, None));
     assert!(text.contains("You are a knight."), "{text}");
@@ -102,7 +102,7 @@ fn a_grown_up_is_not_offered_play() {
 
 #[test]
 fn a_childs_day_is_for_playing_not_work() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let pip = who(&state, "Pip");
     let text = prompt_text(&plan_prompt(&state, pip, 1200, None));
     assert!(
@@ -116,7 +116,7 @@ fn a_childs_day_is_for_playing_not_work() {
 
 #[test]
 fn in_conversation_a_child_is_introduced_as_one_and_a_hard_word_is_a_telling_off() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let (aldric, pip) = (who(&state, "Aldric"), who(&state, "Pip"));
     let friendly = talk(&state, &aldric.id, &pip.id, TalkTone::Friendly);
     let text = prompt_text(&conversation_prompt(&state, &friendly, aldric, pip, 1200));
@@ -131,7 +131,7 @@ fn in_conversation_a_child_is_introduced_as_one_and_a_hard_word_is_a_telling_off
 
 #[test]
 fn the_interpreter_refuses_a_fight_or_a_gift_from_a_child_but_lets_them_play() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let (pip, garrick) = (who(&state, "Pip"), who(&state, "Garrick"));
     let calls = vec![
         call("brawl", json!({"person": "Garrick"})),

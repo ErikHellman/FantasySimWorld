@@ -34,6 +34,8 @@ const FIGHTER_DAMAGE: f64 = 1.6;
 const COWARD_PANIC: f64 = 0.5;
 /// The most anyone panics when the dead land a blow; the timid come close to it, the fearless hardly ever.
 pub const PANIC_MAX: f64 = 0.15;
+/// A villager the model told to stand runs at this share of the usual breaking point.
+pub const LAST_RESORT: f64 = 0.5;
 const PANIC_LINES: [&str; 4] = [
     "I can't, I can't do this!",
     "Gods help me, I'm getting out of here!",
@@ -264,6 +266,7 @@ fn bury_the_fallen(ctx: &mut Ctx, was_id: &str) {
         day,
         cause: record.cause,
     });
+    crate::systems::ceremonies::on_buried(ctx, was_id);
 }
 
 /// Who struck the blow.
@@ -604,9 +607,12 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         c.combat.next_attack_tick = c.combat.next_attack_tick.max(tick + seconds_to_ticks(1.3));
         return;
     }
-    // Those fighting on instinct know when they are beaten; born fighters hang on longer.
+    // Those fighting on instinct know when they are beaten; born fighters hang on longer. A stand the
+    // model ordered is held past that point, but nobody fights the dead to the last hit point: at half
+    // the usual threshold even they break and run.
     let give_up = if c.has(Quirk::Fighter) { 0.1 } else { 0.34 - c.profile.bravery * 0.22 };
-    if mode == FightMode::Monster && source != IntentSource::Llm && c.hp < cap * give_up {
+    let breaking_point = if source == IntentSource::Llm { give_up * LAST_RESORT } else { give_up };
+    if mode == FightMode::Monster && c.hp < cap * breaking_point {
         start_flee(ctx, id, IntentSource::Reflex);
         return;
     }

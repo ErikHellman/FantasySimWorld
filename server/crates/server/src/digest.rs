@@ -13,12 +13,12 @@ use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::living;
+use fsw_sim::util::{living, name_of};
 use fsw_world::places::{ActivityId, find_place};
 
 use crate::api::wire::{
-    AmbientCounts, CharacterDetail, ChronicleEntry, Inventory, LlmStatus, Memory, MemoryKind, Mood, Needs, PlanRow,
-    RelationLabel, RelationRow, RosterEntry, Status,
+    AmbientCounts, CharacterDetail, ChronicleEntry, Founding, Inventory, LlmStatus, Memory, MemoryKind, Mood, Needs,
+    PlanRow, RelationLabel, RelationRow, RosterEntry, Status,
 };
 use crate::encode::chronicle_entry;
 
@@ -100,6 +100,10 @@ pub fn status_of(state: &SimState, extras: StatusExtras) -> Status {
         alarm: is_alarm(state),
         part: part_of_day(game_time(state.tick).hour).into(),
         ambient: ambient_of(state),
+        founding: state
+            .director
+            .founding
+            .then_some(Founding { settled: state.order.len() as u32, total: state.director.population_target as u32 }),
     }
 }
 
@@ -113,6 +117,7 @@ fn label(label: SimLabel) -> RelationLabel {
         SimLabel::Rival => RelationLabel::Rival,
         SimLabel::Enemy => RelationLabel::Enemy,
         SimLabel::Family => RelationLabel::Family,
+        SimLabel::Spouse => RelationLabel::Spouse,
     }
 }
 
@@ -186,6 +191,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
         },
         home: find_place(&c.home_id).map_or(c.home_id.clone(), |place| place.name.into()),
         homeless: is_homeless(state, c),
+        spouse: c.spouse_id.as_deref().map(|spouse| name_of(state, spouse)),
         kills: c.kills.max(0) as u32,
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),
@@ -230,11 +236,23 @@ pub fn chronicle_tail(state: &SimState) -> Vec<ChronicleEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsw_sim::{Sim, create_state};
+    use fsw_sim::{Command, Sim, create_state};
+    use fsw_testing::create_test_state;
+
+    #[test]
+    fn status_reports_the_founding_until_the_village_is_full() {
+        let extras = || StatusExtras { llm: crate::world_task::llm_off(), viewers: 0, speed: 1, throttled: false };
+        let mut sim = Sim::new(create_state(4));
+        assert_eq!(status_of(&sim.state, extras()).founding, Some(Founding { settled: 0, total: 13 }));
+        sim.enqueue(Command::FoundVillage);
+        sim.step();
+        assert_eq!(status_of(&sim.state, extras()).founding, None);
+        assert_eq!(status_of(&create_test_state(4), extras()).founding, None);
+    }
 
     #[test]
     fn a_child_is_whole_at_half_the_class_hit_points() {
-        let state = create_state(1);
+        let state = create_test_state(1);
         let pip = living(&state).find(|c| c.profile.name == "Pip Vane").unwrap();
         let row = roster_of(&state).into_iter().find(|row| row.id == pip.id).unwrap();
         assert_eq!(row.hp, 1.0);
@@ -251,7 +269,7 @@ mod tests {
 
     #[test]
     fn renders_the_inspector_and_roster() {
-        let mut sim = Sim::new(create_state(4));
+        let mut sim = Sim::new(create_test_state(4));
         for _ in 0..2000 {
             sim.step();
         }

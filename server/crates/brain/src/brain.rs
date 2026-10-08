@@ -18,10 +18,11 @@ use fsw_sim::Command;
 use fsw_sim::commands::{RelationshipNote, TuningPatch};
 use fsw_sim::events::SimEvent;
 use fsw_sim::state::{
-    BoardReaction, ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource, SimState,
-    StimulusKind,
+    BoardReaction, CeremonyPhase, ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource,
+    Rite, SimState, StimulusKind,
 };
 use fsw_sim::systems::billboards::{has_read, reading, shown};
+use fsw_sim::systems::ceremonies::{attending, speakers};
 use fsw_sim::systems::fire::fighting_fire;
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
 use fsw_world::places::{billboards, get_place};
@@ -35,13 +36,14 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, mercy_prompt, plan_cue, plan_prompt,
-    prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt,
+    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, mercy_prompt, plan_cue,
+    plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt, vows_prompt,
 };
 use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
-    feeling, interpret_conversation, interpret_decision, interpret_plan, reflection_relationships, spoken,
+    feeling, interpret_conversation, interpret_decision, interpret_plan, interpret_speech, reflection_relationships,
+    spoken,
 };
 
 const RETRY_AFTER: Duration = Duration::from_secs(60);
@@ -61,6 +63,8 @@ pub enum RequestKind {
     Decide,
     PlanDay,
     Billboard,
+    /// a speech for a wedding or a funeral, asked for hours ahead
+    Ceremony,
     Reflect,
 }
 
@@ -74,6 +78,7 @@ impl RequestKind {
             Self::Decide => "decide",
             Self::PlanDay => "plan_day",
             Self::Billboard => "billboard",
+            Self::Ceremony => "ceremony",
             Self::Reflect => "reflect",
         }
     }
@@ -86,6 +91,7 @@ impl RequestKind {
             Self::Decide => 4,
             Self::PlanDay => 5,
             Self::Billboard => 6,
+            Self::Ceremony => 7,
             Self::Reflect => 8,
         }
     }
@@ -261,6 +267,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Stalk { target_id } => format!("stalk {}", name_of(state, target_id)),
         IntentAction::FightFire { place_id } => format!("fight the fire at {place_id}"),
         IntentAction::Fetch { target_id } => format!("bring {} home", name_of(state, target_id)),
+        IntentAction::Attend { place_id } => format!("attend the ceremony at {place_id}"),
     }
 }
 
@@ -648,6 +655,7 @@ impl Brain {
                 }
                 SimEvent::MercyRequest { attacker_id, victim_id } => self.on_mercy(attacker_id, victim_id),
                 SimEvent::BillboardRead { id, board_id } => self.on_billboard(id, board_id),
+                SimEvent::CeremonyScheduled { ceremony_id } => self.on_ceremony(ceremony_id),
                 SimEvent::Death { id, monster: false, .. } => {
                     let queue = {
                         let mut s = self.inner.state.lock();
@@ -706,8 +714,10 @@ impl Brain {
                         || c.convo_id.is_some()
                         || c.combat.yielded
                         || c.combat.mercy_until_tick > 0
-                        // On the bucket chain there is nothing to decide: the sim keeps them at it.
+                        // On the bucket chain, or at a wedding or a funeral, there is nothing to decide: the
+                        // sim keeps them at it.
                         || fighting_fire(c)
+                        || attending(c)
                     {
                         continue;
                     }
@@ -1194,6 +1204,60 @@ impl Brain {
             None,
             None,
         );
+    }
+
+    /// A wedding or a funeral has been arranged: ask the couple for their vows, or the officiant for a
+    /// eulogy. There are hours of game time to answer; the sim has scripted lines when none comes.
+    fn on_ceremony(&self, ceremony_id: &str) {
+        let allowed = {
+            let s = self.inner.state.lock();
+            s.queue.is_some() && s.governor.allow(Tier::Idle)
+        };
+        if !allowed || self.backlogged() {
+            return;
+        }
+        let speakers: Vec<Id> = read(&*self.inner.link, |state| {
+            state.ceremony.as_ref().filter(|c| c.id == ceremony_id).map(speakers).unwrap_or_default()
+        });
+        for speaker in speakers {
+            let (build_ceremony, apply_ceremony) = (ceremony_id.to_owned(), ceremony_id.to_owned());
+            let (build_speaker, apply_speaker) = (speaker.clone(), speaker.clone());
+            self.request(
+                RequestKind::Ceremony,
+                format!("y:{ceremony_id}:{speaker}"),
+                Some(speaker),
+                Duration::from_secs(1200),
+                None,
+                move |state, _| {
+                    let ceremony = state.ceremony.as_ref().filter(|c| {
+                        c.id == build_ceremony && matches!(c.phase, CeremonyPhase::Announced | CeremonyPhase::Gathering)
+                    })?;
+                    let me = state.characters.get(&build_speaker)?;
+                    let prompt = match &ceremony.rite {
+                        Rite::Wedding { a, b } => {
+                            let partner = state.characters.get(if *a == build_speaker { b } else { a })?;
+                            vows_prompt(state, me, partner, ceremony)
+                        }
+                        Rite::Funeral { .. } => eulogy_prompt(state, me, ceremony),
+                    };
+                    built(prompt, ())
+                },
+                move |state, response, ()| {
+                    if state.ceremony.as_ref().is_none_or(|c| c.id != apply_ceremony) {
+                        return Applied::stale("the ceremony was called off");
+                    }
+                    let Some(text) = interpret_speech(&response.calls) else {
+                        return Applied::fallback("no speech; the scripted lines will do");
+                    };
+                    let summary = utf16_truncate(&text, 80).to_owned();
+                    let command =
+                        Command::CeremonySpeech { ceremony_id: apply_ceremony, speaker_id: apply_speaker, text };
+                    Applied::ok(summary, vec![command])
+                },
+                None,
+                None,
+            );
+        }
     }
 
     /// Someone is reading a billboard: ask how they take it. Only when the model has room to spare; the sim

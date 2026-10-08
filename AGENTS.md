@@ -6,8 +6,8 @@ Guidance for coding agents (and people) working in this repository. [README.md](
 
 One shared village runs on a Rust server; browsers only watch it.
 
-- `server/` is a Cargo workspace and owns everything that changes: the simulation (`fsw-sim`), the language-model brain (`fsw-brain`), the SQLite store, sign-in and the event stream (`fsw-server`). `fsw-core` and `fsw-world` hold the maths and the static world.
-- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves. Viewers reach the world only by spending credits (`POST /api/credits/buy`), which the server checks and turns into a `Command`.
+- `server/` is a Cargo workspace and owns everything that changes: the simulation (`fsw-sim`), the language-model brain (`fsw-brain`), the SQLite store, access and the event stream (`fsw-server`). `fsw-core` and `fsw-world` hold the maths and the static world.
+- `src/` is the web client (TypeScript, three.js, Preact). It draws the server's stream (`GET /api/stream`, server-sent events) and calls a few REST routes. It never simulates, never calls a model and never saves. Nothing a viewer does changes the world.
 - Every type that crosses the wire is a Rust struct in `server/crates/server/src/api/wire.rs`, exported to `src/generated/api.ts`.
 - The TypeScript simulation and brain the Rust port was checked against live only at the `ts-sim-reference` tag. Comments in the crates that name `src/sim/…`, `src/brain/…` or `tools/…` files that no longer exist refer to that tag. Do not bring those folders back to `src/`.
 
@@ -41,17 +41,17 @@ These are written by tools and checked by tests. Regenerate them; never edit the
 | `server/crates/world/tests/golden/*.json` | `bun tools/dump-world.ts` (from the TypeScript world in `src/world`) | `server/crates/world/tests/golden.rs` |
 | `public/audio/*` | `pnpm audio` (from `tools/audio/sources.ts`; needs Bun, ffmpeg and bsdtar) | |
 
-Fixtures from the TypeScript reference that cannot be regenerated on this branch: `server/crates/sim/tests/fixtures/export-day-*.json` (browser saves that must keep loading) and `server/crates/brain/tests/fixtures/prompts.json` (the prompts, word for word). Change them only for a deliberate change to the save format or a prompt, and say so in the commit.
+Fixtures from the TypeScript reference that cannot be regenerated on this branch: `server/crates/sim/tests/fixtures/export-day-*.json` (browser saves that must keep loading) and `server/crates/brain/tests/fixtures/prompts.json` (the prompts, word for word). Change them only for a deliberate change to the save format or a prompt, and say so in the commit. `server/crates/testing/data/cast.json` is the hand-written cast of the TypeScript game, used only by tests that know villagers by name (the game itself invents every villager); it is edited by hand.
 
 ## Rules a change has to keep
 
 - **The browser is a viewer.** No simulation, brain, saves or model calls in `src/`. `tests/architecture.test.ts` enforces the layer graph; see [src/AGENTS.md](src/AGENTS.md).
 - **The language model is configured on the server only**, through the `LLM_*` environment variables (`server/crates/server/src/config.rs`). Nothing about the model (key, URL, model, tuning) may become settable or visible in full from a browser; the admin panel shows it read-only with a connection test. The key and header values never reach a browser or an export, and `ApiKey` masks the key in `Debug` output.
-- **The sim is deterministic.** Only the world task advances it, and the outside world reaches it only through `Command`s applied at tick boundaries. See [server/AGENTS.md](server/AGENTS.md) for the porting rules that keep it reproducible.
+- **The sim is deterministic.** Only the world task advances it, and the outside world reaches it only through `Command`s applied at tick boundaries. That includes the villagers themselves: a new world is empty, and the model's descriptions of its founders and newcomers arrive as commands (`Settle`, `NewcomerDraft`), which the sim turns into characters with its own RNG. See [server/AGENTS.md](server/AGENTS.md) for the porting rules that keep it reproducible.
 - **The world exists twice.** `src/world` (TypeScript, for terrain, scenery and the camera) and `server/crates/world` (Rust, for the sim) must describe the same map. A layout change goes into both, then `bun tools/dump-world.ts` regenerates the golden fixtures and `cargo test` must pass. The client compares the server's `hello.worldHash` with its own and warns when they differ.
 - **Wire changes start in Rust.** Change `wire.rs`, run `export-api`, then update the client. Bump `PROTOCOL_VERSION` in `wire.rs` for a change older clients cannot read.
 - **The database schema only grows.** Add a new numbered migration in `server/crates/server/src/store/migrations.rs`; never edit one that has shipped.
-- **Guests only watch.** Anyone may watch as a guest for 15 minutes without signing in (`server/crates/server/src/guests.rs`). A new `/api` route goes into the `members` group in `api/router.rs`, which answers 403 to guests, unless watching needs it; guests never get a `ChatKey`, so they have no chat and no credits.
+- **Everyone may watch and chat.** Anyone who opens the page holds a guest seat (`server/crates/server/src/guests.rs`, capped by `MAX_VIEWERS`); only the holder of `AUTH_TOKEN` (or everyone, with `AUTH_MODE=off`) is an admin. A new `/api/admin` route goes under `require_admin` in `api/router.rs`; everything else under `/api` is open to guests.
 - **Security defaults stay safe.** `AUTH_MODE=off` must keep refusing non-loopback addresses and origins; mutating routes keep the CSRF check (JSON bodies, `Origin` equal to `PUBLIC_ORIGIN`); `TRUST_PROXY` stays opt-in.
 - **Sound licences**: only CC0, public domain or CC BY (credited in `public/audio/CREDITS.md`). No share-alike or non-commercial sounds.
 - **3D models** come from the KayKit collection (CC0), processed by `pnpm assets` into `public/assets/`.

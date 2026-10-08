@@ -1,4 +1,4 @@
-import type { Billboard, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, TickFrame } from '../generated/api';
+import type { Billboard, Ceremony, Dyn, DynDelta, Entity, EntityKind, Grave, House, Look, Snapshot, TickFrame } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -55,7 +55,7 @@ function fromEntity(entity: Entity): ViewEntity {
 }
 
 /**
- * The world as this viewer has been told it: entities, graves, billboards and houses, kept up to
+ * The world as this viewer has been told it: entities, graves, billboards, houses and the ceremony, kept up to
  * date by applying each tick frame in order. Everything else (roster, chronicle,
  * voices) goes to the HUD store.
  */
@@ -75,6 +75,10 @@ export class ViewWorld {
   readonly houses = new Map<string, House>();
   /** bumped when a house changes */
   housesVersion = 0;
+  /** the wedding or funeral the village has arranged, if any */
+  ceremony: Ceremony | null = null;
+  /** bumped when the ceremony changes */
+  ceremonyVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -89,6 +93,8 @@ export class ViewWorld {
     this.houses.clear();
     for (const house of snapshot.houses) this.houses.set(house.id, house);
     this.housesVersion++;
+    this.ceremony = snapshot.ceremony;
+    this.ceremonyVersion++;
   }
 
   /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
@@ -106,6 +112,9 @@ export class ViewWorld {
         if (event.house.phase === 'intact') this.houses.delete(event.house.id);
         else this.houses.set(event.house.id, event.house);
         this.housesVersion++;
+      } else if (event.type === 'ceremony') {
+        this.ceremony = event.ceremony.phase === 'over' ? null : event.ceremony;
+        this.ceremonyVersion++;
       }
     }
   }

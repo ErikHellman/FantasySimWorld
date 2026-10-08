@@ -11,10 +11,13 @@ use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, 
 use fsw_core::Vec2;
 use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{
-    Intent, IntentAction, IntentSource, Memory, MemoryKind, SimState, Stimulus, StimulusKind, TalkTone,
+    Ceremony, CeremonyPhase, Intent, IntentAction, IntentSource, Memory, MemoryKind, Rite, SimState, Stimulus,
+    StimulusKind, TalkTone,
 };
-use fsw_sim::util::{first_name, living};
-use fsw_sim::{Command, Sim, SimEvent, create_state};
+use fsw_sim::systems::death::kill_character;
+use fsw_sim::util::{Ctx, first_name, living};
+use fsw_sim::{Command, Sim, SimEvent};
+use fsw_testing::create_test_state;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 
@@ -77,7 +80,7 @@ fn reply(calls: Value) -> Value {
 }
 
 fn harness(responder: Responder, conversations: ConversationMode) -> Harness {
-    let mut state = create_state(30);
+    let mut state = create_test_state(30);
     // Nobody falls into talk on their own: the tests start the conversations they need, and who
     // happens to be chatting at dawn otherwise depends on the dice.
     for c in state.characters.values_mut() {
@@ -658,4 +661,147 @@ async fn a_request_cancelled_while_its_cue_waits_is_never_built_or_sent() {
     let stimuli = h.link.sim.lock().state.characters[&id].stimuli.clone();
     assert!(stimuli.iter().any(|s| s.text == SMOKE), "the build's commands were not sent");
     assert!(!h.transport.bodies().iter().any(|body| body.to_string().contains(SMOKE)), "no prompt was sent");
+}
+
+impl Harness {
+    /// Arranges a wedding between two villagers for two o'clock and tells the brain, as the sim would.
+    fn arrange_wedding(&mut self, a: &str, b: &str) -> String {
+        let mut sim = self.link.sim.lock();
+        let day = fsw_core::time::game_time(sim.state.tick).day;
+        let officiant = living(&sim.state).find(|c| first_name(c) == "Rowan").unwrap().id.clone();
+        for (me, other) in [(a, b), (b, a)] {
+            sim.state.characters.get_mut(me).unwrap().partner_id = Some(other.to_owned());
+        }
+        let id = sim.state.new_id("y");
+        sim.state.ceremony = Some(Ceremony {
+            id: id.clone(),
+            rite: Rite::Wedding { a: a.into(), b: b.into() },
+            place_id: "green".into(),
+            start_tick: fsw_sim::systems::director::tick_at(day, 14.0),
+            phase: CeremonyPhase::Announced,
+            step: 0,
+            until_tick: 0,
+            officiant,
+            speeches: Vec::new(),
+            attendees: Vec::new(),
+            slips: 0,
+        });
+        drop(sim);
+        self.brain.handle(&[SimEvent::CeremonyScheduled { ceremony_id: id.clone() }]);
+        id
+    }
+
+    /// Kills a villager; the sim arranges the funeral and the brain hears of it.
+    fn bury(&mut self, victim: &str) -> String {
+        let mut sim = self.link.sim.lock();
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        kill_character(&mut ctx, victim, "slain by a skeleton", None);
+        let id = sim.state.ceremony.as_ref().expect("a funeral").id.clone();
+        drop(sim);
+        self.brain.handle(&events);
+        id
+    }
+
+    fn speeches(&self) -> Vec<(String, String)> {
+        let sim = self.link.sim.lock();
+        let Some(ceremony) = &sim.state.ceremony else { return Vec::new() };
+        ceremony.speeches.iter().map(|s| (s.speaker_id.clone(), s.text.clone())).collect()
+    }
+}
+
+/// Answers the `speech` tool with `text`, and everything else with "continue".
+fn speaks(text: &'static str) -> Responder {
+    continue_otherwise(move |tools, _| {
+        tools.iter().any(|t| t == "speech").then(|| json!([{ "name": "speech", "args": { "text": text } }]))
+    })
+}
+
+#[tokio::test]
+async fn asks_the_couple_for_their_vows_when_a_wedding_is_arranged() {
+    let mut h = harness(
+        speaks("I will stand by you, whatever walks the road. *takes a breath* That is all."),
+        ConversationMode::Batched,
+    );
+    h.settle().await;
+    let (sylvi, kael) = (h.who("Sylvi"), h.who("Kael"));
+    h.arrange_wedding(&sylvi, &kael);
+    h.wait().await;
+    h.step(1);
+    let mut speeches = h.speeches();
+    speeches.sort();
+    assert_eq!(speeches.len(), 2, "{speeches:?}");
+    assert!(speeches.iter().all(|(_, text)| text == "I will stand by you, whatever walks the road. That is all."));
+    assert_eq!(h.log("Sylvi", RequestKind::Ceremony).unwrap().status, LogStatus::Ok);
+    assert_eq!(h.log("Kael", RequestKind::Ceremony).unwrap().status, LogStatus::Ok);
+    let bodies = h.transport.bodies();
+    let asked = bodies.iter().map(|b| b.to_string()).collect::<Vec<_>>().join("\n");
+    assert!(asked.contains("Write the vow you will speak to Kael"), "Sylvi was not asked for her vow");
+    assert!(asked.contains("Write the vow you will speak to Sylvi"), "Kael was not asked for his vow");
+}
+
+#[tokio::test]
+async fn asks_the_officiant_for_a_eulogy_that_names_the_dead_and_who_grieves() {
+    let mut h = harness(speaks("Garrick was a hard man and a true one. Sleep now."), ConversationMode::Batched);
+    h.settle().await;
+    let (garrick, dorn) = (h.who("Garrick"), h.who("Dorn"));
+    // Dorn is Garrick's drinking companion.
+    h.link.sim.lock().state.characters.get_mut(&dorn).unwrap().relationships.get_mut(&garrick).unwrap().affinity = 50.0;
+    h.bury(&garrick);
+    h.wait().await;
+    h.step(1);
+    let speeches = h.speeches();
+    assert_eq!(speeches.len(), 1, "{speeches:?}");
+    assert_eq!(speeches[0].0, h.who("Rowan"));
+    assert_eq!(h.log("Rowan", RequestKind::Ceremony).unwrap().status, LogStatus::Ok);
+    let asked = h.transport.bodies().iter().map(|b| b.to_string()).collect::<Vec<_>>().join("\n");
+    assert!(asked.contains("Garrick Stonefist died on day"), "the prompt does not name the dead");
+    assert!(
+        asked.contains("Grieving most: ") && asked.contains("Dorn (friend)"),
+        "the prompt does not say who grieves"
+    );
+}
+
+#[tokio::test]
+async fn a_speech_that_is_only_stage_directions_leaves_the_scripted_lines() {
+    let mut h = harness(speaks("*weeps quietly*"), ConversationMode::Batched);
+    h.settle().await;
+    let (sylvi, kael) = (h.who("Sylvi"), h.who("Kael"));
+    h.arrange_wedding(&sylvi, &kael);
+    h.wait().await;
+    h.step(1);
+    assert!(h.speeches().is_empty());
+    assert_eq!(h.log("Sylvi", RequestKind::Ceremony).unwrap().status, LogStatus::Fallback);
+}
+
+#[tokio::test]
+async fn a_speech_for_a_ceremony_that_was_called_off_is_dropped_as_stale() {
+    let mut h = harness(speaks("Too late for these words."), ConversationMode::Batched);
+    h.settle().await;
+    let (sylvi, kael) = (h.who("Sylvi"), h.who("Kael"));
+    h.arrange_wedding(&sylvi, &kael);
+    h.link.sim.lock().state.ceremony = None;
+    h.wait().await;
+    h.step(1);
+    assert!(h.speeches().is_empty());
+    // Called off before the prompt was built, so no request reached the model.
+    let asked = h.transport.bodies().iter().any(|b| b.to_string().contains("Write the vow"));
+    assert!(!asked);
+}
+
+#[tokio::test]
+async fn no_speech_is_asked_for_while_the_model_is_off() {
+    let mut h = harness(speaks("Nobody will hear this."), ConversationMode::Batched);
+    h.brain.configure(
+        LlmSettings { enabled: false, ..settings(ConversationMode::Batched) },
+        ApiKey::default(),
+        None,
+        None,
+    );
+    let (sylvi, kael) = (h.who("Sylvi"), h.who("Kael"));
+    h.arrange_wedding(&sylvi, &kael);
+    h.wait().await;
+    h.step(1);
+    assert!(h.speeches().is_empty());
+    assert!(h.log("Sylvi", RequestKind::Ceremony).is_none());
 }

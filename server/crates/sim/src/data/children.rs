@@ -40,6 +40,9 @@ pub fn child_look(class: ClassId) -> &'static ChildLook {
 /// What a child does with a free hour.
 pub const CHILD_HOBBIES: [ActivityId; 3] = [ActivityId::Play, ActivityId::Stroll, ActivityId::Rest];
 
+/// How many children a village has when its founding ends.
+pub const FOUNDING_CHILDREN: [i64; 2] = [4, 5];
+
 /// A child ages one year every this many sim days.
 pub const BIRTHDAY_DAYS: i64 = 3;
 /// The age at which a child becomes an adult.
@@ -62,7 +65,8 @@ pub const CHILD_GRIEVANCE_CAP: f64 = 30.0;
 
 /// First names for children born in the village (none shared with the wanderers' list).
 pub const CHILD_FIRST_NAMES: [&str; 14] = [
-    "Pim", "Tilly", "Rook", "Nettle", "Bo", "Wick", "Fenna", "Oakes", "Lark", "Dot", "Hob", "Juniper", "Sprout", "Mab",
+    "Pim", "Tilly", "Bramble", "Nettle", "Bo", "Wick", "Fenna", "Oakes", "Lark", "Dot", "Hob", "Juniper", "Sprout",
+    "Mab",
 ];
 
 /// Traits a child may be given at birth.
@@ -100,9 +104,12 @@ mod tests {
     }
 
     #[test]
-    fn child_names_do_not_overlap_the_wanderers() {
+    fn child_names_do_not_overlap_the_invented_villagers() {
+        use crate::data::names::{FIRST_NAMES_HE, FIRST_NAMES_SHE, FIRST_NAMES_THEY};
         for name in CHILD_FIRST_NAMES {
-            assert!(!crate::systems::arrivals::FIRST_NAMES.contains(&name), "{name}");
+            let taken =
+                FIRST_NAMES_SHE.contains(&name) || FIRST_NAMES_HE.contains(&name) || FIRST_NAMES_THEY.contains(&name);
+            assert!(!taken, "{name}");
         }
     }
 }

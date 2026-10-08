@@ -56,7 +56,6 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -
         name: None,
         lasting: false,
         was_id: None,
-        until_tick: None,
         arson: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
@@ -157,12 +156,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
             }
             continue;
         }
-        if monster.until_tick.is_some_and(|until| tick >= until) {
-            die(tick, monster);
-            continue;
-        }
-        let bought = monster.until_tick.is_some();
-        if daylight && !monster.lasting && !bought {
+        if daylight && !monster.lasting {
             die(tick, monster);
             crumbled += 1;
             continue;
@@ -174,7 +168,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
             }
             continue;
         }
-        if daylight && !bought && lie_low(ctx, &id) {
+        if daylight && lie_low(ctx, &id) {
             continue;
         }
         let monster = ctx.m(&id);
@@ -223,11 +217,11 @@ pub fn update_monsters(ctx: &mut Ctx) {
 
         let monster = &ctx.state.monsters[&id];
         if monster.kind == MonsterKind::Necromancer
-            && (!daylight || bought)
+            && !daylight
             && tick >= monster.next_summon_tick
             && ctx.state.monsters.len() < MAX_MONSTERS
         {
-            let (pos, facing, until_tick) = (monster.pos, monster.facing, monster.until_tick);
+            let (pos, facing) = (monster.pos, monster.facing);
             ctx.m(&id).next_summon_tick = tick + seconds_to_ticks(SUMMON_SECONDS);
             let mut summoned = false;
             for _ in 0..SUMMONED_PER_CAST {
@@ -237,9 +231,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
                 let x = pos.x + ctx.range(-3.0, 3.0);
                 let z = pos.z + ctx.range(-3.0, 3.0);
                 if let Some(spot) = nearest_walkable(vec2(x, z), 4) {
-                    let minion = spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
-                    // What a bought necromancer raises goes when it does.
-                    ctx.m(&minion).until_tick = until_tick;
+                    spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
                     summoned = true;
                 }
             }

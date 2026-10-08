@@ -15,6 +15,7 @@ use crate::state::{
     MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
+use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
@@ -22,7 +23,6 @@ use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelte
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::systems::viewer_events::pray;
 use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
@@ -355,9 +355,6 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         // A child drawn small would sit below the seat, so they sit on the ground beside it.
         let anim = if c.is_child() && anim == AnimId::SitChair { AnimId::SitFloor } else { anim };
         set_anim(c, anim, true);
-        if activity_id == ActivityId::Pray {
-            pray(ctx, id);
-        }
         if activity_id == ActivityId::ReadBoard {
             // With a model about, give it time to say how this person takes the board; the stock reaction
             // comes at the end either way if it does not answer.
@@ -841,6 +838,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
             IntentAction::Fetch { target_id } => run_fetch(ctx, &id, target_id),
+            IntentAction::Attend { place_id } => run_attend(ctx, &id, place_id),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);
                 if c.act.phase == ActPhase::Start {

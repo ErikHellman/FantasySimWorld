@@ -4,7 +4,8 @@ use fsw_core::time::TICKS_PER_DAY;
 use fsw_sim::state::{Character, Profile, Pronouns, SimState};
 use fsw_sim::systems::relationships::{RelationDelta, adjust, looks_welcome};
 use fsw_sim::util::{Ctx, chemistry, drawn_to, first_name, living, openness, rel};
-use fsw_sim::{Sim, SimEvent, create_state};
+use fsw_sim::{Sim, SimEvent};
+use fsw_testing::create_test_state;
 
 fn who(state: &SimState, name: &str) -> String {
     living(state).find(|c| first_name(c) == name).unwrap().id.clone()
@@ -16,7 +17,7 @@ fn with_trust(state: &mut SimState, from: &str, to: &str, trust: f64) {
 
 #[test]
 fn the_shy_open_up_to_those_they_trust_and_least_to_women() {
-    let mut state = create_state(1);
+    let mut state = create_test_state(1);
     let (torvald, brenna, aldric) = (who(&state, "Torvald"), who(&state, "Brenna"), who(&state, "Aldric"));
     let open = |state: &SimState, to: &str| openness(&state.characters[&torvald], &state.characters[to]);
 
@@ -41,7 +42,7 @@ fn the_shy_open_up_to_those_they_trust_and_least_to_women() {
 
 /// Conversations a very sociable Torvald starts with women over a few days.
 fn chats_with_women(seed: u32, shyness: f64) -> usize {
-    let mut state = create_state(seed);
+    let mut state = create_test_state(seed);
     let torvald = who(&state, "Torvald");
     let profile = &mut state.characters.get_mut(&torvald).unwrap().profile;
     profile.shyness = shyness;
@@ -71,7 +72,7 @@ fn a_shy_villager_seldom_starts_a_conversation_with_a_woman() {
 
 #[test]
 fn everyone_warms_to_a_good_looking_person_and_keeps_warming() {
-    let mut state = create_state(1);
+    let mut state = create_test_state(1);
     let (torvald, garrick, kael) = (who(&state, "Torvald"), who(&state, "Garrick"), who(&state, "Kael"));
     // Kael has no authored bond with him: the head start comes from his looks alone.
     let welcome = looks_welcome(&state.characters[&torvald]);
@@ -92,7 +93,7 @@ fn everyone_warms_to_a_good_looking_person_and_keeps_warming() {
 
 #[test]
 fn a_good_looking_person_turns_most_heads() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let torvald = &state.characters[&who(&state, "Torvald")];
     let others: Vec<&Character> = living(&state).filter(|c| c.id != torvald.id).collect();
     let drawn = others.iter().filter(|c| drawn_to(c, torvald)).count();
@@ -109,7 +110,7 @@ fn a_good_looking_person_turns_most_heads() {
 
 #[test]
 fn profiles_without_shyness_or_looks_read_and_write_as_before() {
-    let state = create_state(1);
+    let state = create_test_state(1);
     let garrick = &state.characters[&who(&state, "Garrick")].profile;
     let json = serde_json::to_value(garrick).unwrap();
     assert!(json.get("shyness").is_none() && json.get("looks").is_none());
