@@ -131,7 +131,9 @@ function BillboardsSection() {
       <h3>Billboards</h3>
       <p class="muted">
         Each board shows a new slogan every morning unless you put something up. The tone colours the board and how the
-        villagers take it. While the world is paused, a change shows when it resumes.
+        villagers take it. Readers may also do what a board urges: words such as pray, eat, ale, rest, fish, buy, market,
+        train, work, neighbour or friend send some of them off to do it. While the world is paused, a change shows when it
+        resumes.
       </p>
       <ul class="graves">
         {ui.billboards.value.map((board) => <BillboardRow key={board.id} board={board} />)}

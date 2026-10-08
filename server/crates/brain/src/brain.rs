@@ -21,7 +21,7 @@ use fsw_sim::state::{
     BoardReaction, CeremonyPhase, ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource,
     Rite, SimState, StimulusKind,
 };
-use fsw_sim::systems::billboards::{has_read, reading, shown};
+use fsw_sim::systems::billboards::{advice_for, advice_label, has_read, reading, shown};
 use fsw_sim::systems::ceremonies::{attending, speakers};
 use fsw_sim::systems::fire::fighting_fire;
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
@@ -1295,7 +1295,8 @@ impl Brain {
                 let index = reading(c).filter(|&i| billboards()[i].id == board && !has_read(state, c, i))?;
                 let place = get_place(&billboards()[index].place_id).name;
                 let text = shown(state, index).text;
-                built(billboard_prompt(state, c, place, &text), billboards()[index].id.clone())
+                let advice = advice_for(state, c, index).map(advice_label);
+                built(billboard_prompt(state, c, place, &text, advice), billboards()[index].id.clone())
             },
             move |_, response, board_id| {
                 let Some(call) = response.calls.iter().find(|c| c.name == "react_to_billboard") else {
@@ -1310,11 +1311,16 @@ impl Brain {
                     Some(Value::String(thought)) if !thought.trim().is_empty() => Some(thought.clone()),
                     _ => None,
                 };
-                let summary =
-                    format!("{}{}", reaction.as_str(), say.as_ref().map_or(String::new(), |s| format!(": “{s}”")));
+                let follow = call.args.get("follow").and_then(Value::as_bool);
+                let summary = format!(
+                    "{}{}{}",
+                    reaction.as_str(),
+                    if follow == Some(true) { ", takes its advice" } else { "" },
+                    say.as_ref().map_or(String::new(), |s| format!(": “{s}”"))
+                );
                 Applied::ok(
                     summary,
-                    vec![Command::BillboardReaction { id: apply_id.clone(), board_id, reaction, say, thought }],
+                    vec![Command::BillboardReaction { id: apply_id.clone(), board_id, reaction, say, thought, follow }],
                 )
             },
             None,
