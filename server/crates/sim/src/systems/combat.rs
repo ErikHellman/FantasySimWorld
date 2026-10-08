@@ -633,7 +633,8 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
             c.act.path = route;
         }
         let mut path = std::mem::take(&mut c.act.path);
-        advance(c, &mut path, RUN_SPEED);
+        let speed = RUN_SPEED * c.stride();
+        advance(c, &mut path, speed);
         c.act.path = path;
         set_anim(c, AnimId::Run, false);
         return;

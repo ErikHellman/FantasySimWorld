@@ -475,7 +475,8 @@ pub fn update_conversations(ctx: &mut Ctx) {
                     ac.act.repath_tick = tick + seconds_to_ticks(1.0);
                 }
                 let mut path = std::mem::take(&mut ac.act.path);
-                advance(ac, &mut path, WALK_SPEED);
+                let speed = WALK_SPEED * ac.stride();
+                advance(ac, &mut path, speed);
                 ac.act.path = path;
                 // The legs follow the body: with no route to walk, wait on the spot rather than walk on it.
                 set_anim(ac, if ac.moving { AnimId::Walk } else { AnimId::Idle }, false);
