@@ -15,6 +15,7 @@ The server migration is complete. The world, the language-model brain and every 
 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
+- A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Sign-in with a shared token, or with Google, Apple, Microsoft, LinkedIn, GitHub or Discord accounts and an allowlist; local development without sign-in.
@@ -27,7 +28,7 @@ Not yet done or not yet tried:
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
 - **Sign-in with real accounts**: every provider is tested against fakes only ([docs/sign-in.md](docs/sign-in.md) links a guide per provider, with the console steps and the check).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
-- **Later**: spoken lines (text to speech; the seam is in place), viewers acting on the world, orc raiders and large bosses, block and dodge, embeddings for memory, and newcomer profiles written by the model.
+- **Later**: spoken lines (text to speech; the seam is in place), coin and trade on top of the materials, new places built from scratch, orc raiders and large bosses, block and dodge, and newcomer profiles written by the model.
 
 ## What you need
 
@@ -233,7 +234,7 @@ cd server && cargo fmt --check && cargo clippy --all-targets --locked -- -D warn
 
 - `pnpm test` covers the client's stream playback, the view of the world it builds from the stream, the world layer, the audio mood and settings, and the architecture rules (the browser never reaches the simulation, the brain or saves; three.js stays in `src/render`).
 - `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the prompts byte for byte, the brain against a fake model, sign-in against a fake OpenID provider, the store, and the HTTP routes.
-- `cargo test -- --ignored` adds the 200-day soak and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
+- `cargo test -- --ignored` adds the 200-day soak, a 60-day check that the village does not level its own trees and homes, and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
 - Two committed files are written by the server and checked by its tests. In `server/`, after changing a type in `server/crates/server/src/api/wire.rs`, run `cargo run --bin export-api` (rewrites `src/generated/api.ts`); after changing the stream encoder, run `cargo run --bin export-frames` (rewrites `tests/fixtures/server-frames.json`, which the client's tests replay).
 
 Other tools:
@@ -250,7 +251,7 @@ Other tools:
 | `src/core` | Seeded RNG, 2D maths, game time |
 | `src/world` | The hex map, places and activity spots, scatter, navigation grid, pathfinding (terrain, scenery and camera bounds in the browser) |
 | `src/net` | The event stream, the world as this viewer knows it, the jitter buffer, REST calls |
-| `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table |
+| `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table; the trees and rocks, buildings and marks the server can change |
 | `src/ui` | The HUD, chat, admin panel, login and no-access pages (Preact and signals) |
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
