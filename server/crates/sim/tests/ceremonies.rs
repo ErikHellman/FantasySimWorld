@@ -351,6 +351,11 @@ fn a_funeral_is_held_the_next_morning_for_everyone_who_died_since_the_last() {
         describe_activity(w.state(), k).contains("funeral") || describe_activity(w.state(), k).contains("graveside")
     );
     let trust_before = w.state().characters[&kael].relationships[&isolde].trust;
+    // Wherever the morning took him, the widower is at the graveside before the mourners speak.
+    let k = w.sim.state.characters.get_mut(&kael).unwrap();
+    let spot = k.act.dest.expect("the widower has a spot at the graveside");
+    k.pos = spot;
+    k.act.path = vec![spot];
 
     // The officiant may have been at the far end of the valley when the village was called, so the
     // rite can start as late as the grace allows; by ten the dead are in the ground either way.

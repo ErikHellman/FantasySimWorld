@@ -13,6 +13,7 @@ use crate::state::{
     SimState, WorldJob,
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::blocking::update_blocking;
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
@@ -372,6 +373,7 @@ impl Sim {
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);
+        update_blocking(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);
         events
