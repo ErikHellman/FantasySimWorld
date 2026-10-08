@@ -501,6 +501,65 @@ spouse: string | null, kills: number, planSource: string, plan: Array<PlanRow>, 
  */
 memories: Array<Memory>, };
 
+/**
+ * A villager to link to from a card.
+ */
+export type NamedId = { id: string, 
+/**
+ * their first name
+ */
+name: string, };
+
+/**
+ * The inspector for one of the dead, every label rendered on the server.
+ */
+export type MonsterDetail = { id: string, 
+/**
+ * what its label says: the species, or the name of the villager it once was
+ */
+name: string, 
+/**
+ * e.g. "skeleton warrior" (`kind` is the tag of [`Detail`])
+ */
+species: string, hp: number, maxHp: number, 
+/**
+ * what it is doing now, e.g. "Hunting Mira near the well"
+ */
+status: string, 
+/**
+ * the villager it hunts, if any
+ */
+target: NamedId | null, 
+/**
+ * when and where it rose, e.g. "Rose from the graveyard on day 3 at 21:40"; empty when not known
+ */
+rose: string, 
+/**
+ * the full name of the villager it once was
+ */
+was: string | null, 
+/**
+ * does not crumble at dawn
+ */
+lasting: boolean, 
+/**
+ * villagers it has slain
+ */
+kills: number, 
+/**
+ * blows it has landed on a villager
+ */
+blows: number, 
+/**
+ * the least and the most one of its blows takes
+ */
+damage: [number, number], };
+
+/**
+ * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
+ */
+export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail;
+
 export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
@@ -700,7 +759,7 @@ export type StreamEvents = {
   tick: TickFrame;
   status: Status;
   roster: RosterEntry[];
-  detail: CharacterDetail;
+  detail: Detail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;
   chat_welcome: ChatWelcome;

@@ -9,7 +9,7 @@ use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::monsters::MonsterKind;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, ActivityId, ChronicleKind, House, HousePhase, Intent, IntentAction, IntentSource, SimState,
+    ActPhase, ActivityId, ChronicleKind, House, HousePhase, Intent, IntentAction, IntentSource, MonsterOrigin, SimState,
 };
 use fsw_sim::systems::arrivals::free_home;
 use fsw_sim::systems::combat::{max_hp, start_flee};
@@ -57,7 +57,7 @@ fn raise_a_monster(sim: &mut Sim) {
     let mut events = Vec::new();
     let mut ctx = Ctx::new(&mut sim.state, &mut events);
     let at = get_place("green").door;
-    spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, at, 0.0);
+    spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, at, 0.0, MonsterOrigin::Graveyard);
 }
 
 fn set_alight(sim: &mut Sim, place: &str) {

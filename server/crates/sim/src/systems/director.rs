@@ -6,7 +6,7 @@ use fsw_core::vec2;
 use fsw_world::places::{ActivityId, get_place};
 
 use crate::events::SimEvent;
-use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind};
+use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind, MonsterOrigin};
 use crate::systems::arrivals::arrive;
 use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
@@ -68,7 +68,8 @@ fn spawn_wave(ctx: &mut Ctx) {
         let z = point.z + ctx.range(-0.6, 0.6);
         let Some(pos) = ctx.state.nav.nearest_walkable(vec2(x, z), 5) else { continue };
         let kind = if with_necromancer && i == 0 { MonsterKind::Necromancer } else { random_monster_kind(ctx) };
-        spawn_monster(ctx, kind, pos, place.facing);
+        let origin = if from_ruins { MonsterOrigin::Ruins } else { MonsterOrigin::Graveyard };
+        spawn_monster(ctx, kind, pos, place.facing, origin);
     }
     if first_of_night {
         let text = if with_necromancer {

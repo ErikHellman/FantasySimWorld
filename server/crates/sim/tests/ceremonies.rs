@@ -7,7 +7,8 @@ use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::monsters::MonsterKind;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActivityId, CeremonyPhase, ChronicleKind, Intent, IntentAction, IntentSource, RelationLabel, Rite, SimState,
+    ActivityId, CeremonyPhase, ChronicleKind, Intent, IntentAction, IntentSource, MonsterOrigin, RelationLabel, Rite,
+    SimState,
 };
 use fsw_sim::systems::arrivals::free_home;
 use fsw_sim::systems::ceremonies::{BETROTHAL_DAYS, FUNERAL_HOUR, WEDDING_HOUR, attending};
@@ -275,14 +276,16 @@ fn a_wedding_slips_a_day_for_a_fire_or_the_dead_and_is_called_off_after_three() 
     // Just before the village is called at 13:20, so it has not yet slunk off to the ruins.
     let (mut w, _, _) = betrothed(3);
     w.run_to(5, 13.33);
-    w.with(|ctx| spawn_monster(ctx, MonsterKind::SkeletonWarrior, get_place("green").origin, 0.0));
+    w.with(|ctx| {
+        spawn_monster(ctx, MonsterKind::SkeletonWarrior, get_place("green").origin, 0.0, MonsterOrigin::Ruins)
+    });
     w.sim.state.monsters.values_mut().for_each(|m| m.lasting = true);
     w.run(10);
     assert_eq!(w.state().ceremony.as_ref().unwrap().slips, 1);
     // One lying low at the ruins puts nothing off.
     let (mut w, _, _) = betrothed(3);
     w.run_to(5, 13.2);
-    w.with(|ctx| spawn_monster(ctx, MonsterKind::Necromancer, get_place("ruins").door, 0.0));
+    w.with(|ctx| spawn_monster(ctx, MonsterKind::Necromancer, get_place("ruins").door, 0.0, MonsterOrigin::Ruins));
     w.sim.state.monsters.values_mut().for_each(|m| m.lasting = true);
     w.run_to(5, 13.5);
     assert_eq!(w.state().ceremony.as_ref().unwrap().phase, CeremonyPhase::Gathering);

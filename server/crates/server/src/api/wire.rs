@@ -6,7 +6,7 @@
 //!
 //! Stream events (`GET /api/stream`, server-sent events), by event name:
 //! `hello` [`Hello`], `snapshot` [`Snapshot`], `tick` [`TickFrame`], `status` [`Status`],
-//! `roster` (a list of [`RosterEntry`]), `detail` [`CharacterDetail`], `brainlog` [`BrainLogRecord`] (admins only),
+//! `roster` (a list of [`RosterEntry`]), `detail` [`Detail`], `brainlog` [`BrainLogRecord`] (admins only),
 //! `world_reset` [`WorldReset`], `chat_welcome` [`ChatWelcome`], `chat` [`ChatMessage`], `chat_you` [`ChatYou`],
 //! `guest_end` [`GuestEnd`] (guests only, the last event on their stream).
 //! Event ids are `"<bootId>:<tick>"`.
@@ -815,6 +815,53 @@ pub struct CharacterDetail {
     pub memories: Vec<Memory>,
 }
 
+/// A villager to link to from a card.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedId {
+    pub id: Id,
+    /// their first name
+    pub name: String,
+}
+
+/// The inspector for one of the dead, every label rendered on the server.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonsterDetail {
+    pub id: Id,
+    /// what its label says: the species, or the name of the villager it once was
+    pub name: String,
+    /// e.g. "skeleton warrior" (`kind` is the tag of [`Detail`])
+    pub species: String,
+    pub hp: f64,
+    pub max_hp: f64,
+    /// what it is doing now, e.g. "Hunting Mira near the well"
+    pub status: String,
+    /// the villager it hunts, if any
+    pub target: Option<NamedId>,
+    /// when and where it rose, e.g. "Rose from the graveyard on day 3 at 21:40"; empty when not known
+    pub rose: String,
+    /// the full name of the villager it once was
+    pub was: Option<String>,
+    /// does not crumble at dawn
+    pub lasting: bool,
+    /// villagers it has slain
+    pub kills: u32,
+    /// blows it has landed on a villager
+    pub blows: u32,
+    /// the least and the most one of its blows takes
+    pub damage: [u32; 2],
+}
+
+/// What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Detail {
+    // Boxed so the enum stays small whichever card is the bigger one.
+    Villager(Box<CharacterDetail>),
+    Monster(Box<MonsterDetail>),
+}
+
 // ---------------------------------------------------------------------------
 // Brain log (admins)
 // ---------------------------------------------------------------------------
@@ -1188,6 +1235,9 @@ pub fn typescript() -> String {
         Inventory,
         PlanRow,
         CharacterDetail,
+        NamedId,
+        MonsterDetail,
+        Detail,
         RequestKind,
         LogStatus,
         BrainLogRecord,
@@ -1215,7 +1265,7 @@ pub fn typescript() -> String {
         "/** Payload of each named event on `GET /api/stream`. */\n\
          export type StreamEvents = {\n  \
          hello: Hello;\n  snapshot: Snapshot;\n  tick: TickFrame;\n  status: Status;\n  roster: RosterEntry[];\n  \
-         detail: CharacterDetail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
+         detail: Detail;\n  brainlog: BrainLogRecord;\n  world_reset: WorldReset;\n  \
          chat_welcome: ChatWelcome;\n  chat: ChatMessage;\n  chat_you: ChatYou;\n  guest_end: GuestEnd;\n};\n",
     );
     out

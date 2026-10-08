@@ -10,7 +10,7 @@ use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
 use crate::data::monsters::{MONSTERS, MonsterKind};
 use crate::events::{Projectile, SimEvent};
-use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterPhase, SimState};
+use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
 use crate::systems::combat::{Assailant, damage_character};
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
@@ -22,7 +22,7 @@ const SUMMON_SECONDS: f64 = 20.0;
 const SUMMONED_PER_CAST: usize = 2;
 const ROAM_TARGETS: [&str; 7] = ["green", "tavern", "market", "watchtower", "smithy", "graveyard", "graveyard"];
 
-pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -> Id {
+pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, origin: MonsterOrigin) -> Id {
     let def = kind.def();
     let tick = ctx.tick();
     let id = ctx.state.new_id("m");
@@ -56,6 +56,11 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64) -
         lasting: false,
         was_id: None,
         arson: None,
+        rose_tick: Some(tick),
+        origin: Some(origin),
+        raised_by: None,
+        kills: 0,
+        blows: 0,
     };
     ctx.state.monsters.insert(id.clone(), monster);
     ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
@@ -193,6 +198,13 @@ pub fn update_monsters(ctx: &mut Ctx) {
                     let damage = ctx.int_range(def.damage[0], def.damage[1]);
                     let by = Assailant { id: id.clone(), label: def.label.into(), character: None };
                     damage_character(ctx, &victim, damage, by, FightMode::Monster);
+                    // Its tally, for the viewer's card.
+                    let slain = !ctx.state.characters.contains_key(&victim);
+                    let monster = ctx.m(&id);
+                    monster.blows += 1;
+                    if slain {
+                        monster.kills += 1;
+                    }
                 }
             }
             continue;
@@ -232,7 +244,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
                 let x = pos.x + ctx.range(-3.0, 3.0);
                 let z = pos.z + ctx.range(-3.0, 3.0);
                 if let Some(spot) = ctx.state.nav.nearest_walkable(vec2(x, z), 4) {
-                    spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing);
+                    spawn_monster(ctx, MonsterKind::SkeletonMinion, spot, facing, MonsterOrigin::Summoned);
                     summoned = true;
                 }
             }
