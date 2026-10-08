@@ -104,6 +104,36 @@ fn a_child_at_play_is_described_as_playing() {
     assert!(seen, "no child played all day");
 }
 
+#[test]
+fn a_child_covers_ground_at_the_pace_of_their_short_legs() {
+    use fsw_core::math2d::dist;
+    use fsw_core::time::{TICK_SECONDS, TICKS_PER_DAY};
+    use fsw_sim::data::children::CHILD_SCALE;
+    use fsw_sim::data::classes::WALK_SPEED;
+    use fsw_sim::state::AnimId;
+    use std::collections::HashMap;
+    // How often each length of step was taken at a walk, in micrometres, children and adults apart.
+    let mut steps: [HashMap<i64, u32>; 2] = Default::default();
+    let mut sim = Sim::new(create_test_state(1));
+    let mut last: Vec<_> = living(&sim.state).map(|c| (c.id.clone(), c.pos)).collect();
+    for _ in 0..TICKS_PER_DAY / 2 {
+        sim.step();
+        for (id, before) in &mut last {
+            let c = &sim.state.characters[id.as_str()];
+            let step = dist(*before, c.pos);
+            *before = c.pos;
+            if step > 0.0 && matches!(c.anim, AnimId::Walk | AnimId::WalkB | AnimId::WalkC) {
+                *steps[usize::from(c.is_child())].entry((step * 1e6).round() as i64).or_default() += 1;
+            }
+        }
+    }
+    // Most ticks of a walk are a full stride along a straight leg of the route; corners and arrivals are shorter.
+    let stride = |who: usize| *steps[who].iter().max_by_key(|(_, n)| **n).expect("nobody walked").0;
+    let micrometres = |speed: f64| (speed * TICK_SECONDS * 1e6).round() as i64;
+    assert_eq!(stride(0), micrometres(WALK_SPEED), "an adult's stride");
+    assert_eq!(stride(1), micrometres(WALK_SPEED * CHILD_SCALE), "a child's stride");
+}
+
 // --- Protection -----------------------------------------------------------------
 
 mod protection {

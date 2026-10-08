@@ -112,8 +112,9 @@ pub(crate) fn travel(tick: i64, c: &mut Character, speed: Option<f64>) -> bool {
     }
     let speed = speed.unwrap_or_else(|| speed_of(c, tick));
     let mut path = std::mem::take(&mut c.act.path);
-    let arrived = advance(c, &mut path, speed);
+    let arrived = advance(c, &mut path, speed * c.stride());
     c.act.path = path;
+    // The gait follows the pace asked for, so a running child still runs, only shorter-legged.
     let anim = if speed > WALK_SPEED * 1.3 { AnimId::Run } else { walk_anim(c, tick) };
     set_anim(c, anim, false);
     arrived
@@ -348,7 +349,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             return;
         };
         let c = ctx.c(id);
-        let speed = speed_of(c, tick);
+        let speed = speed_of(c, tick) * c.stride();
         if !step_toward(c, slot.pos, speed) {
             let anim = walk_anim(c, tick);
             set_anim(c, anim, false);

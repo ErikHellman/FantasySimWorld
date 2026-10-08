@@ -475,7 +475,8 @@ pub fn update_conversations(ctx: &mut Ctx) {
                 // Stop a comfortable distance short rather than standing on their toes.
                 if d > TALK_DISTANCE + 0.3 {
                     let mut path = std::mem::take(&mut ac.act.path);
-                    advance(ac, &mut path, WALK_SPEED);
+                    let speed = WALK_SPEED * ac.stride();
+                    advance(ac, &mut path, speed);
                     ac.act.path = path;
                     set_anim(ac, AnimId::Walk, false);
                 }

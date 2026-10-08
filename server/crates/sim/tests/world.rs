@@ -276,6 +276,12 @@ fn two_at_one_tree_bring_it_down_sooner() {
     let time_to_fell = |workers: &[&str]| {
         let mut sim = quiet(4);
         sim.state.director.next_wave_tick = i64::MAX;
+        // The cast's feuds are settled, or a brawl can pull a woodcutter off the tree and the race says nothing.
+        for c in sim.state.characters.values_mut() {
+            for r in c.relationships.values_mut() {
+                r.grievance = 0.0;
+            }
+        }
         for id in workers {
             set_work(&mut sim, id, WorldJob::Fell, &tree);
         }

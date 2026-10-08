@@ -901,6 +901,13 @@ impl Character {
         self.child.is_some()
     }
 
+    /// How far this character's legs carry them, as a share of an adult's: a child
+    /// is an adult model drawn small, so they cover ground at the same fraction of
+    /// the pace or their feet slide over it.
+    pub fn stride(&self) -> f64 {
+        if self.is_child() { crate::data::children::CHILD_SCALE } else { 1.0 }
+    }
+
     /// Drunk at this tick.
     pub fn drunk(&self, tick: i64) -> bool {
         tick < self.quirk_state.drunk_until_tick
