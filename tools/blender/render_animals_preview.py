@@ -2,7 +2,8 @@
 
     /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/render_animals_preview.py -- <out dir> [sheets...]
 
-Sheets: lineup (every species beside a villager, to scale), scene (a small farmyard
+Sheets: lineup (every species beside a villager, to scale), ride (a villager on a
+horse), scene (a small farmyard
 from about the game camera's height), tiles (each model alone, and each species
 from four sides; ImageMagick's `montage` then joins them into variants.png and
 turnarounds.png). With no sheet names, all of them.
@@ -28,7 +29,7 @@ FARMER_TEXTURE = os.path.join(REPO, "public/assets/textures/farmer_texture_A.png
 
 args = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
 OUT = os.path.abspath(args[0] if args else os.path.join(HERE, "preview"))
-SHEETS = set(args[1:]) or {"lineup", "scene", "tiles"}
+SHEETS = set(args[1:]) or {"lineup", "ride", "scene", "tiles"}
 os.makedirs(OUT, exist_ok=True)
 
 # One of each species, smallest first, then the other colours.
@@ -124,8 +125,8 @@ def remove(holder):
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
-def farmer(location, turn=0.0):
-    """Farmer_A with the arms lowered from the rest T-pose, for scale.
+def farmer(location, turn=0.0, riding=False):
+    """Farmer_A with the arms lowered from the rest T-pose, or sitting astride with `riding`, for scale.
 
     The processed models leave their palette texture out (the client adds it), so it is put back here.
     """
@@ -139,11 +140,27 @@ def farmer(location, turn=0.0):
             texture.interpolation = "Closest"
             tree.links.new(texture.outputs["Color"], tree.nodes["Principled BSDF"].inputs["Base Color"])
     rig = next(o for o in descendants(holder) if o.type == "ARMATURE")
-    for bone, angle in (("upperarm.l", 1.25), ("upperarm.r", -1.25)):
+    # Turns in the rig's own axes: x across the body, y front to back (forward is -y), z up.
+    turns = {"upperarm.l": Quaternion((0, 1, 0), 1.25), "upperarm.r": Quaternion((0, 1, 0), -1.25)}
+    if riding:
+        turns["upperarm.l"] = Quaternion((1, 0, 0), -0.5) @ Quaternion((0, 1, 0), 1.1)
+        turns["upperarm.r"] = Quaternion((1, 0, 0), -0.5) @ Quaternion((0, 1, 0), -1.1)
+        # The legs are too short to wrap round a horse: thighs go out sideways over its back
+        # and the shins hang straight down its flanks.
+        for side, s in (("l", 1), ("r", -1)):
+            turns["upperleg." + side] = Quaternion((0, 1, 0), -s * 1.25) @ Quaternion((1, 0, 0), -0.3)
+            turns["lowerleg." + side] = Quaternion((0, 1, 0), s * 1.2)
+    for bone, turn_by in turns.items():
         pose = rig.pose.bones[bone]
         rest = pose.bone.matrix_local.to_quaternion()
-        pose.rotation_quaternion = rest.inverted() @ Quaternion((0, 1, 0), angle) @ rest
+        pose.rotation_quaternion = rest.inverted() @ turn_by @ rest
     return holder
+
+
+def seat_of(holder):
+    """Where a rider's hips go on a horse: its empty named seat."""
+    bpy.context.view_layer.update()
+    return next(o for o in descendants(holder) if o.name.startswith("seat")).matrix_world.translation.copy()
 
 
 def bounds(holders):
@@ -213,11 +230,11 @@ def lineup():
         width = max(c.x for c in bounds([holder])) - min(c.x for c in bounds([holder]))
         x += width / 2
         holder.location.x = x
-        label(name.split("_")[0], (x, -0.95, 0.02))
+        label(name.split("_")[0], (x, -1.3, 0.02))
         x += width / 2 + 0.3
         holders.append(holder)
     holder = farmer((x + 0.6, 0, 0))
-    label("villager", (x + 0.6, -0.95, 0.02))
+    label("villager", (x + 0.6, -1.3, 0.02))
     holders.append(holder)
     frame(camera, holders, azimuth=28, elevation=16, margin=1.1)
     render(os.path.join(OUT, "lineup.png"))
@@ -238,7 +255,7 @@ def farmyard():
     load(os.path.join(PROPS, "flowers_yellow.glb"), (5.2, -5.6, 0))
     load(os.path.join(PROPS, "mushrooms_red.glb"), (7.4, 1.0, 0))
     placed = [
-        ("horse_chestnut", (3.3, 1.8), 2.4), ("horse_grey", (1.2, 2.6), 3.6), ("cow_holstein", (-2.8, 1.6), 0.6), ("cow_brown", (-4.2, -0.6), 2.0),
+        ("horse_chestnut", (3.3, 1.8), 2.4), ("horse_grey", (0.6, 1.9), -1.2), ("cow_holstein", (-2.8, 1.6), 0.6), ("cow_brown", (-4.2, -0.6), 2.0),
         ("sheep_white", (0.4, -0.4), -0.5), ("sheep_white", (1.4, -1.2), 0.3), ("sheep_black", (-0.6, -1.4), 0.9),
         ("goat_brown", (4.4, -1.6), -1.0), ("goat_white", (2.8, -2.6), 0.5), ("pig_pink", (-2.6, -2.4), -0.8), ("pig_spotted", (-1.2, -2.0), 0.4),
         ("chicken_white", (-6.4, -5.6), 0.8), ("chicken_brown", (-5.5, -6.3), -0.4), ("chicken_white", (-6.9, -6.6), 2.6),
@@ -246,8 +263,11 @@ def farmyard():
         ("dog_collie", (-1.0, -5.2), 0.5), ("cat_ginger", (-7.6, -2.4), -1.2), ("cat_grey", (6.6, -4.2), 0.7), ("dog_brown", (-7.4, -4.6), -0.6),
         ("owl_brown", (6.0, 4.0), -0.3),
     ]
+    loaded = {}
     for name, (x, y), turn in placed:
-        load(os.path.join(ANIMALS, name + ".glb"), (x, y, 0), turn)
+        loaded[name] = load(os.path.join(ANIMALS, name + ".glb"), (x, y, 0), turn)
+    rider_turn = dict((name, turn) for name, _, turn in placed)["horse_grey"]
+    farmer(seat_of(loaded["horse_grey"]) - Vector((0, 0, 0.38)), turn=rider_turn, riding=True)
     # The owl and the robin perch on fence posts; posts are about 1.3 tall.
     for holder in bpy.data.objects:
         if holder.name == "owl_brown.glb":
@@ -263,6 +283,17 @@ def farmyard():
     camera.data.lens = 40
     aim(camera, (0, -1.5, 0.6), azimuth=14, elevation=46, distance=21)
     render(os.path.join(OUT, "in_scene.png"))
+
+
+def ride():
+    scene, camera = stage(ground="#d8d0bd", size=(1800, 1100), samples=64)
+    mounted = load(os.path.join(ANIMALS, "horse_chestnut.glb"), (0, 0, 0))
+    # The rig's hips sit 0.41 above its origin; the mesh's seat is a little lower.
+    rider = farmer(seat_of(mounted) - Vector((0, 0, 0.38)), riding=True)
+    saddled = load(os.path.join(ANIMALS, "horse_grey.glb"), (2.4, 0.6, 0))
+    standing = farmer((-1.7, -0.2, 0))
+    frame(camera, [mounted, rider, saddled, standing], azimuth=38, elevation=14, margin=1.08)
+    render(os.path.join(OUT, "ride.png"))
 
 
 def tiles():
@@ -303,6 +334,8 @@ def tiles():
 
 if "lineup" in SHEETS:
     lineup()
+if "ride" in SHEETS:
+    ride()
 if "scene" in SHEETS:
     farmyard()
 if "tiles" in SHEETS:

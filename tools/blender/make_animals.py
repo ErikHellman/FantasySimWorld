@@ -433,43 +433,73 @@ def cow(name, c):
 
 
 def horse(name, c):
+    """A riding horse, sized for a villager to sit astride.
+
+    The villagers are chibi, with legs only about half a unit long, so the horse
+    is tall (a rider's feet hang well clear of the ground) but its back stays
+    narrow enough for those short legs to straddle. The saddle is its own part
+    so the game can show it only on horses that are ridden, and an empty named
+    `seat` marks where a rider's hips go.
+    """
     reset()
     animal = root(name)
-    leg, bw, bl, bh = 0.78, 0.56, 1.2, 0.6
+    leg, bw, bl, bh = 1.0, 0.62, 1.6, 0.72
     bz = leg + bh / 2 - 0.06
+    top = bz + bh / 2
     box((bw, bl, bh), (0, 0, bz), c["coat"], round=0.55)
     body = part("body", (0, 0, bz), animal)
-    legs4(body, bw, bl, leg + 0.08, 0.16, c["coat"], c["hoof"], foot=0.12, inset=0.05, socks=c.get("socks", ()))
+    legs4(body, bw, bl, leg + 0.08, 0.21, c["coat"], c["hoof"], foot=0.15, inset=0.06, socks=c.get("socks", ()))
 
-    # The neck belongs to the head so the two bow together.
+    # The neck belongs to the head so the two bow together. The head and neck are the
+    # first draft's scaled up by k, which kept the face's proportions.
+    k = 1.3
     lean = 0.45
     axis = Vector((0, -math.sin(lean), math.cos(lean)))
     back = Vector((0, math.cos(lean), math.sin(lean)))
-    neck = Vector((0, -bl / 2 + 0.1, bz + bh / 2 + 0.14))
-    box((0.3, 0.34, 0.66), neck, c["coat"], rotation=(lean, 0, 0), round=0.5)
+    neck = Vector((0, -bl / 2 + 0.1 * k, top + 0.14 * k))
+    box((0.3 * k, 0.34 * k, 0.66 * k), neck, c["coat"], rotation=(lean, 0, 0), round=0.5)
     for t in (-0.26, -0.12, 0.02, 0.16, 0.3):
-        box((0.12, 0.13, 0.17), neck + axis * t + back * 0.17, c["mane"], rotation=(lean, 0, 0), round=0.5)
+        box((0.12 * k, 0.13 * k, 0.17 * k), neck + axis * t * k + back * 0.17 * k, c["mane"], rotation=(lean, 0, 0), round=0.5)
     tilt = 0.4
     along = Vector((0, -math.cos(tilt), -math.sin(tilt)))
-    head_centre = neck + axis * 0.36 + along * 0.2
-    box((0.36, 0.64, 0.38), head_centre, c["coat"], rotation=(tilt, 0, 0), round=0.55)
-    box((0.34, 0.2, 0.3), head_centre + along * 0.27 + Vector((0, 0, -0.02)), c["muzzle"], rotation=(tilt, 0, 0), round=0.55)
+    up = Vector((0, 0, k))
+    head_centre = neck + (axis * 0.36 + along * 0.2) * k
+    box((0.36 * k, 0.64 * k, 0.38 * k), head_centre, c["coat"], rotation=(tilt, 0, 0), round=0.55)
+    box((0.34 * k, 0.2 * k, 0.3 * k), head_centre + along * 0.27 * k - up * 0.02, c["muzzle"], rotation=(tilt, 0, 0), round=0.55)
     if c.get("blaze"):
-        box((0.1, 0.4, 0.03), head_centre + along * 0.02 + Vector((0, 0, 0.19)), WHITE, rotation=(tilt, 0, 0), round=0.5)
-    box((0.14, 0.14, 0.12), head_centre - along * 0.18 + Vector((0, 0, 0.2)), c["mane"], rotation=(tilt, 0, 0), round=0.5)
-    eye_at = head_centre - along * 0.05 + Vector((0, 0, 0.07))
-    eyes(0.18, eye_at.y, eye_at.z, 0.1, side=True)
-    head = part("head", (0, -bl / 2 + 0.12, bz + bh / 2 - 0.08), body)
+        box((0.1 * k, 0.4 * k, 0.03 * k), head_centre + along * 0.02 * k + up * 0.19, WHITE, rotation=(tilt, 0, 0), round=0.5)
+    box((0.14 * k, 0.14 * k, 0.12 * k), head_centre - along * 0.18 * k + up * 0.2, c["mane"], rotation=(tilt, 0, 0), round=0.5)
+    eye_at = head_centre - along * 0.05 * k + up * 0.07
+    eyes(0.18 * k, eye_at.y, eye_at.z, 0.1 * k, side=True)
+    head = part("head", (0, -bl / 2 + 0.12 * k, top - 0.08 * k), body)
     for side, s in SIDES:
-        ear = head_centre - along * 0.24 + Vector((s * 0.1, 0, 0.16))
-        rod(ear, ear + Vector((s * 0.03, 0.03, 0.17)), 0.065, c["coat"], tip_radius=0.0, vertices=4)
+        ear = head_centre - along * 0.24 * k + Vector((s * 0.1 * k, 0, 0.16 * k))
+        rod(ear, ear + Vector((s * 0.03, 0.03, 0.17)) * k, 0.065 * k, c["coat"], tip_radius=0.0, vertices=4)
         part("ear_" + side, ear, head)
 
     base = Vector((0, bl / 2 - 0.03, bz + bh * 0.32))
-    bend = base + Vector((0, 0.2, -0.16))
-    rod(base, bend, 0.09, c["mane"], tip_radius=0.07)
-    rod(bend, bend + Vector((0, 0.05, -0.42)), 0.075, c["mane"], tip_radius=0.03)
+    bend = base + Vector((0, 0.2, -0.16)) * k
+    rod(base, bend, 0.09 * k, c["mane"], tip_radius=0.07 * k)
+    rod(bend, bend + Vector((0, 0.05, -0.42)) * k, 0.075 * k, c["mane"], tip_radius=0.03 * k)
     part("tail", base, body)
+
+    # A blanket wrapped over the back, a saddle on it and short stirrups: a villager's legs
+    # are short, so their feet sit just below the saddle and out over the horse's sides.
+    sy = 0.08
+    wrap = 0.6 * bh
+    box((bw + 0.03, 0.66, wrap), (0, sy, top - wrap / 2 + 0.025), c["blanket"], round=0.17 / (wrap / 2))
+    box((bw * 0.62, 0.5, 0.1), (0, sy, top + 0.07), c["leather"], round=0.6)
+    box((0.22, 0.1, 0.16), (0, sy - 0.24, top + 0.13), c["leather"], round=0.6)
+    box((bw * 0.56, 0.09, 0.16), (0, sy + 0.24, top + 0.13), c["leather"], round=0.6)
+    for s in (1, -1):
+        stirrup = Vector((s * 0.4, sy - 0.12, top - 0.1))
+        rod((s * bw * 0.28, sy - 0.06, top + 0.06), stirrup + Vector((0, 0, 0.02)), 0.02, c["leather"], vertices=4)
+        box((0.14, 0.16, 0.04), stirrup, "#8d8a88", round=0.5)
+    saddle = part("saddle", (0, sy, top), body)
+    seat = bpy.data.objects.new("seat", None)
+    bpy.context.scene.collection.objects.link(seat)
+    seat.parent = saddle
+    seat.location = (0, 0, 0.12)
     export(name)
 
 
@@ -635,8 +665,8 @@ ROSTER = [
     (cow, "cow_holstein", {"coat": "#f3f0ea", "legs": "#f3f0ea", "spot": "#2f2b2b", "muzzle": "#eab0ac", "nostril": "#8a4b52", "udder": "#eab0ac", "horn": "#ece0c2", "ear": "#2f2b2b", "hoof": "#3a3330", "tuft": "#2f2b2b", "head_spot": True,
                            "spots": ((1, -0.22, 0.04, 0.3, 0.2), (1, 0.24, -0.02, 0.24, 0.18), (-1, -0.05, 0.02, 0.36, 0.22), (-1, 0.3, 0.06, 0.18, 0.14), (0, 0.12, 0, 0.26, 0.3))}),
     (cow, "cow_brown", {"coat": "#9a5a35", "legs": "#9a5a35", "muzzle": "#e8c9a8", "nostril": "#6a3a2a", "udder": "#e8b9a8", "horn": "#ece0c2", "ear": "#9a5a35", "hoof": "#3a2a20", "tuft": "#5a3220"}),
-    (horse, "horse_chestnut", {"coat": "#a65a2e", "mane": "#4a2c1c", "muzzle": "#7e4223", "hoof": "#3a3330", "blaze": True, "socks": ("fl", "br")}),
-    (horse, "horse_grey", {"coat": "#c9c6c2", "mane": "#f2f0ec", "muzzle": "#8d8a88", "hoof": "#4a4542"}),
+    (horse, "horse_chestnut", {"coat": "#a65a2e", "mane": "#4a2c1c", "muzzle": "#7e4223", "hoof": "#3a3330", "blaze": True, "socks": ("fl", "br"), "blanket": "#b8413a", "leather": "#6a3f24"}),
+    (horse, "horse_grey", {"coat": "#c9c6c2", "mane": "#f2f0ec", "muzzle": "#8d8a88", "hoof": "#4a4542", "blanket": "#3f6fae", "leather": "#4a3426"}),
     (crow, "crow", {"body": "#34333d", "wing": "#2a2932", "tip": "#22212a", "tail": "#2a2932", "beak": "#4a4854", "legs": "#4a4854"}),
     (lambda n, c: crow(n, c, flying=True), "crow_flying", {"body": "#34333d", "wing": "#2a2932", "tip": "#22212a", "tail": "#2a2932", "beak": "#4a4854", "legs": "#4a4854"}),
     (songbird, "robin", {"back": "#8a6a4a", "breast": "#e2703a", "wing": "#735638", "beak": "#3a3330", "legs": "#6a5a4a"}),
