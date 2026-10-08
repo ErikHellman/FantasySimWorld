@@ -363,8 +363,6 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
         c.act.until_tick = tick + minutes_to_ticks(minutes);
         c.tool = def.tool.map(str::to_owned);
         let anim = slot.anim.and_then(AnimId::parse).unwrap_or(def.anim);
-        // A child drawn small would sit below the seat, so they sit on the ground beside it.
-        let anim = if c.is_child() && anim == AnimId::SitChair { AnimId::SitFloor } else { anim };
         set_anim(c, anim, true);
         if activity_id == ActivityId::ReadBoard {
             // With a model about, give it time to say how this person takes the board; the stock reaction

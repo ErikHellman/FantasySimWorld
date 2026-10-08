@@ -12,6 +12,10 @@ const FADE_SECONDS = 0.18;
  * a swung weapon and for the shadow it throws into the picture at a low sun.
  */
 const CULL_MARGIN = 6;
+/** The bone whose place the sitting clip moves onto the seat. */
+const HIPS_TRACK = 'hips.position';
+/** A seated body this close to the seat, in metres, is left where the clip puts it. */
+const SEAT_TOLERANCE = 0.02;
 
 export type ActorLook = Look;
 
@@ -54,6 +58,8 @@ export class ActorView {
   private readonly bounds = new THREE.Sphere();
   /** animation time that passed while out of view, owed to the mixer */
   private unplayed = 0;
+  /** how far to move the body, while it sits on a seat, to bring its hips onto the seat (null when they are already there) */
+  private readonly seatShift: THREE.Vector3 | null;
 
   constructor(private readonly assets: Assets, look: ActorLook) {
     const template = assets.character(look.model);
@@ -86,6 +92,7 @@ export class ActorView {
     this.model = model;
     this.root.add(model);
     this.mixer = new THREE.AnimationMixer(model);
+    this.seatShift = seatShift(assets, this.rig, template.scale);
     this.hands = { r: model.getObjectByName('handslotr') ?? null, l: model.getObjectByName('handslotl') ?? null };
   }
 
@@ -180,6 +187,12 @@ export class ActorView {
     }
     this.mixer.update(dt + this.unplayed);
     this.unplayed = 0;
+    if (this.seatShift) {
+      // Follow the sitting clip's weight, so the body rises onto the seat as it sits down and steps off as it gets up.
+      const sitting = this.actions.get(ANIMS.sit_chair.clip);
+      const weight = sitting?.isRunning() ? sitting.getEffectiveWeight() : 0;
+      this.model.position.copy(this.seatShift).multiplyScalar(weight);
+    }
   }
 
   dispose(): void {
@@ -188,4 +201,21 @@ export class ActorView {
     for (const skeleton of this.skeletons.values()) skeleton.dispose();
     this.root.removeFromParent();
   }
+}
+
+/**
+ * The seats are made for the medium rig at full size: its sitting clip puts the hips on them. A body drawn at
+ * another scale has its hips moved with it; a child (the adult mesh at 0.6) has them below the seat and in front of
+ * it, so it sinks into the chair. This is how far to move the whole body to put its hips where the medium rig's go.
+ */
+function seatShift(assets: Assets, rig: string, scale: number): THREE.Vector3 | null {
+  const seated = (rig: string): THREE.Vector3 | null => {
+    const hips = assets.clip(rig, ANIMS.sit_chair.clip).tracks.find((track) => track.name === HIPS_TRACK);
+    return hips ? new THREE.Vector3().fromArray(hips.values) : null;
+  };
+  const target = seated(TIMING_RIG);
+  const own = seated(rig);
+  if (!target || !own) return null;
+  const shift = target.sub(own.multiplyScalar(scale));
+  return shift.length() < SEAT_TOLERANCE ? null : shift;
 }

@@ -288,7 +288,7 @@ mod protection {
     }
 
     #[test]
-    fn a_child_sits_on_the_ground_to_eat() {
+    fn a_child_sits_on_the_seat_to_eat() {
         use fsw_sim::data::anims::AnimId;
         use fsw_sim::state::ActPhase;
         use fsw_world::places::ActivityId;
@@ -299,7 +299,7 @@ mod protection {
             for c in children(&sim.state) {
                 if c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Eat)) && c.act.phase == ActPhase::Perform
                 {
-                    assert_ne!(c.anim, AnimId::SitChair, "{}", c.profile.name);
+                    assert_eq!(c.anim, AnimId::SitChair, "{}", c.profile.name);
                     seen = true;
                 }
             }
