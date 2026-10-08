@@ -851,7 +851,7 @@ fn conclude_wedding(ctx: &mut Ctx, ceremony: &Ceremony, a: &str, b: &str) {
             "{a_name} and {b_name} were married on the village green before the whole village. \
              They make their home at {home_name}."
         ),
-        vec![a.into(), b.into()],
+        vec![a.into(), b.into(), crate::systems::world::building_id(&home)],
     );
     ctx.emit(SimEvent::SavePoint { reason: "wedding".into() });
     begin_feast(ctx);

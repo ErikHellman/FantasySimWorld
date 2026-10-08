@@ -223,6 +223,30 @@ export class Structures {
     });
   }
 
+  /**
+   * The building under a ray, as its object id (`b:<place>`), or null. Only what is drawn for each building right now
+   * (the building, its bigger self, the ruin, the bare plot or the scaffolding) can be hit; the raycaster itself does
+   * not skip hidden objects, so they are left out here. The nearest hit wins, and the distance comes back with it so
+   * the caller can weigh it against other things under the ray.
+   */
+  pick(raycaster: THREE.Raycaster): { id: string; distance: number } | null {
+    const visible: THREE.Object3D[] = [];
+    const owner = new Map<THREE.Object3D, string>();
+    for (const structure of this.structures.values()) {
+      for (const root of [structure.building, structure.bigger, structure.ruin, structure.plot, structure.scaffold]) {
+        if (!root || !root.visible) continue;
+        visible.push(root);
+        owner.set(root, `b:${structure.placeId}`);
+      }
+    }
+    const hit = raycaster.intersectObjects(visible, true)[0];
+    if (!hit) return null;
+    let object: THREE.Object3D | null = hit.object;
+    while (object && !owner.has(object)) object = object.parent;
+    const id = object ? owner.get(object) : undefined;
+    return id ? { id, distance: hit.distance } : null;
+  }
+
   /** Per rendered frame: flames lick and smoke rises over the burning building. */
   update(dt: number): void {
     if (!this.fires.some((fire) => fire.at)) return;

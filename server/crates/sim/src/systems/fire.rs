@@ -31,7 +31,9 @@ use crate::systems::death::{detach, kill_character};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::systems::world::{building_whole, drop_object, place_model, position_of, prop_name, put_object};
+use crate::systems::world::{
+    building_id, building_whole, drop_object, place_model, position_of, prop_name, put_object,
+};
 use crate::util::{
     Ctx, bump_epoch, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, set_anim,
 };
@@ -120,6 +122,18 @@ pub fn site_name(site: &str) -> String {
         None if is_home_site(site) => find_place(site).map_or_else(|| site.to_owned(), |place| place.name.to_owned()),
         None => "something the village built".to_owned(),
     }
+}
+
+/// The id a site goes by on a viewer's page: a home by its building (`b:<home>`), anything else as it is.
+/// Chronicle lines about a site carry it, after the people they name, so the page can find them.
+pub fn site_id(site: &str) -> String {
+    if is_home_site(site) { building_id(site) } else { site.to_owned() }
+}
+
+/// `ids` with the site's page id on the end, for a chronicle line about it.
+fn ids_with(mut ids: Vec<Id>, site: &str) -> Vec<Id> {
+    ids.push(site_id(site));
+    ids
 }
 
 /// Whether a fire site is a building (which musters the village) rather than a prop.
@@ -223,7 +237,11 @@ pub fn ignite_site(ctx: &mut Ctx, site: &str, arsonist: Option<&str>) {
                 bump_epoch(c);
             }
             if arsonist.is_none() {
-                ctx.chronicle(ChronicleKind::Fire, format!("{} is on fire!", capitalised(place.name)), Vec::new());
+                ctx.chronicle(
+                    ChronicleKind::Fire,
+                    format!("{} is on fire!", capitalised(place.name)),
+                    vec![site.to_owned()],
+                );
             }
             ctx.emit(SimEvent::SavePoint { reason: "fire".into() });
         } else {
@@ -249,7 +267,7 @@ fn arson_consequences(ctx: &mut Ctx, site: &str, arsonist: Option<&str>) {
     let name = site_name(site);
     let who = first_name(ctx.cr(arsonist)).to_owned();
     ctx.c(arsonist).last_arson_tick = tick;
-    ctx.chronicle(ChronicleKind::Fire, format!("{who} set fire to {name}!"), vec![arsonist.to_owned()]);
+    ctx.chronicle(ChronicleKind::Fire, format!("{who} set fire to {name}!"), vec![arsonist.to_owned(), site_id(site)]);
     ctx.remember(arsonist, format!("Set fire to {name}."), 7.0, MemoryKind::Event, Vec::new());
     let pos = site_pos(ctx.state, site);
     let saw = witnesses(ctx, pos, &[arsonist]);
@@ -491,7 +509,7 @@ pub fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
         ctx.chronicle(
             ChronicleKind::Fire,
             format!("While the village slept, the dead set fire to {}.", place.name),
-            residents(ctx.state, place_id),
+            ids_with(residents(ctx.state, place_id), place_id),
         );
     }
     arson_consequences(ctx, place_id, arsonist);
@@ -673,7 +691,7 @@ fn put_out(ctx: &mut Ctx, site: &str) {
     ctx.chronicle(
         ChronicleKind::Fire,
         format!("The fire at {name} is out. {} carried the water that saved it.", names(ctx.state, &helpers)),
-        helpers.clone(),
+        ids_with(helpers.clone(), site),
     );
     for id in &helpers {
         let others: Vec<Id> = helpers.iter().filter(|other| *other != id).cloned().collect();
@@ -704,7 +722,11 @@ fn burn_down(ctx: &mut Ctx, site: &str) {
             let ruin =
                 WorldObject::Building { stage: BuildingStage::Ruin, since_tick: tick, work: 0.0, fire: 0.0, helpers };
             put_object(ctx.state, site, ruin);
-            ctx.chronicle(ChronicleKind::Fire, format!("{} burned to the ground.", capitalised(&name)), Vec::new());
+            ctx.chronicle(
+                ChronicleKind::Fire,
+                format!("{} burned to the ground.", capitalised(&name)),
+                vec![site.to_owned()],
+            );
             for id in living_ids(ctx.state) {
                 let text = format!("The village could not save {name} from the fire; it burned to the ground.");
                 ctx.remember(&id, text, 6.0, MemoryKind::Event, Vec::new());
@@ -744,7 +766,7 @@ fn burn_down_home(ctx: &mut Ctx, place_id: &str) {
     ctx.chronicle(
         ChronicleKind::Fire,
         format!("{} burned to the ground.{lost}", capitalised(place.name)),
-        homeless.clone(),
+        ids_with(homeless.clone(), place_id),
     );
     for id in living_ids(ctx.state) {
         if homeless.contains(&id) {
@@ -785,7 +807,7 @@ pub fn add_work(ctx: &mut Ctx, id: &str, place_id: &str) -> bool {
     ctx.chronicle(
         ChronicleKind::Fire,
         format!("{} stands again, rebuilt by the village.{again}", capitalised(place.name)),
-        housed.clone(),
+        ids_with(housed.clone(), place_id),
     );
     for id in living_ids(ctx.state) {
         if housed.contains(&id) {

@@ -225,8 +225,21 @@ export class WorldView {
     this.overlay.update(labels, this.rig.camera, this.rig.distance, this.canvas.clientWidth, this.canvas.clientHeight);
   }
 
-  /** The character nearest to a screen point, if any is within `radius` pixels of it and so counts as clicked. */
+  /**
+   * What a tap on a screen point picks: the villager nearest to it within `radius` pixels, or failing that the
+   * building or built thing under it (`b:<place>`, `n:<n>`), or null.
+   */
   pick(clientX: number, clientY: number, radius = 46): string | null {
+    const villager = this.pickVillager(clientX, clientY, radius);
+    if (villager) return villager;
+    const ray = this.rig.rayAt(clientX, clientY);
+    const hits = [this.structures.pick(ray), this.marks.pick(ray)].filter((hit) => hit !== null);
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits[0]?.id ?? null;
+  }
+
+  /** The character nearest to a screen point, if any is within `radius` pixels of it and so counts as clicked. */
+  private pickVillager(clientX: number, clientY: number, radius: number): string | null {
     const rect = this.canvas.getBoundingClientRect();
     let best: string | null = null;
     let bestDistance = radius;

@@ -43,6 +43,7 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/me", get(auth::me))
         .route("/watch", post(world::watch))
         .route("/characters/{id}", get(world::character))
+        .route("/sites/{id}", get(world::site))
         .route("/chronicle", get(world::chronicle))
         .route("/logout", post(auth::logout))
         .route("/chat", post(chat::post))

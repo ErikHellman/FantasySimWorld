@@ -4,12 +4,15 @@ import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
   Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
-  Snapshot, Status, Stockpile, Utterance, WorldObject,
+  SiteDetail, Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
 import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
 
-export type { CharacterDetail, RelationRow, RosterEntry } from '../generated/api';
+export type { CharacterDetail, RelationRow, RosterEntry, SiteDetail } from '../generated/api';
+
+/** Whether a selectable id names a site (a building `b:<place>` or something built `n:<n>`) rather than a villager. */
+export const isSiteId = (id: string): boolean => id.startsWith('b:') || id.startsWith('n:');
 
 export interface AudioSlotStatus {
   id: string;
@@ -74,8 +77,12 @@ export const ui = {
   /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
   founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
+  /** the villager being followed, or the site being looked at (see `isSiteId`) */
   selectedId: signal<string | null>(null),
+  /** the followed villager's page, once the server has sent it */
   detail: signal<CharacterDetail | null>(null),
+  /** the page of the building or built thing being looked at, once the server has sent it */
+  site: signal<SiteDetail | null>(null),
   chronicle: signal<ChronicleEntry[]>([]),
   /** older chronicle entries exist on the server */
   chronicleMore: signal(true),

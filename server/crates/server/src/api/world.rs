@@ -21,16 +21,16 @@ use tokio::sync::oneshot;
 
 use crate::AppState;
 use crate::api::wire::{
-    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, NewWorldRequest, SpeedRequest,
-    WatchRequest,
+    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, NewWorldRequest, SiteDetail,
+    SpeedRequest, WatchRequest,
 };
 use crate::api::{ApiFailure, error};
-use crate::digest::detail_of;
+use crate::digest::{detail_json, detail_of, site_of};
 use crate::encode::sim_tone;
 use crate::store::{SnapshotReason, now_ms};
 use crate::world_task::{Outgoing, SPEEDS, Watch, WorldInput};
 
-/// `POST /api/watch`: the character whose `detail` this tab receives.
+/// `POST /api/watch`: the character whose `detail`, or the site whose `site`, this tab receives.
 pub async fn watch(State(app): State<Arc<AppState>>, Json(body): Json<WatchRequest>) -> Response {
     if body.viewer.is_empty() || body.viewer.len() > 64 {
         return error(StatusCode::BAD_REQUEST, "viewer is required");
@@ -41,7 +41,7 @@ pub async fn watch(State(app): State<Arc<AppState>>, Json(body): Json<WatchReque
     if let Some(id) = body.id {
         let json = {
             let core = world.core.read();
-            detail_of(&core.sim.state, &id).map(|d| serde_json::to_string(&d).expect("details serialise"))
+            detail_json(&core.sim.state, &id)
         };
         if let Some(json) = json {
             let json: Arc<str> = Arc::from(json);
@@ -61,6 +61,12 @@ pub async fn character(
     detail_of(&core.sim.state, &id)
         .map(Json)
         .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such villager".into()))
+}
+
+/// `GET /api/sites/{id}`: the page for a building (`b:<place>`) or something the village built (`n:<n>`).
+pub async fn site(State(app): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<SiteDetail>, ApiFailure> {
+    let core = app.world.core.read();
+    site_of(&core.sim.state, &id).map(Json).ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such site".into()))
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`: history from the database, oldest first.

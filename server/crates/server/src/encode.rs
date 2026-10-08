@@ -326,17 +326,28 @@ fn wire_object(id: &str, object: &SimWorldObject) -> WorldObject {
         }),
         _ => None,
     };
+    let (stage, since_tick, progress, fire) = object_facts(object);
     WorldObject {
         id: id.to_owned(),
         kind,
         name: object_name(id, object),
-        stage: object.stage_name().to_owned(),
-        since_tick: object.since_tick().max(0) as u64,
-        // Coarse steps, so a shift of work is a handful of events rather than one a minute.
-        progress: (js_round(progress_of(object) * 20.0) * 5.0) as u8,
-        fire: (js_round(object.fire().clamp(0.0, 100.0) / 5.0) * 5.0) as u8,
+        stage,
+        since_tick: since_tick.max(0) as u64,
+        progress,
+        fire,
         placed,
     }
+}
+
+/// An object's stage, the tick it began, and its work and fire in percent, as viewers are told them: the
+/// percentages in coarse steps, so a shift of work is a handful of events rather than one a minute.
+pub fn object_facts(object: &SimWorldObject) -> (String, i64, u8, u8) {
+    (
+        object.stage_name().to_owned(),
+        object.since_tick(),
+        (js_round(progress_of(object) * 20.0) * 5.0) as u8,
+        (js_round(object.fire().clamp(0.0, 100.0) / 5.0) * 5.0) as u8,
+    )
 }
 
 /// The stockpiles that hold anything.

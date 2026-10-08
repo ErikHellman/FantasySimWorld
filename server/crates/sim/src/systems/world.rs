@@ -530,6 +530,15 @@ pub fn project_label(project: &Project) -> String {
     }
 }
 
+/// The site a project's chronicle lines belong to: the building of the pad's place for something new,
+/// else the thing worked on. A finished thing of its own (`n:<n>`) is added when it is put up.
+fn project_site(project: &Project) -> String {
+    match project.kind {
+        ProjectKind::Construct => building_id(project.target.split('/').next().unwrap_or_default()),
+        _ => fire::site_id(&project.target),
+    }
+}
+
 /// Which of a pad's kinds a project puts up: fixed by the project's id, so every machine agrees.
 fn pad_kind_for(project: &Project, pad: &Pad) -> PadKind {
     pad.kinds[hash_string(&project.id) as usize % pad.kinds.len()]
@@ -687,7 +696,8 @@ fn queue_projects(ctx: &mut Ctx) {
             };
             put_object(ctx.state, &project.target, raising);
         }
-        ctx.chronicle(ChronicleKind::World, format!("The village takes on {}.", project_label(&project)), Vec::new());
+        let line = format!("The village takes on {}.", project_label(&project));
+        ctx.chronicle(ChronicleKind::World, line, vec![project_site(&project)]);
         ctx.state.projects.push(project);
     }
 }
@@ -698,6 +708,7 @@ fn complete_project(ctx: &mut Ctx, id: &str) {
     let Some(index) = ctx.state.projects.iter().position(|p| p.id == id) else { return };
     let project = ctx.state.projects.remove(index);
     let label = project_label(&project);
+    let mut sites = vec![project_site(&project)];
     match project.kind {
         ProjectKind::Raise | ProjectKind::Restore => drop_object(ctx.state, &project.target),
         ProjectKind::Expand => {
@@ -729,6 +740,7 @@ fn complete_project(ctx: &mut Ctx, id: &str) {
                 let built =
                     WorldObject::Built { stage: PropStage::Whole, since_tick: tick, work: 0.0, fire: 0.0, spec };
                 put_object(ctx.state, &id_new, built);
+                sites.push(id_new);
             }
         }
     }
@@ -742,7 +754,7 @@ fn complete_project(ctx: &mut Ctx, id: &str) {
         ProjectKind::Expand => format!("{site} has a new room; {names} built it."),
         ProjectKind::Construct => format!("{} put up {label}.", capitalised(&names)),
     };
-    ctx.chronicle(ChronicleKind::World, line, helpers.clone());
+    ctx.chronicle(ChronicleKind::World, line, [helpers.clone(), sites].concat());
     for h in &helpers {
         ctx.remember(h, format!("Helped with {label}."), 5.0, MemoryKind::Event, Vec::new());
     }
@@ -1200,7 +1212,7 @@ fn dismantle(ctx: &mut Ctx, id: &str, target: &str) -> String {
         ctx.chronicle(
             ChronicleKind::World,
             format!("{names} took {} apart, down to its footings.", place.name),
-            helpers.clone(),
+            [helpers.clone(), vec![building_id(place_id)]].concat(),
         );
         for other in living_ids(ctx.state) {
             if helpers.contains(&other) {

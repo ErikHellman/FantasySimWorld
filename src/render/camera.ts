@@ -104,11 +104,16 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
-  private groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+  /** The ray from the camera through a point on the page (in client pixels), for picking what is under it. */
+  rayAt(clientX: number, clientY: number): THREE.Raycaster {
     const rect = this.element.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    return this.raycaster.ray.intersectPlane(this.ground, new THREE.Vector3());
+    return this.raycaster;
+  }
+
+  private groundPoint(clientX: number, clientY: number): THREE.Vector3 | null {
+    return this.rayAt(clientX, clientY).ray.intersectPlane(this.ground, new THREE.Vector3());
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {

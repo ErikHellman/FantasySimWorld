@@ -6,6 +6,7 @@ import { ChatPanel } from './Chat';
 import { FoundingDialog } from './Founding';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
+import { SitePanel } from './SitePanel';
 import { isTouchScreen } from './layout';
 import { GuestLine } from './Line';
 import { MobileHud } from './Mobile';
@@ -188,6 +189,7 @@ export function App() {
           <Roster />
           <Chronicle />
           <Inspector />
+          <SitePanel />
           <ChatPanel />
         </>
       )}
