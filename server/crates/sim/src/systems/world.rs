@@ -27,6 +27,7 @@ use crate::state::{
     Intent, IntentAction, IntentSource, MemoryKind, Project, ProjectKind, PropStage, Quirk, Resource, RockStage,
     SimState, StimulusKind, Store, TreeStage, WorldJob, WorldObject,
 };
+use crate::systems::economy::{self, describe_gold, pay_wages};
 use crate::systems::fire;
 use crate::systems::intents::{finish, leave_building, travel, travel_to};
 use crate::util::{Ctx, first_name, join_names, living, living_ids, place_name_at, set_anim};
@@ -518,8 +519,8 @@ pub fn beds_total(state: &SimState) -> u32 {
 
 /// "raising the smithy", "putting the bench at the village green back", "making the red cottage bigger",
 /// "a fence by the red cottage": what a project is.
-pub fn project_label(project: &Project) -> String {
-    match project.kind {
+pub fn project_label(state: &SimState, project: &Project) -> String {
+    let label = match project.kind {
         ProjectKind::Raise => format!("raising {}", fire::site_name(&project.target)),
         ProjectKind::Restore => format!("putting {} back", fire::site_name(&project.target)),
         ProjectKind::Expand => format!("making {} bigger", fire::site_name(&project.target)),
@@ -527,21 +528,31 @@ pub fn project_label(project: &Project) -> String {
             Some(pad) => format!("{} by {}", pad_kind_name(pad_kind_for(project, pad)), place_name_at(pad.pos)),
             None => "something new".to_owned(),
         },
+    };
+    match &project.sponsor {
+        Some(sponsor) => format!("{label}, paid for by {}", crate::util::name_of(state, sponsor)),
+        None => label,
     }
 }
 
-/// Which of a pad's kinds a project puts up: fixed by the project's id, so every machine agrees.
+/// Which of a pad's kinds a project puts up: what its sponsor chose, else fixed by the project's id,
+/// so every machine agrees.
 fn pad_kind_for(project: &Project, pad: &Pad) -> PadKind {
-    pad.kinds[hash_string(&project.id) as usize % pad.kinds.len()]
+    project.pad_kind.unwrap_or_else(|| pad.kinds[hash_string(&project.id) as usize % pad.kinds.len()])
 }
 
-fn pad_kind_name(kind: PadKind) -> &'static str {
+pub fn pad_kind_name(kind: PadKind) -> &'static str {
     match kind {
         PadKind::Fence => "a fence",
         PadKind::LogStack => "a stack of logs",
         PadKind::Bench => "a bench",
         PadKind::Crate => "a crate of goods",
         PadKind::Planter => "a bed of flowers",
+        PadKind::Wagon => "a wagon",
+        PadKind::Haybale => "a hay bale",
+        PadKind::Scarecrow => "a scarecrow",
+        PadKind::Chest => "a strongbox",
+        PadKind::Barrel => "a barrel",
     }
 }
 
@@ -556,10 +567,17 @@ fn pad_kind_model(kind: PadKind, salt: u32) -> (&'static str, &'static str, f64,
             ("props", CRATES[salt as usize % CRATES.len()], 1.0, 0.5)
         }
         PadKind::Planter => ("custom", "flowers_mixed", 1.5, 0.0),
+        PadKind::Wagon => ("halloween", "wagon", 1.0, 0.9),
+        PadKind::Haybale => ("halloween", "haybale", 1.0, 0.6),
+        PadKind::Scarecrow => ("halloween", "scarecrow", 1.0, 0.3),
+        PadKind::Chest => ("dungeon", "chest_gold", 1.0, 0.4),
+        PadKind::Barrel => ("dungeon", "barrel_large", 1.0, 0.5),
     }
 }
 
-fn pad_kind_cost(kind: PadKind) -> Store {
+/// What putting a pad kind up costs the village in materials; the strongbox is the one thing that
+/// takes ore.
+pub fn pad_kind_cost(kind: PadKind) -> Store {
     let mut cost = Store::default();
     let wood = match kind {
         PadKind::Fence => 4,
@@ -567,8 +585,16 @@ fn pad_kind_cost(kind: PadKind) -> Store {
         PadKind::Bench => 5,
         PadKind::Crate => 4,
         PadKind::Planter => 2,
+        PadKind::Wagon => 4,
+        PadKind::Haybale => 2,
+        PadKind::Scarecrow => 3,
+        PadKind::Chest => 3,
+        PadKind::Barrel => 3,
     };
     cost.add(Resource::Wood, wood, i64::MAX);
+    if kind == PadKind::Chest {
+        cost.add(Resource::Ore, 1, i64::MAX);
+    }
     cost
 }
 
@@ -580,12 +606,12 @@ fn cost_of(wood: i64, stone: i64) -> Store {
 }
 
 /// Whether a pad has something standing on it, or going up.
-fn pad_taken(state: &SimState, pad_id: &str) -> bool {
+pub fn pad_taken(state: &SimState, pad_id: &str) -> bool {
     state.objects.values().any(|o| matches!(o, WorldObject::Built { spec, .. } if spec.pad.as_deref() == Some(pad_id)))
         || state.projects.iter().any(|p| p.kind == ProjectKind::Construct && p.target == pad_id)
 }
 
-fn new_project(state: &mut SimState, kind: ProjectKind, target: String, cost: Store, need: f64) -> Project {
+pub(crate) fn new_project(state: &mut SimState, kind: ProjectKind, target: String, cost: Store, need: f64) -> Project {
     let id = state.new_id("j:");
     Project {
         id,
@@ -597,6 +623,9 @@ fn new_project(state: &mut SimState, kind: ProjectKind, target: String, cost: St
         work: 0.0,
         since_tick: state.tick,
         helpers: Vec::new(),
+        sponsor: None,
+        price: 0,
+        pad_kind: None,
     }
 }
 
@@ -622,6 +651,8 @@ fn queue_projects(ctx: &mut Ctx) {
             wanted.push(project);
         }
     }
+    // A building to raise comes first; then whoever has the coin may pay for something of their own.
+    economy::sponsored_project(ctx, wanted.len());
     for id in &ids {
         if !room(ctx.state, &wanted) {
             break;
@@ -687,7 +718,11 @@ fn queue_projects(ctx: &mut Ctx) {
             };
             put_object(ctx.state, &project.target, raising);
         }
-        ctx.chronicle(ChronicleKind::World, format!("The village takes on {}.", project_label(&project)), Vec::new());
+        ctx.chronicle(
+            ChronicleKind::World,
+            format!("The village takes on {}.", project_label(ctx.state, &project)),
+            Vec::new(),
+        );
         ctx.state.projects.push(project);
     }
 }
@@ -697,7 +732,7 @@ fn complete_project(ctx: &mut Ctx, id: &str) {
     let tick = ctx.tick();
     let Some(index) = ctx.state.projects.iter().position(|p| p.id == id) else { return };
     let project = ctx.state.projects.remove(index);
-    let label = project_label(&project);
+    let label = project_label(ctx.state, &project);
     match project.kind {
         ProjectKind::Raise | ProjectKind::Restore => drop_object(ctx.state, &project.target),
         ProjectKind::Expand => {
@@ -742,6 +777,7 @@ fn complete_project(ctx: &mut Ctx, id: &str) {
         ProjectKind::Expand => format!("{site} has a new room; {names} built it."),
         ProjectKind::Construct => format!("{} put up {label}.", capitalised(&names)),
     };
+    economy::pay_builders(ctx, &project);
     ctx.chronicle(ChronicleKind::World, line, helpers.clone());
     for h in &helpers {
         ctx.remember(h, format!("Helped with {label}."), 5.0, MemoryKind::Event, Vec::new());
@@ -809,7 +845,7 @@ pub fn nearby_targets(state: &SimState, pos: Vec2, limit: usize) -> Vec<WorkTarg
             targets.push(WorkTarget {
                 id: project.id.clone(),
                 jobs: vec![WorldJob::Build],
-                label: project_label(project),
+                label: project_label(state, project),
             });
         }
     }
@@ -1102,7 +1138,7 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
                 }
             }
             ctx.c(id).carried = carried;
-            let label = project(ctx.state, target).map(project_label).unwrap_or_default();
+            let label = project(ctx.state, target).map(|p| project_label(ctx.state, p)).unwrap_or_default();
             if put.is_empty() {
                 format!("The work on {label} needed nothing you carried.")
             } else {
@@ -1117,11 +1153,19 @@ fn complete_job(ctx: &mut Ctx, id: &str, job: WorldJob, target: &str) -> String 
             if put.is_empty() {
                 format!("There was no room left at {place} for what you carried.")
             } else {
-                format!("You put {} down at {place}.", put.describe())
+                // The village pays for what it is given, while the chest holds anything.
+                match pay_wages(ctx, id, &put) {
+                    0 => {
+                        format!("You put {} down at {place}; the chest was empty, so nobody paid you.", put.describe())
+                    }
+                    paid => {
+                        format!("You put {} down at {place} and were paid {}.", put.describe(), describe_gold(paid))
+                    }
+                }
             }
         }
         WorldJob::Build => {
-            let label = project(ctx.state, target).map(project_label).unwrap_or_default();
+            let label = project(ctx.state, target).map(|p| project_label(ctx.state, p)).unwrap_or_default();
             complete_project(ctx, target);
             format!("You finished {label}.")
         }
@@ -1574,7 +1618,7 @@ pub fn describe_target(state: &SimState, job: WorldJob, target: &str) -> String 
             None => "something",
         },
         WorldJob::Build | WorldJob::Deliver if project(state, target).is_some() => {
-            return project(state, target).map(project_label).unwrap_or_default();
+            return project(state, target).map(|p| project_label(state, p)).unwrap_or_default();
         }
         WorldJob::Build => "something",
         WorldJob::Deliver => return find_place(target).map_or("the stockpile", |p| p.name).to_owned(),

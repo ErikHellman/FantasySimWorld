@@ -269,6 +269,17 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Fetch { target_id } => format!("bring {} home", name_of(state, target_id)),
         IntentAction::Attend { place_id } => format!("attend the ceremony at {place_id}"),
         IntentAction::WorldWork { job, target, .. } => format!("{} {target}", job.as_str()),
+        IntentAction::PickUp { loot_id } => format!("pick up {loot_id}"),
+        IntentAction::Commission { what } => format!("commission {what}"),
+        IntentAction::Trade { target_id, item, buy } => {
+            format!(
+                "{} {} {} {}",
+                if *buy { "buy" } else { "sell" },
+                item.as_str(),
+                if *buy { "from" } else { "to" },
+                name_of(state, target_id)
+            )
+        }
     }
 }
 

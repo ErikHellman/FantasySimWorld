@@ -57,7 +57,9 @@ function About({ d }: { d: CharacterDetail }) {
       <Meter label="Rested" value={d.needs.energy} />
       <Meter label="Company" value={d.needs.social} />
       <p class="muted inventory">
-        Carrying: {d.inventory.food} food · {d.inventory.potion} potion{d.inventory.potion === 1 ? '' : 's'} · {d.inventory.gift} gift{d.inventory.gift === 1 ? '' : 's'}
+        Carrying: {d.inventory.food} food · {d.inventory.potion} potion{d.inventory.potion === 1 ? '' : 's'} · {d.inventory.gift} gift{d.inventory.gift === 1 ? '' : 's'} · {d.gold} gold
+        {d.inventory.trinket > 0 && ` · ${d.inventory.trinket} trinket${d.inventory.trinket === 1 ? '' : 's'}`}
+        {d.inventory.relic > 0 && ` · ${d.inventory.relic} relic${d.inventory.relic === 1 ? '' : 's'}`}
         {d.carried.wood > 0 && ` · ${d.carried.wood} wood`}
         {d.carried.stone > 0 && ` · ${d.carried.stone} stone`}
         {d.carried.ore > 0 && ` · ${d.carried.ore} ore`}
