@@ -9,9 +9,9 @@ use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind, Monster, MonsterOrigin,
-    MonsterPhase, PlanSource, ProjectKind, PropStage, Raid, RaidPhase, RelationLabel as SimLabel, Resource, SimState,
-    WorldObject as SimWorldObject,
+    ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
+    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Raid, RaidPhase,
+    RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
@@ -22,9 +22,9 @@ use fsw_sim::util::{first_name, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
-    AmbientCounts, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory, LlmStatus, Memory,
-    MemoryKind, MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail,
-    SiteKind, SiteNeed, SiteProject, Status,
+    AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory,
+    LlmStatus, Memory, MemoryKind, MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow,
+    RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 
@@ -186,6 +186,54 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<Detail> {
         .map(|detail| Detail::Villager(Box::new(detail)))
         .or_else(|| monster_detail_of(state, id).map(|detail| Detail::Monster(Box::new(detail))))
         .or_else(|| ghost_detail_of(state, id).map(|detail| Detail::Ghost(Box::new(detail))))
+        .or_else(|| animal_detail_of(state, id).map(|detail| Detail::Animal(Box::new(detail))))
+}
+
+/// The card of one of the valley's animals.
+pub fn animal_detail_of(state: &SimState, id: &str) -> Option<AnimalDetail> {
+    let a = state.animals.get(id)?;
+    let def = a.species.def();
+    let named = |who: Option<&String>| {
+        who.filter(|w| state.characters.contains_key(*w)).map(|w| NamedId { id: w.clone(), name: name_of(state, w) })
+    };
+    Some(AnimalDetail {
+        id: a.id.clone(),
+        name: a.name.clone().unwrap_or_else(|| def.label.into()),
+        species: def.noun.into(),
+        status: animal_status(state, a),
+        owner: named(a.owner.as_ref()),
+        rider: named(a.rider.as_ref()),
+        yields: def.yields.map(str::to_owned),
+    })
+}
+
+/// What an animal is doing, in a few words: "Grazing near the windmill farm", "At Mira's heels".
+fn animal_status(state: &SimState, a: &Animal) -> String {
+    let def = a.species.def();
+    let place = place_name_at(a.pos);
+    if let Some(rider) = &a.rider {
+        return format!("Carrying {} near {place}", name_of(state, rider));
+    }
+    if state.tick < a.flee_until_tick {
+        return "Running from the dead".into();
+    }
+    if let Some(waiting) = &a.waiting_for {
+        return format!("Waiting near {place} for {} to come back", name_of(state, waiting));
+    }
+    let keeper = a.owner.as_deref().and_then(|o| state.characters.get(o));
+    match a.anim {
+        AnimalAnim::Sleep => format!("Asleep near {place}"),
+        AnimalAnim::Fly => "Flying".into(),
+        _ if keeper.is_some_and(|k| k.inside.is_none() && fsw_core::math2d::dist(k.pos, a.pos) < 6.0) => {
+            format!("At {}'s heels", keeper.map(first_name).unwrap_or_default())
+        }
+        _ if keeper.is_some() => format!("Waiting for {} near {place}", keeper.map(first_name).unwrap_or_default()),
+        AnimalAnim::Graze => format!("Grazing near {place}"),
+        AnimalAnim::Peck => format!("Pecking about near {place}"),
+        AnimalAnim::Walk | AnimalAnim::Run => format!("Wandering near {place}"),
+        _ if def.nocturnal => format!("Keeping watch over {place}"),
+        _ => format!("Idling near {place}"),
+    }
 }
 
 /// The card of a ghost: who it was, how they died, and what it is about.

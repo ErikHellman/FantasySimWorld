@@ -58,6 +58,8 @@ pub fn create_state(seed: u32) -> SimState {
         performances: Vec::new(),
         economy: Default::default(),
         loot: Default::default(),
+        animals: Default::default(),
+        fauna: Default::default(),
         weather: Default::default(),
         ghosts: Default::default(),
         nav: Default::default(),

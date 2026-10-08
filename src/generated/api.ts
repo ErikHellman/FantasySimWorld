@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -55,7 +55,7 @@ speed: number, protocolVersion: number,
  */
 worldHash: string, viewers: number, role: Role, };
 
-export type EntityKind = "villager" | "monster" | "corpse" | "ghost";
+export type EntityKind = "villager" | "monster" | "corpse" | "ghost" | "animal";
 
 /**
  * How a character or monster is drawn (the sim's `Look`).
@@ -134,6 +134,10 @@ act: string | null,
  */
 z: boolean, 
 /**
+ * for a villager, the horse they ride; for a horse, who rides it
+ */
+mt?: string | null, 
+/**
  * height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
  */
 y?: number, };
@@ -143,7 +147,7 @@ export type Entity = { static: EntityStatic, dyn: Dyn, };
 /**
  * The fields of [`Dyn`] that changed this tick; absent means unchanged.
  */
-export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, y?: number | null, };
+export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, mt?: string | null, y?: number | null, };
 
 /**
  * One `tick` event per sim tick. Empty lists are left out.
@@ -595,6 +599,35 @@ blows: number,
 damage: [number, number], };
 
 /**
+ * The card of one of the valley's animals.
+ */
+export type AnimalDetail = { id: string, 
+/**
+ * a pet's or a horse's name, or what it is ("a sheep")
+ */
+name: string, 
+/**
+ * e.g. "sheep" (`kind` is the tag of [`Detail`])
+ */
+species: string, 
+/**
+ * what it is doing now, e.g. "Grazing in the meadow" or "At Mira's heels"
+ */
+status: string, 
+/**
+ * the villager who keeps it, for a pet
+ */
+owner: NamedId | null, 
+/**
+ * who is riding it, for a horse
+ */
+rider: NamedId | null, 
+/**
+ * what tending it gives the village, e.g. "milk"
+ */
+yields: string | null, };
+
+/**
  * The inspector for a ghost, every label rendered on the server.
  */
 export type GhostDetail = { id: string, 
@@ -626,7 +659,7 @@ nightsLeft: number, };
 /**
  * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
  */
-export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail | { "kind": "ghost" } & GhostDetail;
+export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail | { "kind": "ghost" } & GhostDetail | { "kind": "animal" } & AnimalDetail;
 
 /**
  * What a site is: a place's building, or something the village put up on a pad.
@@ -705,7 +738,7 @@ stockpile: Goods | null,
  */
 history: Array<ChronicleEntry>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "name" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 

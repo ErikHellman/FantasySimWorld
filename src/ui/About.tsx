@@ -45,7 +45,7 @@ export function AboutTechPanel() {
           <li>
             The 3D models are the <a href="https://kaylousberg.com" target="_blank" rel="noopener noreferrer">KayKit</a>{' '}
             collection by Kay Lousberg (CC0), with a few things made for the game in Blender in the same style, the
-            dragon among them; the sounds and music are CC0, public domain or CC BY.
+            animals and the dragon among them; the sounds and music are CC0, public domain or CC BY.
           </li>
         </ul>
 

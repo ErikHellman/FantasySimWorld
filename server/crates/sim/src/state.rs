@@ -9,6 +9,7 @@ use fsw_world::places::{Obstacle, PadKind};
 use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer, Serialize};
 
+pub use crate::data::animals::{AnimalAnim, Species};
 pub use crate::data::anims::AnimId;
 pub use crate::data::classes::ClassId;
 pub use crate::data::monsters::MonsterKind;
@@ -666,6 +667,10 @@ pub enum IntentAction {
     PickUp {
         loot_id: String,
     },
+    /// walks up to an animal (`SimState.animals`) and makes a fuss of it
+    Pet {
+        animal_id: Id,
+    },
     /// walks up to someone and buys `item` from them, or sells it to them, at the market's price
     Trade {
         target_id: Id,
@@ -734,6 +739,7 @@ impl IntentAction {
             Self::Listen { .. } => "listen",
             Self::WorldWork { .. } => "world_work",
             Self::PickUp { .. } => "pick_up",
+            Self::Pet { .. } => "pet",
             Self::Trade { .. } => "trade",
             Self::Commission { .. } => "commission",
         }
@@ -982,6 +988,12 @@ pub struct Character {
     /// in good spirits after a fine tune until this tick (`systems::music`); 0 when not
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub heartened_until_tick: i64,
+    /// the horse this character is riding (`systems::animals`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<Id>,
+    /// the horse this character is walking over to, to ride the rest of the way
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mounting: Option<Id>,
     /// brushing past someone who stood in the way (`systems::blocking`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passing: Option<Passing>,
@@ -1270,6 +1282,86 @@ pub struct Raid {
     pub aim: Option<Vec2>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aim_home: Option<String>,
+}
+
+/// One of the valley's animals: a beast of the farm, a bird, or a villager's dog or cat. See
+/// `systems::animals`. Animals are kept apart from `monsters` so nothing that fights, raises the alarm
+/// or counts the dead ever sees them.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Animal {
+    pub id: Id,
+    pub species: Species,
+    /// its model in the `animals` bundle, which fixes its colour
+    pub model: String,
+    /// a pet's name, given by its keeper, or a horse's; the rest go unnamed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// the villager who keeps it, for a pet; a pet whose keeper is gone and has no one else is a stray
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<Id>,
+    /// a pet's home, so it can go to someone else there when its keeper dies
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_id: Option<String>,
+    pub pos: Vec2,
+    pub facing: f64,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub moving: bool,
+    pub anim: AnimalAnim,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<Vec2>,
+    /// for a bird in the air, where it lands
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flight: Option<Vec2>,
+    /// when it next picks somewhere to go
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_move_tick: i64,
+    /// running from the dead until then
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub flee_until_tick: i64,
+    /// the villager riding it, for a horse
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rider: Option<Id>,
+    /// a horse left where its rider got down waits for them there until then, then goes home
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_for: Option<Id>,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub waiting_until_tick: i64,
+    /// for a pet without a name: past this tick the sim names it itself
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub name_deadline_tick: i64,
+    /// when someone last made a fuss of it
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub petted_tick: i64,
+}
+
+/// The bookkeeping of the valley's animals. A world from before them reads as the default, and gets its
+/// animals on its first tick after founding.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fauna {
+    /// the animals have been given to the village
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub founded: bool,
+    /// the animals' own generator, so that what they do never shifts the villagers' draws
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub rng: u32,
+    /// the number in the next animal's id ("a1", "a2", …), apart from `SimState::next_id` for the same reason
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_id: i64,
+    /// when a stray dog or cat next turns up
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_stray_tick: i64,
+}
+
+impl Fauna {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 /// Where a ghost is in its few nights among the living. See `systems::ghosts`.
@@ -1998,6 +2090,11 @@ pub struct SimState {
     /// what the dead left lying where they fell, by id (`l:<n>`); see [`Loot`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub loot: IndexMap<String, Loot>,
+    /// the valley's animals, by id (`a<n>`); see [`Animal`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub animals: Map<Animal>,
+    #[serde(default, skip_serializing_if = "Fauna::is_default")]
+    pub fauna: Fauna,
     /// the weather over the valley; see [`Weather`] and `systems::weather`
     #[serde(default, skip_serializing_if = "Weather::is_default")]
     pub weather: Weather,

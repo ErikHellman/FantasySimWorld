@@ -64,7 +64,7 @@ const BASE: ActivityDef = ActivityDef {
 };
 
 /// In the TypeScript object's key order (`ACTIVITY_IDS`).
-pub static ACTIVITIES: [ActivityDef; 23] = [
+pub static ACTIVITIES: [ActivityDef; 24] = [
     ActivityDef {
         id: ActivityId::Eat,
         label: "eat a meal at the tavern",
@@ -297,6 +297,18 @@ pub static ACTIVITIES: [ActivityDef; 23] = [
     },
     // And music: a song or a tune in public, with no slot; the performer takes a spot of their own in front of
     // the tavern or on the green and whoever is about gathers round (`systems::music`).
+    // The farm's animals, with no slot either: the farmer goes to one of the herd where it stands and sees to it
+    // (`systems::animals`); eggs and milk come of it.
+    ActivityDef {
+        id: ActivityId::Tend,
+        label: "tend the animals at the farm",
+        verb: "tending the animals",
+        anim: AnimId::WorkB,
+        minutes: [60, 120],
+        yields: Some((ItemId::Food, 60)),
+        kind: ActivityKind::Work,
+        ..BASE
+    },
     ActivityDef {
         id: ActivityId::Perform,
         label: "sing or play music for whoever will listen, outside the tavern",
