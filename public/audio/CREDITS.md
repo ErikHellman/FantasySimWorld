@@ -32,6 +32,7 @@ Some sounds were cut, mixed, levelled and re-encoded for the game.
 | [80 CC0 creature SFX](https://opengameart.org/content/80-cc0-creature-sfx) | rubberduck | CC0 | hurt, death |
 | [80 CC0 RPG SFX](https://opengameart.org/content/80-cc0-rpg-sfx) | rubberduck | CC0 | sword_hit, block_clang, monster_spawn, monster_death |
 | [Peaceful Forest](https://opengameart.org/content/peaceful-forest) | Samza | CC0 | music: peaceful_forest |
+| [Their Coming (generic horn sound)](https://opengameart.org/content/their-coming-generic-horn-sound) | StumpyStrust | CC0 | war_horn |
 | [Blacksmith's Hammer](https://opengameart.org/content/blacksmiths-hammer) | VishwaJai | CC0 | smithy |
 | [Chickens demanding food](https://commons.wikimedia.org/wiki/File:Chickens_demanding_food.ogg) | alys (PDSounds) | Public domain | village_day |
 | [Church bells, Leverkusen 2007](https://commons.wikimedia.org/wiki/File:Church_bells_-_Leverkusen,_2007.oga) | natalie (PDSounds) | Public domain | alarm |

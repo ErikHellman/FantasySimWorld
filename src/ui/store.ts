@@ -74,6 +74,8 @@ export const ui = {
   population: signal(0),
   monsters: signal(0),
   alarm: signal(false),
+  /** an orc war band is in the valley */
+  raid: signal(false),
   /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
   founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
@@ -183,6 +185,7 @@ export function fromStatus(status: Status): void {
   ui.population.value = status.population;
   ui.monsters.value = status.monsters;
   ui.alarm.value = status.alarm;
+  ui.raid.value = status.raid;
   ui.founding.value = status.founding;
 }
 

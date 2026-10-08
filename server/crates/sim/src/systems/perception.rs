@@ -3,6 +3,7 @@
 use fsw_core::math2d::dist;
 use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 
+use crate::data::monsters::Faction;
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActPhase, Character, ChronicleKind, FightMode, Id, IntentAction, IntentSource, MemoryKind, Monster, MonsterPhase,
@@ -12,6 +13,7 @@ use crate::systems::combat::{max_hp, start_fight, start_flee};
 use crate::systems::conversation::abort_conversation;
 use crate::systems::fire::burning;
 use crate::systems::intents::leave_building;
+use crate::systems::raids::foe_noun;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
     Ctx, a_noun_capital, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at,
@@ -52,18 +54,23 @@ fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_
 fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
     let tick = ctx.tick();
     let where_ = place_name_at(monster.pos);
+    let raiders = monster.kind.faction() == Faction::Orc;
     if tick >= ctx.state.director.alarm_until_tick {
-        ctx.say(id, format!("To arms! The dead are at {where_}!"), None, true);
+        let (shout, news) = if raiders {
+            (format!("To arms! Orcs at {where_}!"), format!("orc raiders are at {where_}"))
+        } else {
+            (format!("To arms! The dead are at {where_}!"), format!("the dead are walking at {where_}"))
+        };
+        ctx.say(id, shout, None, true);
         let name = first_name(ctx.cr(id)).to_owned();
-        ctx.chronicle(
-            ChronicleKind::Combat,
-            format!("{name} raised the alarm: the dead are walking at {where_}."),
-            vec![id.into()],
-        );
+        ctx.chronicle(ChronicleKind::Combat, format!("{name} raised the alarm: {news}."), vec![id.into()]);
         ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Alert });
     }
     ctx.state.director.alarm_until_tick = tick + minutes_to_ticks(40.0);
     ctx.state.director.alarm_pos = Some(monster.pos);
+    if raiders {
+        ctx.state.director.alarm_raid = true;
+    }
 }
 
 /// When the last monster falls, those who fought remember it together.
@@ -78,11 +85,15 @@ fn stand_down(ctx: &mut Ctx) {
         })
         .map(|c| (c.id.clone(), first_name(c).to_owned()))
         .collect();
+    let raiders = ctx.state.director.alarm_raid;
     ctx.state.director.alarm_until_tick = tick;
     ctx.state.director.alarm_pos = None;
+    ctx.state.director.alarm_raid = false;
     if fighters.is_empty() {
         return;
     }
+    let (foe, gone) =
+        if raiders { ("the orc raiders", "the raiders are gone") } else { ("the dead", "the dead are destroyed") };
     let names: Vec<&str> = fighters.iter().map(|(_, name)| name.as_str()).collect();
     let ids: Vec<Id> = fighters.iter().map(|(id, _)| id.clone()).collect();
     ctx.chronicle(ChronicleKind::Combat, format!("The attack is over. {} held the line.", join_names(&names)), ids);
@@ -92,13 +103,13 @@ fn stand_down(ctx: &mut Ctx) {
             adjust(ctx, id, other, RelationDelta { affinity: 2.0, trust: 3.0, familiarity: 2.0, ..Default::default() });
         }
         let text = if others.is_empty() {
-            "Fought off the dead alone.".to_owned()
+            format!("Fought off {foe} alone.")
         } else {
             let names: Vec<&str> = others.iter().map(|(_, name)| name.as_str()).collect();
-            format!("Fought off the dead beside {}.", join_names(&names))
+            format!("Fought off {foe} beside {}.", join_names(&names))
         };
         ctx.remember(id, text, 6.0, MemoryKind::Event, others.iter().map(|(o, _)| o.clone()).collect());
-        ctx.stimulate(id, StimulusKind::Victory, "The fight is over and the dead are destroyed.", 1, None);
+        ctx.stimulate(id, StimulusKind::Victory, format!("The fight is over and {gone}."), 1, None);
     }
     ctx.emit(SimEvent::SavePoint { reason: "attack over".into() });
 }
@@ -184,8 +195,9 @@ pub fn update_perception(ctx: &mut Ctx) {
                 leave_building(&nav, c);
             }
             if !has_recent_stimulus(c, StimulusKind::Alarm, tick - minutes_to_ticks(30.0), None) {
+                let foe = foe_noun(target.kind.faction());
                 let text =
-                    format!("The alarm has been raised: the dead are attacking near {}.", place_name_at(target.pos));
+                    format!("The alarm has been raised: {foe} are attacking near {}.", place_name_at(target.pos));
                 ctx.stimulate(id, StimulusKind::Alarm, text, 2, Some(&target.id));
             }
             start_fight(ctx, id, &target.id, FightMode::Monster, IntentSource::Reflex, None);

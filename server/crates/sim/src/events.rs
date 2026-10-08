@@ -32,6 +32,18 @@ pub enum Projectile {
     Food,
 }
 
+/// Where an orc raid has got to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RaidPhase {
+    /// the band has appeared on the west road
+    Coming,
+    /// it has had enough and makes for the road
+    Leaving,
+    /// the last of it is gone
+    Gone,
+}
+
 /// How a blow ended for the one it was aimed at.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -122,6 +134,10 @@ pub enum SimEvent {
     SavePoint {
         reason: String,
     },
+    /// An orc war band has come up the road, turned for home, or gone.
+    Raid {
+        phase: RaidPhase,
+    },
     /// Someone has stepped up to a billboard and started reading it.
     BillboardRead {
         id: Id,
@@ -154,6 +170,7 @@ impl SimEvent {
             Self::MercyRequest { .. } => "mercy_request",
             Self::Woke { .. } => "woke",
             Self::SavePoint { .. } => "save_point",
+            Self::Raid { .. } => "raid",
             Self::BillboardRead { .. } => "billboard_read",
             Self::NewcomerWanted { .. } => "newcomer_wanted",
         }

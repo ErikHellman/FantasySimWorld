@@ -20,7 +20,8 @@ use crate::data::economy::{
     market_float, material_price, material_reserve, price, yard_price,
 };
 use crate::state::{
-    Character, ChronicleKind, ItemId, Loot, LootKind, MemoryKind, MonsterKind, Resource, SimState, StimulusKind, Store,
+    Character, ChronicleKind, Haul, ItemId, Loot, LootKind, MemoryKind, MonsterKind, Resource, SimState, StimulusKind,
+    Store,
 };
 use crate::state::{Project, ProjectKind};
 use crate::systems::director::tick_at;
@@ -404,6 +405,37 @@ pub fn drop_loot(ctx: &mut Ctx, monster_id: &str, kind: MonsterKind, pos: Vec2, 
     let id = ctx.state.new_id("l:");
     ctx.state.loot.insert(id, Loot { kind: left, pos, since_tick: tick });
     let text = format!("The {} left {} where it fell, at {}.", kind.def().label, left.label(), place_name_at(pos));
+    ctx.remember(killer, text.clone(), 3.0, MemoryKind::Event, Vec::new());
+    ctx.stimulate(killer, StimulusKind::Loot, text, 0, None);
+}
+
+/// A raider has fallen with plunder on it: it lies where the raider fell, a heap for each kind of thing,
+/// for the village to pick up again. Nothing is drawn: the heaps sit at fixed places around the body.
+pub fn drop_haul(ctx: &mut Ctx, haul: &Haul, pos: Vec2, killer: &str) {
+    let tick = ctx.tick();
+    let mut heaps: Vec<LootKind> = Vec::new();
+    if haul.coins > 0 {
+        heaps.push(LootKind::Coins { count: haul.coins });
+    }
+    for item in ItemId::ALL {
+        if let Some(&count) = haul.goods.get(&item).filter(|&&n| n > 0) {
+            heaps.push(LootKind::Goods { item, count });
+        }
+    }
+    for (resource, count) in haul.materials.iter() {
+        heaps.push(LootKind::Materials { resource, count });
+    }
+    if heaps.is_empty() {
+        return;
+    }
+    const AROUND: [(f64, f64); 6] = [(0.0, 0.0), (0.7, 0.3), (-0.6, 0.5), (0.2, -0.7), (-0.5, -0.4), (0.8, -0.3)];
+    for (i, kind) in heaps.iter().enumerate() {
+        let (dx, dz) = AROUND[i % AROUND.len()];
+        let id = ctx.state.new_id("l:");
+        ctx.state.loot.insert(id, Loot { kind: *kind, pos: Vec2 { x: pos.x + dx, z: pos.z + dz }, since_tick: tick });
+    }
+    let what = haul.describe().unwrap_or_default();
+    let text = format!("The raider I felled dropped {what}, plunder from the village, at {}.", place_name_at(pos));
     ctx.remember(killer, text.clone(), 3.0, MemoryKind::Event, Vec::new());
     ctx.stimulate(killer, StimulusKind::Loot, text, 0, None);
 }

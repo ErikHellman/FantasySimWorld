@@ -79,6 +79,13 @@ export const SOURCES = {
     page: 'https://commons.wikimedia.org/wiki/File:Church_bells_-_Leverkusen,_2007.oga',
     url: `${COMMONS}3/36/Church_bells_-_Leverkusen%2C_2007.oga`,
   },
+  warHorn: {
+    title: 'Their Coming (generic horn sound)',
+    author: 'StumpyStrust',
+    license: 'CC0',
+    page: 'https://opengameart.org/content/their-coming-generic-horn-sound',
+    url: `${OGA}theircoming3_0.ogg`,
+  },
   anvil: {
     title: "Blacksmith's Hammer",
     author: 'VishwaJai',
@@ -188,6 +195,7 @@ export const EFFECTS: readonly Effect[] = [
   { slot: 'monster_spawn', source: 'roar' },
   { slot: 'monster_death', source: 'creatureDie' },
   { slot: 'alarm', source: 'churchBells', from: 4, seconds: 6 },
+  { slot: 'war_horn', source: 'warHorn' },
 ];
 
 /** Music: the track ids are listed in src/audio/musicTracks.ts. */

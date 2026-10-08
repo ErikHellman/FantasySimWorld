@@ -343,8 +343,10 @@ fn the_secret_necromancer_can_fall_for_good_and_be_laid_to_rest() {
     let fallen = w.sim.state.monsters.values().find(|m| m.lasting).expect("a lasting necromancer").id.clone();
     assert_eq!(w.sim.state.monsters[&fallen].name.as_deref(), Some("Elowen the Necromancer"));
 
-    // Daylight does not turn her to dust: she keeps to the ruins until nightfall.
+    // Daylight does not turn her to dust: she keeps to the ruins until nightfall. (No raid that morning: its
+    // alarm would bring the village out against her.)
     w.sim.state.tick = tick_at(9, 9.0);
+    w.sim.state.director.next_raid_tick = i64::MAX;
     w.clear_the_streets(&[]);
     let lair = get_place("ruins").door;
     let far = fsw_core::math2d::dist(w.sim.state.monsters[&fallen].pos, lair);

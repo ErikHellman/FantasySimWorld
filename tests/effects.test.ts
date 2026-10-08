@@ -35,4 +35,12 @@ describe('effects', () => {
     playEffects(engine, [hit(), hit('blocked'), hit('dodged')], () => true, listener);
     expect(played).toEqual(['sword_hit', 'hurt', 'block_clang', 'dodge_whoosh']);
   });
+
+  it('sounds the war horn when a band comes up the road, and a fallen raider falls like a man', () => {
+    const { engine, played } = fakeEngine();
+    const death = (id: string): WireEvent => ({ type: 'death', id, name: 'x', pos: { x: 0, z: 0 }, monster: true }) as WireEvent;
+    const raid = (phase: 'coming' | 'leaving' | 'gone'): WireEvent => ({ type: 'raid', phase }) as WireEvent;
+    playEffects(engine, [raid('coming'), raid('leaving'), death('m1'), death('m2')], () => false, listener, (id) => id === 'm2');
+    expect(played).toEqual(['war_horn', 'monster_death', 'death']);
+  });
 });

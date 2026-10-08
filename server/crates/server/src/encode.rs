@@ -34,7 +34,8 @@ use indexmap::IndexMap;
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
     Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HitOutcome, House, HousePhase, Look, Loot, LootKind,
-    Placed, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
+    Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject,
+    WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -374,12 +375,16 @@ pub fn loot_of(state: &SimState) -> Vec<Loot> {
 }
 
 fn wire_loot(id: &str, loot: &SimLoot) -> Loot {
-    let (kind, count) = match loot.kind {
-        SimLootKind::Coins { count } => (LootKind::Coins, count.max(0) as u32),
-        SimLootKind::Trinket => (LootKind::Trinket, 0),
-        SimLootKind::Relic => (LootKind::Relic, 0),
+    let (kind, count, item) = match loot.kind {
+        SimLootKind::Coins { count } => (LootKind::Coins, count.max(0) as u32, None),
+        SimLootKind::Trinket => (LootKind::Trinket, 0, None),
+        SimLootKind::Relic => (LootKind::Relic, 0, None),
+        SimLootKind::Goods { item, count } => (LootKind::Goods, count.max(0) as u32, Some(item.as_str().to_owned())),
+        SimLootKind::Materials { resource, count } => {
+            (LootKind::Materials, count.max(0) as u32, Some(resource.as_str().to_owned()))
+        }
     };
-    Loot { id: id.to_owned(), kind, count, pos: point(loot.pos), gone: false }
+    Loot { id: id.to_owned(), kind, count, item, pos: point(loot.pos), gone: false }
 }
 
 /// The village chest and the market's stalls, as viewers are told of them.
@@ -515,6 +520,13 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                 name: name.clone(),
                 pos: point(*pos),
                 monster: *monster,
+            }),
+            SimEvent::Raid { phase } => result.push(WireEvent::Raid {
+                phase: match phase {
+                    fsw_sim::events::RaidPhase::Coming => RaidPhase::Coming,
+                    fsw_sim::events::RaidPhase::Leaving => RaidPhase::Leaving,
+                    fsw_sim::events::RaidPhase::Gone => RaidPhase::Gone,
+                },
             }),
             SimEvent::MonsterSpawn { id, pos } => {
                 result.push(WireEvent::MonsterSpawn { id: id.clone(), pos: point(*pos) })

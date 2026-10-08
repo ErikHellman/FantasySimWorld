@@ -406,6 +406,9 @@ fn cannot_begin(state: &SimState, ceremony: &Ceremony) -> Option<&'static str> {
     }
     let centre = centre_of(state, ceremony);
     let lair = get_place("ruins").door;
+    if state.raid.is_some() {
+        return Some("raiders are in the valley");
+    }
     let abroad = state.monsters.values().any(|m| {
         m.phase != MonsterPhase::Dying
             && dist(m.pos, centre) < DANGER_RADIUS

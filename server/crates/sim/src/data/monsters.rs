@@ -13,6 +13,8 @@ pub enum MonsterKind {
     SkeletonRogue,
     SkeletonMage,
     Necromancer,
+    OrcAxe,
+    OrcClub,
 }
 
 /// Whose side a monster is on. Rising at night, crumbling at dawn, burial and arson are the undead's alone.
@@ -32,6 +34,8 @@ pub struct MonsterAnims {
     pub chase: AnimId,
     pub death: AnimId,
 }
+
+const ORC: MonsterAnims = MonsterAnims { rise: None, idle: Idle, walk: Walk, chase: Run, death: Death };
 
 const UNDEAD: MonsterAnims = MonsterAnims {
     rise: Some(SkeletonSpawn),
@@ -67,8 +71,9 @@ pub struct MonsterDef {
     pub dodge: f64,
 }
 
-/// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks).
-pub static MONSTERS: [MonsterDef; 5] = [
+/// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks). The orcs
+/// come last and never in a wave of the dead (weight 0), so the picks among the dead are as they were.
+pub static MONSTERS: [MonsterDef; 7] = [
     MonsterDef {
         kind: MonsterKind::SkeletonMinion,
         faction: Faction::Undead,
@@ -173,6 +178,48 @@ pub static MONSTERS: [MonsterDef; 5] = [
         weight: 0.0,
         block: 0.0,
         dodge: 0.0,
+    },
+    MonsterDef {
+        kind: MonsterKind::OrcAxe,
+        faction: Faction::Orc,
+        label: "orc raider",
+        model: "OrcRaider",
+        texture: None,
+        main_hand: Some("Orc_Axe"),
+        off_hand: None,
+        max_hp: 150.0,
+        damage: [13, 19],
+        range: 2.1,
+        interval: 1.5,
+        speed: 3.0,
+        style: WeaponStyle::Melee,
+        attack_anims: &[Attack1hChop, Attack1hSlice],
+        anims: ORC,
+        sight: 3.0,
+        weight: 0.0,
+        block: 0.15,
+        dodge: 0.0,
+    },
+    MonsterDef {
+        kind: MonsterKind::OrcClub,
+        faction: Faction::Orc,
+        label: "orc raider",
+        model: "OrcRaider",
+        texture: None,
+        main_hand: Some("Orc_Club"),
+        off_hand: None,
+        max_hp: 130.0,
+        damage: [11, 16],
+        range: 2.1,
+        interval: 1.3,
+        speed: 3.1,
+        style: WeaponStyle::Melee,
+        attack_anims: &[Attack1hChop, Attack1hStab],
+        anims: ORC,
+        sight: 3.0,
+        weight: 0.0,
+        block: 0.0,
+        dodge: 0.1,
     },
 ];
 

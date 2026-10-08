@@ -58,6 +58,8 @@ anims! {
     HitB = "hit_b" => ("Hit_B", false),
     Death = "death" => ("Death_A", false),
     DeathB = "death_b" => ("Death_B", false),
+    // lying where it fell, without falling again: for a corpse that was a monster first
+    DeathPose = "death_pose" => ("Death_A_Pose", false),
     Interact = "interact" => ("Interact", false),
     PickUp = "pick_up" => ("PickUp", false),
     UseItem = "use_item" => ("Use_Item", false),

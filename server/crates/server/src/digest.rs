@@ -7,10 +7,12 @@ use fsw_core::jsmath::js_round;
 use fsw_core::time::{format_clock, game_time, part_of_day};
 use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
+use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActPhase, Character, HousePhase, IntentAction, MemoryKind as SimMemoryKind, Monster, MonsterOrigin, MonsterPhase,
-    PlanSource, ProjectKind, PropStage, RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
+    PlanSource, ProjectKind, PropStage, RaidOrder, RelationLabel as SimLabel, Resource, SimState,
+    WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
@@ -22,8 +24,8 @@ use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
     AmbientCounts, CharacterDetail, ChronicleEntry, Detail, Founding, Goods, Inventory, LlmStatus, Memory, MemoryKind,
-    MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind,
-    SiteNeed, SiteProject, Status,
+    MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail,
+    SiteKind, SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 
@@ -107,6 +109,7 @@ pub fn status_of(state: &SimState, extras: StatusExtras) -> Status {
         population: state.order.len() as u32,
         monsters: monster_count(state),
         alarm: is_alarm(state),
+        raid: state.raid.is_some(),
         part: part_of_day(game_time(state.tick).hour).into(),
         ambient: ambient_of(state),
         founding: state
@@ -205,6 +208,11 @@ pub fn monster_detail_of(state: &SimState, id: &str) -> Option<MonsterDetail> {
         kills: m.kills.max(0) as u32,
         blows: m.blows.max(0) as u32,
         damage: [def.damage[0].max(0) as u32, def.damage[1].max(0) as u32],
+        faction: match def.faction {
+            Faction::Undead => MonsterFaction::Undead,
+            Faction::Orc => MonsterFaction::Orc,
+        },
+        carrying: m.raid.as_ref().and_then(|order| order.haul.describe()),
     })
 }
 
@@ -213,6 +221,9 @@ fn monster_status(state: &SimState, m: &Monster, target: Option<&NamedId>) -> St
     let hour = game_time(state.tick).hour;
     let daylight = (5.6..19.4).contains(&hour);
     let here = place_name_at(m.pos);
+    if let Some(order) = &m.raid {
+        return raider_status(state, m, order, target, &here);
+    }
     match m.phase {
         MonsterPhase::Rising => format!("Rising from the ground at {here}"),
         MonsterPhase::Dying if m.was_id.is_some() => "Laid to rest at last".into(),
@@ -230,6 +241,21 @@ fn monster_status(state: &SimState, m: &Monster, target: Option<&NamedId>) -> St
             None if daylight && m.lasting => "Lying low in the ruins".into(),
             None => format!("Prowling near {here}"),
         },
+    }
+}
+
+/// What a raider is about, for the card.
+fn raider_status(state: &SimState, m: &Monster, order: &RaidOrder, target: Option<&NamedId>, here: &str) -> String {
+    let place = |id: &str| find_place(id).map_or_else(|| id.to_owned(), |p| p.name.to_owned());
+    match (m.phase, target, &order.target) {
+        (MonsterPhase::Dying, ..) => "Fallen".into(),
+        (_, Some(target), _) => format!("Fighting {} near {here}", target.name),
+        _ if order.leaving && order.haul.is_empty() => "Making for the west road".into(),
+        _ if order.leaving => "Running for the west road with its plunder".into(),
+        (_, _, Some(goal)) if order.work_until_tick > 0 => format!("Plundering {}", place(goal)),
+        (_, _, Some(goal)) => format!("Making for {}", place(goal)),
+        _ if state.raid.is_some() => format!("Looking for something to steal near {here}"),
+        _ => format!("Prowling near {here}"),
     }
 }
 
@@ -253,6 +279,7 @@ fn monster_rose(state: &SimState, m: &Monster) -> String {
             }
         }
         Some(MonsterOrigin::Turned) => "Gave themself to the dark".to_owned(),
+        Some(MonsterOrigin::Road) => "Came up the west road with a war band".to_owned(),
         Some(MonsterOrigin::Graveyard) | None => "Rose from the graveyard".to_owned(),
     };
     let time = game_time(rose_tick);

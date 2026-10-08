@@ -182,4 +182,10 @@ export class ViewWorld {
   isMonster(id: string): boolean {
     return this.entities.get(id)?.kind === 'monster';
   }
+
+  /** One of an orc war band, rather than one of the dead. */
+  isRaider(id: string): boolean {
+    const entity = this.entities.get(id);
+    return entity?.kind === 'monster' && entity.look.model.startsWith('Orc');
+  }
 }

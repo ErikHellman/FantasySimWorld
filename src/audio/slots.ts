@@ -33,6 +33,7 @@ export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'monster_spawn', label: 'The dead clawing out of the ground', kind: 'effect', gain: 0.9 },
   { id: 'monster_death', label: 'A skeleton collapsing', kind: 'effect', gain: 0.8 },
   { id: 'alarm', label: 'The alarm being raised (a bell or horn)', kind: 'effect', gain: 1 },
+  { id: 'war_horn', label: 'An orc war band sounding its horn on the road', kind: 'effect', gain: 1 },
 ];
 
 export const AUDIO_EXTENSIONS = ['ogg', 'mp3', 'wav'] as const;

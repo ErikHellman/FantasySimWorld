@@ -199,7 +199,7 @@ async function start(): Promise<void> {
     }
     speech.handle(events);
     if (!fast) {
-      playEffects(audio, events, (id) => world.isVillager(id), listener());
+      playEffects(audio, events, (id) => world.isVillager(id), listener(), (id) => world.isRaider(id));
       mood.noteEvents(events, listener(), ui.selectedId.value, seconds());
     }
   };
@@ -307,7 +307,7 @@ async function start(): Promise<void> {
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
     const ceremony = ui.ceremony.value;
-    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
+    const scene = { hour, alarm: ui.alarm.value || ui.raid.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
     audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);

@@ -27,6 +27,7 @@ export const ANIMS = {
   hit_b: def('Hit_B', false),
   death: def('Death_A', false),
   death_b: def('Death_B', false),
+  death_pose: def('Death_A_Pose', false),
   interact: def('Interact', false),
   pick_up: def('PickUp', false),
   use_item: def('Use_Item', false),

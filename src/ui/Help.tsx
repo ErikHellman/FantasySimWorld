@@ -27,7 +27,7 @@ export function HelpPanel() {
     ui.panel.value = 'none';
   };
   const banner = (
-    <li><strong>A banner</strong> across the top says when the alarm is up, a house is on fire, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
+    <li><strong>A banner</strong> across the top says when the alarm is up, orc raiders are in the valley, a house is on fire, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
   );
   return (
     <div class="modal" onClick={close}>
@@ -91,21 +91,21 @@ export function HelpPanel() {
         <h3>On the screen</h3>
         {phone ? (
           <ul class="help-list">
-            <li><strong>Top</strong>: the day and time, and 💀 when the dead are abroad.</li>
+            <li><strong>Top</strong>: the day and time, and 💀 when the dead or raiders are abroad.</li>
             <li><strong>Tabs</strong> along the bottom (down the side when the phone lies on its side): 👥 the villagers, 📜 the chronicle and what they have said, 💬 the chat, 👤 the villager you follow, and ☰ for how many are watching, the language model, the graveyard, settings and this help. One pane opens at a time; tap its tab again or tap the world to put it away.</li>
             <li><strong>Following</strong>: the chip above the tabs names the villager the camera follows. Tap it for their page, ✕ to let them go.</li>
             <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
-            <li><strong>One of the dead</strong>: follow it for a card with its health, what it is after, where it rose and who it has slain.</li>
+            <li><strong>One of the dead, or a raider</strong>: follow it for a card with its health, what it is after, where it came from, what it is carrying off and who it has slain.</li>
             <li><strong>A building's page</strong>: tap a building, or something the village built, for its condition, who lives and is there, the work on it and its history.</li>
             {banner}
           </ul>
         ) : (
         <ul class="help-list">
-          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, the dead abroad 💀, the graveyard 🪦 (click it to read the names), the stores of wood 🪵, stone 🪨 and ore ⛏ once the village has gathered any, and the village chest 🪙 with 🧺 what the market's stalls hold. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
+          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, the dead and raiders abroad 💀, the graveyard 🪦 (click it to read the names), the stores of wood 🪵, stone 🪨 and ore ⛏ once the village has gathered any, and the village chest 🪙 with 🧺 what the market's stalls hold. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹. A 🧒 marks a child.</li>
-          <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
+          <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights, raids and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
-          <li><strong>One of the dead</strong> (right, when you follow it): its health, what it is after, where and how it rose, who it once was, and how many villagers it has slain.</li>
+          <li><strong>One of the dead, or a raider</strong> (right, when you follow it): its health, what it is after, where and how it rose or came, who it once was, what it is carrying off, and how many villagers it has slain.</li>
           <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
@@ -121,6 +121,7 @@ export function HelpPanel() {
           <li>They talk, and every conversation shifts how they feel about each other. Friendships, rivalries and love grow from it; grudges can end in a fight.</li>
           <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>
+          <li>Every week or so, by day, a war band of orcs comes up the west road with a blast of its horn. The raiders go for the market, the farm, the smithy, the stores of wood and stone and any home left empty: they take coin from the chest, goods off the stalls and materials from the stores, and a place they have plundered yields nothing for a day. They fight whoever gets in their way, and leave when they have their loot, have lost half their number or most of their strength, or it is five in the afternoon. A raider who falls drops what it carried for the villagers to pick up; what the rest take down the road is gone. Orcs do not rise again, and their bodies lie where they fell for a while.</li>
           <li>In a fight, skill and luck count. Knights, paladins, swordsmen and barbarians can turn a blow aside (a clang and a spark: it does a quarter of the harm), and rogues, scouts and rangers can step out of one (a whoosh and a puff of dust). Arrows and spells can only be dodged. The brave and born fighters defend a little better, the badly hurt a little worse. Some of the dead can do it too.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>

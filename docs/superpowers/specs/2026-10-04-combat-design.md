@@ -87,6 +87,8 @@ Before and after, run `cargo run --release -p fsw-sim --bin soak -- 30 <seed> --
 
 Orcs are not the dead. They do not rise from graves, they do not crumble at dawn, and their bodies are not buried; a fallen orc's corpse lies for a while and then is gone.
 
+**Plunder, as built.** The owner chose both halves: a plundered place is spoiled for a game day, and raiders carry off real goods. At the market an orc takes up to 12 coins from the chest and up to 3 goods off the stalls; at any stockpile (the market, the lumber camp, the mine) up to 10 materials. A farm, the smithy or a home is only spoiled. A raider who falls drops what it carried where it fell, as loot the villagers pick up (coins into the purse, goods into the pack, materials into their arms and on to the stores); what the band takes down the road is gone. This reverses the economy note's "no theft of coin".
+
 ### Where it lives
 
 - **Kinds** (`data/monsters.rs`): `MonsterKind::OrcAxe`, `OrcClub` and `OrcWarchief` (step 3), and a `faction()` returning `Undead` or `Orc`. Daylight, rising, burial and arson apply to the undead only. Orc corpses are not buried.
@@ -102,6 +104,19 @@ Orcs are not the dead. They do not rise from graves, they do not crumble at dawn
 - **The brain** (`prompts.rs`): the world text "the only monsters are the walking dead" becomes "the dead rise at night; orc raiders sometimes come up the road by day". Prompts say "raiders" for orcs in sight. This is a deliberate change to `prompts.json`.
 - **Wire**: a new `WireEvent::Raid { phase }` (`coming`, `leaving` or `gone`) for the horn and the music. `MonsterSpawn` and `look` already carry the rest. Older clients ignore an event they do not know. `export-api` is re-run.
 - **Client**: the war horn (`src/audio`, CC0, credited), the `tension` mood during a raid (`src/audio/mood.ts`), and the chronicle kind `combat`.
+
+### Built
+
+Built as above, with these details settled in the code:
+- **When**: the first raid is fixed by the seed (day 4 to 6, 9:00 to 15:00), so nothing is drawn and nothing written until it comes; `crates/sim/tests/raids.rs` holds a world before its first raid equal to one without raids. After that the next is drawn when a band appears. A raid that is due but cannot come waits for the same hour the next day.
+- **The band**: `MonsterKind::OrcAxe` and `OrcClub` (the OrcRaider model, two hides, some without a pack), at the end of `MONSTERS` with weight 0. They are as tough as a knight (150 and 130 health, 13–19 and 11–16 damage); at the first trial's 70 and 60 the village cut every band down within minutes and nobody was ever hurt.
+- **Where it lives**: `systems/raids.rs` is run from `update_director` (the schedule, the warning, the band's end) and from the monsters' loop for each orc (`update_orc`), so the system order in `Sim::step` is unchanged. The warning is skipped if someone has already seen the band and shouted. The alarm, the stand-down, panic and the prompts name raiders rather than the dead when it is orcs (`Director.alarm_raid`).
+- **Spoiling**: `activity_minute` skips an activity's goods at a plundered place (the check needs the slot's place, which `give` does not have).
+- **Bodies**: an orc dies like one of the dead (five seconds of `Death`), then lies as a corpse in the death pose for two hours; no grave.
+- **Wire** (protocol 9: the new loot kinds would break an older page): `WireEvent::Raid`, `LootKind::Goods` and `Materials` with an `item`, `MonsterDetail.faction` and `carrying`, `Status.raid` (the banner and the music). Orcs send no `monster_spawn`: they walk up, they do not claw out of the ground.
+- **Sound**: the war horn is StumpyStrust's "Their Coming" (CC0); a fallen orc plays the villagers' fall, not the skeleton's clatter.
+
+Measured over 30 days, seeds 1 to 10 (means per village): 4.2 raids; 9.4 places plundered; 0.9 villagers killed by orcs; the band got away with plunder 0.8 times. Villagers dead, all causes, 6.4 (6.5 before raids). Most bands turn for home on losing 60% of their health, 20 to 50 minutes after they appear; a few take all they came for. The chest ends the month much as it did without raids. In practice the raiders seldom get past the farm, the lumber camp and the nearest cottages before the village is on them.
 
 ## Step 3: bosses
 

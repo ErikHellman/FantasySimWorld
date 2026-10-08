@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
 pub type Id = String;
@@ -273,6 +273,15 @@ pub enum Ranged {
     Food,
 }
 
+/// Where an orc raid has got to.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RaidPhase {
+    Coming,
+    Leaving,
+    Gone,
+}
+
 /// How a blow ended for the one it was aimed at.
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -340,6 +349,10 @@ pub enum WireEvent {
     MonsterSpawn {
         id: Id,
         pos: Vec2,
+    },
+    /// an orc war band came up the road, turned for home, or is gone
+    Raid {
+        phase: RaidPhase,
     },
     Chronicle {
         entry: ChronicleEntry,
@@ -444,8 +457,12 @@ pub struct Loot {
     /// `l:<n>`
     pub id: String,
     pub kind: LootKind,
-    /// how many coins, for `coins`; 0 otherwise
+    /// how many coins, goods or materials; 0 for a trinket or a relic
     pub count: u32,
+    /// for goods, the item (`food`, `potion`, `gift`); for materials, the material (`wood`, `stone`, `ore`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub item: Option<String>,
     pub pos: Vec2,
     /// picked up or blown away: forget it
     #[serde(default)]
@@ -458,6 +475,10 @@ pub enum LootKind {
     Coins,
     Trinket,
     Relic,
+    /// food, potions or gifts a fallen raider carried off; `item` says which
+    Goods,
+    /// wood, stone or ore a fallen raider carried off; `item` says which
+    Materials,
 }
 
 /// The village chest and what the market's stalls hold.
@@ -666,6 +687,8 @@ pub struct Status {
     pub population: u32,
     pub monsters: u32,
     pub alarm: bool,
+    /// an orc war band is in the valley
+    pub raid: bool,
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
     pub ambient: AmbientCounts,
@@ -867,6 +890,17 @@ pub struct MonsterDetail {
     pub blows: u32,
     /// the least and the most one of its blows takes
     pub damage: [u32; 2],
+    /// one of the dead, or an orc raider
+    pub faction: MonsterFaction,
+    /// a raider's plunder, e.g. "12 coins and 6 logs of wood"
+    pub carrying: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MonsterFaction {
+    Undead,
+    Orc,
 }
 
 /// What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
@@ -1280,6 +1314,7 @@ pub fn typescript() -> String {
         Emote,
         Ranged,
         HitOutcome,
+        RaidPhase,
         Utterance,
         WireEvent,
         ChronicleKind,
@@ -1318,6 +1353,7 @@ pub fn typescript() -> String {
         CharacterDetail,
         NamedId,
         MonsterDetail,
+        MonsterFaction,
         Detail,
         SiteKind,
         SiteNeed,

@@ -34,6 +34,7 @@ export const SOUND_CREDITS: readonly SoundCredit[] = [
   { title: '80 CC0 creature SFX', author: 'rubberduck', license: 'CC0', url: 'https://opengameart.org/content/80-cc0-creature-sfx' },
   { title: '80 CC0 RPG SFX', author: 'rubberduck', license: 'CC0', url: 'https://opengameart.org/content/80-cc0-rpg-sfx' },
   { title: 'Peaceful Forest', author: 'Samza', license: 'CC0', url: 'https://opengameart.org/content/peaceful-forest' },
+  { title: 'Their Coming (generic horn sound)', author: 'StumpyStrust', license: 'CC0', url: 'https://opengameart.org/content/their-coming-generic-horn-sound' },
   { title: 'Blacksmith\'s Hammer', author: 'VishwaJai', license: 'CC0', url: 'https://opengameart.org/content/blacksmiths-hammer' },
   { title: 'Chickens demanding food', author: 'alys (PDSounds)', license: 'Public domain', url: 'https://commons.wikimedia.org/wiki/File:Chickens_demanding_food.ogg' },
   { title: 'Church bells, Leverkusen 2007', author: 'natalie (PDSounds)', license: 'Public domain', url: 'https://commons.wikimedia.org/wiki/File:Church_bells_-_Leverkusen,_2007.oga' },

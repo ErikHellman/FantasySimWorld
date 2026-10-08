@@ -45,6 +45,10 @@ pub fn create_state(seed: u32) -> SimState {
             newcomer_deadline_tick: 0,
             awaiting_funeral: Vec::new(),
             next_project_tick: 0,
+            next_raid_tick: 0,
+            raids: 0,
+            raid_called: false,
+            alarm_raid: false,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
@@ -56,6 +60,8 @@ pub fn create_state(seed: u32) -> SimState {
         performances: Vec::new(),
         economy: Default::default(),
         loot: Default::default(),
+        raid: None,
+        plundered: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

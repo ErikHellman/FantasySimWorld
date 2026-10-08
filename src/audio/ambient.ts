@@ -68,7 +68,13 @@ export function ambientLevels(counts: AmbientCounts, hour: number, listener: Lis
 }
 
 /** Plays effects for a tick's events, quieter the further they are from where the camera looks. */
-export function playEffects(engine: AudioEngine, events: readonly WireEvent[], isVillager: (id: string) => boolean, listener: Listener): void {
+export function playEffects(
+  engine: AudioEngine,
+  events: readonly WireEvent[],
+  isVillager: (id: string) => boolean,
+  listener: Listener,
+  isRaider: (id: string) => boolean = () => false,
+): void {
   const volumeAt = (x: number, z: number): number => near(Math.hypot(x - listener.x, z - listener.z), 30 + listener.distance);
   for (const event of events) {
     if (event.type === 'attack') {
@@ -85,7 +91,10 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
         if (isVillager(event.targetId)) engine.play('hurt', volume * 0.7);
       }
     } else if (event.type === 'death') {
-      engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
+      // A raider falls like a man; only the dead clatter apart.
+      engine.play(event.monster && !isRaider(event.id) ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
+    } else if (event.type === 'raid' && event.phase === 'coming') {
+      engine.play('war_horn', 0.9);
     } else if (event.type === 'monster_spawn') {
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'speech' && event.loud && (event.text.startsWith('To arms') || event.text.startsWith('Fire!'))) {

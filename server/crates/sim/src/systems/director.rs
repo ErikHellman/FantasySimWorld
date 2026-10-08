@@ -1,4 +1,4 @@
-//! Keeps the world neither empty nor quiet: night attacks, the watch rota, and newcomers.
+//! Keeps the world neither empty nor quiet: night attacks, orc raids by day, the watch rota, and newcomers.
 
 use fsw_core::jsmath::js_round;
 use fsw_core::time::{MINUTES_PER_DAY, START_MINUTE, TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks};
@@ -10,6 +10,7 @@ use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind, MonsterOrigin};
 use crate::systems::arrivals::arrive;
 use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
+use crate::systems::raids::update_raids;
 use crate::util::{Ctx, adult_count, first_name, join_names, living};
 
 const MAX_WAVE: i64 = 7;
@@ -151,6 +152,8 @@ pub fn update_director(ctx: &mut Ctx) {
         return;
     }
 
+    update_raids(ctx);
+
     if tick >= ctx.state.director.next_wave_tick {
         let dark = !(4.0..19.5).contains(&hour);
         if dark {
@@ -159,9 +162,11 @@ pub fn update_director(ctx: &mut Ctx) {
         schedule_next_wave(ctx, dark);
     }
 
+    // Nobody walks up the west road while a war band is on it.
     if adult_count(ctx.state) < ctx.state.director.population_target
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
+        && ctx.state.raid.is_none()
     {
         let director = &ctx.state.director;
         let deadline = director.newcomer_deadline_tick;

@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -223,6 +223,11 @@ export type Ranged = "arrow" | "bolt" | "magic" | "food";
 export type HitOutcome = "hit" | "blocked" | "dodged";
 
 /**
+ * Where an orc raid has got to.
+ */
+export type RaidPhase = "coming" | "leaving" | "gone";
+
+/**
  * One spoken line, with everything a sink needs to show it or say it aloud.
  */
 export type Utterance = { tick: number, speakerId: string, speakerName: string, toId: string | null, toName: string | null, text: string, 
@@ -246,7 +251,7 @@ export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id
 /**
  * left out when the blow simply landed
  */
-outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
+outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -389,15 +394,19 @@ export type Loot = {
  */
 id: string, kind: LootKind, 
 /**
- * how many coins, for `coins`; 0 otherwise
+ * how many coins, goods or materials; 0 for a trinket or a relic
  */
-count: number, pos: Vec2, 
+count: number, 
+/**
+ * for goods, the item (`food`, `potion`, `gift`); for materials, the material (`wood`, `stone`, `ore`)
+ */
+item?: string, pos: Vec2, 
 /**
  * picked up or blown away: forget it
  */
 gone: boolean, };
 
-export type LootKind = "coins" | "trinket" | "relic";
+export type LootKind = "coins" | "trinket" | "relic" | "goods" | "materials";
 
 /**
  * Raw materials in a villager's arms.
@@ -426,6 +435,10 @@ export type Status = { llm: LlmStatus, viewers: number, speed: number,
  * the world is held at 1x because the model has a backlog
  */
 throttled: boolean, population: number, monsters: number, alarm: boolean, 
+/**
+ * an orc war band is in the valley
+ */
+raid: boolean, 
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
@@ -562,7 +575,17 @@ blows: number,
 /**
  * the least and the most one of its blows takes
  */
-damage: [number, number], };
+damage: [number, number], 
+/**
+ * one of the dead, or an orc raider
+ */
+faction: MonsterFaction, 
+/**
+ * a raider's plunder, e.g. "12 coins and 6 logs of wood"
+ */
+carrying: string | null, };
+
+export type MonsterFaction = "undead" | "orc";
 
 /**
  * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.

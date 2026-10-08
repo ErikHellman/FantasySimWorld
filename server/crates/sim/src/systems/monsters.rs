@@ -2,19 +2,20 @@
 
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::rng;
-use fsw_core::time::seconds_to_ticks;
+use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
 use fsw_world::places::get_place;
 
 use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
-use crate::data::monsters::{MONSTERS, MonsterKind};
+use crate::data::monsters::{Faction, MONSTERS, MonsterKind};
 use crate::events::HitOutcome;
 use crate::events::{Projectile, SimEvent};
-use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
+use crate::state::{ChronicleKind, Corpse, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
 use crate::systems::combat::{Assailant, Blow, damage_character_with, villager_defends};
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
+use crate::systems::raids::{ORC_CORPSE_MINUTES, update_orc};
 use crate::util::{Ctx, living, monster_ids, set_anim};
 
 /// The most of the dead abroad at once, the dying included.
@@ -68,9 +69,13 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         kills: 0,
         blows: 0,
         defend_ready_tick: 0,
+        raid: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
-    ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
+    // The dead claw their way out of the ground; a raider just walks up.
+    if def.anims.rise.is_some() {
+        ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
+    }
     id
 }
 
@@ -225,7 +230,7 @@ pub fn chase_and_strike(ctx: &mut Ctx, id: &str, target_id: &str, target_pos: Ve
 }
 
 /// The number in a monster id ("m12" → 12), as `Number(id.slice(1))`.
-fn id_number(id: &str) -> i64 {
+pub(crate) fn id_number(id: &str) -> i64 {
     id.get(1..).and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
@@ -241,9 +246,25 @@ pub fn update_monsters(ctx: &mut Ctx) {
         monster.moving = false;
 
         if monster.phase == MonsterPhase::Dying {
-            if tick - monster.since_tick > seconds_to_ticks(5.0) {
-                ctx.state.monsters.shift_remove(&id);
+            if tick - monster.since_tick > seconds_to_ticks(5.0)
+                && let Some(gone) = ctx.state.monsters.shift_remove(&id)
+                && gone.kind.faction() == Faction::Orc
+            {
+                // The dead crumble to nothing; a raider's body lies where it fell for a while.
+                ctx.state.corpses.push(Corpse {
+                    id: gone.id,
+                    look: gone.look,
+                    pos: gone.pos,
+                    facing: gone.facing,
+                    anim: AnimId::DeathPose,
+                    until_tick: tick + minutes_to_ticks(ORC_CORPSE_MINUTES),
+                });
             }
+            continue;
+        }
+        // Raiders keep to their errand by day; the rest of this is for the dead.
+        if def.faction == Faction::Orc {
+            update_orc(ctx, &id);
             continue;
         }
         if daylight && !monster.lasting {

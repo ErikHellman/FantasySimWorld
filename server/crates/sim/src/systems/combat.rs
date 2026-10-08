@@ -7,6 +7,7 @@ use fsw_core::{Vec2, vec2};
 
 use crate::data::anims::AnimId;
 use crate::data::classes::{FISTS, RUN_SPEED, Weapon, WeaponStyle};
+use crate::data::monsters::Faction;
 use crate::events::{Emote, HitOutcome, Projectile, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::{
@@ -16,9 +17,10 @@ use crate::state::{
 use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, free_grave_plot, kill_character};
-use crate::systems::economy::drop_loot;
+use crate::systems::economy::{drop_haul, drop_loot};
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
+use crate::systems::raids;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
     Body, Ctx, a_noun, a_noun_capital, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting,
@@ -318,15 +320,15 @@ pub fn panic_chance(c: &crate::state::Character) -> f64 {
     PANIC_MAX * clamp(1.0 - c.profile.bravery * 0.85 - c.profile.temper * 0.15, 0.0, 1.0)
 }
 
-/// Someone fighting the dead loses their nerve and runs for home.
-fn panic(ctx: &mut Ctx, id: &str) {
+/// Someone fighting the dead (or the raiders) loses their nerve and runs for home.
+fn panic(ctx: &mut Ctx, id: &str, foe: &str) {
     let pos = ctx.cr(id).pos;
     let where_ = place_name_at(pos);
     start_flee(ctx, id, IntentSource::Reflex);
     let line = ctx.pick(&PANIC_LINES);
     ctx.say(id, line, None, true);
     ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Alert });
-    ctx.remember(id, format!("I panicked and ran from the dead at {where_}."), 6.0, MemoryKind::Event, Vec::new());
+    ctx.remember(id, format!("I panicked and ran from {foe} at {where_}."), 6.0, MemoryKind::Event, Vec::new());
     let name = ctx.cr(id).profile.name.clone();
     ctx.chronicle(
         ChronicleKind::Combat,
@@ -385,6 +387,15 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     set_anim(m, def.anims.death, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
+    if def.faction == Faction::Orc {
+        let haul = ctx.m(monster_id).raid.take().map(|order| order.haul).unwrap_or_default();
+        raids::on_fallen(ctx);
+        drop_haul(ctx, &haul, pos, attacker);
+        let where_ = place_name_at(pos);
+        ctx.remember(attacker, format!("Slew {} at {where_}.", a_noun(def.label)), 5.0, MemoryKind::Event, Vec::new());
+        ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
+        return;
+    }
     drop_loot(ctx, monster_id, kind, pos, attacker);
     let where_ = place_name_at(pos);
     let necromancer = kind == MonsterKind::Necromancer;
@@ -517,7 +528,8 @@ pub fn damage_character_with(
             );
         let chance = panic_chance(v);
         if fighting_the_dead && ctx.chance(chance) {
-            panic(ctx, victim);
+            let faction = ctx.state.monsters.get(&by.id).map_or(Faction::Undead, |m| m.kind.faction());
+            panic(ctx, victim, raids::foe_noun(faction));
             return;
         }
     }

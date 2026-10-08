@@ -5,7 +5,7 @@
 
 # Fantasy Sim World
 
-A 3D world in the KayKit style. A dozen fantasy villagers, each invented by a language model when the world begins, follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
+A 3D world in the KayKit style. A dozen fantasy villagers, each invented by a language model when the world begins, follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and the orc raiders who now and then come up the road by day and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
 
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated by the server and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
@@ -21,6 +21,7 @@ The server migration is complete. The world, the language-model brain and every 
 - The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
 - A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
 - Children: four or five live in the village from the day it is founded, and lovers who stay together have more. Children play, get into trouble (pinched food, a thrown apple, a hidden tool, a tall tale, a wander into the wilds at dusk, now and then a fire), never fight, and come of age after about a month as adults with a trade of their own ([the design](docs/superpowers/specs/2026-10-08-children-design.md)).
+- Combat: fighters with a shield or a blade can block a blow, the nimble can dodge one, and every week or so an orc war band comes up the west road by day to plunder the farm, the stores, the market and empty homes. A raider who falls drops what it carried; what the band gets away with is gone ([the design](docs/superpowers/specs/2026-10-04-combat-design.md)).
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
@@ -36,7 +37,7 @@ The server migration is complete. The world, the language-model brain and every 
 Not yet done or not yet tried:
 
 - **Models**: the figures under [Connecting a language model](#connecting-a-language-model) are from one local model (`qwen/qwen3.6-35b-a3b` in LM Studio). The deployed game uses hosted models (the help's tech tour says which), but they have not been measured the same way; run the `probe` tool against yours.
-- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, orc raiders and large bosses.
+- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, large bosses.
 
 ## What you need
 
@@ -76,11 +77,11 @@ set -a; . ./.env; set +a
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
-- Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead to follow it and read its card instead.
+- Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead, or a raider, to follow it and read its card instead.
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the dead, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the dead, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.

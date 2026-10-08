@@ -115,6 +115,7 @@ fn main() {
             "alive": state.order.len(),
             "dead": state.dead.len(),
             "arrivals": state.director.arrivals,
+            "raids": state.director.raids,
             "deaths": state.dead.iter().map(|(id, r)| json!({"id": id, "name": r.name, "day": r.day, "cause": r.cause})).collect::<Vec<Value>>(),
             "chronicleKinds": kinds,
             "stockpiles": state.stockpiles,
