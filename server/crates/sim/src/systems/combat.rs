@@ -21,8 +21,8 @@ use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
-    Body, Ctx, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting, nearby_characters, place_name_at,
-    set_anim, their,
+    Body, Ctx, a_noun, a_noun_capital, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting,
+    nearby_characters, place_name_at, set_anim, their,
 };
 
 const BRAWL_YIELD: f64 = 0.3;
@@ -382,7 +382,7 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     m.since_tick = tick;
     m.hit_tick = 0;
     m.path.clear();
-    set_anim(m, AnimId::SkeletonDeath, true);
+    set_anim(m, def.anims.death, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
     drop_loot(ctx, monster_id, kind, pos, attacker);
@@ -390,7 +390,7 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     let necromancer = kind == MonsterKind::Necromancer;
     ctx.remember(
         attacker,
-        format!("Destroyed a {} at {where_}.", def.label),
+        format!("Destroyed {} at {where_}.", a_noun(def.label)),
         if necromancer { 8.0 } else { 4.0 },
         MemoryKind::Event,
         Vec::new(),
@@ -482,7 +482,7 @@ pub fn damage_character_with(
     if fatal {
         let cause = match &by.character {
             Some(_) => format!("killed by {}", by.label),
-            None => format!("slain by a {} at {}", by.label, place_name_at(pos)),
+            None => format!("slain by {} at {}", a_noun(&by.label), place_name_at(pos)),
         };
         kill_character(ctx, victim, &cause, by.character.as_deref());
         return;
@@ -503,7 +503,7 @@ pub fn damage_character_with(
                 let how = if mode == FightMode::Brawl { " with their fists" } else { " with a weapon" };
                 format!("{} is attacking you{how}!", by.label)
             } else {
-                format!("A {} is attacking you!", by.label)
+                format!("{} is attacking you!", a_noun_capital(&by.label))
             };
             ctx.stimulate(victim, StimulusKind::Attacked, text, 3, Some(&by.id));
         }

@@ -1,4 +1,4 @@
-//! The walking dead.
+//! The monsters: the walking dead, and the orc raiders who come up the road.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +15,35 @@ pub enum MonsterKind {
     Necromancer,
 }
 
+/// Whose side a monster is on. Rising at night, crumbling at dawn, burial and arson are the undead's alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Faction {
+    Undead,
+    Orc,
+}
+
+/// The clips a monster moves with.
+pub struct MonsterAnims {
+    /// played while it climbs out of the ground; one that does not rise is ready at once
+    pub rise: Option<AnimId>,
+    pub idle: AnimId,
+    pub walk: AnimId,
+    /// on the heels of a villager
+    pub chase: AnimId,
+    pub death: AnimId,
+}
+
+const UNDEAD: MonsterAnims = MonsterAnims {
+    rise: Some(SkeletonSpawn),
+    idle: SkeletonIdle,
+    walk: SkeletonWalk,
+    chase: SkeletonWalk,
+    death: SkeletonDeath,
+};
+
 pub struct MonsterDef {
     pub kind: MonsterKind,
+    pub faction: Faction,
     pub label: &'static str,
     pub model: &'static str,
     pub texture: Option<&'static str>,
@@ -29,6 +56,7 @@ pub struct MonsterDef {
     pub speed: f64,
     pub style: WeaponStyle,
     pub attack_anims: &'static [AnimId],
+    pub anims: MonsterAnims,
     /// how far it notices villagers
     pub sight: f64,
     /// relative chance in an ordinary wave
@@ -43,6 +71,7 @@ pub struct MonsterDef {
 pub static MONSTERS: [MonsterDef; 5] = [
     MonsterDef {
         kind: MonsterKind::SkeletonMinion,
+        faction: Faction::Undead,
         label: "skeleton",
         model: "Skeleton_Minion",
         texture: None,
@@ -55,6 +84,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
         speed: 2.7,
         style: WeaponStyle::Melee,
         attack_anims: &[Attack1hChop, Attack1hStab],
+        anims: UNDEAD,
         sight: 18.0,
         weight: 5.0,
         block: 0.0,
@@ -62,6 +92,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
     },
     MonsterDef {
         kind: MonsterKind::SkeletonWarrior,
+        faction: Faction::Undead,
         label: "skeleton warrior",
         model: "Skeleton_Warrior",
         texture: None,
@@ -74,6 +105,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
         speed: 2.5,
         style: WeaponStyle::Melee,
         attack_anims: &[Attack1hChop, Attack1hSlice],
+        anims: UNDEAD,
         sight: 18.0,
         weight: 3.0,
         block: 0.3,
@@ -81,6 +113,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
     },
     MonsterDef {
         kind: MonsterKind::SkeletonRogue,
+        faction: Faction::Undead,
         label: "skeleton stalker",
         model: "Skeleton_Rogue",
         texture: None,
@@ -93,6 +126,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
         speed: 3.4,
         style: WeaponStyle::Melee,
         attack_anims: &[AttackDualChop, AttackDualSlice],
+        anims: MonsterAnims { chase: Run, ..UNDEAD },
         sight: 21.0,
         weight: 2.0,
         block: 0.0,
@@ -100,6 +134,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
     },
     MonsterDef {
         kind: MonsterKind::SkeletonMage,
+        faction: Faction::Undead,
         label: "skeleton mage",
         model: "Skeleton_Mage",
         texture: None,
@@ -112,6 +147,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
         speed: 2.4,
         style: WeaponStyle::Magic,
         attack_anims: &[MagicShoot],
+        anims: UNDEAD,
         sight: 20.0,
         weight: 2.0,
         block: 0.0,
@@ -119,6 +155,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
     },
     MonsterDef {
         kind: MonsterKind::Necromancer,
+        faction: Faction::Undead,
         label: "necromancer",
         model: "Necromancer",
         texture: None,
@@ -131,6 +168,7 @@ pub static MONSTERS: [MonsterDef; 5] = [
         speed: 2.3,
         style: WeaponStyle::Magic,
         attack_anims: &[MagicShoot, MagicCast],
+        anims: UNDEAD,
         sight: 23.0,
         weight: 0.0,
         block: 0.0,
@@ -141,5 +179,9 @@ pub static MONSTERS: [MonsterDef; 5] = [
 impl MonsterKind {
     pub fn def(self) -> &'static MonsterDef {
         MONSTERS.iter().find(|def| def.kind == self).expect("every monster has a definition")
+    }
+
+    pub fn faction(self) -> Faction {
+        self.def().faction
     }
 }

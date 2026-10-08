@@ -10,7 +10,7 @@ use crate::systems::fire::home_usable;
 use crate::systems::music::{performance, venue_phrase};
 use crate::systems::quirks::reading_late;
 use crate::systems::world::describe_target;
-use crate::util::{join_names, name_of, place_name_at};
+use crate::util::{a_noun, join_names, name_of, place_name_at};
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
     let doing = doing(state, c);
@@ -123,7 +123,7 @@ fn doing(state: &SimState, c: &Character) -> String {
         },
         IntentAction::Fight { target_id, mode } => match mode {
             FightMode::Monster => match state.monsters.get(target_id) {
-                Some(monster) => format!("fighting a {}", monster.kind.def().label),
+                Some(monster) => format!("fighting {}", a_noun(monster.kind.def().label)),
                 None => "fighting".into(),
             },
             FightMode::Brawl => format!("brawling with {}", name_of(state, target_id)),

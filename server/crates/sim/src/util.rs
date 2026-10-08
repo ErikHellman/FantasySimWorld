@@ -185,6 +185,19 @@ pub fn get_monster<'s>(state: &'s SimState, id: Option<&str>) -> Option<&'s Mons
     state.monsters.get(id?).filter(|m| m.phase != MonsterPhase::Dying)
 }
 
+/// The noun with "a" or "an" before it: "a skeleton", "an orc raider".
+pub fn a_noun(noun: &str) -> String {
+    let article = if noun.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
+    format!("{article} {noun}")
+}
+
+/// The same, to start a sentence: "A skeleton", "An orc raider".
+pub fn a_noun_capital(noun: &str) -> String {
+    let phrase = a_noun(noun);
+    let mut chars = phrase.chars();
+    chars.next().map_or(phrase.clone(), |first| first.to_uppercase().chain(chars).collect())
+}
+
 pub fn first_name(c: &Character) -> &str {
     c.profile.name.split(' ').next().unwrap_or_default()
 }

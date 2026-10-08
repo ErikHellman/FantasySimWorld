@@ -435,7 +435,7 @@ pub fn arson(ctx: &mut Ctx, id: &str, check: bool) -> bool {
             let mut path = std::mem::take(&mut monster.path);
             advance(monster, &mut path, speed);
             monster.path = path;
-            set_anim(monster, AnimId::SkeletonWalk, false);
+            set_anim(monster, monster.kind.def().anims.walk, false);
             return true;
         }
         monster.path.clear();
@@ -448,7 +448,7 @@ pub fn arson(ctx: &mut Ctx, id: &str, check: bool) -> bool {
         return true;
     }
     monster.arson = None;
-    set_anim(monster, AnimId::SkeletonIdle, false);
+    set_anim(monster, monster.kind.def().anims.idle, false);
     ignite(ctx, &plan.place_id);
     true
 }

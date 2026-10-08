@@ -13,7 +13,9 @@ use crate::systems::conversation::abort_conversation;
 use crate::systems::fire::burning;
 use crate::systems::intents::leave_building;
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::util::{Ctx, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at};
+use crate::util::{
+    Ctx, a_noun_capital, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at,
+};
 
 const SIGHT: f64 = 18.0;
 const WATCH_SIGHT: f64 = 48.0;
@@ -144,7 +146,11 @@ pub fn update_perception(ctx: &mut Ctx) {
                 abort_conversation(ctx, &convo);
             }
             if !has_recent_stimulus(ctx.cr(id), StimulusKind::Threat, tick - seconds_to_ticks(30.0), None) {
-                let text = format!("A {} is coming at you near {}!", seen.kind.def().label, place_name_at(seen.pos));
+                let text = format!(
+                    "{} is coming at you near {}!",
+                    a_noun_capital(seen.kind.def().label),
+                    place_name_at(seen.pos)
+                );
                 ctx.stimulate(id, StimulusKind::Threat, text, 3, Some(&seen.id));
             }
             let c = ctx.cr(id);
