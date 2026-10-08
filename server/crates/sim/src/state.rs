@@ -653,6 +653,10 @@ pub enum IntentAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         minutes: Option<f64>,
     },
+    /// walks to something the dead left (`SimState.loot`) and picks it up
+    PickUp {
+        loot_id: String,
+    },
 }
 
 /// Work that changes the world; see `systems::world` and `data::jobs`.
@@ -707,6 +711,7 @@ impl IntentAction {
             Self::Fetch { .. } => "fetch",
             Self::Attend { .. } => "attend",
             Self::WorldWork { .. } => "world_work",
+            Self::PickUp { .. } => "pick_up",
         }
     }
 
@@ -811,6 +816,8 @@ pub enum StimulusKind {
     Wrath,
     /// a birth, a child coming of age, or a child's mischief reported to those who raise them
     Family,
+    /// something the dead left lying where they fell
+    Loot,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -1576,6 +1583,9 @@ pub struct SimState {
     /// the village's chest and the market's stalls; see [`Economy`] and `systems::economy`
     #[serde(default, skip_serializing_if = "Economy::is_default")]
     pub economy: Economy,
+    /// what the dead left lying where they fell, by id (`l:<n>`); see [`Loot`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub loot: IndexMap<String, Loot>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
@@ -1638,6 +1648,46 @@ impl Economy {
             0 => "nothing".into(),
             1 => parts[0].clone(),
             n => format!("{} and {}", parts[..n - 1].join(", "), parts[n - 1]),
+        }
+    }
+}
+
+/// Something one of the dead left where it fell, for whoever picks it up: coins straight into the
+/// purse, or a valuable for the pack. It lies on the ground, blocks nothing, and is gone after a few
+/// days. Kept out of `objects`, which is the map's business.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Loot {
+    pub kind: LootKind,
+    pub pos: Vec2,
+    pub since_tick: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LootKind {
+    Coins { count: i64 },
+    Trinket,
+    Relic,
+}
+
+impl LootKind {
+    /// "4 coins", "a trinket", "a relic".
+    pub fn label(self) -> String {
+        match self {
+            Self::Coins { count: 1 } => "a coin".into(),
+            Self::Coins { count } => format!("{count} coins"),
+            Self::Trinket => "a trinket".into(),
+            Self::Relic => "a relic".into(),
+        }
+    }
+
+    /// The item a valuable goes into the pack as; coins go into the purse instead.
+    pub fn item(self) -> Option<ItemId> {
+        match self {
+            Self::Coins { .. } => None,
+            Self::Trinket => Some(ItemId::Trinket),
+            Self::Relic => Some(ItemId::Relic),
         }
     }
 }

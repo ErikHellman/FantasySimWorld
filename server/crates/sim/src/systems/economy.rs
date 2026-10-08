@@ -6,15 +6,21 @@
 //! Nothing here draws from the RNG. A world that has never traded holds the starting chest and
 //! nothing on the stalls, and this module changes nothing in it until someone sells, buys or is paid.
 
-use fsw_core::time::TICKS_PER_GAME_MINUTE;
+use fsw_core::Vec2;
+use fsw_core::math2d::dist;
+use fsw_core::rng::hash_string;
+use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE};
 
 use crate::data::economy::{
-    MAX_WAGE_PER_DEPOSIT, TRADER_HOUR, base_price, keeps, market_float, material_price, material_reserve, price,
+    LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100, MAX_WAGE_PER_DEPOSIT, TRADER_HOUR, base_price,
+    keeps, market_float, material_price, material_reserve, price,
 };
-use crate::state::{Character, ChronicleKind, ItemId, Resource, Store};
+use crate::state::{
+    Character, ChronicleKind, ItemId, Loot, LootKind, MemoryKind, MonsterKind, Resource, SimState, StimulusKind, Store,
+};
 use crate::systems::director::tick_at;
 use crate::systems::world::STOCKPILES;
-use crate::util::Ctx;
+use crate::util::{Ctx, place_name_at};
 
 /// Pays a villager from the chest, as much of `amount` as the chest holds; returns what was paid.
 pub fn pay(c: &mut Character, purse: &mut i64, amount: i64) -> i64 {
@@ -146,7 +152,53 @@ fn trader_visit(ctx: &mut Ctx) {
     ctx.chronicle(ChronicleKind::Trade, line, Vec::new());
 }
 
-/// Runs the economy's clock: the trader's daily visit.
+/// One of the dead has fallen: what it leaves is fixed by the monster and the tick, so every machine
+/// agrees and the RNG is not drawn. The necromancer always leaves a relic. The killer is told.
+pub fn drop_loot(ctx: &mut Ctx, monster_id: &str, kind: MonsterKind, pos: Vec2, killer: &str) {
+    let tick = ctx.tick();
+    let roll = hash_string(&format!("{monster_id}@{tick}"));
+    let left = if kind == MonsterKind::Necromancer {
+        LootKind::Relic
+    } else {
+        match roll % 100 {
+            n if n < LOOT_NOTHING_OF_100 => return,
+            n if n < LOOT_NOTHING_OF_100 + LOOT_COINS_OF_100 => {
+                LootKind::Coins { count: LOOT_COINS_LEAST + i64::from((roll / 100) % 5) }
+            }
+            _ => LootKind::Trinket,
+        }
+    };
+    let id = ctx.state.new_id("l:");
+    ctx.state.loot.insert(id, Loot { kind: left, pos, since_tick: tick });
+    let text = format!("The {} left {} where it fell, at {}.", kind.def().label, left.label(), place_name_at(pos));
+    ctx.remember(killer, text.clone(), 3.0, MemoryKind::Event, Vec::new());
+    ctx.stimulate(killer, StimulusKind::Loot, text, 0, None);
+}
+
+/// "4 coins near the village green": loot as it is named to a villager.
+pub fn loot_label(loot: &Loot) -> String {
+    format!("{} near {}", loot.kind.label(), place_name_at(loot.pos))
+}
+
+/// The loot within `reach` of `pos`, nearest first (then by id, so every machine agrees).
+pub fn loot_near(state: &SimState, pos: Vec2, reach: f64) -> Vec<(f64, String)> {
+    let mut near: Vec<(f64, String)> =
+        state.loot.iter().map(|(id, loot)| (dist(pos, loot.pos), id.clone())).filter(|(d, _)| *d <= reach).collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    near
+}
+
+/// Whether someone is already on their way to this loot.
+pub fn loot_claimed(state: &SimState, loot_id: &str, by_other_than: &str) -> bool {
+    state.characters.values().any(|c| {
+        c.id != by_other_than
+            && c.intent
+                .as_ref()
+                .is_some_and(|i| matches!(&i.action, crate::state::IntentAction::PickUp { loot_id: l } if l == loot_id))
+    })
+}
+
+/// Runs the economy's clock: the trader's daily visit, and loot nobody took blowing away.
 pub fn update_economy(ctx: &mut Ctx) {
     let tick = ctx.tick();
     if tick % TICKS_PER_GAME_MINUTE != 0 {
@@ -154,5 +206,17 @@ pub fn update_economy(ctx: &mut Ctx) {
     }
     if tick == tick_at(ctx.time.day, TRADER_HOUR) {
         trader_visit(ctx);
+    }
+    if !ctx.state.loot.is_empty() {
+        let old: Vec<String> = ctx
+            .state
+            .loot
+            .iter()
+            .filter(|(_, loot)| tick - loot.since_tick >= LOOT_DAYS * TICKS_PER_DAY)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in old {
+            ctx.state.loot.shift_remove(&id);
+        }
     }
 }

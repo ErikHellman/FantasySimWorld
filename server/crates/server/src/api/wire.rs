@@ -231,6 +231,8 @@ pub struct Snapshot {
     pub stockpiles: Vec<Stockpile>,
     /// the village chest and the market's stalls
     pub economy: Economy,
+    /// what the dead left lying about
+    pub loot: Vec<Loot>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -352,6 +354,10 @@ pub enum WireEvent {
     Economy {
         economy: Economy,
     },
+    /// something the dead left appeared on the ground, or is gone
+    Loot {
+        loot: Loot,
+    },
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,6 +417,29 @@ pub struct Stockpile {
     pub wood: u32,
     pub stone: u32,
     pub ore: u32,
+}
+
+/// Something the dead left on the ground, for whoever picks it up.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Loot {
+    /// `l:<n>`
+    pub id: String,
+    pub kind: LootKind,
+    /// how many coins, for `coins`; 0 otherwise
+    pub count: u32,
+    pub pos: Vec2,
+    /// picked up or blown away: forget it
+    #[serde(default)]
+    pub gone: bool,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LootKind {
+    Coins,
+    Trinket,
+    Relic,
 }
 
 /// The village chest and what the market's stalls hold.
@@ -1139,6 +1168,8 @@ pub fn typescript() -> String {
         WorldObject,
         Stockpile,
         Economy,
+        Loot,
+        LootKind,
         Goods,
         LlmState,
         LlmStatus,

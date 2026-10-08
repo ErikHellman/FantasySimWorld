@@ -201,7 +201,11 @@ stockpiles: Array<Stockpile>,
 /**
  * the village chest and the market's stalls
  */
-economy: Economy, };
+economy: Economy, 
+/**
+ * what the dead left lying about
+ */
+loot: Array<Loot>, };
 
 export type WorldReset = { 
 /**
@@ -233,7 +237,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -366,6 +370,25 @@ export type Economy = {
  * coin in the village chest, which pays wages and purchases and takes the trader's coin
  */
 purse: number, food: number, potion: number, gift: number, trinket: number, relic: number, };
+
+/**
+ * Something the dead left on the ground, for whoever picks it up.
+ */
+export type Loot = { 
+/**
+ * `l:<n>`
+ */
+id: string, kind: LootKind, 
+/**
+ * how many coins, for `coins`; 0 otherwise
+ */
+count: number, pos: Vec2, 
+/**
+ * picked up or blown away: forget it
+ */
+gone: boolean, };
+
+export type LootKind = "coins" | "trinket" | "relic";
 
 /**
  * Raw materials in a villager's arms.

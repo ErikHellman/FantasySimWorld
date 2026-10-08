@@ -82,6 +82,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::WorldWork { job, target, .. } => {
             !ctx.cr(id).is_child() && *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
         }
+        // Anyone may stoop for what the dead left, while it is still there.
+        IntentAction::PickUp { loot_id } => ctx.state.loot.contains_key(loot_id),
     }
 }
 

@@ -64,6 +64,7 @@ pub struct Tools {
     pub billboard: ToolDef,
     pub speech: ToolDef,
     pub work_on: ToolDef,
+    pub pick_up: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -255,5 +256,15 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["job", "target"],
+    ),
+    pick_up: tool(
+        "pick_up",
+        "Go and pick up something the dead left on the ground nearby: coins for your purse, or a trinket or relic to sell at the market.",
+        json!({
+            "what": { "type": "string", "description": "What to pick up, as the message names it." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["what"],
     ),
 });

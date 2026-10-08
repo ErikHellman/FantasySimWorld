@@ -8,13 +8,13 @@ use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
-use crate::data::economy::price;
+use crate::data::economy::{PICK_REACH, price};
 use crate::events::{Emote, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::CARRY_CAP;
 use crate::state::{
-    Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, MemoryKind,
-    MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
+    Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, LootKind,
+    MemoryKind, MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
 use crate::systems::ceremonies::run_attend;
@@ -27,7 +27,7 @@ use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::world::{deliver_next, run_world_work};
-use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, rel, set_anim};
+use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, place_name_at, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
 /// Close enough to strike from behind.
@@ -764,6 +764,64 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
     }
 }
 
+/// Walks to something the dead left and picks it up: coins into the purse, a valuable into the pack.
+fn run_pick_up(ctx: &mut Ctx, id: &str, loot_id: &str) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(loot) = ctx.state.loot.get(loot_id).cloned() else {
+        finish(ctx, id, "It was gone before you got there.");
+        return;
+    };
+    let c = ctx.c(id);
+    match c.act.phase {
+        ActPhase::Start => {
+            let spot = nav.nearest_walkable(loot.pos, 3).unwrap_or(loot.pos);
+            if !travel_to(tick, &nav, c, spot) {
+                finish(ctx, id, "You could not find a way to it.");
+                return;
+            }
+            c.act.until_tick = tick + minutes_to_ticks(30.0);
+        }
+        ActPhase::Travel => {
+            if dist(c.pos, loot.pos) > PICK_REACH && !travel(tick, c, None) {
+                if tick >= c.act.until_tick {
+                    finish(ctx, id, "You gave up looking for it.");
+                }
+                return;
+            }
+            c.act.path.clear();
+            c.facing = facing_to(c.pos, loot.pos);
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + seconds_to_ticks(AnimId::PickUp.seconds());
+            set_anim(c, AnimId::PickUp, true);
+        }
+        ActPhase::Perform => {
+            if tick < c.act.until_tick {
+                return;
+            }
+            set_anim(c, AnimId::Idle, false);
+            match loot.kind.item() {
+                Some(item) if c.inventory.get(item) >= ITEM_CAP => {
+                    finish(ctx, id, format!("Your pack is too full for {}.", loot.kind.label()));
+                    return;
+                }
+                Some(item) => give(c, item),
+                None => {
+                    if let LootKind::Coins { count } = loot.kind {
+                        c.gold += count;
+                    }
+                }
+            }
+            ctx.state.loot.shift_remove(loot_id);
+            let text = format!("Picked up {} at {}.", loot.kind.label(), place_name_at(loot.pos));
+            ctx.remember(id, text, 3.0, MemoryKind::Event, Vec::new());
+            finish(ctx, id, format!("You picked up {}.", loot.kind.label()));
+        }
+        ActPhase::Done => {}
+    }
+}
+
 fn run_flee(ctx: &mut Ctx, id: &str) {
     let tick = ctx.tick();
     let nav = ctx.state.nav.clone();
@@ -886,6 +944,7 @@ pub fn update_intents(ctx: &mut Ctx) {
                 run_activity(ctx, &id, *activity, place_id.clone(), *minutes);
             }
             IntentAction::Talk { target_id, opener, tone } => run_talk(ctx, &id, target_id, *tone, opener),
+            IntentAction::PickUp { loot_id } => run_pick_up(ctx, &id, loot_id),
             IntentAction::Give { target_id, item } => {
                 run_give(ctx, &id, target_id, *item, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
             }

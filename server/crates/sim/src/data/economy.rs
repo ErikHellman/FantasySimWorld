@@ -87,3 +87,17 @@ pub fn keeps(item: ItemId) -> i64 {
 pub fn sells_at_market(jobs: &[ActivityId]) -> bool {
     jobs.contains(&ActivityId::Trade)
 }
+
+/// How far a villager goes out of their way for something the dead left, and how close they must
+/// stand to take it.
+pub const LOOT_REACH: f64 = 25.0;
+pub const PICK_REACH: f64 = 1.2;
+/// Loot nobody takes is gone after this long.
+pub const LOOT_DAYS: i64 = 3;
+/// How close one of the dead may be before nobody stoops for loot.
+pub const LOOT_DANGER: f64 = 30.0;
+/// Of a hundred fallen skeletons, how many leave nothing, and how many coins; the rest leave a trinket.
+pub const LOOT_NOTHING_OF_100: u32 = 45;
+pub const LOOT_COINS_OF_100: u32 = 45;
+/// Coins from a skeleton: this many, plus up to four more.
+pub const LOOT_COINS_LEAST: i64 = 2;

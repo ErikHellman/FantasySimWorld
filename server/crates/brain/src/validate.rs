@@ -2,11 +2,13 @@
 //! commands, repairing what can be repaired (port of `src/brain/tools/validate.ts`).
 
 use fsw_core::jsmath::{js_hypot, utf16_len, utf16_truncate};
+use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone, WorldJob,
 };
 use fsw_sim::systems::ceremonies;
+use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::brawl_unlocked;
 use fsw_sim::systems::world::{self, gather_target};
@@ -325,6 +327,23 @@ fn item(value: Option<&Value>) -> Option<ItemId> {
     }
 }
 
+/// The loot within reach the model named, by the words of its label ("coins", "trinket", the place),
+/// else the nearest; `None` when there is none within reach.
+pub fn resolve_loot(state: &SimState, c: &Character, value: Option<&Value>) -> Option<String> {
+    let near = economy::loot_near(state, c.pos, LOOT_REACH);
+    let text = norm(value);
+    let words: Vec<&str> = text.split(' ').filter(|w| w.len() > 2).collect();
+    let mut best: Option<(usize, &String)> = None;
+    for (_, id) in &near {
+        let label = norm_str(&economy::loot_label(&state.loot[id]));
+        let hits = words.iter().filter(|w| label.contains(*w)).count();
+        if hits > 0 && best.is_none_or(|(b, _)| hits > b) {
+            best = Some((hits, id));
+        }
+    }
+    best.map(|(_, id)| id.clone()).or_else(|| near.first().map(|(_, id)| id.clone()))
+}
+
 /// Turns the tool calls of a "decide" or "react" reply into intents.
 pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -> Decision {
     let mut decision = Decision::default();
@@ -404,6 +423,10 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     },
                 }
             }
+            "pick_up" => match resolve_loot(state, c, args.get("what")) {
+                Some(loot_id) => decision.intents.push(intent(IntentAction::PickUp { loot_id })),
+                None => decision.problems.push(format!("nothing to pick up at \"{}\"", shown(args.get("what")))),
+            },
             "give" => {
                 let person = resolve_person(state, args.get("person"), Some(&c.id));
                 let item = item(args.get("item"));

@@ -8,6 +8,7 @@ use fsw_core::jsmath::{js_round, utf16_len};
 use fsw_core::math2d::dist;
 use fsw_core::time::{TICKS_PER_DAY, format_clock, game_time, part_of_day};
 use fsw_sim::data::activities::activity;
+use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory, MonsterPhase,
@@ -15,6 +16,7 @@ use fsw_sim::state::{
 };
 use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
+use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
@@ -330,6 +332,8 @@ fn offered_to(c: &Character) -> Vec<ActivityId> {
 
 /// The most things a prompt offers to work on.
 const TARGETS_NAMED: usize = 6;
+/// How many pieces of loot the decide prompt names.
+const LOOT_NAMED: usize = 4;
 
 /// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
 /// when nothing is within reach.
@@ -346,6 +350,17 @@ fn targets_line(state: &SimState, c: &Character) -> String {
         })
         .collect();
     format!("Things you could work on nearby (work_on): {}.", items.join("; "))
+}
+
+/// What the dead left lying within reach, nearest first, at most four. Empty when there is nothing, so
+/// the prompt reads as it did.
+fn loot_line(state: &SimState, c: &Character) -> String {
+    let near = economy::loot_near(state, c.pos, LOOT_REACH);
+    if near.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = near.iter().take(LOOT_NAMED).map(|(_, id)| economy::loot_label(&state.loot[id])).collect();
+    format!("On the ground within reach (pick_up): {}.", items.join("; "))
 }
 
 /// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
@@ -658,6 +673,10 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if !targets.is_empty() {
         tools.push(TOOLS.work_on.clone());
     }
+    let loot = loot_line(state, c);
+    if !loot.is_empty() {
+        tools.push(TOOLS.pick_up.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -711,6 +730,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
             ),
             section(2, plan_line(c, time.hour)),
             section(2, targets),
+            section(2, loot),
             section(
                 5,
                 if far.len() > 5 {

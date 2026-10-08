@@ -238,3 +238,149 @@ fn the_economy_survives_a_save_and_load() {
     let reloaded: Economy = serde_json::from_str("{\"purse\":12}").unwrap();
     assert_eq!((reloaded.purse, reloaded.stock.len()), (12, 0));
 }
+
+mod loot {
+    //! What the dead leave behind, and who stoops for it.
+
+    use super::*;
+    use fsw_core::vec2;
+    use fsw_sim::data::economy::LOOT_DAYS;
+    use fsw_sim::state::{Loot, LootKind, MonsterKind};
+    use fsw_sim::systems::combat::damage_monster;
+    use fsw_sim::systems::monsters::spawn_monster;
+    use fsw_sim::util::Ctx;
+    use fsw_world::places::get_place;
+
+    fn with<R>(sim: &mut Sim, f: impl FnOnce(&mut Ctx) -> R) -> R {
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        f(&mut ctx)
+    }
+
+    fn slay(sim: &mut Sim, kind: MonsterKind) -> Vec<LootKind> {
+        let pos = get_place("green").origin;
+        with(sim, |ctx| {
+            let id = spawn_monster(ctx, kind, pos, 0.0);
+            damage_monster(ctx, &id, 10_000, "c1");
+        });
+        sim.state.loot.values().map(|l| l.kind).collect()
+    }
+
+    #[test]
+    fn a_slain_skeleton_may_leave_loot_and_the_necromancer_always_a_relic() {
+        let mut sim = quiet(7);
+        let rng = sim.state.rng;
+        let mut kinds = Vec::new();
+        for _ in 0..40 {
+            kinds = slay(&mut sim, MonsterKind::SkeletonMinion);
+        }
+        assert_eq!(sim.state.rng, rng, "what the dead leave is fixed, not rolled");
+        assert!(kinds.len() < 40, "not every skeleton leaves something");
+        assert!(kinds.iter().any(|k| matches!(k, LootKind::Coins { .. })), "{kinds:?}");
+        for kind in &kinds {
+            if let LootKind::Coins { count } = kind {
+                assert!((2..=6).contains(count), "{count}");
+            }
+        }
+        let before = sim.state.loot.len();
+        let kinds = slay(&mut sim, MonsterKind::Necromancer);
+        assert_eq!(kinds.len(), before + 1);
+        assert_eq!(kinds[before], LootKind::Relic);
+        // The killer heard of it.
+        let killer = &sim.state.characters["c1"];
+        assert!(
+            killer.memories.iter().any(|m| m.text.contains("left a relic where it fell")),
+            "{:?}",
+            killer.memories.last()
+        );
+        assert!(killer.stimuli.iter().any(|s| s.text.contains("relic")));
+        // Two fresh worlds agree.
+        let mut again = quiet(7);
+        for _ in 0..40 {
+            slay(&mut again, MonsterKind::SkeletonMinion);
+        }
+        slay(&mut again, MonsterKind::Necromancer);
+        assert_eq!(again.state.loot, sim.state.loot);
+    }
+
+    fn drop_near(sim: &mut Sim, id: &str, kind: LootKind) -> String {
+        let c = &sim.state.characters[id];
+        let pos = sim.state.nav.nearest_walkable(vec2(c.pos.x + 3.0, c.pos.z + 1.0), 4).unwrap();
+        let loot_id = sim.state.new_id("l:");
+        let tick = sim.state.tick;
+        sim.state.loot.insert(loot_id.clone(), Loot { kind, pos, since_tick: tick });
+        loot_id
+    }
+
+    #[test]
+    fn coins_on_the_ground_are_picked_up_by_day() {
+        let mut sim = quiet(8);
+        // Mid-morning, with everyone up and about.
+        run_until(&mut sim, TICKS_PER_DAY, |s| fsw_core::time::game_time(s.tick).hour >= 9.0);
+        let gold = sim.state.characters["c1"].gold;
+        let coins = drop_near(&mut sim, "c1", LootKind::Coins { count: 4 });
+        let trinket = drop_near(&mut sim, "c1", LootKind::Trinket);
+        let taken = |s: &SimState| !s.loot.contains_key(&coins) && !s.loot.contains_key(&trinket);
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 4, taken) < TICKS_PER_DAY / 4, "nobody stooped for it");
+        let picked: Vec<&fsw_sim::state::Character> =
+            living(&sim.state).filter(|c| c.memories.iter().any(|m| m.text.starts_with("Picked up 4 coins"))).collect();
+        assert_eq!(picked.len(), 1);
+        assert!(picked[0].gold >= 4, "{}", picked[0].gold);
+        assert!(living(&sim.state).any(|c| c.inventory.trinket == 1));
+        if picked[0].id == "c1" {
+            assert!(picked[0].gold >= gold + 4);
+        }
+    }
+
+    #[test]
+    fn nobody_stoops_for_loot_while_the_dead_are_near_or_by_night() {
+        let mut sim = quiet(9);
+        run_until(&mut sim, TICKS_PER_DAY, |s| fsw_core::time::game_time(s.tick).hour >= 9.0);
+        let coins = drop_near(&mut sim, "c1", LootKind::Coins { count: 3 });
+        let at = sim.state.loot[&coins].pos;
+        let post = vec2(at.x + 6.0, at.z);
+        let warrior = with(&mut sim, |ctx| spawn_monster(ctx, MonsterKind::SkeletonWarrior, post, 0.0));
+        // The warrior is held at its post all morning: unkillable, and not one to crumble or lie low.
+        for _ in 0..600 {
+            let m = sim.state.monsters.get_mut(&warrior).unwrap();
+            m.hp = 10_000.0;
+            m.lasting = true;
+            m.pos = post;
+            sim.step();
+        }
+        assert!(sim.state.loot.contains_key(&coins), "someone stooped with the dead six paces off");
+        assert!(
+            !living(&sim.state)
+                .any(|c| matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::PickUp { .. })))
+        );
+    }
+
+    #[test]
+    fn loot_blocks_nothing_and_blows_away_after_three_days() {
+        let mut sim = quiet(10);
+        let coins = drop_near(&mut sim, "c2", LootKind::Coins { count: 2 });
+        assert!(!sim.state.nav.is_live(), "loot is not on the nav grid");
+        // Nobody can reach it: it lies in the dark of the first night and is then forgotten by all.
+        sim.state.loot[&coins].since_tick -= LOOT_DAYS * TICKS_PER_DAY;
+        run_until(&mut sim, 2 * fsw_core::time::TICKS_PER_GAME_MINUTE, |_| false);
+        assert!(!sim.state.loot.contains_key(&coins), "three-day-old loot is gone");
+    }
+
+    #[test]
+    fn loot_survives_a_save_and_load() {
+        let mut sim = quiet(11);
+        // A step first, so the quiet tuning is in the world and not still queued beside it.
+        sim.step();
+        slay(&mut sim, MonsterKind::Necromancer);
+        drop_near(&mut sim, "c1", LootKind::Coins { count: 5 });
+        let json = serde_json::to_string(&sim.state).unwrap();
+        assert!(json.contains("\"loot\""));
+        let mut resumed = Sim::new(round_trip(&sim.state));
+        assert_eq!(resumed.state, sim.state);
+        for _ in 0..3000 {
+            sim.step();
+            resumed.step();
+        }
+        assert!(resumed.state == sim.state, "reloaded loot went a different way");
+    }
+}
