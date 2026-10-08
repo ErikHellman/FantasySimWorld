@@ -351,6 +351,9 @@ pub const FOUNDING_ANIMALS: [(Species, usize); 10] = [
     (Species::Owl, 1),
 ];
 
+/// How much faster than walking a villager goes on horseback.
+pub const RIDE_PACE: f64 = 1.9;
+
 /// The chance that a home has a dog or a cat when the village is founded.
 pub const PET_CHANCE: f64 = 0.5;
 /// Of the pets, the share that are dogs.

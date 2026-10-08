@@ -5,6 +5,7 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
 use crate::state::{ActPhase, Character, FightMode, IntentAction, ItemId, Rite, SimState, WorldJob};
+use crate::systems::animals::call;
 use crate::systems::economy::{Commission, loot_label};
 use crate::systems::fire::home_usable;
 use crate::systems::music::{performance, venue_phrase};
@@ -116,6 +117,11 @@ fn doing(state: &SimState, c: &Character) -> String {
                 format!("going to sell {what} to {}", name_of(state, target_id))
             }
         }
+        IntentAction::Pet { animal_id } => match state.animals.get(animal_id) {
+            Some(animal) if c.act.phase == ActPhase::Perform => format!("making a fuss of {}", call(animal)),
+            Some(animal) => format!("going over to {}", call(animal)),
+            None => "looking for an animal".into(),
+        },
         IntentAction::PickUp { loot_id } => match state.loot.get(loot_id) {
             Some(loot) if c.act.phase == ActPhase::Perform => format!("picking up {}", loot.kind.label()),
             Some(loot) => format!("going to pick up {}", loot_label(loot)),

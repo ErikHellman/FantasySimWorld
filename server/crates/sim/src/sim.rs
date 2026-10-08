@@ -88,6 +88,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         }
         // Anyone may stoop for what the dead left, while it is still there.
         IntentAction::PickUp { loot_id } => ctx.state.loot.contains_key(loot_id),
+        // Anyone may make a fuss of an animal nobody is riding.
+        IntentAction::Pet { animal_id } => ctx.state.animals.get(animal_id).is_some_and(|a| a.rider.is_none()),
         // A deal needs two grown villagers; whether it goes through is settled face to face.
         IntentAction::Trade { target_id, .. } => {
             target_id != id && ctx.alive(target_id) && !ctx.cr(id).is_child() && !ctx.cr(target_id).is_child()

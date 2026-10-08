@@ -100,7 +100,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
         oh: if c.tool.as_deref().is_some_and(|t| !t.is_empty()) || ease { None } else { c.look.off_hand.clone() },
         act,
         z: c.asleep,
-        mt: None,
+        mt: c.mount.clone(),
     }
 }
 

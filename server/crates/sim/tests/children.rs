@@ -792,6 +792,8 @@ mod mischief {
         run_to_hour(&mut sim, 18.0);
         plan(&mut sim, &moss, Mischief::WanderOff);
         side_by_side(&mut sim, &moss, &rowan, "green");
+        // Wide awake, so the evening's nap does not keep Moss in.
+        sim.state.characters.get_mut(&moss).unwrap().needs.energy = 100.0;
         // Rowan has the evening free and the raids hold off. Rowan, a parent or someone nearer may be the one to go
         // after Moss, depending on how the day went.
         sim.state.director.next_wave_tick = sim.state.tick + TICKS_PER_DAY;

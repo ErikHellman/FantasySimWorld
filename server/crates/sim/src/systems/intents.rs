@@ -6,9 +6,13 @@ use fsw_core::{Vec2, vec2};
 use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get_slot, slots_for};
 
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
+use crate::data::animals::RIDE_PACE;
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
 use crate::data::economy::{PICK_REACH, price};
+
+/// Close enough to an animal to make a fuss of it.
+const PET_REACH: f64 = 1.8;
 use crate::events::{Emote, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::CARRY_CAP;
@@ -16,6 +20,7 @@ use crate::state::{
     Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, LootKind,
     MemoryKind, MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
+use crate::systems::animals;
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
 use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
@@ -110,10 +115,17 @@ pub(crate) fn travel_to(tick: i64, nav: &NavOverlay, c: &mut Character, dest: Ve
     true
 }
 
-/// Walks the current route; true on arrival.
+/// Walks the current route, or rides it on horseback (`systems::animals`); true on arrival.
 pub(crate) fn travel(tick: i64, c: &mut Character, speed: Option<f64>) -> bool {
     if c.act.path.is_empty() {
         return true;
+    }
+    if c.mount.is_some() {
+        let mut path = std::mem::take(&mut c.act.path);
+        let arrived = advance(c, &mut path, WALK_SPEED * RIDE_PACE);
+        c.act.path = path;
+        set_anim(c, AnimId::Ride, false);
+        return arrived;
     }
     let speed = speed.unwrap_or_else(|| speed_of(c, tick));
     let mut path = std::mem::take(&mut c.act.path);
@@ -279,6 +291,18 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             }
             return;
         }
+        // The farm's animals have no slot: the farmer goes to one of them where it stands.
+        if activity_id == ActivityId::Tend {
+            let pick = ctx.next_float();
+            let Some(spot) = animals::tending_spot(ctx.state, &nav, pick) else {
+                finish(ctx, id, "There were no animals to tend.");
+                return;
+            };
+            if !travel_to(tick, &nav, ctx.c(id), spot) {
+                finish(ctx, id, "You could not get to the animals.");
+            }
+            return;
+        }
         if activity_id == ActivityId::Stroll || activity_id == ActivityId::Play {
             let goal = if activity_id == ActivityId::Play { play_goal(ctx, id) } else { stroll_goal(ctx) };
             let c = ctx.c(id);
@@ -319,6 +343,21 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             c.act.since_tick = tick;
             c.act.until_tick = tick + minutes_to_ticks(minutes);
             ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Sleep });
+            return;
+        }
+        if activity_id == ActivityId::Tend {
+            let until = tick + minutes_to_ticks(minutes);
+            let pos = ctx.cr(id).pos;
+            let animal = animals::hold_still(ctx.state, pos, until, false);
+            let c = ctx.c(id);
+            if let Some(at) = animal {
+                c.facing = facing_to(c.pos, at);
+            }
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = until;
+            c.tool = def.tool.map(str::to_owned);
+            set_anim(c, def.anim, true);
             return;
         }
         if activity_id == ActivityId::Rebuild {
@@ -931,6 +970,67 @@ fn run_commission(ctx: &mut Ctx, id: &str, what: &str) {
 }
 
 /// Walks to something the dead left and picks it up: coins into the purse, a valuable into the pack.
+/// Walks up to an animal and makes a fuss of it: a pat, a scratch behind the ears.
+fn run_pet(ctx: &mut Ctx, id: &str, animal_id: &str) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(animal) = ctx.state.animals.get(animal_id).filter(|a| a.rider.is_none()) else {
+        finish(ctx, id, "It had gone off before you got to it.");
+        return;
+    };
+    let (at, name) = (animal.pos, animals::call(animal));
+    let c = ctx.c(id);
+    match c.act.phase {
+        ActPhase::Start => {
+            let spot = nav.nearest_walkable(at, 2).unwrap_or(at);
+            if !travel_to(tick, &nav, c, spot) {
+                finish(ctx, id, format!("You could not get to {name}."));
+                return;
+            }
+            c.act.until_tick = tick + minutes_to_ticks(10.0);
+        }
+        ActPhase::Travel => {
+            if dist(c.pos, at) > PET_REACH {
+                // It wanders; follow it now and then, and give up in the end.
+                if travel(tick, c, None) && tick >= c.act.repath_tick {
+                    c.act.repath_tick = tick + seconds_to_ticks(1.0);
+                    let spot = nav.nearest_walkable(at, 2).unwrap_or(at);
+                    travel_to(tick, &nav, c, spot);
+                }
+                if tick >= c.act.until_tick {
+                    finish(ctx, id, format!("{name} would not keep still."));
+                }
+                return;
+            }
+            c.act.path.clear();
+            c.facing = facing_to(c.pos, at);
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + seconds_to_ticks(AnimId::Interact.seconds() + 2.0);
+            set_anim(c, AnimId::Interact, true);
+            let (pos, until) = (c.pos, c.act.until_tick);
+            animals::hold_still(ctx.state, pos, until, true);
+        }
+        ActPhase::Perform => {
+            if tick < c.act.until_tick {
+                return;
+            }
+            set_anim(c, AnimId::Idle, false);
+            c.needs.social = (c.needs.social + 4.0).min(100.0);
+            if let Some(animal) = ctx.state.animals.get_mut(animal_id) {
+                animal.petted_tick = tick;
+            }
+            ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Heart });
+            if ctx.chance(0.3) {
+                let text = format!("Made a fuss of {name} near {}.", place_name_at(at));
+                ctx.remember(id, text, 1.5, MemoryKind::Event, Vec::new());
+            }
+            finish(ctx, id, format!("You made a fuss of {name}."));
+        }
+        ActPhase::Done => {}
+    }
+}
+
 fn run_pick_up(ctx: &mut Ctx, id: &str, loot_id: &str) {
     let tick = ctx.tick();
     let nav = ctx.state.nav.clone();
@@ -1111,6 +1211,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             }
             IntentAction::Talk { target_id, opener, tone } => run_talk(ctx, &id, target_id, *tone, opener),
             IntentAction::PickUp { loot_id } => run_pick_up(ctx, &id, loot_id),
+            IntentAction::Pet { animal_id } => run_pet(ctx, &id, animal_id),
             IntentAction::Commission { what } => run_commission(ctx, &id, what),
             IntentAction::Trade { target_id, item, buy } => {
                 run_trade(ctx, &id, target_id, *item, *buy, intent.say.as_ref().is_some_and(|s| !s.is_empty()))

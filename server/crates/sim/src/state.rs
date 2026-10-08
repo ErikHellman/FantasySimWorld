@@ -662,6 +662,10 @@ pub enum IntentAction {
     PickUp {
         loot_id: String,
     },
+    /// walks up to an animal (`SimState.animals`) and makes a fuss of it
+    Pet {
+        animal_id: Id,
+    },
     /// walks up to someone and buys `item` from them, or sells it to them, at the market's price
     Trade {
         target_id: Id,
@@ -729,6 +733,7 @@ impl IntentAction {
             Self::Listen { .. } => "listen",
             Self::WorldWork { .. } => "world_work",
             Self::PickUp { .. } => "pick_up",
+            Self::Pet { .. } => "pet",
             Self::Trade { .. } => "trade",
             Self::Commission { .. } => "commission",
         }
@@ -975,6 +980,12 @@ pub struct Character {
     /// in good spirits after a fine tune until this tick (`systems::music`); 0 when not
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub heartened_until_tick: i64,
+    /// the horse this character is riding (`systems::animals`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<Id>,
+    /// the horse this character is walking over to, to ride the rest of the way
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mounting: Option<Id>,
 }
 
 impl Character {
@@ -1242,6 +1253,9 @@ pub struct Animal {
     /// for a pet without a name: past this tick the sim names it itself
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub name_deadline_tick: i64,
+    /// when someone last made a fuss of it
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub petted_tick: i64,
 }
 
 /// The bookkeeping of the valley's animals. A world from before them reads as the default, and gets its

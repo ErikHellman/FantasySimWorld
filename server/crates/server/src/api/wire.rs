@@ -971,6 +971,8 @@ pub enum RequestKind {
     PlanDay,
     Billboard,
     Ceremony,
+    /// a name for a new pet
+    Name,
     Reflect,
 }
 

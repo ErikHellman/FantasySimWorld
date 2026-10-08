@@ -252,13 +252,16 @@ export class WorldView {
       });
     }
     for (const [id, actor] of this.actors) {
-      actor.view.update(simDt, alpha, this.heightAt, this.frustum);
       const entity = actor.entity;
-      const seat = entity.mount ? this.animals.get(entity.mount)?.view.seat() : null;
-      if (seat) {
+      const horse = entity.mount ? this.animals.get(entity.mount) : undefined;
+      const seat = horse?.view.seat();
+      if (horse && seat) {
         seat.getWorldPosition(this.seatAt);
-        actor.view.ride(this.seatAt, this.animals.get(entity.mount ?? '')?.view.root.rotation.y ?? 0);
+        actor.view.ride(this.seatAt, horse.view.root.rotation.y);
+      } else {
+        actor.view.ride(null);
       }
+      actor.view.update(simDt, alpha, this.heightAt, this.frustum);
       if (!entity.name) continue; // corpses have no label
       const position = actor.view.root.position;
       labels.push({

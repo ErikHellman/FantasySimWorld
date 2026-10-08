@@ -69,6 +69,10 @@ function decide(names, user) {
     const what = /\(commission\): ([^;.(]+)/.exec(user)?.[1]?.trim() ?? 'a new room';
     return [{ name: 'commission', args: { what, thought: 'Time I had something to show for the coin.' } }];
   }
+  if (names.includes('pet') && roll < 0.2) {
+    const animal = /\(pet\): ([^,(.]+)/.exec(user)?.[1]?.trim() ?? 'the dog';
+    return [{ name: 'pet', args: { animal, say: 'Who is a good one, then?' } }];
+  }
   if (names.includes('talk_to') && nearby.length > 0 && roll < 0.35) {
     return [{ name: 'talk_to', args: { person: pick(nearby), message: pick(OPENERS), tone: Math.random() < 0.12 ? 'hostile' : 'friendly', thought: pick(THOUGHTS) } }];
   }
@@ -119,6 +123,7 @@ function respond(body) {
       : 'We lay a neighbour in the earth today, and the valley is smaller for it. Remember the work of their hands and the nights they stood with us. Go gently, and let the living hold each other a little closer.';
     return [{ name: 'speech', args: { text } }];
   }
+  if (names.includes('name_pet')) return [{ name: 'name_pet', args: { name: pick(['Bramblepaw', 'Hob', 'Turnip', 'Clementine', 'Sixpence', 'Mossy']) } }];
   if (names.includes('reflection')) return [{ name: 'reflection', args: { summary: 'I am holding together, though the nights wear on me. I have more friends here than I thought.', insights: ['I should say what I feel before it is too late.'], relationships: [] } }];
   if (names.includes('create_villager')) return [{ name: 'create_villager', args: invent(body, user) }];
   if (names.includes('go_to') || names.includes('do_activity')) return decide(names, user);

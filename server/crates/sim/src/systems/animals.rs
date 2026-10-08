@@ -16,7 +16,7 @@ use fsw_world::places::{find_place, get_place, homes};
 use crate::data::animals::{AnimalAnim, DOG_SHARE, FOUNDING_ANIMALS, Haunt, PET_CHANCE, Species};
 use crate::events::SimEvent;
 use crate::nav::NavOverlay;
-use crate::state::{Animal, ChronicleKind, Id, MemoryKind, MonsterPhase, SimState};
+use crate::state::{ActPhase, Animal, ChronicleKind, Id, MemoryKind, MonsterPhase, SimState};
 use crate::systems::movement::{advance, face, route_to};
 use crate::util::{Ctx, adults, first_name};
 
@@ -29,6 +29,14 @@ const HEEL: f64 = 3.0;
 const CATCH_UP: f64 = 9.0;
 /// Beyond this a pet stops following and goes home.
 const FOLLOW_LIMIT: f64 = 70.0;
+/// A walk shorter than this, in paces, is not worth a horse.
+const RIDE_MIN: f64 = 70.0;
+/// How far a villager setting out will go to fetch a free horse.
+const MOUNT_REACH: f64 = 25.0;
+/// Close enough to a horse to get on.
+const MOUNT_DISTANCE: f64 = 1.6;
+/// How long a horse waits where its rider got down before it goes home.
+const WAIT_HOURS: f64 = 6.0;
 const BODY_RADIUS: f64 = 0.45;
 /// Longest a name may be, in UTF-16 units.
 const NAME_CAP: usize = 16;
@@ -116,6 +124,7 @@ fn spawn(state: &mut SimState, species: Species, model: &str, pos: Vec2, facing:
             waiting_for: None,
             waiting_until_tick: 0,
             name_deadline_tick: 0,
+            petted_tick: 0,
         },
     );
     id
@@ -318,6 +327,7 @@ pub fn update_animals(ctx: &mut Ctx) {
     }
 
     let nav = ctx.state.nav.clone();
+    ride(ctx, &nav);
     let threats: Vec<Vec2> =
         ctx.state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).map(|m| m.pos).collect();
     let tick = ctx.tick();
@@ -329,6 +339,191 @@ pub fn update_animals(ctx: &mut Ctx) {
         }
     }
     nudge(ctx.state, &nav);
+}
+
+/// Riding: villagers who reached the horse they set out for get on; those setting out on a long walk with a free
+/// horse a short way off go to it first; and a ridden horse goes where its rider goes until the ride ends, when it
+/// waits there for them. Runs after `update_intents`, so a walk begun this tick is seen this tick.
+fn ride(ctx: &mut Ctx, nav: &NavOverlay) {
+    let tick = ctx.tick();
+    let ridden: Vec<(Id, Id)> =
+        ctx.state.animals.values().filter_map(|a| a.rider.clone().map(|r| (a.id.clone(), r))).collect();
+    for (horse, rider) in ridden {
+        // A rider keeps on from one errand to the next only while the next is a long one too.
+        let riding = ctx.state.characters.get(&rider).is_some_and(|c| {
+            c.mount.as_deref() == Some(horse.as_str())
+                && c.inside.is_none()
+                && c.act.phase == ActPhase::Travel
+                && !c.act.path.is_empty()
+                && (c.act.since_tick != tick || path_length(c.pos, &c.act.path) >= RIDE_MIN)
+        });
+        if riding {
+            let c = &ctx.state.characters[&rider];
+            let (pos, facing, moving) = (c.pos, c.facing, c.moving);
+            let animal = ctx.state.animals.get_mut(&horse).expect("horse");
+            animal.pos = pos;
+            animal.facing = facing;
+            animal.moving = moving;
+            animal.anim = AnimalAnim::Ridden;
+        } else {
+            dismount(ctx, &horse, &rider);
+        }
+    }
+
+    for id in crate::util::living_ids(ctx.state) {
+        let c = &ctx.state.characters[&id];
+        if let Some(horse) = c.mounting.clone() {
+            let walking = c.act.phase == ActPhase::Travel && !c.act.path.is_empty() && c.inside.is_none();
+            let held =
+                ctx.state.animals.get(&horse).filter(|a| a.rider.is_none() && a.waiting_for.as_deref() == Some(&id));
+            match held {
+                Some(a) if walking && dist(a.pos, c.pos) < MOUNT_DISTANCE => mount(ctx, &id, &horse),
+                Some(_) if walking => {}
+                _ => {
+                    ctx.c(&id).mounting = None;
+                    if let Some(a) = ctx.state.animals.get_mut(&horse)
+                        && a.waiting_for.as_deref() == Some(id.as_str())
+                        && a.rider.is_none()
+                    {
+                        a.waiting_for = None;
+                    }
+                }
+            }
+            continue;
+        }
+        // Only a walk begun this tick, by a grown villager out of doors, long enough to be worth a horse.
+        if c.mount.is_some()
+            || c.is_child()
+            || c.inside.is_some()
+            || c.act.phase != ActPhase::Travel
+            || c.act.since_tick != tick
+        {
+            continue;
+        }
+        let Some(dest) = c.act.dest else { continue };
+        let walk = path_length(c.pos, &c.act.path);
+        if walk < RIDE_MIN {
+            continue;
+        }
+        let from = c.pos;
+        let free = ctx
+            .state
+            .animals
+            .values()
+            .filter(|a| {
+                a.species.def().rideable
+                    && a.rider.is_none()
+                    && a.waiting_for.as_deref().is_none_or(|w| w == id)
+                    && tick >= a.flee_until_tick
+                    && dist(a.pos, from) < MOUNT_REACH
+            })
+            .min_by(|a, b| dist(a.pos, from).total_cmp(&dist(b.pos, from)))
+            .map(|a| (a.id.clone(), a.pos));
+        let Some((horse, at)) = free else { continue };
+        let (Some(to_horse), Some(onward)) = (route_to(nav, from, at), route_to(nav, at, dest)) else { continue };
+        // Not worth it when fetching the horse is most of the way.
+        if path_length(from, &to_horse) > walk * 0.35 {
+            continue;
+        }
+        let c = ctx.c(&id);
+        c.act.path = [to_horse, onward].concat();
+        c.mounting = Some(horse.clone());
+        let animal = ctx.state.animals.get_mut(&horse).expect("horse");
+        animal.waiting_for = Some(id.clone());
+        animal.waiting_until_tick = tick + minutes_to_ticks(10.0);
+        animal.path.clear();
+    }
+}
+
+fn path_length(from: Vec2, path: &[Vec2]) -> f64 {
+    let mut length = 0.0;
+    let mut at = from;
+    for &point in path {
+        length += dist(at, point);
+        at = point;
+    }
+    length
+}
+
+fn mount(ctx: &mut Ctx, rider: &str, horse: &str) {
+    let c = ctx.c(rider);
+    c.mounting = None;
+    c.mount = Some(horse.to_owned());
+    let pos = c.pos;
+    let animal = ctx.state.animals.get_mut(horse).expect("horse");
+    animal.rider = Some(rider.to_owned());
+    animal.waiting_for = None;
+    animal.path.clear();
+    animal.pos = pos;
+    animal.anim = AnimalAnim::Ridden;
+}
+
+/// The ride is over: the rider gets down and the horse waits there for them, a while.
+fn dismount(ctx: &mut Ctx, horse: &str, rider: &str) {
+    let tick = ctx.tick();
+    let alive = ctx.alive(rider);
+    if alive && ctx.cr(rider).mount.as_deref() == Some(horse) {
+        ctx.c(rider).mount = None;
+    }
+    let animal = ctx.state.animals.get_mut(horse).expect("horse");
+    animal.rider = None;
+    animal.path.clear();
+    animal.moving = false;
+    animal.anim = animal.species.def().pause;
+    if alive {
+        animal.waiting_for = Some(rider.to_owned());
+        animal.waiting_until_tick = tick + minutes_to_ticks(WAIT_HOURS * 60.0);
+    }
+}
+
+/// Where to stand to tend one of the farm's animals, and which: one of those that give something, by `pick` (0..1).
+pub fn tending_spot(state: &SimState, nav: &NavOverlay, pick: f64) -> Option<Vec2> {
+    let herd: Vec<&Animal> = state
+        .animals
+        .values()
+        .filter(|a| a.species.def().yields.is_some() && a.rider.is_none() && a.owner.is_none())
+        .collect();
+    if herd.is_empty() {
+        return None;
+    }
+    let animal = herd[((pick * herd.len() as f64) as usize).min(herd.len() - 1)];
+    nav.nearest_walkable(vec2(animal.pos.x + 1.3, animal.pos.z), 3)
+}
+
+/// Keeps the animal nearest `pos` (within a few paces) where it is until `until`, while someone sees to it; where
+/// it stands.
+pub fn hold_still(state: &mut SimState, pos: Vec2, until: i64, pets: bool) -> Option<Vec2> {
+    let animal = state
+        .animals
+        .values_mut()
+        .filter(|a| a.rider.is_none() && (pets || a.owner.is_none()) && dist(a.pos, pos) < 4.0)
+        .min_by(|a, b| dist(a.pos, pos).total_cmp(&dist(b.pos, pos)))?;
+    animal.path.clear();
+    animal.flight = None;
+    animal.next_move_tick = animal.next_move_tick.max(until);
+    animal.anim = animal.species.def().pause;
+    Some(animal.pos)
+}
+
+/// A pet a villager might stop to make a fuss of: their own, near and not fussed over lately; for a child, any
+/// dog or cat near.
+pub fn pet_to_fuss(state: &SimState, id: &str) -> Option<Id> {
+    let c = state.characters.get(id)?;
+    if c.inside.is_some() || c.mount.is_some() {
+        return None;
+    }
+    state
+        .animals
+        .values()
+        .filter(|a| {
+            a.species.def().pet
+                && a.rider.is_none()
+                && (a.owner.as_deref() == Some(id) || c.is_child())
+                && dist(a.pos, c.pos) < 8.0
+                && state.tick - a.petted_tick > minutes_to_ticks(180.0)
+        })
+        .min_by(|a, b| dist(a.pos, c.pos).total_cmp(&dist(b.pos, c.pos)))
+        .map(|a| a.id.clone())
 }
 
 /// The village may have built where an animal stood: it steps off onto open ground at once.

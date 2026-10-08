@@ -176,7 +176,9 @@ export class AnimalView {
 
   private pose(j: Joints, t: number): void {
     const sway = Math.sin(t * 1.3);
-    switch (this.anim) {
+    // A ridden horse stands still while its rider does.
+    const anim = this.anim === 'ridden' && this.speed < 0.3 ? 'idle' : this.anim;
+    switch (anim) {
       case 'walk':
       case 'run':
       case 'ridden':

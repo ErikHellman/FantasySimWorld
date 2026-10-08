@@ -8,7 +8,7 @@
 //! not depend on the server; state is only read, in short sections, never
 //! across an await.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,14 +36,15 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, mercy_prompt, plan_cue,
-    plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt, vows_prompt,
+    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, mercy_prompt,
+    name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt,
+    vows_prompt,
 };
 use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
-    feeling, interpret_conversation, interpret_decision, interpret_plan, interpret_speech, reflection_relationships,
-    spoken,
+    feeling, interpret_conversation, interpret_decision, interpret_pet_name, interpret_plan, interpret_speech,
+    reflection_relationships, spoken,
 };
 
 const RETRY_AFTER: Duration = Duration::from_secs(60);
@@ -65,6 +66,8 @@ pub enum RequestKind {
     Billboard,
     /// a speech for a wedding or a funeral, asked for hours ahead
     Ceremony,
+    /// a name for a pet that has come to live with someone
+    Name,
     Reflect,
 }
 
@@ -79,6 +82,7 @@ impl RequestKind {
             Self::PlanDay => "plan_day",
             Self::Billboard => "billboard",
             Self::Ceremony => "ceremony",
+            Self::Name => "name",
             Self::Reflect => "reflect",
         }
     }
@@ -91,7 +95,7 @@ impl RequestKind {
             Self::Decide => 4,
             Self::PlanDay => 5,
             Self::Billboard => 6,
-            Self::Ceremony => 7,
+            Self::Ceremony | Self::Name => 7,
             Self::Reflect => 8,
         }
     }
@@ -191,6 +195,8 @@ struct BrainInner {
     /// conversation id -> transcript as the brain knows it (turn-by-turn mode)
     turns: HashMap<Id, Vec<ConversationLine>>,
     last_scan: Option<Instant>,
+    /// pets their keepers have been asked to name, so each is asked once
+    asked_names: HashSet<Id>,
     tokens: u64,
     last_error: String,
     /// the embedding model and its vectors, when memories are recalled by meaning
@@ -271,6 +277,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Listen { performer_id } => format!("listen to {}", name_of(state, performer_id)),
         IntentAction::WorldWork { job, target, .. } => format!("{} {target}", job.as_str()),
         IntentAction::PickUp { loot_id } => format!("pick up {loot_id}"),
+        IntentAction::Pet { animal_id } => format!("pet {animal_id}"),
         IntentAction::Commission { what } => format!("commission {what}"),
         IntentAction::Trade { target_id, item, buy } => {
             format!(
@@ -304,6 +311,7 @@ impl Brain {
                     minds: HashMap::new(),
                     turns: HashMap::new(),
                     last_scan: None,
+                    asked_names: HashSet::new(),
                     tokens: 0,
                     last_error: String::new(),
                     memory: None,
@@ -669,6 +677,7 @@ impl Brain {
                 SimEvent::MercyRequest { attacker_id, victim_id } => self.on_mercy(attacker_id, victim_id),
                 SimEvent::BillboardRead { id, board_id } => self.on_billboard(id, board_id),
                 SimEvent::CeremonyScheduled { ceremony_id } => self.on_ceremony(ceremony_id),
+                SimEvent::PetAdopted { animal_id, owner_id } => self.on_pet_adopted(animal_id, owner_id),
                 SimEvent::Death { id, monster: false, .. } => {
                     let queue = {
                         let mut s = self.inner.state.lock();
@@ -706,7 +715,28 @@ impl Brain {
             self.apply_tuning();
         }
         self.scan(now, &queue);
+        self.name_pets(&queue);
         self.publish();
+    }
+
+    /// Unnamed pets whose keepers have not yet been asked: ask, while the model has room and before the sim names
+    /// the pet itself. A pet is often adopted when the queue is full (all of a new village's pets come at its
+    /// founding), so this looks again on every scan.
+    fn name_pets(&self, queue: &JobQueue) {
+        let pending: Vec<(Id, Id)> = read(&*self.inner.link, |state| {
+            state
+                .animals
+                .values()
+                .filter(|a| a.name.is_none() && state.tick < a.name_deadline_tick)
+                .filter_map(|a| a.owner.clone().filter(|o| state.characters.contains_key(o)).map(|o| (a.id.clone(), o)))
+                .collect()
+        });
+        for (pet, owner) in pending {
+            if queue.has(&format!("p:{pet}")) || self.inner.state.lock().asked_names.contains(&pet) {
+                continue;
+            }
+            self.on_pet_adopted(&pet, &owner);
+        }
     }
 
     fn scan(&self, now: Instant, queue: &JobQueue) {
@@ -1271,6 +1301,51 @@ impl Brain {
                 None,
             );
         }
+    }
+
+    /// A dog or a cat has come to live with someone: ask them what to call it. There is an hour of game time to
+    /// answer; the sim names it from its own list when none comes.
+    fn on_pet_adopted(&self, animal_id: &str, owner_id: &str) {
+        let allowed = {
+            let s = self.inner.state.lock();
+            s.queue.is_some() && s.governor.allow(Tier::Idle)
+        };
+        if !allowed || self.backlogged() {
+            return;
+        }
+        self.inner.state.lock().asked_names.insert(animal_id.to_owned());
+        let (build_pet, apply_pet) = (animal_id.to_owned(), animal_id.to_owned());
+        let (build_owner, apply_owner) = (owner_id.to_owned(), owner_id.to_owned());
+        self.request(
+            RequestKind::Name,
+            format!("p:{animal_id}"),
+            Some(owner_id.to_owned()),
+            Duration::from_secs(600),
+            None,
+            move |state, _| {
+                let pet = state.animals.get(&build_pet).filter(|a| a.name.is_none())?;
+                if pet.owner.as_deref() != Some(build_owner.as_str()) {
+                    return None;
+                }
+                let me = state.characters.get(&build_owner)?;
+                built(name_pet_prompt(state, me, pet), ())
+            },
+            move |state, response, ()| {
+                let unnamed = state
+                    .animals
+                    .get(&apply_pet)
+                    .is_some_and(|a| a.name.is_none() && a.owner.as_deref() == Some(apply_owner.as_str()));
+                if !unnamed {
+                    return Applied::stale("the pet has its name already, or another keeper");
+                }
+                let Some(name) = interpret_pet_name(&response.calls) else {
+                    return Applied::fallback("no usable name; the sim will choose one");
+                };
+                Applied::ok(format!("named it {name}"), vec![Command::NameAnimal { animal_id: apply_pet, name }])
+            },
+            None,
+            None,
+        );
     }
 
     /// Someone is reading a billboard: ask how they take it. Only when the model has room to spare; the sim

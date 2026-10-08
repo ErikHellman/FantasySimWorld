@@ -1,17 +1,21 @@
 //! The valley's animals: given to the village once it is founded, keeping to their haunts, running from the dead,
 //! following their keepers, and named by them.
 
+use fsw_core::Vec2;
 use fsw_core::math2d::dist;
 use fsw_core::vec2;
 use fsw_sim::Command;
 use fsw_sim::Sim;
+use fsw_sim::commands::TuningPatch;
+use fsw_sim::state::{ActivityId, Intent, IntentAction, IntentSource};
 use fsw_sim::state::{AnimalAnim, MonsterKind, MonsterOrigin, SimState, Species};
-use fsw_sim::systems::animals::{FLEE_RADIUS, STRIDE, clean_name, pasture};
+use fsw_sim::systems::animals::{FLEE_RADIUS, STRIDE, clean_name, pasture, update_animals};
 use fsw_sim::systems::director::tick_at;
+use fsw_sim::systems::intents::fresh_act;
 use fsw_sim::systems::monsters::spawn_monster;
 use fsw_sim::util::{Ctx, first_name};
 use fsw_testing::create_test_state;
-use fsw_world::places::get_place;
+use fsw_world::places::{get_place, places};
 
 fn founded(seed: u32) -> Sim {
     let mut sim = Sim::new(create_test_state(seed));
@@ -50,24 +54,18 @@ fn the_village_gets_its_animals_once_it_is_founded() {
 }
 
 #[test]
-fn a_world_without_animals_gets_them_and_its_villagers_draw_as_before() {
-    // The animals draw from their own generator: the villagers' world goes on exactly as it would without them.
-    let with = create_test_state(5);
-    let mut without = with.clone();
-    without.fauna.founded = true;
-    without.fauna.next_stray_tick = i64::MAX;
-    let mut a = Sim::new(with);
-    let mut b = Sim::new(without);
+fn animals_draw_nothing_from_the_villagers_generator() {
+    // What the animals do on their own never shifts the villagers' draws.
+    let mut sim = founded(5);
+    let rng = sim.state.rng;
+    let mut events = Vec::new();
     for _ in 0..2400 {
-        a.step();
-        b.step();
+        sim.state.tick += 1;
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        update_animals(&mut ctx);
     }
-    assert!(!a.state.animals.is_empty());
-    assert!(b.state.animals.is_empty());
-    assert_eq!(a.state.rng, b.state.rng);
-    for (id, c) in &a.state.characters {
-        assert_eq!(c.pos, b.state.characters[id].pos, "{id} walked the same");
-    }
+    assert_eq!(sim.state.rng, rng);
+    assert!(sim.state.animals.values().any(|a| a.path.len() + usize::from(a.flight.is_some()) > 0 || a.moving));
 }
 
 #[test]
@@ -217,4 +215,149 @@ fn sleepers_sleep_at_night() {
     let herd: Vec<_> = sim.state.animals.values().filter(|a| a.species == Species::Sheep).collect();
     let asleep = herd.iter().filter(|a| a.anim == AnimalAnim::Sleep).count();
     assert!(asleep * 2 >= herd.len(), "{asleep} of {} sheep asleep", herd.len());
+}
+
+/// Puts someone out in the open, awake, at `pos`, with nothing to do for an hour.
+fn idle_at(state: &mut SimState, id: &str, pos: Vec2) {
+    let tick = state.tick;
+    let c = state.characters.get_mut(id).expect("a villager");
+    c.act = fresh_act(tick);
+    c.pos = pos;
+    c.inside = None;
+    c.asleep = false;
+    c.slot_id = None;
+    c.intent = Some(Intent::new(IntentAction::Wait { minutes: 60.0 }, IntentSource::Routine));
+    c.queue.clear();
+    c.needs.hunger = 90.0;
+    c.needs.energy = 90.0;
+}
+
+fn set_intent(sim: &mut Sim, id: &str, action: IntentAction) {
+    let epoch = sim.state.characters[id].epoch;
+    sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents: vec![Intent::new(action, IntentSource::Llm)] });
+}
+
+fn first_adult(state: &SimState) -> String {
+    state
+        .order
+        .iter()
+        .find(|id| !state.characters[*id].is_child() && state.characters[*id].convo_id.is_none())
+        .expect("a grown villager not talking")
+        .clone()
+}
+
+/// A village where nobody starts a conversation, which would set aside what a test asks of someone.
+fn quiet(seed: u32) -> Sim {
+    let mut sim = founded(seed);
+    sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
+    for _ in 0..1200 {
+        sim.step();
+    }
+    sim
+}
+
+#[test]
+fn a_farmer_tends_the_herd_and_gets_food_for_it() {
+    let mut sim = quiet(1);
+    let farmer = first_adult(&sim.state);
+    idle_at(&mut sim.state, &farmer, get_place("farm").door);
+    sim.state.characters.get_mut(&farmer).expect("farmer").inventory.food = 0;
+    let tend = IntentAction::Activity { activity: ActivityId::Tend, place_id: None, minutes: Some(65.0) };
+    set_intent(&mut sim, &farmer, tend);
+    let mut beside_an_animal = false;
+    for _ in 0..(90 * 20) {
+        sim.step();
+        let c = &sim.state.characters[&farmer];
+        let tending = c.intent.as_ref().is_some_and(|i| i.is_activity(ActivityId::Tend));
+        if tending && c.act.phase == fsw_sim::state::ActPhase::Perform {
+            beside_an_animal |= sim.state.animals.values().any(|a| a.owner.is_none() && dist(a.pos, c.pos) < 4.0);
+        }
+    }
+    assert!(beside_an_animal, "the farmer stood beside one of the herd");
+    assert!(sim.state.characters[&farmer].inventory.food >= 1, "tending gave food");
+}
+
+#[test]
+fn a_keeper_makes_a_fuss_of_their_pet() {
+    let mut sim = quiet(1);
+    let state = &sim.state;
+    let pet = state
+        .animals
+        .values()
+        .find(|a| a.owner.as_deref().is_some_and(|o| state.characters[o].convo_id.is_none()))
+        .expect("a pet whose keeper is not talking")
+        .clone();
+    let owner = pet.owner.clone().expect("a keeper");
+    let near = sim.state.nav.nearest_walkable(vec2(pet.pos.x + 2.0, pet.pos.z), 3).expect("open ground");
+    idle_at(&mut sim.state, &owner, near);
+    set_intent(&mut sim, &owner, IntentAction::Pet { animal_id: pet.id.clone() });
+    let mut hearts = 0;
+    for _ in 0..400 {
+        for event in sim.step() {
+            if matches!(&event, fsw_sim::events::SimEvent::Emote { id, emote: fsw_sim::events::Emote::Heart } if *id == owner)
+            {
+                hearts += 1;
+            }
+        }
+    }
+    assert!(sim.state.animals[&pet.id].petted_tick > 0);
+    assert_eq!(hearts, 1);
+}
+
+#[test]
+fn a_villager_rides_a_free_horse_on_a_long_trip_and_it_waits_then_goes_home() {
+    let mut sim = quiet(1);
+    let horse = sim.state.animals.values().find(|a| a.species == Species::Horse).expect("a horse").clone();
+    let rider = first_adult(&sim.state);
+    let start = sim.state.nav.nearest_walkable(vec2(horse.pos.x + 4.0, horse.pos.z), 3).expect("open ground");
+    idle_at(&mut sim.state, &rider, start);
+    // Somewhere far off.
+    let far = places()
+        .iter()
+        .filter(|p| !p.id.starts_with("home"))
+        .max_by(|a, b| dist(a.door, start).total_cmp(&dist(b.door, start)))
+        .expect("a place");
+    let goal = far.door;
+
+    let mut on_foot = sim.state.clone();
+    on_foot.animals.retain(|_, a| a.species != Species::Horse);
+    let arrive = |mut sim: Sim, rider: &str| -> (i64, bool, Sim) {
+        let epoch = sim.state.characters[rider].epoch;
+        let intent = Intent::new(IntentAction::GoTo { place_id: far.id.clone() }, IntentSource::Llm);
+        sim.enqueue(Command::SetIntents { id: rider.into(), epoch, intents: vec![intent] });
+        let mut rode = false;
+        for t in 0..6000 {
+            sim.step();
+            let c = &sim.state.characters[rider];
+            rode |= c.mount.is_some();
+            if dist(c.pos, goal) < 4.0 {
+                return (t, rode, sim);
+            }
+        }
+        panic!("{rider} never got to {}", far.id);
+    };
+    let (walked, walker_rode, _) = arrive(Sim::new(on_foot), &rider);
+    let (ridden, rode, mut sim) = arrive(sim, &rider);
+    assert!(!walker_rode);
+    assert!(rode, "the rider got on the horse");
+    assert!(ridden < walked, "riding ({ridden} ticks) beats walking ({walked})");
+
+    // Got down at the end, and the horse waits there for them while they bide a while.
+    set_intent(&mut sim, &rider, IntentAction::Wait { minutes: 240.0 });
+    for _ in 0..40 {
+        sim.step();
+    }
+    let h = &sim.state.animals[&horse.id];
+    assert_eq!(h.rider, None);
+    assert_eq!(sim.state.characters[&rider].mount, None);
+    assert_eq!(h.waiting_for.as_deref(), Some(rider.as_str()));
+    assert!(dist(h.pos, goal) < 8.0);
+
+    // Come nightfall it gives up on them and goes home to the pasture.
+    while sim.state.tick < tick_at(2, 1.0) {
+        sim.step();
+    }
+    let h = &sim.state.animals[&horse.id];
+    assert_eq!(h.waiting_for, None);
+    assert!(dist(h.pos, pasture()) < 25.0, "the horse is home: {:?}", h.pos);
 }
