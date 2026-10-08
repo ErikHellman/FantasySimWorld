@@ -35,6 +35,9 @@ const RAID_LEAST_ALIVE: usize = 8;
 /// A raid an admin calls still needs someone to raid.
 const CALLED_LEAST_ALIVE: usize = 3;
 const BAND_LEAST: i64 = 3;
+/// Every third raid from this day on is led by a warchief, when the village is big enough to be worth it.
+const WARCHIEF_FROM_DAY: i64 = 12;
+const WARCHIEF_LEAST_ALIVE: i64 = 10;
 const BAND_MOST: i64 = 6;
 /// How long after the band appears the village hears of it.
 const WARNING_SECONDS: f64 = 20.0;
@@ -136,23 +139,41 @@ fn spawn_band(ctx: &mut Ctx) {
     let tick = ctx.tick();
     let day = ctx.time.day;
     let alive = adult_count(ctx.state) as i64;
-    let room = MAX_MONSTERS.saturating_sub(ctx.state.monsters.len()) as i64;
+    let mut room = MAX_MONSTERS.saturating_sub(ctx.state.monsters.len()) as i64;
+    let led = ctx.state.director.raids % 3 == 2
+        && day >= WARCHIEF_FROM_DAY
+        && alive >= WARCHIEF_LEAST_ALIVE
+        && room > BAND_LEAST;
+    if led {
+        room -= 1;
+    }
     let size = (BAND_LEAST + alive / 6).clamp(BAND_LEAST, BAND_MOST).min(room);
     let road = get_place("west_road");
     let mut members = Vec::new();
     let mut max_hp = 0.0;
-    for i in 0..size {
+    let mut warchief = None;
+    // The warchief first, then the band, so the draws come in the same order on every machine.
+    for i in (if led { -1 } else { 0 })..size {
         let z = road.origin.z + ctx.range(-2.0, 2.0);
         let pos = ctx.state.nav.nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
-        let kind = if i % 2 == 0 { MonsterKind::OrcAxe } else { MonsterKind::OrcClub };
+        let kind = match i {
+            -1 => MonsterKind::OrcWarchief,
+            i if i % 2 == 0 => MonsterKind::OrcAxe,
+            _ => MonsterKind::OrcClub,
+        };
         let id = spawn_monster(ctx, kind, pos, road.facing, MonsterOrigin::Road);
         // Every band is a little mixed: two hides of orc, and some who travel without a pack.
+        let chief = kind == MonsterKind::OrcWarchief;
+        if chief {
+            warchief = Some(id.clone());
+        }
         let looks = hash_string(&format!("{id}@{}", ctx.state.seed));
         let m = ctx.m(&id);
-        if looks % 2 == 1 {
+        // The brute keeps its own hide and gear.
+        if !chief && looks % 2 == 1 {
             m.look.texture = Some("orc_texture_B".into());
         }
-        if (looks / 2).is_multiple_of(3) {
+        if !chief && (looks / 2).is_multiple_of(3) {
             m.look.hide.push("Orc_Warpack".into());
         }
         m.raid = Some(RaidOrder::default());
@@ -175,6 +196,7 @@ fn spawn_band(ctx: &mut Ctx) {
         warned: false,
         leaving: false,
         carried_off: Haul::default(),
+        warchief,
     });
     ctx.emit(SimEvent::Raid { phase: RaidPhase::Coming });
 }
@@ -244,6 +266,7 @@ fn warn(ctx: &mut Ctx) {
     let Some(band) = ctx.state.raid.as_mut() else { return };
     band.warned = true;
     let size = band.size;
+    let led = band.warchief.is_some();
     let up = standing(ctx.state, ctx.state.raid.as_ref().expect("a band"));
     let road = get_place("west_road");
     let pos = up.first().map_or(road.door, |id| ctx.state.monsters[id].pos);
@@ -254,9 +277,10 @@ fn warn(ctx: &mut Ctx) {
             ctx.say(crier, "Orcs on the road! To arms!", None, true);
             ctx.emit(SimEvent::Emote { id: crier.clone(), emote: Emote::Alert });
         }
+        let led = if led { ", led by a warchief," } else { "" };
         ctx.chronicle(
             ChronicleKind::Combat,
-            format!("A war band of {size} orcs is coming up the west road!"),
+            format!("A war band of {size} orcs{led} is coming up the west road!"),
             crier.into_iter().collect(),
         );
     }
@@ -300,9 +324,12 @@ fn vanish(ctx: &mut Ctx, id: &str) {
     }
 }
 
-/// A raider has fallen: one fewer in the band.
-pub fn on_fallen(ctx: &mut Ctx) {
-    if let Some(band) = ctx.state.raid.as_mut() {
+/// A raider has fallen: one fewer in the band. When it is the warchief, the band breaks and makes for home.
+pub fn on_fallen(ctx: &mut Ctx, id: &str) {
+    let Some(band) = ctx.state.raid.as_mut() else { return };
+    if band.warchief.as_deref() == Some(id) {
+        turn_for_home(ctx);
+    } else {
         band.fallen += 1;
     }
 }

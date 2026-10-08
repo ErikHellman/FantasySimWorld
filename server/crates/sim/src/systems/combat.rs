@@ -24,7 +24,7 @@ use crate::systems::raids;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
     Body, Ctx, a_noun, a_noun_capital, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting,
-    nearby_characters, place_name_at, set_anim, their,
+    join_names, nearby_characters, place_name_at, set_anim, their,
 };
 
 const BRAWL_YIELD: f64 = 0.3;
@@ -363,6 +363,11 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
         fatal,
         outcome,
     });
+    // A boss remembers everyone who stood against it, for the day it falls.
+    let m = ctx.m(monster_id);
+    if def.boss && !m.foes.iter().any(|f| f == attacker) {
+        m.foes.push(attacker.to_owned());
+    }
     if outcome == HitOutcome::Dodged {
         return;
     }
@@ -387,25 +392,33 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     set_anim(m, def.anims.death, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
+    if def.boss {
+        fell_boss(ctx, monster_id, attacker, pos);
+    }
     if def.faction == Faction::Orc {
         let haul = ctx.m(monster_id).raid.take().map(|order| order.haul).unwrap_or_default();
-        raids::on_fallen(ctx);
+        raids::on_fallen(ctx, monster_id);
         drop_haul(ctx, &haul, pos, attacker);
-        let where_ = place_name_at(pos);
-        ctx.remember(attacker, format!("Slew {} at {where_}.", a_noun(def.label)), 5.0, MemoryKind::Event, Vec::new());
+        if !def.boss {
+            let where_ = place_name_at(pos);
+            let text = format!("Slew {} at {where_}.", a_noun(def.label));
+            ctx.remember(attacker, text, 5.0, MemoryKind::Event, Vec::new());
+        }
         ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
         return;
     }
     drop_loot(ctx, monster_id, kind, pos, attacker);
     let where_ = place_name_at(pos);
     let necromancer = kind == MonsterKind::Necromancer;
-    ctx.remember(
-        attacker,
-        format!("Destroyed {} at {where_}.", a_noun(def.label)),
-        if necromancer { 8.0 } else { 4.0 },
-        MemoryKind::Event,
-        Vec::new(),
-    );
+    if !def.boss {
+        ctx.remember(
+            attacker,
+            format!("Destroyed {} at {where_}.", a_noun(def.label)),
+            if necromancer { 8.0 } else { 4.0 },
+            MemoryKind::Event,
+            Vec::new(),
+        );
+    }
     let (fallen_name, was_id) = {
         let m = &ctx.state.monsters[monster_id];
         (m.name.clone(), m.was_id.clone())
@@ -429,6 +442,40 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
         );
     }
     ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
+}
+
+/// A boss has fallen: the chronicle names everyone who fought it, each of them remembers it as one of the great
+/// days of their life, and the server saves.
+fn fell_boss(ctx: &mut Ctx, monster_id: &str, killer: &str, pos: Vec2) {
+    let label = ctx.state.monsters[monster_id].kind.def().label;
+    let mut foes: Vec<Id> = ctx.state.monsters[monster_id].foes.iter().filter(|f| ctx.alive(f)).cloned().collect();
+    if !foes.iter().any(|f| f == killer) {
+        foes.push(killer.to_owned());
+    }
+    let where_ = place_name_at(pos);
+    let killer_name = first_name(ctx.cr(killer)).to_owned();
+    let names: Vec<String> = foes.iter().map(|f| first_name(ctx.cr(f)).to_owned()).collect();
+    let text = if foes.len() == 1 {
+        format!("{killer_name} brought down the {label} at {where_}, alone!")
+    } else {
+        format!(
+            "The {label} fell at {where_}, brought down by {}. {killer_name} struck the last blow.",
+            join_names(&names)
+        )
+    };
+    ctx.chronicle(ChronicleKind::Combat, text, foes.clone());
+    for foe in &foes {
+        let others: Vec<Id> = foes.iter().filter(|o| *o != foe).cloned().collect();
+        let memory = if others.is_empty() {
+            format!("I brought down the {label} at {where_}, alone.")
+        } else {
+            let names: Vec<String> = others.iter().map(|o| first_name(ctx.cr(o)).to_owned()).collect();
+            format!("We brought down the {label} at {where_}: I fought it beside {}.", join_names(&names))
+        };
+        ctx.remember(foe, memory, 9.0, MemoryKind::Event, others);
+        ctx.stimulate(foe, StimulusKind::Victory, format!("The {label} has fallen!"), 1, None);
+    }
+    ctx.emit(SimEvent::SavePoint { reason: "boss fallen".into() });
 }
 
 /// A grave, at last, for a villager who became one of the dead.

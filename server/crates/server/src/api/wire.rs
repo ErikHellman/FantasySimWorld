@@ -101,6 +101,10 @@ pub struct EntityStatic {
     pub hostile: bool,
     /// villagers only
     pub voice: Option<VoiceProfile>,
+    /// set (true) for a boss the whole village must rally against; left out otherwise
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub boss: Option<bool>,
 }
 
 /// The parts of an entity that change from tick to tick, quantised so an idle
@@ -901,6 +905,8 @@ pub struct MonsterDetail {
     pub faction: MonsterFaction,
     /// a raider's plunder, e.g. "12 coins and 6 logs of wood"
     pub carrying: Option<String>,
+    /// a boss: the skeleton golem or the orc warchief
+    pub boss: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]

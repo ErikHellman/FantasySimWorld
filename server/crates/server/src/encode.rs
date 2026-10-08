@@ -74,6 +74,7 @@ pub fn character_static(c: &Character) -> EntityStatic {
         max_hp: max_hp(c),
         hostile: false,
         voice: Some(voice(&c.profile.voice)),
+        boss: None,
     }
 }
 
@@ -115,6 +116,7 @@ pub fn monster_static(m: &Monster) -> EntityStatic {
         max_hp: def.max_hp,
         hostile: true,
         voice: None,
+        boss: def.boss.then_some(true),
     }
 }
 
@@ -142,6 +144,7 @@ pub fn corpse_static(corpse: &Corpse) -> EntityStatic {
         max_hp: 1.0,
         hostile: false,
         voice: None,
+        boss: None,
     }
 }
 

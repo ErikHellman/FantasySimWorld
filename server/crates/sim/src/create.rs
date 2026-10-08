@@ -49,6 +49,7 @@ pub fn create_state(seed: u32) -> SimState {
             raids: 0,
             raid_called: false,
             alarm_raid: false,
+            next_golem_night: 0,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),

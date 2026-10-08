@@ -22,6 +22,8 @@ use crate::util::{
 const SIGHT: f64 = 18.0;
 const WATCH_SIGHT: f64 = 48.0;
 const RESPONDER_BRAVERY: f64 = 0.6;
+/// While a boss is abroad, the alarm rallies anyone with this much nerve.
+pub const BOSS_RESPONDER_BRAVERY: f64 = 0.45;
 const ALARM_RANGE: f64 = 150.0;
 const FIRE_COURAGE: f64 = 0.2;
 /// Heartened by music, people find a little more nerve.
@@ -121,6 +123,7 @@ pub fn update_perception(ctx: &mut Ctx) {
         ctx.state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).cloned().collect();
     let alarm = tick < ctx.state.director.alarm_until_tick;
     let house_burning = burning(ctx.state).is_some();
+    let bar = if monsters.iter().any(|m| m.kind.def().boss) { BOSS_RESPONDER_BRAVERY } else { RESPONDER_BRAVERY };
 
     if monsters.is_empty() {
         if ctx.state.director.alarm_pos.is_some() {
@@ -186,7 +189,7 @@ pub fn update_perception(ctx: &mut Ctx) {
         if !alarm || is_fighting(c) {
             continue;
         }
-        let responder = !c.is_child() && c.profile.bravery >= RESPONDER_BRAVERY && c.hp > max_hp(c) * 0.4;
+        let responder = !c.is_child() && c.profile.bravery >= bar && c.hp > max_hp(c) * 0.4;
         if responder {
             let Some(target) = nearest_monster(&monsters, c, ALARM_RANGE).cloned() else { continue };
             let nav = ctx.state.nav.clone();

@@ -90,7 +90,11 @@ export type EntityStatic = { id: string, kind: EntityKind, name: string, look: L
 /**
  * villagers only
  */
-voice: VoiceProfile | null, };
+voice: VoiceProfile | null, 
+/**
+ * set (true) for a boss the whole village must rally against; left out otherwise
+ */
+boss?: boolean, };
 
 /**
  * The parts of an entity that change from tick to tick, quantised so an idle
@@ -588,7 +592,11 @@ faction: MonsterFaction,
 /**
  * a raider's plunder, e.g. "12 coins and 6 logs of wood"
  */
-carrying: string | null, };
+carrying: string | null, 
+/**
+ * a boss: the skeleton golem or the orc warchief
+ */
+boss: boolean, };
 
 export type MonsterFaction = "undead" | "orc";
 

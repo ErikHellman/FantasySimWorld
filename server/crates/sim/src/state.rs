@@ -1204,6 +1204,9 @@ pub struct Monster {
     /// an orc's orders in a raid; see `systems::raids`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raid: Option<RaidOrder>,
+    /// a boss's: every villager who has struck it, for the chronicle when it falls
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foes: Vec<Id>,
 }
 
 /// What one raider is about: the place it means to plunder, and what it carries off.
@@ -1301,6 +1304,9 @@ pub struct Band {
     /// what those who got away took with them
     #[serde(default, skip_serializing_if = "Haul::is_empty")]
     pub carried_off: Haul,
+    /// the orc warchief who leads it, if one does; one of `members`, but not counted in `size`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warchief: Option<Id>,
 }
 
 /// A monster's plan to burn a house while the village sleeps.
@@ -1809,6 +1815,9 @@ pub struct Director {
     /// the alarm that is up is for raiders, not the dead
     #[serde(default, skip_serializing_if = "is_false")]
     pub alarm_raid: bool,
+    /// the night from which a skeleton golem may rise; 0 until the first has (it comes from night 10)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_golem_night: i64,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.

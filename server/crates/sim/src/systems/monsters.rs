@@ -1,5 +1,6 @@
 //! The walking dead: rising, roaming, chasing, striking, crumbling at dawn.
 
+use fsw_core::jsmath::{cos, sin};
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::rng;
 use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
@@ -8,7 +9,7 @@ use fsw_world::places::get_place;
 
 use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
-use crate::data::monsters::{Faction, MONSTERS, MonsterKind};
+use crate::data::monsters::{Area, Faction, MONSTERS, MonsterKind};
 use crate::events::HitOutcome;
 use crate::events::{Projectile, SimEvent};
 use crate::state::{ChronicleKind, Corpse, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
@@ -70,6 +71,7 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         blows: 0,
         defend_ready_tick: 0,
         raid: None,
+        foes: Vec::new(),
     };
     ctx.state.monsters.insert(id.clone(), monster);
     // The dead claw their way out of the ground; a raider just walks up.
@@ -168,24 +170,70 @@ pub fn land_swing(ctx: &mut Ctx, id: &str) {
     }
     monster.hit_tick = 0;
     let reach = def.range * if def.style == WeaponStyle::Melee { 1.45 } else { 1.5 };
-    let monster_pos = monster.pos;
-    if let Some(victim) = victim
-        && ctx.state.characters[&victim].inside.is_none()
-        && dist(ctx.state.characters[&victim].pos, monster_pos) <= reach
-    {
-        let damage = ctx.int_range(def.damage[0], def.damage[1]);
-        let outcome = villager_defends(ctx, &victim, monster_pos, Blow::of(def.style));
-        let by = Assailant { id: id.to_owned(), label: def.label.into(), character: None };
-        damage_character_with(ctx, &victim, damage, by, FightMode::Monster, outcome);
-        // Its tally, for the viewer's card.
-        let slain = !ctx.state.characters.contains_key(&victim);
-        let monster = ctx.m(id);
-        if outcome != HitOutcome::Dodged {
-            monster.blows += 1;
+    let (monster_pos, facing) = (monster.pos, monster.facing);
+    let victim = victim.filter(|v| {
+        let c = &ctx.state.characters[v];
+        c.inside.is_none() && dist(c.pos, monster_pos) <= reach
+    });
+    match def.area {
+        None => {
+            if let Some(victim) = victim {
+                strike(ctx, id, &victim, Blow::of(def.style));
+            }
         }
-        if slain {
-            monster.kills += 1;
+        Some(Area::Slam { radius }) => {
+            // The blow comes down in front of it, where its quarry stood, and everyone near that spot is caught.
+            let aim = victim.as_ref().map_or(def.range, |v| dist(ctx.state.characters[v].pos, monster_pos));
+            let reach = aim.min(def.range);
+            let impact = vec2(monster_pos.x + sin(facing) * reach, monster_pos.z + cos(facing) * reach);
+            let caught: Vec<Id> = living(ctx.state)
+                .filter(|c| c.inside.is_none() && dist(c.pos, impact) <= radius)
+                .map(|c| c.id.clone())
+                .collect();
+            for victim in caught {
+                if ctx.alive(&victim) {
+                    strike(ctx, id, &victim, Blow::Slam);
+                }
+            }
         }
+        Some(Area::Cleave { more }) => {
+            let Some(victim) = victim else { return };
+            // Whoever else stands within the sweep, in front of it, nearest first.
+            let mut beside: Vec<(f64, Id)> = living(ctx.state)
+                .filter(|c| c.id != victim && c.inside.is_none() && dist(c.pos, monster_pos) <= reach)
+                .filter(|c| {
+                    let d = dist(c.pos, monster_pos).max(1e-6);
+                    (sin(facing) * (c.pos.x - monster_pos.x) + cos(facing) * (c.pos.z - monster_pos.z)) / d > 0.5
+                })
+                .map(|c| (dist(c.pos, monster_pos), c.id.clone()))
+                .collect();
+            beside.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            strike(ctx, id, &victim, Blow::Melee);
+            for (_, other) in beside.into_iter().take(more) {
+                if ctx.alive(&other) {
+                    strike(ctx, id, &other, Blow::Melee);
+                }
+            }
+        }
+    }
+}
+
+/// One blow of a monster's on one villager, who may defend; it counts on the monster's card.
+fn strike(ctx: &mut Ctx, id: &str, victim: &str, blow: Blow) {
+    let def = ctx.state.monsters[id].kind.def();
+    let monster_pos = ctx.state.monsters[id].pos;
+    let damage = ctx.int_range(def.damage[0], def.damage[1]);
+    let outcome = villager_defends(ctx, victim, monster_pos, blow);
+    let by = Assailant { id: id.to_owned(), label: def.label.into(), character: None };
+    damage_character_with(ctx, victim, damage, by, FightMode::Monster, outcome);
+    // Its tally, for the viewer's card.
+    let slain = !ctx.state.characters.contains_key(victim);
+    let Some(monster) = ctx.state.monsters.get_mut(id) else { return };
+    if outcome != HitOutcome::Dodged {
+        monster.blows += 1;
+    }
+    if slain {
+        monster.kills += 1;
     }
 }
 
@@ -213,7 +261,8 @@ pub fn chase_and_strike(ctx: &mut Ctx, id: &str, target_id: &str, target_pos: Ve
         let anim = ctx.pick(def.attack_anims);
         let monster = ctx.m(id);
         set_anim(monster, anim, true);
-        monster.hit_tick = tick + seconds_to_ticks(clamp(anim.seconds() * 0.45, 0.35, 0.8));
+        let windup = def.windup.unwrap_or_else(|| clamp(anim.seconds() * 0.45, 0.35, 0.8));
+        monster.hit_tick = tick + seconds_to_ticks(windup);
         monster.hit_target_id = Some(target_id.to_owned());
         monster.next_attack_tick = tick + seconds_to_ticks(def.interval);
         let from = monster.pos;
@@ -345,8 +394,8 @@ pub fn update_monsters(ctx: &mut Ctx) {
             continue;
         }
 
-        // With the whole village asleep, a roaming monster goes for a house instead.
-        if arson(ctx, &id, (tick + id_number(&id)) % 10 == 0) {
+        // With the whole village asleep, a roaming monster goes for a house instead (a boss has bigger quarry).
+        if !def.boss && arson(ctx, &id, (tick + id_number(&id)) % 10 == 0) {
             continue;
         }
 

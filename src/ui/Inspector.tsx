@@ -120,7 +120,7 @@ function MonsterCard({ d }: { d: MonsterDetail }) {
   return (
     <>
       <h2>{d.name}</h2>
-      <p class="subtitle">{d.species} · {side}{d.lasting && ' · does not fear the dawn'}</p>
+      <p class="subtitle">{d.species} · {side}{d.boss && ' · it takes the village to bring it down'}{d.lasting && ' · does not fear the dawn'}</p>
       <p class="status">{d.status}</p>
       <div class="tab-body">
         {/* Red whatever it has left, as its label's bar is. */}

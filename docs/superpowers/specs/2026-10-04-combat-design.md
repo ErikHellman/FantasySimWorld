@@ -1,5 +1,7 @@
 # Block, dodge, orc raids and bosses
 
+**Status (2026-10-08): built**, all three steps, plus an admin's "Call a raid". Each step's "Built" section says where the code differs from the plan and what the soak measured.
+
 Fights today are an exchange of blows. Every swing that is still in reach when its windup ends lands, and the only enemies are the dead, who rise at night and crumble at dawn. This design makes combat richer in three steps, each shipped on its own:
 
 1. **Block and dodge.** Defenders can turn a blow aside or step out of it, so skill and equipment show and fights last a little longer.
@@ -151,6 +153,18 @@ Measured over 30 days, seeds 1 to 10 (means per village): 4.2 raids; 9.4 places 
 - The rally in `perception.rs`.
 - **Wire**: `EntityStatic` gains an optional `boss` flag. The model's draw scale comes from `asset-list.mjs`.
 - **Client**: the boss bar in `src/ui`.
+
+### Built
+
+Built as above, with these differences:
+- **The golem's numbers**: at the planned 25–40 damage every 2.8 seconds its slam killed four villagers a month in each village, as fighters crowd round it. It is built at 18–28 every 3.2 seconds, after a 1.2-second windup, with 600 health and a reach of 2.6; it then kills about one villager a month and is always brought down. It drops a relic like the necromancer, and it never sets fires.
+- **The warchief's cleave** takes the one it swings at and one more in front of it; he is built with block 0.15 like the axe raiders. He leads every third raid (the third, sixth, …) from day 12 with at least ten alive, spawns first so the draws come in a fixed order, belongs to the band without counting in its size or its fallen, and when he falls the band turns for home at once.
+- **The large rig** borrows the `Skeletons_*` clips, so the golem rises, walks and crumbles like the rest of the dead. The models are drawn at 0.9 (golem, 3.8 units tall) and 0.8 (warchief, 3.4); the asset build allows any scale on the large rig for a model that never sits (`seats: false`).
+- **The rally**: a golem's rising raises the alarm and stirs everyone (`director::rally`); a warchief comes with his band's warning. While any boss is abroad, perception's responder bar is 0.45.
+- **Remembered**: every villager who struck the boss is kept in `Monster.foes`; when it falls the chronicle names them and who struck the last blow, each remembers it at importance 9 with the others as subjects, and the server saves (`SavePoint { "boss fallen" }`).
+- **The client**: `EntityStatic.boss` (optional) and `MonsterDetail.boss`; `src/ui/BossBar.tsx` shows the nearest boss within 60 units of the camera.
+
+Measured over 30 days, seeds 1 to 10 (means per village): 1.9 golems rose and all were brought down; 1.0 villagers killed by golems, 0.3 by a warchief and 0.3 by orc raiders. Villagers dead, all causes, 6.8 (6.6 before any of this work); monsters destroyed 177 (168).
 
 ## Tests
 

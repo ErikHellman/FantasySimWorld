@@ -15,6 +15,8 @@ pub enum MonsterKind {
     Necromancer,
     OrcAxe,
     OrcClub,
+    SkeletonGolem,
+    OrcWarchief,
 }
 
 /// Whose side a monster is on. Rising at night, crumbling at dawn, burial and arson are the undead's alone.
@@ -22,6 +24,15 @@ pub enum MonsterKind {
 pub enum Faction {
     Undead,
     Orc,
+}
+
+/// A boss's blow that hits more than the one it is aimed at.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Area {
+    /// everyone out of doors within `radius` of where it lands; it cannot be blocked
+    Slam { radius: f64 },
+    /// the one it is aimed at and up to `more` others in front of it
+    Cleave { more: usize },
 }
 
 /// The clips a monster moves with.
@@ -69,11 +80,17 @@ pub struct MonsterDef {
     pub block: f64,
     /// the chance of stepping out of a blow
     pub dodge: f64,
+    /// the whole village must rally to bring it down
+    pub boss: bool,
+    /// seconds from the start of a swing to the blow, when not the clip's own timing
+    pub windup: Option<f64>,
+    /// a blow that hits more than one
+    pub area: Option<Area>,
 }
 
 /// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks). The orcs
 /// come last and never in a wave of the dead (weight 0), so the picks among the dead are as they were.
-pub static MONSTERS: [MonsterDef; 7] = [
+pub static MONSTERS: [MonsterDef; 9] = [
     MonsterDef {
         kind: MonsterKind::SkeletonMinion,
         faction: Faction::Undead,
@@ -94,6 +111,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 5.0,
         block: 0.0,
         dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonWarrior,
@@ -115,6 +135,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 3.0,
         block: 0.3,
         dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonRogue,
@@ -136,6 +159,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 2.0,
         block: 0.0,
         dodge: 0.2,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonMage,
@@ -157,6 +183,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 2.0,
         block: 0.0,
         dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::Necromancer,
@@ -178,6 +207,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 0.0,
         block: 0.0,
         dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::OrcAxe,
@@ -199,6 +231,9 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 0.0,
         block: 0.15,
         dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
     },
     MonsterDef {
         kind: MonsterKind::OrcClub,
@@ -220,6 +255,57 @@ pub static MONSTERS: [MonsterDef; 7] = [
         weight: 0.0,
         block: 0.0,
         dodge: 0.1,
+        boss: false,
+        windup: None,
+        area: None,
+    },
+    MonsterDef {
+        kind: MonsterKind::SkeletonGolem,
+        faction: Faction::Undead,
+        label: "skeleton golem",
+        model: "Skeleton_Golem",
+        texture: None,
+        main_hand: None,
+        off_hand: None,
+        max_hp: 600.0,
+        damage: [18, 28],
+        range: 2.6,
+        interval: 3.2,
+        speed: 1.9,
+        style: WeaponStyle::Melee,
+        attack_anims: &[Attack2hSlice],
+        anims: UNDEAD,
+        sight: 22.0,
+        weight: 0.0,
+        block: 0.0,
+        dodge: 0.0,
+        boss: true,
+        windup: Some(1.2),
+        area: Some(Area::Slam { radius: 2.8 }),
+    },
+    MonsterDef {
+        kind: MonsterKind::OrcWarchief,
+        faction: Faction::Orc,
+        label: "orc warchief",
+        model: "OrcBrute",
+        texture: None,
+        main_hand: Some("Orc_Axe_Large"),
+        off_hand: None,
+        max_hp: 420.0,
+        damage: [20, 32],
+        range: 2.4,
+        interval: 2.0,
+        speed: 2.8,
+        style: WeaponStyle::Melee,
+        attack_anims: &[Attack2hChop, Attack2hSlice],
+        anims: ORC,
+        sight: 3.0,
+        weight: 0.0,
+        block: 0.15,
+        dodge: 0.0,
+        boss: true,
+        windup: None,
+        area: Some(Area::Cleave { more: 1 }),
     },
 ];
 

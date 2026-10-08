@@ -387,11 +387,11 @@ pub fn pay_builders(ctx: &mut Ctx, project: &Project) {
 }
 
 /// One of the dead has fallen: what it leaves is fixed by the monster and the tick, so every machine
-/// agrees and the RNG is not drawn. The necromancer always leaves a relic. The killer is told.
+/// agrees and the RNG is not drawn. The necromancer and the golem always leave a relic. The killer is told.
 pub fn drop_loot(ctx: &mut Ctx, monster_id: &str, kind: MonsterKind, pos: Vec2, killer: &str) {
     let tick = ctx.tick();
     let roll = hash_string(&format!("{monster_id}@{tick}"));
-    let left = if kind == MonsterKind::Necromancer {
+    let left = if matches!(kind, MonsterKind::Necromancer | MonsterKind::SkeletonGolem) {
         LootKind::Relic
     } else {
         match roll % 100 {

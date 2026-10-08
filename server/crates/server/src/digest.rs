@@ -213,6 +213,7 @@ pub fn monster_detail_of(state: &SimState, id: &str) -> Option<MonsterDetail> {
             Faction::Orc => MonsterFaction::Orc,
         },
         carrying: m.raid.as_ref().and_then(|order| order.haul.describe()),
+        boss: def.boss,
     })
 }
 

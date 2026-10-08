@@ -9,6 +9,8 @@ export interface ViewEntity {
   look: Look;
   maxHp: number;
   hostile: boolean;
+  /** a boss the whole village must rally against */
+  boss: boolean;
   x: number;
   z: number;
   facing: number;
@@ -47,7 +49,7 @@ function decode(target: ViewEntity, dyn: Partial<Dyn>): void {
 function fromEntity(entity: Entity): ViewEntity {
   const s = entity.static;
   const view: ViewEntity = {
-    id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile,
+    id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile, boss: s.boss ?? false,
     x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false,
   };
   decode(view, entity.dyn);
