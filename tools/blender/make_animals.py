@@ -682,6 +682,7 @@ ROSTER = [
     (songbird, "robin", {"back": "#8a6a4a", "breast": "#e2703a", "wing": "#735638", "beak": "#3a3330", "legs": "#6a5a4a"}),
     (songbird, "bluebird", {"back": "#4a7ac8", "breast": "#e08a4a", "wing": "#3a62a8", "beak": "#3a3330", "legs": "#6a5a4a"}),
     (lambda n, c: songbird(n, c, flying=True), "robin_flying", {"back": "#8a6a4a", "breast": "#e2703a", "wing": "#735638", "beak": "#3a3330", "legs": "#6a5a4a"}),
+    (lambda n, c: songbird(n, c, flying=True), "bluebird_flying", {"back": "#4a7ac8", "breast": "#e08a4a", "wing": "#3a62a8", "beak": "#3a3330", "legs": "#6a5a4a"}),
     (owl, "owl_brown", {"body": "#9a7050", "belly": "#e6d3b0", "wing": "#7a5438", "face": "#efe2c8", "iris": "#f2c23a", "beak": "#c9a96a", "talon": "#c9a96a", "fleck": "#9a7050",
                         "flecks": ((-0.06, 0.05), (0.06, 0.0), (0, -0.07), (-0.07, -0.12), (0.07, -0.14))}),
     (owl, "owl_snowy", {"tufts": False, "body": "#f4f1ea", "belly": "#ffffff", "wing": "#e6e1d6", "face": "#ffffff", "iris": "#f2c23a", "beak": "#3a3330", "talon": "#3a3330", "fleck": "#3a3330",

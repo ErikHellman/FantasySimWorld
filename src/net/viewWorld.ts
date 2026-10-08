@@ -22,6 +22,8 @@ export interface ViewEntity {
   /** current activity id, if performing one */
   act: string | null;
   asleep: boolean;
+  /** for a villager, the horse they ride; for a horse, who rides it */
+  mount: string | null;
 }
 
 const graveKey = (grave: Grave): string => `${grave.plot}:${grave.characterId}`;
@@ -42,13 +44,14 @@ function decode(target: ViewEntity, dyn: Partial<Dyn>): void {
   if (dyn.oh !== undefined) target.offHand = dyn.oh;
   if (dyn.act !== undefined) target.act = dyn.act;
   if (dyn.z !== undefined) target.asleep = dyn.z;
+  if (dyn.mt !== undefined) target.mount = dyn.mt;
 }
 
 function fromEntity(entity: Entity): ViewEntity {
   const s = entity.static;
   const view: ViewEntity = {
     id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile,
-    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false,
+    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, mount: null,
   };
   decode(view, entity.dyn);
   return view;
@@ -181,5 +184,9 @@ export class ViewWorld {
 
   isMonster(id: string): boolean {
     return this.entities.get(id)?.kind === 'monster';
+  }
+
+  isAnimal(id: string): boolean {
+    return this.entities.get(id)?.kind === 'animal';
   }
 }

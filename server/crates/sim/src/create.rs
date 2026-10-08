@@ -56,6 +56,8 @@ pub fn create_state(seed: u32) -> SimState {
         performances: Vec::new(),
         economy: Default::default(),
         loot: Default::default(),
+        animals: Default::default(),
+        fauna: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

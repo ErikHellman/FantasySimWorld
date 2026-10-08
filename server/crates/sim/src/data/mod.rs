@@ -1,7 +1,8 @@
-//! Static game data: animations, classes, monsters, activities, names to invent villagers from, small talk, the
+//! Static game data: animations, animals, classes, monsters, activities, names to invent villagers from, small talk, the
 //! billboards' slogans, and the economy's prices.
 
 pub mod activities;
+pub mod animals;
 pub mod anims;
 pub mod billboards;
 pub mod ceremonies;

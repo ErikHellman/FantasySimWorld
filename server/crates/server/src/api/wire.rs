@@ -17,9 +17,9 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
-/// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
+/// Character, monster, animal, corpse and conversation ids (`c1`, `m7`, `a3`, …).
 pub type Id = String;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq)]
@@ -64,6 +64,9 @@ pub enum EntityKind {
     Villager,
     Monster,
     Corpse,
+    /// one of the valley's animals; its look's model is in the `animals` bundle, and its name is empty unless it is
+    /// a pet or a horse
+    Animal,
 }
 
 /// How a character or monster is drawn (the sim's `Look`).
@@ -125,6 +128,10 @@ pub struct Dyn {
     pub act: Option<String>,
     /// asleep
     pub z: bool,
+    /// for a villager, the horse they ride; for a horse, who rides it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub mt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -166,6 +173,9 @@ pub struct DynDelta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub z: Option<bool>,
+    #[serde(default, with = "present", skip_serializing_if = "Option::is_none")]
+    #[ts(as = "Option<Option<String>>", optional)]
+    pub mt: Option<Option<String>>,
 }
 
 /// A delta field that is present (possibly as `null`) reads as `Some(_)`; a missing one as `None`.
@@ -854,6 +864,25 @@ pub struct MonsterDetail {
     pub damage: [u32; 2],
 }
 
+/// The card of one of the valley's animals.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnimalDetail {
+    pub id: Id,
+    /// a pet's or a horse's name, or what it is ("a sheep")
+    pub name: String,
+    /// e.g. "sheep" (`kind` is the tag of [`Detail`])
+    pub species: String,
+    /// what it is doing now, e.g. "Grazing in the meadow" or "At Mira's heels"
+    pub status: String,
+    /// the villager who keeps it, for a pet
+    pub owner: Option<NamedId>,
+    /// who is riding it, for a horse
+    pub rider: Option<NamedId>,
+    /// what tending it gives the village, e.g. "milk"
+    pub yields: Option<String>,
+}
+
 /// What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -861,6 +890,7 @@ pub enum Detail {
     // Boxed so the enum stays small whichever card is the bigger one.
     Villager(Box<CharacterDetail>),
     Monster(Box<MonsterDetail>),
+    Animal(Box<AnimalDetail>),
 }
 
 /// What a site is: a place's building, or something the village put up on a pad.
@@ -1302,6 +1332,7 @@ pub fn typescript() -> String {
         CharacterDetail,
         NamedId,
         MonsterDetail,
+        AnimalDetail,
         Detail,
         SiteKind,
         SiteNeed,

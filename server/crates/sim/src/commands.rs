@@ -111,4 +111,10 @@ pub enum Command {
         speaker_id: Id,
         text: String,
     },
+    /// The name a keeper gave their new pet; ignored unless the animal is still theirs and still
+    /// unnamed, and when the name is unusable or taken.
+    NameAnimal {
+        animal_id: Id,
+        name: String,
+    },
 }

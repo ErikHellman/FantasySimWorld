@@ -5750,7 +5750,7 @@ export const assetManifest: AssetManifest = {
    }
   },
   "animals": {
-   "url": "assets/bundles/animals.glb?v=dcef93df14",
+   "url": "assets/bundles/animals.glb?v=c068c866d6",
    "models": {
     "bluebird": {
      "bounds": [
@@ -5758,6 +5758,16 @@ export const assetManifest: AssetManifest = {
       0,
       -0.222,
       0.095,
+      0.335,
+      0.2
+     ]
+    },
+    "bluebird_flying": {
+     "bounds": [
+      -0.333,
+      0.06,
+      -0.23,
+      0.333,
       0.335,
       0.2
      ]

@@ -1,5 +1,6 @@
 //! The systems, run each tick in the order `Sim::step` lists.
 
+pub mod animals;
 pub mod arrivals;
 pub mod billboards;
 pub mod ceremonies;

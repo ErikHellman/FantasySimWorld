@@ -144,7 +144,7 @@ async function start(): Promise<void> {
   const listener = (): { x: number; z: number; distance: number } => ({ x: view.rig.target.x, z: view.rig.target.z, distance: view.rig.distance });
   let ambient: AmbientCounts = { awake: 0, eating: 0, drinking: 0, smithing: 0, relaxing: 0 };
 
-  /** Follows a villager, or looks at a site (a building or something built); null lets go of either. */
+  /** Follows a villager, one of the dead or an animal, or looks at a site (a building or something built); null lets go. */
   const select = (id: string | null): void => {
     ui.selectedId.value = id;
     ui.detail.value = null;
@@ -166,7 +166,9 @@ async function start(): Promise<void> {
     } else {
       const fetched: Promise<Detail> = world.isMonster(id)
         ? api.monster(id).then((detail) => ({ kind: 'monster', ...detail }))
-        : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));
+        : world.isAnimal(id)
+          ? api.animal(id).then((detail) => ({ kind: 'animal', ...detail }))
+          : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));
       fetched.then((detail) => {
         if (ui.selectedId.value === id) ui.detail.value = detail;
       }, letGo);

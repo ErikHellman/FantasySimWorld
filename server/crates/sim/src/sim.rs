@@ -12,6 +12,7 @@ use crate::state::{
     ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
     SimState, WorldJob,
 };
+use crate::systems::animals::{self, update_animals};
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
@@ -309,6 +310,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
         Command::CeremonySpeech { ceremony_id, speaker_id, text } => {
             ceremonies::hold_speech(ctx, &ceremony_id, &speaker_id, text);
         }
+        Command::NameAnimal { animal_id, name } => animals::name_pet(ctx, &animal_id, &name),
     }
 }
 
@@ -367,6 +369,7 @@ impl Sim {
         update_music(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
+        update_animals(&mut ctx);
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_world(&mut ctx);

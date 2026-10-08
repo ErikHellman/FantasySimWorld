@@ -23,6 +23,26 @@ const SEAT_TOLERANCE = 0.02;
  * on its blade.
  */
 const UPSIDE_DOWN_IN_HAND = new Set(['tools/shovel']);
+/** How far a rig's hips sit above its feet at rest, in metres at full size: a rider's root goes this far under the seat. */
+const HIPS_HEIGHT = 0.38;
+/**
+ * A rider's legs. A villager's legs are too short to hang down a horse's sides, so the thighs go out sideways over its
+ * back and the shins hang straight down: turns in the model's own axes (x across the body to its left, y up, z ahead).
+ */
+const RIDING_POSE: readonly [string, THREE.Quaternion][] = [
+  ['upperlegl', turnZ(1.25).multiply(turnX(-0.3))],
+  ['upperlegr', turnZ(-1.25).multiply(turnX(-0.3))],
+  ['lowerlegl', turnZ(-1.2)],
+  ['lowerlegr', turnZ(1.2)],
+];
+
+function turnX(angle: number): THREE.Quaternion {
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+}
+
+function turnZ(angle: number): THREE.Quaternion {
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+}
 
 export type ActorLook = Look;
 
@@ -67,6 +87,9 @@ export class ActorView {
   private unplayed = 0;
   /** how far to move the body, while it sits on a seat, to bring its hips onto the seat (null when they are already there) */
   private readonly seatShift: THREE.Vector3 | null;
+  /** each leg bone's rest turn and the turn on top of it that sits it astride a horse */
+  private readonly riding: { bone: THREE.Object3D; rest: THREE.Quaternion; astride: THREE.Quaternion }[] = [];
+  private readonly hipsHeight: number;
 
   constructor(private readonly assets: Assets, look: ActorLook) {
     const template = assets.character(look.model);
@@ -101,6 +124,28 @@ export class ActorView {
     this.mixer = new THREE.AnimationMixer(model);
     this.seatShift = seatShift(assets, this.rig, template.scale);
     this.hands = { r: model.getObjectByName('handslotr') ?? null, l: model.getObjectByName('handslotl') ?? null };
+    this.hipsHeight = HIPS_HEIGHT * template.scale;
+    // A turn in the model's axes becomes one in the bone's own: its rest turn in the model, undone, then the turn,
+    // then the rest turn again.
+    this.root.updateMatrixWorld(true);
+    for (const [name, turn] of RIDING_POSE) {
+      const bone = model.getObjectByName(name);
+      if (!bone) continue;
+      const inModel = bone.getWorldQuaternion(new THREE.Quaternion());
+      const astride = inModel.clone().invert().multiply(turn).multiply(inModel);
+      this.riding.push({ bone, rest: bone.quaternion.clone(), astride });
+    }
+  }
+
+  /**
+   * Puts the body astride a horse, its hips on the saddle's seat (in world space), facing the way the horse does.
+   * Called after `update`, so the legs' pose replaces whatever the clip gave them.
+   */
+  ride(seat: THREE.Vector3, facing: number): void {
+    this.root.position.set(seat.x, seat.y - this.hipsHeight, seat.z);
+    this.root.rotation.y = facing;
+    if (!this.model.visible) return;
+    for (const { bone, rest, astride } of this.riding) bone.quaternion.copy(rest).multiply(astride);
   }
 
   /** Puts a weapon or tool model in a hand (null empties it). */

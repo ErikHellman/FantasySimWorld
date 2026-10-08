@@ -29,6 +29,10 @@ export interface QualitySettings {
   treeSway: boolean;
   /** buildings that can be drawn burning at once (the sim allows two) */
   fireSites: number;
+  /** animals move their legs, heads and wings within this many metres of the camera's target; further off they glide */
+  animalMotion: number;
+  /** hens, ducks, birds, cats and dogs cast shadows too */
+  smallAnimalShadows: boolean;
 }
 
 /** What `pickQuality` looks at; passed in so the choice can be tested without a browser. */
@@ -64,10 +68,12 @@ export function qualitySettings(quality: Quality, devicePixelRatio: number): Qua
     return {
       quality, pixelRatio: Math.min(devicePixelRatio, 2), antialias: true, shadowMapSize: 2048, shadowRange: 70, lamps: 6,
       frameSeconds: 0, groundCoverStep: 1, billboardPixels: 300, adaptive: false, fireFlames: 16, fireSmoke: 8, treeSway: true, fireSites: 2,
+      animalMotion: 160, smallAnimalShadows: true,
     };
   }
   return {
     quality, pixelRatio: Math.min(devicePixelRatio, 1.5), antialias: devicePixelRatio < 2, shadowMapSize: 1024, shadowRange: 45, lamps: 3,
     frameSeconds: 1 / 30, groundCoverStep: 2, billboardPixels: 150, adaptive: true, fireFlames: 7, fireSmoke: 0, treeSway: false, fireSites: 1,
+    animalMotion: 70, smallAnimalShadows: false,
   };
 }

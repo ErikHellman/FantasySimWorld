@@ -118,6 +118,12 @@ pub enum SimEvent {
     NewcomerWanted {
         deadline_tick: i64,
     },
+    /// A villager has taken in a dog or a cat, which has no name yet: the server may ask them for one
+    /// (`Command::NameAnimal`); past the animal's `name_deadline_tick` the sim names it itself.
+    PetAdopted {
+        animal_id: Id,
+        owner_id: Id,
+    },
 }
 
 impl SimEvent {
@@ -142,6 +148,7 @@ impl SimEvent {
             Self::SavePoint { .. } => "save_point",
             Self::BillboardRead { .. } => "billboard_read",
             Self::NewcomerWanted { .. } => "newcomer_wanted",
+            Self::PetAdopted { .. } => "pet_adopted",
         }
     }
 }

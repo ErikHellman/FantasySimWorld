@@ -5,7 +5,7 @@
 //! - Ids: villagers and monsters keep their sim ids; a corpse is
 //!   `corpse:<id of the dead>` (it appears in the tick its villager leaves).
 //! - Order: villagers in `state.order`, monsters in insertion order, corpses in
-//!   array order; `add`, `del` and `d` follow it.
+//!   array order, then animals in insertion order; `add`, `del` and `d` follow it.
 //! - Quantising: positions and facing ×100 and hit points, rounded the
 //!   JavaScript way; diffs compare quantised values, so an idle entity sends nothing.
 //! - "At ease": weapons are put away while sitting or lying, and a work tool
@@ -18,7 +18,7 @@ use fsw_sim::data::anims::AnimId;
 use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
-    ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
+    ActPhase, Animal, AnimalAnim, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
     ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, ItemId,
     Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
     VoiceProfile as SimVoice, WorldObject as SimWorldObject,
@@ -100,6 +100,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
         oh: if c.tool.as_deref().is_some_and(|t| !t.is_empty()) || ease { None } else { c.look.off_hand.clone() },
         act,
         z: c.asleep,
+        mt: None,
     }
 }
 
@@ -128,6 +129,7 @@ pub fn monster_dyn(m: &Monster) -> Dyn {
         oh: m.look.off_hand.clone(),
         act: None,
         z: false,
+        mt: None,
     }
 }
 
@@ -155,6 +157,36 @@ pub fn corpse_dyn(corpse: &Corpse) -> Dyn {
         oh: corpse.look.off_hand.clone(),
         act: None,
         z: false,
+        mt: None,
+    }
+}
+
+/// An animal is drawn from its own model with no hands, and has no health to show. Only pets and horses have
+/// names; the rest go unlabelled, like a body (their card says what they are).
+pub fn animal_static(a: &Animal) -> EntityStatic {
+    EntityStatic {
+        id: a.id.clone(),
+        kind: EntityKind::Animal,
+        name: a.name.clone().unwrap_or_default(),
+        look: Look { model: a.model.clone(), texture: None, hide: Vec::new(), main_hand: None, off_hand: None },
+        max_hp: 0.0,
+        hostile: false,
+        voice: None,
+    }
+}
+
+pub fn animal_dyn(a: &Animal) -> Dyn {
+    Dyn {
+        p: [centi(a.pos.x), centi(a.pos.z)],
+        f: centi(a.facing),
+        a: (a.anim.as_str().to_owned(), 0),
+        hp: 0,
+        v: true,
+        mh: None,
+        oh: None,
+        act: None,
+        z: a.anim == AnimalAnim::Sleep,
+        mt: a.rider.clone(),
     }
 }
 
@@ -171,6 +203,9 @@ pub fn entities_of(state: &SimState) -> Vec<Entity> {
     }
     for corpse in &state.corpses {
         result.push(Entity { fixed: corpse_static(corpse), state: corpse_dyn(corpse) });
+    }
+    for a in state.animals.values() {
+        result.push(Entity { fixed: animal_static(a), state: animal_dyn(a) });
     }
     result
 }
@@ -196,6 +231,7 @@ pub fn diff_dyn(id: &str, prev: &Dyn, next: &Dyn) -> Option<DynDelta> {
     field!(oh);
     field!(act);
     field!(z);
+    field!(mt);
     changed.then_some(delta)
 }
 
@@ -218,6 +254,7 @@ pub fn apply_delta(dyn_: &Dyn, delta: &DynDelta) -> Dyn {
     field!(oh);
     field!(act);
     field!(z);
+    field!(mt);
     next
 }
 
@@ -785,12 +822,15 @@ mod tests {
                 entity.state = apply_delta(&entity.state, delta);
             }
         }
-        let fresh: Vec<Entity> = entities_of(&sim.state);
-        let rebuilt: Vec<Entity> = client.into_values().collect();
-        assert_eq!(rebuilt.len(), fresh.len());
-        for (a, b) in rebuilt.iter().zip(&fresh) {
-            assert_eq!(a.fixed.id, b.fixed.id);
-            assert_eq!(a.state, b.state);
+        // A changed static part is sent as a removal and an addition, which puts the entity last on the client (a
+        // pet given a name, say); so compare by id.
+        let fresh: IndexMap<String, Entity> =
+            entities_of(&sim.state).into_iter().map(|e| (e.fixed.id.clone(), e)).collect();
+        assert_eq!(client.len(), fresh.len());
+        for (id, rebuilt) in &client {
+            let expected = fresh.get(id).unwrap_or_else(|| panic!("{id} is still in the world"));
+            assert_eq!(rebuilt.fixed, expected.fixed);
+            assert_eq!(rebuilt.state, expected.state);
         }
         // By day, about 4 KB/s at 20 ticks a second.
         assert!(sizes / 150 < 8000, "{} bytes per second", sizes / 150);
