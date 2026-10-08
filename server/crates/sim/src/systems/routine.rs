@@ -9,13 +9,16 @@ use fsw_core::time::{TICKS_PER_DAY, minutes_to_ticks};
 use fsw_world::places::ActivityId;
 
 use crate::data::activities::{ActivityKind, activity};
+use crate::data::economy::{LOOT_DANGER, LOOT_REACH};
 use crate::state::{
-    FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock, PlanSource, Quirk, StimulusKind, TalkTone, WorldJob,
+    FightMode, Id, Intent, IntentAction, IntentSource, ItemId, MonsterPhase, PlanBlock, PlanSource, Quirk, SimState,
+    StimulusKind, TalkTone, WorldJob,
 };
 use crate::systems::billboards::wants_to_read;
 use crate::systems::charm;
 use crate::systems::combat::{max_hp, start_fight};
 use crate::systems::conversation::{chatter_roll, talked_recently};
+use crate::systems::economy::{loot_claimed, loot_near, trade_options};
 use crate::systems::fire::ruin_to_rebuild;
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::music::talent;
@@ -319,6 +322,33 @@ fn hostile_intent(ctx: &mut Ctx, id: &str) -> bool {
     false
 }
 
+/// The nearest neighbour who would sell this villager a meal right now.
+fn food_seller_near(state: &SimState, id: &str) -> Option<Id> {
+    trade_options(state, &state.characters[id])
+        .into_iter()
+        .find(|o| o.buy && o.item == ItemId::Food)
+        .map(|o| o.other_id)
+}
+
+/// The nearest loot worth going for: within reach, by daylight (the dead's own hours are theirs), with
+/// none of the dead near it, and nobody else already on their way to it. Nothing is rolled.
+fn loot_to_take(state: &SimState, id: &str, hour: f64) -> Option<String> {
+    if state.loot.is_empty() || !(5.6..19.4).contains(&hour) {
+        return None;
+    }
+    let c = &state.characters[id];
+    let danger = |pos: fsw_core::Vec2| {
+        state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && dist(m.pos, pos) < LOOT_DANGER)
+    };
+    if danger(c.pos) {
+        return None;
+    }
+    loot_near(state, c.pos, LOOT_REACH)
+        .into_iter()
+        .map(|(_, loot_id)| loot_id)
+        .find(|loot_id| !loot_claimed(state, loot_id, id) && !danger(state.loot[loot_id].pos))
+}
+
 /// Picks what a character with nothing to do does next; `None` when it started a fight directly.
 fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     let tick = ctx.tick();
@@ -338,6 +368,15 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
             c.inventory.food -= 1;
             c.needs.hunger = (c.needs.hunger + 45.0).min(100.0);
             return Some(Intent::new(IntentAction::Wait { minutes: 6.0 }, IntentSource::Routine));
+        }
+        // With coin in the purse and a neighbour with food to spare a few paces off, buy a meal from
+        // them rather than walk to the tavern. Nothing is rolled.
+        if !on_watch
+            && ctx.cr(id).inventory.food == 0
+            && let Some(seller) = food_seller_near(ctx.state, id)
+        {
+            let action = IntentAction::Trade { target_id: seller, item: ItemId::Food, buy: true };
+            return Some(Intent::new(action, IntentSource::Routine));
         }
         return Some(act(ActivityId::Eat, None, None));
     }
@@ -361,6 +400,11 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
         if c.hp < max_hp(c) * 0.5 {
             return Some(act(ActivityId::Rest, Some(45.0), Some(c.home_id.clone())));
         }
+    }
+
+    // Something the dead left lying within reach, by day and with none of them near: go and take it.
+    if let Some(loot_id) = loot_to_take(ctx.state, id, hour) {
+        return Some(Intent::new(IntentAction::PickUp { loot_id }, IntentSource::Routine));
     }
 
     if !child && hostile_intent(ctx, id) {

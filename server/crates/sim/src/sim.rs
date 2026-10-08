@@ -19,6 +19,7 @@ use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
+use crate::systems::economy::{Commission, affordable, update_economy};
 use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
@@ -30,7 +31,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
-use crate::systems::world::{job_accepts, update_world};
+use crate::systems::world::{MAX_PROJECTS, job_accepts, update_world};
 use crate::util::{Ctx, get_monster, rel, set_anim};
 
 const MAX_QUEUE: usize = 3;
@@ -83,6 +84,18 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         // A child does no work on the world, whoever asks.
         IntentAction::WorldWork { job, target, .. } => {
             !ctx.cr(id).is_child() && *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
+        }
+        // Anyone may stoop for what the dead left, while it is still there.
+        IntentAction::PickUp { loot_id } => ctx.state.loot.contains_key(loot_id),
+        // A deal needs two grown villagers; whether it goes through is settled face to face.
+        IntentAction::Trade { target_id, .. } => {
+            target_id != id && ctx.alive(target_id) && !ctx.cr(id).is_child() && !ctx.cr(target_id).is_child()
+        }
+        // Paying for building needs the coin and a free pair of hands in the village.
+        IntentAction::Commission { what } => {
+            let c = ctx.cr(id);
+            ctx.state.projects.len() < MAX_PROJECTS
+                && Commission::parse(what, &c.home_id).is_some_and(|choice| affordable(ctx.state, c).contains(&choice))
         }
     }
 }
@@ -357,6 +370,7 @@ impl Sim {
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_world(&mut ctx);
+        update_economy(&mut ctx);
         update_perception(&mut ctx);
         separate(ctx.state);
         update_needs(&mut ctx);

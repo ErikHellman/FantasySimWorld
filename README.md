@@ -25,6 +25,7 @@ The server migration is complete. The world, the language-model brain and every 
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
 - Music: a few villagers can sing or play, and of an evening one of them strikes up outside the tavern (now and then on the green). Whoever is idle within earshot comes to stand and listen; the drinkers listen from their stools. A good tune leaves its listeners in good spirits for a few hours (slower to tire, quicker to heal, a little braver), a poor one draws heckles and empties the yard ([the design](docs/superpowers/specs/2026-10-08-music-design.md)).
+- Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
@@ -35,7 +36,7 @@ Not yet done or not yet tried:
 
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
-- **Later**: spoken lines (text to speech; the seam is in place), coin and trade on top of the materials, new places built from scratch, orc raiders and large bosses, block and dodge.
+- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch, orc raiders and large bosses, block and dodge.
 
 ## What you need
 

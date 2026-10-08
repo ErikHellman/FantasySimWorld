@@ -11,6 +11,7 @@ import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
 import { Lighting } from './lighting';
+import { LootMarks } from './loot';
 import { Overlay, type LabelState } from './overlay';
 import type { QualitySettings } from './quality';
 import { Marks } from './marks';
@@ -49,6 +50,8 @@ export class WorldView {
   private ceremonyVersion = -1;
   private readonly vegetation: Vegetation;
   private readonly marks: Marks;
+  private readonly loot: LootMarks;
+  private lootVersion = -1;
   private readonly builder: SceneryBuilder;
   private worldObjectsVersion = -1;
   private readonly actorGroup = new THREE.Group();
@@ -69,6 +72,7 @@ export class WorldView {
     this.builder = builder;
     this.terrain = new Terrain(assets, builder);
     this.marks = new Marks(assets, builder, this.heightAt, quality);
+    this.loot = new LootMarks(assets, this.heightAt);
     const place = (model: PlacedModel, castShadow: boolean): number =>
       builder.add(assets.model(model.bundle, model.model), {
         x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z), z: model.z, rotation: model.rotation, scale: model.scale, castShadow,
@@ -97,7 +101,7 @@ export class WorldView {
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.structures = new Structures(assets, places, this.heightAt, quality);
     this.dressing = new CeremonyDressing(assets, this.heightAt);
-    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.loot.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -152,6 +156,10 @@ export class WorldView {
     if (this.ceremonyVersion !== world.ceremonyVersion) {
       this.ceremonyVersion = world.ceremonyVersion;
       this.dressing.show(world.ceremony, world.graves);
+    }
+    if (this.lootVersion !== world.lootVersion) {
+      this.lootVersion = world.lootVersion;
+      this.loot.show(world.loot);
     }
     // A prop or grass hidden in a baked chunk needs that chunk baked again: one chunk per tick, at most.
     this.builder.flush();

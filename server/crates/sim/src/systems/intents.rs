@@ -8,25 +8,29 @@ use fsw_world::places::{ActivityId, Slot, billboards, find_place, get_place, get
 use crate::data::activities::{ActivityKind, ITEM_CAP, activity};
 use crate::data::anims::AnimId;
 use crate::data::classes::{RUN_SPEED, WALK_SPEED, WeaponStyle};
+use crate::data::economy::{PICK_REACH, price};
 use crate::events::{Emote, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::CARRY_CAP;
 use crate::state::{
-    Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, MemoryKind,
-    MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
+    Act, ActPhase, Character, ChronicleKind, HousePhase, Intent, IntentAction, IntentSource, ItemId, LootKind,
+    MemoryKind, MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
 use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
+use crate::systems::economy::{
+    Commission, buy_at_market, commission, describe_gold, describe_goods, sell_to_market, trade_offer,
+};
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::music::{run_listen, run_perform};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::world::{deliver_next, run_world_work};
-use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, rel, set_anim};
+use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, place_name_at, rel, set_anim};
 
 const TALK_REACH: f64 = 9.0;
 /// Close enough to strike from behind.
@@ -475,15 +479,51 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             }
         }
         ActivityId::Shop => {
-            let item = if c.inventory.food < 2 { ItemId::Food } else { ItemId::Gift };
-            give(c, item);
-            let what = if item == ItemId::Food { "some food" } else { "a small gift" };
-            finish(ctx, id, format!("You picked up {what} at the market."));
+            // Food when the pack is short of it, a potion for a fighter without one, else a small gift:
+            // whichever the stalls have and the shopper can pay for.
+            let fighter = c.profile.bravery >= 0.6;
+            let wants = [
+                (ItemId::Food, c.inventory.food < 2),
+                (ItemId::Potion, fighter && c.inventory.potion == 0),
+                (ItemId::Gift, true),
+            ];
+            let mut outcome = None;
+            for (item, wanted) in wants {
+                if !wanted {
+                    continue;
+                }
+                let in_stock = ctx.state.economy.in_stock(item);
+                if in_stock > 0 && ctx.cr(id).gold >= price(item, in_stock) {
+                    let paid = buy_at_market(ctx, id, item).unwrap_or(0);
+                    outcome =
+                        Some(format!("You bought {} at the market for {}.", describe_item(item), describe_gold(paid)));
+                    break;
+                }
+            }
+            let outcome = outcome.unwrap_or_else(|| {
+                if ctx.state.economy.stock.is_empty() {
+                    "The market stalls were bare.".to_owned()
+                } else {
+                    "You could not afford anything on the stalls.".to_owned()
+                }
+            });
+            finish(ctx, id, outcome);
         }
         ActivityId::Drink => {
             set_anim(c, AnimId::Idle, false);
             finish(ctx, id, format!("You finished {}.", def.verb));
             after_drink(ctx, id);
+        }
+        ActivityId::Trade => {
+            // A shift at the stall ends with the surplus of the pack sold onto it.
+            set_anim(c, AnimId::Idle, false);
+            let (sold, earned) = sell_to_market(ctx, id);
+            let outcome = if sold.is_empty() {
+                format!("You finished {}.", def.verb)
+            } else {
+                format!("You sold {} for {}.", describe_goods(&sold), describe_gold(earned))
+            };
+            finish(ctx, id, outcome);
         }
         _ => {
             set_anim(c, AnimId::Idle, false);
@@ -646,11 +686,13 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
     travel(tick, c, None);
 }
 
-fn describe_item(item: ItemId) -> &'static str {
+pub fn describe_item(item: ItemId) -> &'static str {
     match item {
         ItemId::Food => "some food",
         ItemId::Potion => "a healing potion",
         ItemId::Gift => "a small gift",
+        ItemId::Trinket => "a trinket",
+        ItemId::Relic => "a relic",
     }
 }
 
@@ -730,6 +772,219 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
     }
     if d > GIVE_REACH * 0.8 {
         travel(tick, c, None);
+    }
+}
+
+/// Walks up to someone and strikes a bargain: the buyer's coin for the seller's thing, at the market's
+/// price, if the seller has it to spare, the buyer can pay, and no grudge stands between them. A hungry
+/// buyer eats the food on the spot.
+fn run_trade(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, buy: bool, said: bool) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(target) = ctx.state.characters.get(target_id) else {
+        finish(ctx, id, "The person you wanted to trade with is gone.");
+        return;
+    };
+    let (target_pos, target_inside, approachable, target_name) =
+        (target.pos, target.inside.is_some(), is_approachable(target), first_name(target).to_owned());
+    let c = ctx.c(id);
+    if c.act.phase == ActPhase::Start {
+        leave_building(&nav, c);
+        c.act.phase = ActPhase::Travel;
+        c.act.since_tick = tick;
+        c.act.until_tick = tick + minutes_to_ticks(40.0);
+    }
+    if c.act.phase == ActPhase::Perform {
+        if tick >= c.act.until_tick {
+            set_anim(c, AnimId::Idle, false);
+            let outcome = std::mem::take(&mut c.outcome);
+            finish(ctx, id, outcome);
+        }
+        return;
+    }
+    let d = dist(c.pos, target_pos);
+    if d <= GIVE_REACH && approachable {
+        c.act.path.clear();
+        c.facing = facing_to(c.pos, target_pos);
+        set_anim(c, AnimId::Interact, true);
+        c.act.phase = ActPhase::Perform;
+        c.act.until_tick = tick + seconds_to_ticks(1.6);
+        let (buyer, seller) = if buy { (id, target_id) } else { (target_id, id) };
+        let offer = trade_offer(ctx.state, ctx.cr(buyer), ctx.cr(seller), item);
+        let what = describe_item(item);
+        let outcome = match offer {
+            Ok(paid) => {
+                *ctx.c(seller).inventory.get_mut(item) -= 1;
+                ctx.c(seller).gold += paid;
+                ctx.c(buyer).gold -= paid;
+                let b = ctx.c(buyer);
+                let ate = item == ItemId::Food && b.needs.hunger < 40.0;
+                if ate {
+                    b.needs.hunger = (b.needs.hunger + 45.0).min(100.0);
+                } else {
+                    give(b, item);
+                }
+                adjust(ctx, buyer, seller, RelationDelta { affinity: 3.0, trust: 1.0, ..Default::default() });
+                adjust(ctx, seller, buyer, RelationDelta { affinity: 2.0, ..Default::default() });
+                let coin = describe_gold(paid);
+                ctx.remember(
+                    buyer,
+                    format!("Bought {what} from {} for {coin}.", first_name(ctx.cr(seller))),
+                    3.0,
+                    MemoryKind::Event,
+                    vec![seller.into()],
+                );
+                ctx.remember(
+                    seller,
+                    format!("Sold {} {what} for {coin}.", first_name(ctx.cr(buyer))),
+                    3.0,
+                    MemoryKind::Event,
+                    vec![buyer.into()],
+                );
+                ctx.emit(SimEvent::Emote { id: target_id.into(), emote: Emote::Gift });
+                if !said {
+                    let line =
+                        if buy { format!("{coin} for {what}? Done.") } else { format!("{what}, for {coin}. Fair?") };
+                    ctx.say(id, capital_first(&line), Some(target_id), false);
+                }
+                if buy {
+                    format!("You bought {what} from {target_name} for {coin}{}.", if ate { " and ate it" } else { "" })
+                } else {
+                    format!("You sold {target_name} {what} for {coin}.")
+                }
+            }
+            Err(why) => {
+                let memory = if buy {
+                    format!("{target_name} would not sell me {what}: {why}.")
+                } else {
+                    format!("{target_name} would not buy {what} from me: {why}.")
+                };
+                ctx.remember(id, memory, 2.0, MemoryKind::Event, vec![target_id.into()]);
+                if buy {
+                    format!("{target_name} would not sell you {what}: {why}.")
+                } else {
+                    format!("{target_name} would not buy {what} from you: {why}.")
+                }
+            }
+        };
+        // Said once the clip has played, so the line lands with the handshake.
+        ctx.c(id).outcome = outcome;
+        return;
+    }
+    if tick >= c.act.until_tick || target_inside {
+        finish(ctx, id, format!("You could not find {target_name} to trade with."));
+        return;
+    }
+    if c.act.path.is_empty() || tick >= c.act.repath_tick {
+        c.act.path = route_to(&nav, c.pos, target_pos).unwrap_or_default();
+        c.act.repath_tick = tick + seconds_to_ticks(1.5);
+    }
+    if d > GIVE_REACH * 0.8 {
+        travel(tick, c, None);
+    }
+}
+
+fn capital_first(line: &str) -> String {
+    let mut chars = line.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
+}
+
+/// Walks to the market and pays the village for something of one's own: a new room, or a thing for
+/// the yard. The coin goes into the chest and the project onto the village's list.
+fn run_commission(ctx: &mut Ctx, id: &str, what: &str) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(choice) = Commission::parse(what, &ctx.cr(id).home_id) else {
+        finish(ctx, id, "You could not think what you wanted to pay for.");
+        return;
+    };
+    let c = ctx.c(id);
+    match c.act.phase {
+        ActPhase::Start => {
+            if !travel_to(tick, &nav, c, get_place("market").door) {
+                finish(ctx, id, "You could not find a way to the market.");
+            }
+        }
+        ActPhase::Travel => {
+            if !travel(tick, c, None) {
+                return;
+            }
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + seconds_to_ticks(1.6);
+            set_anim(c, AnimId::Interact, true);
+        }
+        ActPhase::Perform => {
+            if tick < c.act.until_tick {
+                return;
+            }
+            set_anim(c, AnimId::Idle, false);
+            let label = choice.label();
+            let outcome = match commission(ctx, id, &choice) {
+                Ok(_) => format!("You paid {} for {label}; the village will build it.", describe_gold(choice.price())),
+                Err(why) => format!("You could not pay for {label}: {why}."),
+            };
+            finish(ctx, id, outcome);
+        }
+        ActPhase::Done => {}
+    }
+}
+
+/// Walks to something the dead left and picks it up: coins into the purse, a valuable into the pack.
+fn run_pick_up(ctx: &mut Ctx, id: &str, loot_id: &str) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(loot) = ctx.state.loot.get(loot_id).cloned() else {
+        finish(ctx, id, "It was gone before you got there.");
+        return;
+    };
+    let c = ctx.c(id);
+    match c.act.phase {
+        ActPhase::Start => {
+            let spot = nav.nearest_walkable(loot.pos, 3).unwrap_or(loot.pos);
+            if !travel_to(tick, &nav, c, spot) {
+                finish(ctx, id, "You could not find a way to it.");
+                return;
+            }
+            c.act.until_tick = tick + minutes_to_ticks(30.0);
+        }
+        ActPhase::Travel => {
+            if dist(c.pos, loot.pos) > PICK_REACH && !travel(tick, c, None) {
+                if tick >= c.act.until_tick {
+                    finish(ctx, id, "You gave up looking for it.");
+                }
+                return;
+            }
+            c.act.path.clear();
+            c.facing = facing_to(c.pos, loot.pos);
+            c.act.phase = ActPhase::Perform;
+            c.act.since_tick = tick;
+            c.act.until_tick = tick + seconds_to_ticks(AnimId::PickUp.seconds());
+            set_anim(c, AnimId::PickUp, true);
+        }
+        ActPhase::Perform => {
+            if tick < c.act.until_tick {
+                return;
+            }
+            set_anim(c, AnimId::Idle, false);
+            match loot.kind.item() {
+                Some(item) if c.inventory.get(item) >= ITEM_CAP => {
+                    finish(ctx, id, format!("Your pack is too full for {}.", loot.kind.label()));
+                    return;
+                }
+                Some(item) => give(c, item),
+                None => {
+                    if let LootKind::Coins { count } = loot.kind {
+                        c.gold += count;
+                    }
+                }
+            }
+            ctx.state.loot.shift_remove(loot_id);
+            let text = format!("Picked up {} at {}.", loot.kind.label(), place_name_at(loot.pos));
+            ctx.remember(id, text, 3.0, MemoryKind::Event, Vec::new());
+            finish(ctx, id, format!("You picked up {}.", loot.kind.label()));
+        }
+        ActPhase::Done => {}
     }
 }
 
@@ -855,6 +1110,11 @@ pub fn update_intents(ctx: &mut Ctx) {
                 run_activity(ctx, &id, *activity, place_id.clone(), *minutes);
             }
             IntentAction::Talk { target_id, opener, tone } => run_talk(ctx, &id, target_id, *tone, opener),
+            IntentAction::PickUp { loot_id } => run_pick_up(ctx, &id, loot_id),
+            IntentAction::Commission { what } => run_commission(ctx, &id, what),
+            IntentAction::Trade { target_id, item, buy } => {
+                run_trade(ctx, &id, target_id, *item, *buy, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
+            }
             IntentAction::Give { target_id, item } => {
                 run_give(ctx, &id, target_id, *item, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
             }
