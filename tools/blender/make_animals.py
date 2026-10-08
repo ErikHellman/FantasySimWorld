@@ -3,8 +3,8 @@
     /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_animals.py [-- dog cat ...]
 
 Writes one GLB per animal and colour into tools/blender/out_animals/ (names after
-`--` build only the models whose names start with them). They are drafts for a
-look-and-feel review: `pnpm assets` does not bundle this folder.
+`--` build only the models whose names start with them); `pnpm assets` bundles
+them as `animals`.
 
 The conventions are make_props.py's: a villager is about 2.4 tall, the origin is
 on the ground under the middle of the body, and shapes are chunky bevelled blocks
@@ -12,9 +12,9 @@ with flat shading and flat colours. Proportions follow the KayKit characters: bi
 heads, stubby legs and tall black oval eyes. Animals face -y in Blender, which the
 glTF exporter turns into +z, the way the KayKit characters face.
 
-Each animal is a tree of named parts (body, head, leg_fl, ear_l, tail, wing_l, ...)
-whose origins sit at the joints, so a later step can animate them by turning the
-parts, without remodelling. An animal's left is +x.
+Each animal is a tree of named joints (body, head, leg_fl, ear_l, tail, wing_l, ...),
+each an empty at the joint with its mesh hung under it, so the game animates them
+by turning the joints (src/render/animals.ts). An animal's left is +x.
 """
 import math
 import os
@@ -153,7 +153,13 @@ def root(name):
 
 
 def part(name, pivot, parent):
-    """Joins the pieces made since the last part into one mesh whose origin is the joint at `pivot`."""
+    """Joins the pieces made since the last part into one mesh hung under an empty at the joint `pivot`.
+
+    The joint is an empty, not the mesh itself, because the asset build quantizes
+    meshes: gltf-transform folds the de-quantisation into the transform of any mesh
+    node without children, which would move a leg's hip or an ear's root. The empty
+    keeps the name the game turns (`leg_fl`); the mesh under it is `leg_fl_mesh`.
+    """
     pieces = list(_pieces)
     _pieces.clear()
     bpy.ops.object.select_all(action="DESELECT")
@@ -163,15 +169,19 @@ def part(name, pivot, parent):
     bpy.ops.object.convert(target="MESH")
     if len(pieces) > 1:
         bpy.ops.object.join()
-    obj = bpy.context.view_layer.objects.active
-    obj.name = name
-    obj.data.name = name
+    mesh = bpy.context.view_layer.objects.active
+    mesh.name = name + "_mesh"
+    mesh.data.name = name
     pivot = Vector(pivot)
-    obj.data.transform(Matrix.Translation(-pivot))
-    obj["pivot"] = tuple(pivot)
-    obj.parent = parent
-    obj.location = pivot - Vector(parent["pivot"])
-    return obj
+    mesh.data.transform(Matrix.Translation(-pivot))
+    joint = bpy.data.objects.new(name, None)
+    bpy.context.scene.collection.objects.link(joint)
+    joint["pivot"] = tuple(pivot)
+    joint.parent = parent
+    joint.location = pivot - Vector(parent["pivot"])
+    mesh.parent = joint
+    mesh.location = (0, 0, 0)
+    return joint
 
 
 def export(name):

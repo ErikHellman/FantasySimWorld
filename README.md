@@ -277,7 +277,7 @@ A few props the collection lacks at character scale (a wooden fence, wildflowers
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_props.py
 ```
 
-Draft pets, farm animals and birds in the same style are made the same way, into `tools/blender/out_animals/`, which the asset build does not bundle yet. A second script renders sheets for reviewing them (a lineup beside a villager, a villager riding a horse, a farmyard, every colour and four views of each species) into `tools/blender/preview/`, using ImageMagick's `montage`:
+The pets, farm animals and birds are made the same way, into `tools/blender/out_animals/`, which the same command bundles as `animals`. A second script renders sheets for reviewing them (a lineup beside a villager, a villager riding a horse, a farmyard, every colour and four views of each species) into `tools/blender/preview/`, using ImageMagick's `montage`:
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_animals.py
