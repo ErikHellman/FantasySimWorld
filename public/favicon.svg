@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- B: sun turning to moon over the hex fields; days are safe, nights are not -->
+  <!-- The sun turning into a moon over the fields: days are safe, nights are not. -->
   <defs>
     <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
   </defs>

@@ -39,6 +39,7 @@ These are written by tools and checked by tests. Regenerate them; never edit the
 | `tests/fixtures/server-frames.json` | `cargo run --bin export-frames` (in `server/`) | a `fsw-server` test, and `tests/net.test.ts` replays it |
 | `src/generated/assetManifest.ts`, `src/generated/tileHeights.ts`, `server/data/*.json` | `pnpm assets` (needs the KayKit collection); `bun tools/assets/export-server-data.ts` rewrites only `server/data` | `tests/serverData.test.ts` |
 | `server/crates/world/tests/golden/*.json` | `bun tools/dump-world.ts` (from the TypeScript world in `src/world`) | `server/crates/world/tests/golden.rs` |
+| `public/favicon.ico`, `public/apple-touch-icon.png` | `pnpm icons` (from `public/favicon.svg`) | |
 | `public/audio/*` | `pnpm audio` (from `tools/audio/sources.ts`; needs Bun, ffmpeg and bsdtar) | |
 
 Fixtures from the TypeScript reference that cannot be regenerated on this branch: `server/crates/sim/tests/fixtures/export-day-*.json` (browser saves that must keep loading) and `server/crates/brain/tests/fixtures/prompts.json` (the prompts, word for word). Change them only for a deliberate change to the save format or a prompt, and say so in the commit. `server/crates/testing/data/cast.json` is the hand-written cast of the TypeScript game, used only by tests that know villagers by name (the game itself invents every villager); it is edited by hand.

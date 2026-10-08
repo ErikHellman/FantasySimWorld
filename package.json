@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "assets": "node tools/assets/build-assets.mjs",
-    "audio": "bun tools/audio/build-audio.ts"
+    "audio": "bun tools/audio/build-audio.ts",
+    "icons": "node tools/brand/render-icons.mjs"
   },
   "dependencies": {
     "@preact/signals": "^2.11.3",

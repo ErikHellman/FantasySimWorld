@@ -78,7 +78,10 @@ function MenuSheet() {
   const me = ui.me.value;
   return (
     <div class="menu-sheet">
-      <h2>Fantasy Sim World</h2>
+      <h2>
+        <img class="mark" src="/favicon.svg" alt="" width="24" height="24" />
+        Fantasy Sim World
+      </h2>
       <p class="muted">{ui.clock.value.part}</p>
       <div class="pills">
         <span class="pill" title="People watching">👁 {ui.viewers.value} watching</span>

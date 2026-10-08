@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/logo.svg">
+  <img alt="Fantasy Sim World" src="public/logo-on-light.svg" height="64">
+</picture>
+
 # Fantasy Sim World
 
 A 3D world in the KayKit style. A dozen fantasy villagers, each invented by a language model when the world begins, follow their days, talk, make friends and enemies, fall in love, fight the dead that rise from the graveyard at night and, if pushed far enough, each other. The world runs on a server, around the clock; everyone who opens the page watches the same village from their own free top-down camera.
