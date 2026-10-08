@@ -295,6 +295,9 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
         }
         Command::Settle(villager) => settle_villager(ctx, &villager),
         Command::FoundVillage => fill_village(ctx),
+        Command::CallRaid => {
+            crate::systems::raids::call_raid(ctx);
+        }
         Command::NewcomerDraft(villager) => {
             if !first_name_taken(ctx.state, &villager.name) {
                 ctx.state.director.newcomer_draft = Some(villager);

@@ -309,3 +309,32 @@ fn a_save_in_the_middle_of_a_raid_comes_back_as_it_was() {
     let alive = living(&sim.state).count();
     assert!(alive > 0);
 }
+
+#[test]
+fn a_called_raid_comes_at_once_by_day_at_nine_by_night_and_never_twice() {
+    // By day it comes on the next tick, long before one is due and whatever the village's size.
+    let mut sim = quiet(33);
+    sim.state.tick = tick_at(2, 12.0);
+    let keep: Vec<String> = sim.state.order.iter().take(4).cloned().collect();
+    sim.state.characters.retain(|id, _| keep.contains(id));
+    sim.state.order.retain(|id| keep.contains(id));
+    sim.enqueue(Command::CallRaid);
+    run_until(&mut sim, 3, |s| s.raid.is_some());
+    assert!(sim.state.raid.is_some(), "the band comes when it is called");
+    assert!(!sim.state.director.raid_called);
+    // A second call while it is in the valley is ignored.
+    sim.enqueue(Command::CallRaid);
+    sim.step();
+    assert!(!sim.state.director.raid_called, "one band at a time");
+
+    // By night it waits for morning.
+    let mut sim = quiet(34);
+    sim.state.tick = tick_at(2, 22.0);
+    sim.enqueue(Command::CallRaid);
+    sim.step();
+    assert!(sim.state.director.raid_called && sim.state.raid.is_none());
+    let came = run_until(&mut sim, TICKS_PER_DAY, |s| s.raid.is_some());
+    assert!(came < TICKS_PER_DAY);
+    let hour = game_time(sim.state.raid.as_ref().unwrap().started_tick).hour;
+    assert!((9.0..9.1).contains(&hour), "at nine: {hour}");
+}

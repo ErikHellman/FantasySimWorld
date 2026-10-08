@@ -590,6 +590,13 @@ pub struct Billboard {
     pub custom: bool,
 }
 
+/// The answer to `POST /api/admin/raid`: when the band will come.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RaidCallAnswer {
+    pub message: String,
+}
+
 /// `POST /api/admin/billboards`: puts text up on a billboard, or with no text gives it back to the daily slogans.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -1314,6 +1321,7 @@ pub fn typescript() -> String {
         Emote,
         Ranged,
         HitOutcome,
+        RaidCallAnswer,
         RaidPhase,
         Utterance,
         WireEvent,

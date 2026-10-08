@@ -223,6 +223,11 @@ export type Ranged = "arrow" | "bolt" | "magic" | "food";
 export type HitOutcome = "hit" | "blocked" | "dodged";
 
 /**
+ * The answer to `POST /api/admin/raid`: when the band will come.
+ */
+export type RaidCallAnswer = { message: string, };
+
+/**
  * Where an orc raid has got to.
  */
 export type RaidPhase = "coming" | "leaving" | "gone";

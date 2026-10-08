@@ -84,7 +84,7 @@ set -a; . ./.env; set +a
 - ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the dead, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
-The admin panel (🛠) has the speed, export, import and "new world", the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
+The admin panel (🛠) has the speed, export, import and "new world", **Call a raid** (an orc war band comes up the west road at once by day, or at nine the next morning by night; one at a time), the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
 
 ### Server settings
 

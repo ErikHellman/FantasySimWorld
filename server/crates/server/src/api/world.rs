@@ -15,6 +15,7 @@ use fsw_core::jsmath::utf16_len;
 use fsw_core::time::game_time;
 use fsw_sim::state::{BoardNotice, SAVE_VERSION, SaveFile};
 use fsw_sim::systems::billboards::{TEXT_CAP, clean_text};
+use fsw_sim::systems::raids::RAID_HOURS;
 use fsw_sim::{Command, create_state};
 use fsw_world::places::find_billboard;
 use tokio::sync::oneshot;
@@ -22,7 +23,7 @@ use tokio::sync::oneshot;
 use crate::AppState;
 use crate::api::wire::{
     BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, MonsterDetail, NewWorldRequest,
-    SiteDetail, SpeedRequest, WatchRequest,
+    RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
 };
 use crate::api::{ApiFailure, error};
 use crate::digest::{character_detail_of, detail_json, monster_detail_of, site_of};
@@ -125,6 +126,34 @@ pub async fn billboard(State(app): State<Arc<AppState>>, Json(body): Json<Billbo
     let command = Command::SetBillboard { board_id: body.id, notice };
     match app.world.inputs.send(WorldInput::Command { command, source: "admin" }).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
+    }
+}
+
+/// `POST /api/admin/raid`: calls an orc war band up the west road. The sim decides; what is checked here is only
+/// so the admin hears why nothing will come.
+pub async fn call_raid(State(app): State<Arc<AppState>>) -> Response {
+    let message = {
+        let core = app.world.core.read();
+        let state = &core.sim.state;
+        if state.director.founding {
+            return error(StatusCode::CONFLICT, "The village is still being settled.");
+        }
+        if state.raid.is_some() {
+            return error(StatusCode::CONFLICT, "A war band is already in the valley.");
+        }
+        if state.director.raid_called {
+            return error(StatusCode::CONFLICT, "A raid is already on its way.");
+        }
+        let hour = game_time(state.tick).hour;
+        if (RAID_HOURS[0]..RAID_HOURS[1]).contains(&hour) {
+            "The orcs are on the road.".to_owned()
+        } else {
+            format!("The orcs will come at {}:00, when it is light.", RAID_HOURS[0] as i64)
+        }
+    };
+    match app.world.inputs.send(WorldInput::Command { command: Command::CallRaid, source: "admin" }).await {
+        Ok(()) => (StatusCode::ACCEPTED, Json(RaidCallAnswer { message })).into_response(),
         Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
     }
 }

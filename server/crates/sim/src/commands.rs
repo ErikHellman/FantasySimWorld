@@ -104,6 +104,9 @@ pub enum Command {
     NewcomerDraft(Box<NewVillager>),
     /// No description is coming for the newcomer that was asked for: the sim invents one at the next chance.
     NewcomerLocal,
+    /// An admin calls an orc raid: it comes as soon as it may (by day, with no house burning and room on the
+    /// road). Ignored while the village is being founded, while a band is in the valley or one is already called.
+    CallRaid,
     /// Words the model wrote for someone to say at a ceremony; ignored unless the ceremony still stands and
     /// the speaker still speaks at it.
     CeremonySpeech {

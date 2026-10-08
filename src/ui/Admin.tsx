@@ -49,6 +49,12 @@ function WorldSection() {
     api.admin.newWorld(value === undefined ? {} : { seed: value }).catch((error) => setMessage(errorText(error)));
   };
 
+  const callRaid = (): void => {
+    if (!confirm('Call an orc war band up the west road? Villagers may die.')) return;
+    setMessage('');
+    api.admin.callRaid().then((answer) => setMessage(answer.message), (error) => setMessage(errorText(error)));
+  };
+
   return (
     <>
       <h3>World</h3>
@@ -69,6 +75,10 @@ function WorldSection() {
         </label>
         <input type="text" placeholder="seed (random)" value={seed} style={{ maxWidth: '130px' }} onInput={(event) => setSeed(event.currentTarget.value)} />
         <button class="danger" onClick={newWorld}>New world</button>
+      </div>
+      <div class="row">
+        <button onClick={callRaid} disabled={ui.raid.value}>Call a raid</button>
+        <span class="muted">{ui.raid.value ? 'A war band is in the valley.' : 'Orcs come up the west road by day.'}</span>
       </div>
       {message && <p class="test-result">{message}</p>}
       <details>

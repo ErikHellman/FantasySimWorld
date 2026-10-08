@@ -29,7 +29,7 @@ const FIRST_RAID_DAY: i64 = 4;
 /// Days from one raid to the next.
 const RAID_GAP_DAYS: [i64; 2] = [5, 9];
 /// Raids come up the road between these hours.
-const RAID_HOURS: [f64; 2] = [9.0, 16.0];
+pub const RAID_HOURS: [f64; 2] = [9.0, 16.0];
 /// A village smaller than this is beneath a war band's notice.
 const RAID_LEAST_ALIVE: usize = 8;
 /// A raid an admin calls still needs someone to raid.
@@ -279,7 +279,7 @@ fn end_raid(ctx: &mut Ctx) {
         Some(what) if !names.is_empty() => format!("Orcs raided {places}, and carried off {what}."),
         Some(what) => format!("Orcs raided the village and carried off {what}."),
         None if !names.is_empty() => {
-            format!("Orcs plundered {places}, but nothing they took left the valley: the village drove them off.")
+            format!("Orcs plundered {places}, but the village drove them off before they could carry anything away.")
         }
         None => "The village drove the raiders off before they could take anything.".to_owned(),
     };

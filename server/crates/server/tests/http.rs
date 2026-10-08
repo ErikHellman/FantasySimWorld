@@ -760,7 +760,11 @@ async fn guests_watch_and_chat_without_signing_in_but_do_not_run_the_world() {
     assert_ne!(last_event(&seen, "chat_welcome")["you"], "Sneaky");
 
     // But running the world is for admins.
-    for (method, uri, body) in [("GET", "/api/admin/health", ""), ("POST", "/api/admin/speed", r#"{"speed":0}"#)] {
+    for (method, uri, body) in [
+        ("GET", "/api/admin/health", ""),
+        ("POST", "/api/admin/speed", r#"{"speed":0}"#),
+        ("POST", "/api/admin/raid", "{}"),
+    ] {
         let response = app.clone().oneshot(as_guest(method, uri, &cookie, body)).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
         assert_eq!(text(response).await, r#"{"error":"admins only"}"#);
@@ -847,4 +851,46 @@ async fn without_a_cap_everyone_is_seated_and_with_sign_in_off_nobody_needs_a_se
 
     let (app, _, _data) = app_with("guest-off", &[("AUTH_MODE", "off")]).await;
     assert_eq!(ask_for_a_seat(&app, "{}").await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admins_call_a_raid_up_the_road_once() {
+    let (state, shutdown, _data) = state_with("raid", &[("AUTH_TOKEN", TOKEN)]).await;
+    let app = router(state.clone());
+    let call = || json_request("POST", "/api/admin/raid", "{}");
+    let form = Request::post("/api/admin/raid")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(Body::from("now=1"))
+        .unwrap();
+    assert_eq!(app.clone().oneshot(form).await.unwrap().status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    // Not while the village is still being settled.
+    state.world.core.write().sim.state.director.founding = true;
+    let settling = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(settling.status(), StatusCode::CONFLICT);
+    assert!(text(settling).await.contains("still being settled"));
+    state.world.core.write().sim.state.director.founding = false;
+
+    let called = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(called.status(), StatusCode::ACCEPTED);
+    let answer = text(called).await;
+    assert!(answer.contains("The orcs"), "{answer}");
+
+    // The call reaches the sim as a command at a tick boundary.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        {
+            let core = state.world.core.read();
+            let state = &core.sim.state;
+            if state.director.raid_called || state.raid.is_some() {
+                break;
+            }
+        }
+        assert!(tokio::time::Instant::now() < deadline, "the call never reached the world");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let again = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(again.status(), StatusCode::CONFLICT, "one raid at a time");
+    shutdown.cancel();
 }
