@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- C: the village inside a crystal ball; everyone watches the same world -->
+  <defs>
+    <radialGradient id="sky" cx="0.35" cy="0.25" r="0.9">
+      <stop offset="0" stop-color="#8ab8e8"/>
+      <stop offset="1" stop-color="#1f2d5c"/>
+    </radialGradient>
+    <clipPath id="orb"><circle cx="32" cy="29" r="21"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#10162c"/>
+  <polygon points="18,58 46,58 42,50 22,50" fill="#f2c14e"/>
+  <circle cx="32" cy="29" r="21" fill="url(#sky)"/>
+  <g clip-path="url(#orb)">
+    <polygon points="19,40 32,44 32,50 19,46" fill="#4f8a35"/>
+    <polygon points="32,44 45,40 45,46 32,50" fill="#3f7229"/>
+    <polygon points="32,29 45,33 45,40 32,44 19,40 19,33" fill="#8ccf5e"/>
+    <rect x="27" y="27" width="10" height="9" fill="#f1ede4"/>
+    <polygon points="25,28 32,21 39,28" fill="#e0604f"/>
+    <rect x="30.5" y="31" width="3" height="5" fill="#10162c"/>
+  </g>
+  <circle cx="32" cy="29" r="21" fill="none" stroke="#f2c14e" stroke-width="2.5"/>
+  <ellipse cx="22" cy="18" rx="4" ry="2.5" transform="rotate(-35 22 18)" fill="#ffffff" opacity="0.55"/>
+</svg>

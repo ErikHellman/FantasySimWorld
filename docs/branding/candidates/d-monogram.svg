@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- D: an F cut into a gold hex tile -->
+  <rect width="64" height="64" rx="14" fill="#10162c"/>
+  <polygon points="57,36 44.5,57.5 19.5,57.5 7,36 19.5,14.5 44.5,14.5" fill="#b8882a"/>
+  <polygon points="57,32 44.5,53.5 19.5,53.5 7,32 19.5,10.5 44.5,10.5" fill="#f2c14e"/>
+  <path d="M24 19 H44 V26.5 H31.5 V29.5 H41.5 V37 H31.5 V46 H24 Z" fill="#10162c"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- B: sun turning to moon over the hex fields; days are safe, nights are not -->
+  <defs>
+    <clipPath id="tile"><rect width="64" height="64" rx="14"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#10162c"/>
+  <g stroke="#f2c14e" stroke-width="3.2" stroke-linecap="round">
+    <line x1="12.5" y1="28" x2="8" y2="28"/>
+    <line x1="15.1" y1="18.2" x2="11.9" y2="15"/>
+    <line x1="22.2" y1="11.1" x2="20.5" y2="6.8"/>
+    <line x1="15.1" y1="37.8" x2="11.9" y2="41"/>
+    <line x1="22.2" y1="44.9" x2="20.5" y2="49.2"/>
+  </g>
+  <circle cx="30" cy="28" r="13.5" fill="#f2c14e"/>
+  <circle cx="39" cy="23" r="11.5" fill="#10162c"/>
+  <polygon points="46,16 47.3,19.7 51,21 47.3,22.3 46,26 44.7,22.3 41,21 44.7,19.7" fill="#f1ede4"/>
+  <g clip-path="url(#tile)">
+    <polygon points="10,47 29,52.5 29,64 10,64 -9,52.5" fill="#4f8a35"/>
+    <polygon points="32,47 51,52.5 51,64 13,64 13,52.5" fill="#8ccf5e"/>
+    <polygon points="54,47 73,52.5 73,64 35,64 35,52.5" fill="#5f9e3f"/>
+  </g>
+</svg>
