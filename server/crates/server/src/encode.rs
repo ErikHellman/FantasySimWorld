@@ -1077,7 +1077,7 @@ mod tests {
         sim.state.weather.wind_dir = std::f64::consts::FRAC_PI_2;
         let told = skies(&tracker.frame(&sim.state, &[]));
         assert_eq!(told, vec![Weather { kind: WeatherKind::Rain, intensity: 40, wind: 0, wind_dir: 90 }]);
-        sim.state.weather.intensity = 0.43;
+        sim.state.weather.intensity = 0.41;
         assert!(skies(&tracker.frame(&sim.state, &[])).is_empty());
         assert_eq!(tracker.weather(), weather_of(&sim.state));
     }
