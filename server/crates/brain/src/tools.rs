@@ -65,6 +65,7 @@ pub struct Tools {
     pub speech: ToolDef,
     pub work_on: ToolDef,
     pub pick_up: ToolDef,
+    pub trade: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -266,5 +267,17 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["what"],
+    ),
+    trade: tool(
+        "trade",
+        "Buy something from a neighbour, or sell them something, at the market's price. Only the deals the message lists are open.",
+        json!({
+            "person": person(),
+            "item": { "type": "string", "enum": ["food", "potion", "gift", "trinket", "relic"] },
+            "deal": { "type": "string", "enum": ["buy", "sell"], "description": "buy: their thing for your coin. sell: your thing for their coin." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["person", "item", "deal"],
     ),
 });

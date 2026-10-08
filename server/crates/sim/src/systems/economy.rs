@@ -11,16 +11,19 @@ use fsw_core::math2d::dist;
 use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE};
 
+use crate::data::activities::ITEM_CAP;
 use crate::data::economy::{
-    LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100, MAX_WAGE_PER_DEPOSIT, TRADER_HOUR, base_price,
-    keeps, market_float, material_price, material_reserve, price,
+    LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100, MAX_WAGE_PER_DEPOSIT, SELLER_KEEPS_FOOD_BELOW,
+    TRADE_REACH, TRADER_HOUR, base_price, keeps, market_float, material_price, material_reserve, price,
 };
 use crate::state::{
     Character, ChronicleKind, ItemId, Loot, LootKind, MemoryKind, MonsterKind, Resource, SimState, StimulusKind, Store,
 };
 use crate::systems::director::tick_at;
+use crate::systems::relationships::RUNG_GRUDGE;
 use crate::systems::world::STOCKPILES;
 use crate::util::{Ctx, place_name_at};
+use crate::util::{adults, is_approachable, rel_or_default};
 
 /// Pays a villager from the chest, as much of `amount` as the chest holds; returns what was paid.
 pub fn pay(c: &mut Character, purse: &mut i64, amount: i64) -> i64 {
@@ -150,6 +153,82 @@ fn trader_visit(ctx: &mut Ctx) {
     };
     let line = format!("A passing trader bought {bought} at the market for {}.", describe_gold(earned));
     ctx.chronicle(ChronicleKind::Trade, line, Vec::new());
+}
+
+/// A deal between two villagers, as one of them sees it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TradeOption {
+    pub other_id: String,
+    pub item: ItemId,
+    /// buying from them, else selling to them
+    pub buy: bool,
+    pub price: i64,
+}
+
+/// What `seller` would part with: everything but a meal when hungry.
+fn seller_keeps(seller: &Character, item: ItemId) -> i64 {
+    if item == ItemId::Food && seller.needs.hunger < SELLER_KEEPS_FOOD_BELOW { 1 } else { 0 }
+}
+
+/// Whether `buyer` may buy `item` from `seller` right now, and for how much; otherwise why not.
+pub fn trade_offer(state: &SimState, buyer: &Character, seller: &Character, item: ItemId) -> Result<i64, &'static str> {
+    if buyer.is_child() || seller.is_child() {
+        return Err("children do not trade");
+    }
+    if seller.inventory.get(item) <= seller_keeps(seller, item) {
+        return Err("nothing to spare");
+    }
+    if buyer.inventory.get(item) >= ITEM_CAP {
+        return Err("no room in the pack");
+    }
+    let asked = price(item, state.economy.in_stock(item));
+    if buyer.gold < asked {
+        return Err("not enough coin");
+    }
+    if rel_or_default(seller, &buyer.id).grievance >= RUNG_GRUDGE {
+        return Err("a grudge");
+    }
+    Ok(asked)
+}
+
+/// Whether `other` has a use for `item`: food when short of it, a potion when a fighter without, a
+/// valuable when there is room for it, never a gift.
+fn wants(other: &Character, item: ItemId) -> bool {
+    match item {
+        ItemId::Food => other.inventory.food < 2,
+        ItemId::Potion => other.inventory.potion == 0 && other.profile.bravery >= 0.6,
+        ItemId::Gift => false,
+        ItemId::Trinket | ItemId::Relic => other.inventory.get(item) < ITEM_CAP,
+    }
+}
+
+/// The deals open to `c` with the neighbours within reach, nearest neighbour first: what they could buy
+/// that they have a use for, and what they could sell that the other has a use for.
+pub fn trade_options(state: &SimState, c: &Character) -> Vec<TradeOption> {
+    let mut options = Vec::new();
+    if c.is_child() {
+        return options;
+    }
+    let mut near: Vec<(f64, &Character)> = adults(state)
+        .filter(|o| o.id != c.id && is_approachable(o) && dist(o.pos, c.pos) <= TRADE_REACH)
+        .map(|o| (dist(o.pos, c.pos), o))
+        .collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.id.cmp(&b.1.id)));
+    for (_, other) in near {
+        for item in ItemId::ALL {
+            if wants(c, item)
+                && let Ok(price) = trade_offer(state, c, other, item)
+            {
+                options.push(TradeOption { other_id: other.id.clone(), item, buy: true, price });
+            }
+            if wants(other, item)
+                && let Ok(price) = trade_offer(state, other, c, item)
+            {
+                options.push(TradeOption { other_id: other.id.clone(), item, buy: false, price });
+            }
+        }
+    }
+    options
 }
 
 /// One of the dead has fallen: what it leaves is fixed by the monster and the tick, so every machine

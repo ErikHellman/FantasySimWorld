@@ -332,8 +332,9 @@ fn offered_to(c: &Character) -> Vec<ActivityId> {
 
 /// The most things a prompt offers to work on.
 const TARGETS_NAMED: usize = 6;
-/// How many pieces of loot the decide prompt names.
+/// How many pieces of loot, and how many deals, the decide prompt names.
 const LOOT_NAMED: usize = 4;
+const TRADES_NAMED: usize = 4;
 
 /// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
 /// when nothing is within reach.
@@ -350,6 +351,39 @@ fn targets_line(state: &SimState, c: &Character) -> String {
         })
         .collect();
     format!("Things you could work on nearby (work_on): {}.", items.join("; "))
+}
+
+/// The deals open with the neighbours within reach, at most four. Empty when there are none, so the
+/// prompt reads as it did.
+fn trade_line(state: &SimState, c: &Character) -> String {
+    let options = economy::trade_options(state, c);
+    if options.is_empty() {
+        return String::new();
+    }
+    let items: Vec<String> = options
+        .iter()
+        .take(TRADES_NAMED)
+        .map(|o| {
+            let name = name_of(state, &o.other_id);
+            let what = trade_item(o.item);
+            if o.buy {
+                format!("buy {what} from {name} ({} gold)", o.price)
+            } else {
+                format!("sell {what} to {name} ({} gold)", o.price)
+            }
+        })
+        .collect();
+    format!("You could trade (trade): {}.", items.join("; "))
+}
+
+fn trade_item(item: ItemId) -> &'static str {
+    match item {
+        ItemId::Food => "food",
+        ItemId::Potion => "a potion",
+        ItemId::Gift => "a gift",
+        ItemId::Trinket => "a trinket",
+        ItemId::Relic => "a relic",
+    }
 }
 
 /// What the dead left lying within reach, nearest first, at most four. Empty when there is nothing, so
@@ -677,6 +711,10 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if !loot.is_empty() {
         tools.push(TOOLS.pick_up.clone());
     }
+    let trades = trade_line(state, c);
+    if !trades.is_empty() {
+        tools.push(TOOLS.trade.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -731,6 +769,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
             section(2, plan_line(c, time.hour)),
             section(2, targets),
             section(2, loot),
+            section(2, trades),
             section(
                 5,
                 if far.len() > 5 {

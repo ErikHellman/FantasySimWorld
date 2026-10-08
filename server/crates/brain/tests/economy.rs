@@ -60,3 +60,61 @@ fn loot_within_reach_is_named_and_the_tool_offered_only_then() {
     assert!(decision.intents.is_empty());
     assert!(decision.problems.iter().any(|p| p.contains("nothing to pick up")), "{:?}", decision.problems);
 }
+
+#[test]
+fn deals_within_reach_are_named_and_the_trade_tool_offered_only_then() {
+    use fsw_sim::state::ItemId;
+    let mut state = create_test_state(1);
+    // Alone, there is nobody to deal with and the tool is not offered.
+    let spot = state.characters["c1"].pos;
+    for c in state.characters.values_mut() {
+        if c.id != "c1" {
+            c.pos = vec2(spot.x + 100.0, spot.z + 100.0);
+        }
+    }
+    let c = state.characters["c1"].clone();
+    let prompt = decide_prompt(&state, &c, 1500, None);
+    assert!(!prompt.tools.iter().any(|t| t.name == "trade"), "nobody within reach");
+
+    // A neighbour at hand with food to spare, and a trinket of our own they have the coin for.
+    {
+        let me = state.characters.get_mut("c1").unwrap();
+        me.inventory.food = 0;
+        me.inventory.trinket = 1;
+        me.gold = 10;
+        me.inside = None;
+        let other = state.characters.get_mut("c2").unwrap();
+        other.pos = vec2(spot.x + 2.0, spot.z);
+        other.inside = None;
+        other.inventory.food = 3;
+        other.inventory.potion = 0;
+        other.needs.hunger = 90.0;
+        other.gold = 20;
+    }
+    let c = state.characters["c1"].clone();
+    let other = fsw_sim::util::first_name(&state.characters["c2"]).to_owned();
+    let prompt = decide_prompt(&state, &c, 1500, None);
+    let text = prompt_text(&prompt);
+    assert!(text.contains(&format!("You could trade (trade): buy food from {other} (")), "{text}");
+    assert!(text.contains(&format!("sell a trinket to {other} (")), "{text}");
+    assert!(prompt.tools.iter().any(|t| t.name == "trade"));
+
+    let decision =
+        interpret_decision(&state, &c, &[call("trade", json!({"person": other, "item": "food", "deal": "buy"}))]);
+    assert!(
+        matches!(&decision.intents[0].action, IntentAction::Trade { target_id, item: ItemId::Food, buy: true } if target_id == "c2"),
+        "{:?}",
+        decision.intents
+    );
+    let decision =
+        interpret_decision(&state, &c, &[call("trade", json!({"person": other, "item": "potion", "deal": "buy"}))]);
+    assert!(decision.intents.is_empty());
+    assert!(decision.problems.iter().any(|p| p.contains("nothing to spare")), "{:?}", decision.problems);
+
+    // A child neither buys nor sells.
+    let child = fsw_sim::util::living(&state).find(|c| c.is_child()).cloned().expect("a child");
+    let decision =
+        interpret_decision(&state, &child, &[call("trade", json!({"person": other, "item": "food", "deal": "buy"}))]);
+    assert!(decision.intents.is_empty());
+    assert!(decision.problems.iter().any(|p| p.contains("child")), "{:?}", decision.problems);
+}

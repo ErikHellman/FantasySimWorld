@@ -101,3 +101,8 @@ pub const LOOT_NOTHING_OF_100: u32 = 45;
 pub const LOOT_COINS_OF_100: u32 = 45;
 /// Coins from a skeleton: this many, plus up to four more.
 pub const LOOT_COINS_LEAST: i64 = 2;
+
+/// How far a villager looks for a neighbour to buy from or sell to.
+pub const TRADE_REACH: f64 = 12.0;
+/// A seller this hungry keeps a meal back.
+pub const SELLER_KEEPS_FOOD_BELOW: f64 = 40.0;

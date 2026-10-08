@@ -384,3 +384,128 @@ mod loot {
         assert!(resumed.state == sim.state, "reloaded loot went a different way");
     }
 }
+
+mod trade {
+    //! Buying from a neighbour and selling to one.
+
+    use super::*;
+    use fsw_core::vec2;
+    use fsw_sim::systems::economy::trade_options;
+    use fsw_sim::systems::relationships::RUNG_GRUDGE;
+    use fsw_sim::util::rel;
+
+    /// Puts two villagers side by side on the green, in daylight, with nothing else on their minds.
+    fn side_by_side(seed: u32) -> Sim {
+        let mut sim = quiet(seed);
+        run_until(&mut sim, TICKS_PER_DAY, |s| fsw_core::time::game_time(s.tick).hour >= 9.0);
+        let spot = fsw_world::places::get_place("green").origin;
+        for (id, dx) in [("c1", -1.0), ("c2", 1.0)] {
+            let c = sim.state.characters.get_mut(id).unwrap();
+            c.pos = vec2(spot.x + dx, spot.z);
+            c.inside = None;
+            c.intent = None;
+            c.queue.clear();
+        }
+        sim
+    }
+
+    #[test]
+    fn a_hungry_neighbour_with_coin_buys_a_meal_rather_than_walk_to_the_tavern() {
+        let mut sim = side_by_side(12);
+        {
+            let buyer = sim.state.characters.get_mut("c1").unwrap();
+            buyer.inventory.food = 0;
+            buyer.needs.hunger = 20.0;
+            buyer.gold = 5;
+            let seller = sim.state.characters.get_mut("c2").unwrap();
+            seller.inventory.food = 3;
+            seller.needs.hunger = 80.0;
+            seller.gold = 0;
+        }
+        let options = trade_options(&sim.state, &sim.state.characters["c1"]);
+        assert!(options.iter().any(|o| o.buy && o.item == ItemId::Food && o.other_id == "c2"), "{options:?}");
+        let asked = price(ItemId::Food, 0);
+        let bought = |s: &SimState| s.characters["c2"].gold > 0;
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 6, bought) < TICKS_PER_DAY / 6, "no deal was struck");
+        let (buyer, seller) = (&sim.state.characters["c1"], &sim.state.characters["c2"]);
+        assert_eq!((buyer.gold, seller.gold), (5 - asked, asked));
+        assert_eq!(seller.inventory.food, 2);
+        assert!(buyer.needs.hunger > 40.0, "the meal was eaten on the spot: {}", buyer.needs.hunger);
+        assert!(
+            buyer.memories.iter().any(|m| m.text.starts_with("Bought some food from")),
+            "{:?}",
+            buyer.memories.last()
+        );
+        assert!(seller.memories.iter().any(|m| m.text.starts_with("Sold ")), "{:?}", seller.memories.last());
+        assert!(buyer.outcome.contains("and ate it"), "{}", buyer.outcome);
+    }
+
+    #[test]
+    fn a_seller_with_a_grudge_or_nothing_to_spare_will_not_sell() {
+        let mut sim = side_by_side(13);
+        {
+            let buyer = sim.state.characters.get_mut("c1").unwrap();
+            buyer.inventory.food = 0;
+            buyer.gold = 9;
+            let seller = sim.state.characters.get_mut("c2").unwrap();
+            seller.inventory.food = 3;
+            rel(seller, "c1").grievance = RUNG_GRUDGE;
+        }
+        assert!(!trade_options(&sim.state, &sim.state.characters["c1"]).iter().any(|o| o.other_id == "c2"));
+        set_intent(&mut sim, "c1", IntentAction::Trade { target_id: "c2".into(), item: ItemId::Food, buy: true });
+        let settled = |s: &SimState| s.characters["c1"].outcome.contains("would not sell");
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 6, settled) < TICKS_PER_DAY / 6);
+        assert!(sim.state.characters["c1"].outcome.ends_with("a grudge."), "{}", sim.state.characters["c1"].outcome);
+        assert_eq!(sim.state.characters["c1"].gold, 9);
+        assert_eq!(sim.state.characters["c2"].inventory.food, 3);
+
+        // A hungry seller keeps their last meal back.
+        let seller = sim.state.characters.get_mut("c2").unwrap();
+        rel(seller, "c1").grievance = 0.0;
+        seller.inventory.food = 1;
+        seller.needs.hunger = 20.0;
+        set_intent(&mut sim, "c1", IntentAction::Trade { target_id: "c2".into(), item: ItemId::Food, buy: true });
+        sim.state.characters.get_mut("c1").unwrap().outcome.clear();
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 6, settled) < TICKS_PER_DAY / 6);
+        assert!(
+            sim.state.characters["c1"].outcome.ends_with("nothing to spare."),
+            "{}",
+            sim.state.characters["c1"].outcome
+        );
+    }
+
+    #[test]
+    fn a_valuable_is_sold_to_a_neighbour_with_the_coin() {
+        let mut sim = side_by_side(14);
+        {
+            let seller = sim.state.characters.get_mut("c1").unwrap();
+            seller.inventory.trinket = 1;
+            seller.gold = 0;
+            let buyer = sim.state.characters.get_mut("c2").unwrap();
+            buyer.gold = 20;
+        }
+        let asked = price(ItemId::Trinket, 0);
+        let options = trade_options(&sim.state, &sim.state.characters["c1"]);
+        assert!(options.iter().any(|o| !o.buy && o.item == ItemId::Trinket && o.price == asked), "{options:?}");
+        set_intent(&mut sim, "c1", IntentAction::Trade { target_id: "c2".into(), item: ItemId::Trinket, buy: false });
+        let sold = |s: &SimState| s.characters["c1"].gold > 0;
+        assert!(run_until(&mut sim, TICKS_PER_DAY / 6, sold) < TICKS_PER_DAY / 6);
+        assert_eq!(sim.state.characters["c1"].gold, asked);
+        assert_eq!(sim.state.characters["c2"].inventory.trinket, 1);
+        assert_eq!(sim.state.characters["c2"].gold, 20 - asked);
+    }
+
+    #[test]
+    fn nobody_trades_with_a_child() {
+        let mut sim = quiet(15);
+        let child = living(&sim.state).find(|c| c.is_child()).map(|c| c.id.clone()).expect("a child");
+        sim.state.characters.get_mut(&child).unwrap().inventory.food = 3;
+        sim.state.characters.get_mut("c1").unwrap().gold = 9;
+        set_intent(&mut sim, "c1", IntentAction::Trade { target_id: child.clone(), item: ItemId::Food, buy: true });
+        sim.step();
+        sim.step();
+        let c1 = &sim.state.characters["c1"];
+        assert!(!matches!(c1.intent.as_ref().map(|i| &i.action), Some(IntentAction::Trade { .. })), "{:?}", c1.intent);
+        assert!(trade_options(&sim.state, &sim.state.characters[&child]).is_empty());
+    }
+}

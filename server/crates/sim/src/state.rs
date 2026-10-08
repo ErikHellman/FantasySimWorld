@@ -657,6 +657,12 @@ pub enum IntentAction {
     PickUp {
         loot_id: String,
     },
+    /// walks up to someone and buys `item` from them, or sells it to them, at the market's price
+    Trade {
+        target_id: Id,
+        item: ItemId,
+        buy: bool,
+    },
 }
 
 /// Work that changes the world; see `systems::world` and `data::jobs`.
@@ -712,6 +718,7 @@ impl IntentAction {
             Self::Attend { .. } => "attend",
             Self::WorldWork { .. } => "world_work",
             Self::PickUp { .. } => "pick_up",
+            Self::Trade { .. } => "trade",
         }
     }
 
@@ -719,6 +726,7 @@ impl IntentAction {
         match self {
             Self::Talk { target_id, .. }
             | Self::Give { target_id, .. }
+            | Self::Trade { target_id, .. }
             | Self::Fight { target_id, .. }
             | Self::Stalk { target_id }
             | Self::Fetch { target_id } => Some(target_id),

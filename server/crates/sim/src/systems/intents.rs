@@ -21,7 +21,7 @@ use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
 use crate::systems::conversation::start_conversation;
-use crate::systems::economy::{buy_at_market, describe_gold, describe_goods, sell_to_market};
+use crate::systems::economy::{buy_at_market, describe_gold, describe_goods, sell_to_market, trade_offer};
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::quirks::{after_drink, end_hunt};
@@ -764,6 +764,122 @@ fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) 
     }
 }
 
+/// Walks up to someone and strikes a bargain: the buyer's coin for the seller's thing, at the market's
+/// price, if the seller has it to spare, the buyer can pay, and no grudge stands between them. A hungry
+/// buyer eats the food on the spot.
+fn run_trade(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, buy: bool, said: bool) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let Some(target) = ctx.state.characters.get(target_id) else {
+        finish(ctx, id, "The person you wanted to trade with is gone.");
+        return;
+    };
+    let (target_pos, target_inside, approachable, target_name) =
+        (target.pos, target.inside.is_some(), is_approachable(target), first_name(target).to_owned());
+    let c = ctx.c(id);
+    if c.act.phase == ActPhase::Start {
+        leave_building(&nav, c);
+        c.act.phase = ActPhase::Travel;
+        c.act.since_tick = tick;
+        c.act.until_tick = tick + minutes_to_ticks(40.0);
+    }
+    if c.act.phase == ActPhase::Perform {
+        if tick >= c.act.until_tick {
+            set_anim(c, AnimId::Idle, false);
+            let outcome = std::mem::take(&mut c.outcome);
+            finish(ctx, id, outcome);
+        }
+        return;
+    }
+    let d = dist(c.pos, target_pos);
+    if d <= GIVE_REACH && approachable {
+        c.act.path.clear();
+        c.facing = facing_to(c.pos, target_pos);
+        set_anim(c, AnimId::Interact, true);
+        c.act.phase = ActPhase::Perform;
+        c.act.until_tick = tick + seconds_to_ticks(1.6);
+        let name = first_name(c).to_owned();
+        let (buyer, seller) = if buy { (id, target_id) } else { (target_id, id) };
+        let offer = trade_offer(ctx.state, ctx.cr(buyer), ctx.cr(seller), item);
+        let what = describe_item(item);
+        let outcome = match offer {
+            Ok(paid) => {
+                *ctx.c(seller).inventory.get_mut(item) -= 1;
+                ctx.c(seller).gold += paid;
+                ctx.c(buyer).gold -= paid;
+                let b = ctx.c(buyer);
+                let ate = item == ItemId::Food && b.needs.hunger < 40.0;
+                if ate {
+                    b.needs.hunger = (b.needs.hunger + 45.0).min(100.0);
+                } else {
+                    give(b, item);
+                }
+                adjust(ctx, buyer, seller, RelationDelta { affinity: 3.0, trust: 1.0, ..Default::default() });
+                adjust(ctx, seller, buyer, RelationDelta { affinity: 2.0, ..Default::default() });
+                let coin = describe_gold(paid);
+                ctx.remember(
+                    buyer,
+                    format!("Bought {what} from {} for {coin}.", first_name(ctx.cr(seller))),
+                    3.0,
+                    MemoryKind::Event,
+                    vec![seller.into()],
+                );
+                ctx.remember(
+                    seller,
+                    format!("Sold {} {what} for {coin}.", first_name(ctx.cr(buyer))),
+                    3.0,
+                    MemoryKind::Event,
+                    vec![buyer.into()],
+                );
+                ctx.emit(SimEvent::Emote { id: target_id.into(), emote: Emote::Gift });
+                if !said {
+                    let line =
+                        if buy { format!("{coin} for {what}? Done.") } else { format!("{what}, for {coin}. Fair?") };
+                    ctx.say(id, capital_first(&line), Some(target_id), false);
+                }
+                if buy {
+                    format!("You bought {what} from {target_name} for {coin}{}.", if ate { " and ate it" } else { "" })
+                } else {
+                    format!("You sold {target_name} {what} for {coin}.")
+                }
+            }
+            Err(why) => {
+                let memory = if buy {
+                    format!("{target_name} would not sell me {what}: {why}.")
+                } else {
+                    format!("{target_name} would not buy {what} from me: {why}.")
+                };
+                ctx.remember(id, memory, 2.0, MemoryKind::Event, vec![target_id.into()]);
+                let _ = name;
+                if buy {
+                    format!("{target_name} would not sell you {what}: {why}.")
+                } else {
+                    format!("{target_name} would not buy {what} from you: {why}.")
+                }
+            }
+        };
+        // Said once the clip has played, so the line lands with the handshake.
+        ctx.c(id).outcome = outcome;
+        return;
+    }
+    if tick >= c.act.until_tick || target_inside {
+        finish(ctx, id, format!("You could not find {target_name} to trade with."));
+        return;
+    }
+    if c.act.path.is_empty() || tick >= c.act.repath_tick {
+        c.act.path = route_to(&nav, c.pos, target_pos).unwrap_or_default();
+        c.act.repath_tick = tick + seconds_to_ticks(1.5);
+    }
+    if d > GIVE_REACH * 0.8 {
+        travel(tick, c, None);
+    }
+}
+
+fn capital_first(line: &str) -> String {
+    let mut chars = line.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
+}
+
 /// Walks to something the dead left and picks it up: coins into the purse, a valuable into the pack.
 fn run_pick_up(ctx: &mut Ctx, id: &str, loot_id: &str) {
     let tick = ctx.tick();
@@ -945,6 +1061,9 @@ pub fn update_intents(ctx: &mut Ctx) {
             }
             IntentAction::Talk { target_id, opener, tone } => run_talk(ctx, &id, target_id, *tone, opener),
             IntentAction::PickUp { loot_id } => run_pick_up(ctx, &id, loot_id),
+            IntentAction::Trade { target_id, item, buy } => {
+                run_trade(ctx, &id, target_id, *item, *buy, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
+            }
             IntentAction::Give { target_id, item } => {
                 run_give(ctx, &id, target_id, *item, intent.say.as_ref().is_some_and(|s| !s.is_empty()))
             }

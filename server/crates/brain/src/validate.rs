@@ -401,7 +401,7 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
             }
             // A child has nothing to give, never raises a hand and does no work on the world; the sim would
             // refuse it too.
-            "give" | "brawl" | "attack" | "work_on" if c.is_child() => {
+            "give" | "brawl" | "attack" | "work_on" | "trade" if c.is_child() => {
                 decision.problems.push(format!("a child does not {}", call.name));
             }
             "work_on" => {
@@ -421,6 +421,37 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                             shown(args.get("target"))
                         )),
                     },
+                }
+            }
+            "trade" => {
+                let person = resolve_person(state, args.get("person"), Some(&c.id));
+                let item = item(args.get("item"));
+                let buy = match norm(args.get("deal")).as_str() {
+                    "buy" => Some(true),
+                    "sell" => Some(false),
+                    _ => None,
+                };
+                match (person, item, buy) {
+                    (None, _, _) => decision.problems.push(format!("unknown person \"{}\"", shown(args.get("person")))),
+                    (_, None, _) => decision.problems.push(format!("unknown item \"{}\"", shown(args.get("item")))),
+                    (_, _, None) => decision.problems.push(format!("unknown deal \"{}\"", shown(args.get("deal")))),
+                    (Some(person), Some(item), Some(buy)) => {
+                        let (buyer, seller) = if buy { (c, person) } else { (person, c) };
+                        match economy::trade_offer(state, buyer, seller, item) {
+                            Ok(_) => decision.intents.push(intent(IntentAction::Trade {
+                                target_id: person.id.clone(),
+                                item,
+                                buy,
+                            })),
+                            Err(why) => decision.problems.push(format!(
+                                "cannot {} {} {} {}: {why}",
+                                if buy { "buy" } else { "sell" },
+                                item.as_str(),
+                                if buy { "from" } else { "to" },
+                                first_name(person)
+                            )),
+                        }
+                    }
                 }
             }
             "pick_up" => match resolve_loot(state, c, args.get("what")) {
