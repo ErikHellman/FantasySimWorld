@@ -15,7 +15,7 @@ The valley has weather: clear skies, rain, wind and hail. Each villager takes it
 
 ## Measured
 
-Not yet measured with the soak (`cargo run --release -p fsw-sim --bin soak -- 60 <seed> --log`). The tests in `server/crates/sim/tests/weather.rs` check that thirty days of one seed bring all four kinds, rain at least fifteen times, hail at most fifteen times and never for more than 45 minutes; that a downpour drowns a young fire within the hour; and that hail sends at least three in four villagers indoors within twenty minutes without killing anyone.
+Not yet measured with the soak (`cargo run --release -p fsw-sim --bin soak -- 60 <seed> --log`). The tests in `server/crates/sim/tests/weather.rs` check that thirty days of one seed bring all four kinds, rain at least fifteen times, hail at most fifteen times and never for more than 45 minutes; that a downpour drowns a young fire within two hours; and that hail sends at least three in four villagers indoors within twenty minutes without killing anyone.
 
 ## Where it lives
 

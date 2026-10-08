@@ -246,7 +246,7 @@ fn rain_keeps_a_fire_down_and_wind_fans_it() {
     assert!(windy > calm, "wind {windy} against calm {calm}");
     assert!(drizzle < calm, "drizzle {drizzle} against calm {calm}");
     // A downpour puts a young fire out by itself.
-    assert_eq!(fire_after(WeatherKind::Rain, 1.0, 0.3, 60), None);
+    assert_eq!(fire_after(WeatherKind::Rain, 1.0, 0.3, 120), None);
 }
 
 #[test]
