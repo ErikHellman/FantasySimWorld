@@ -42,12 +42,12 @@ The routines do the ordinary work (felling, mining, tending, carrying, building)
 
 ## Measured
 
-Headless, `cargo run --release -p fsw-sim --bin soak -- 60 <seed>` on seeds 1 to 3, routines only:
+Headless, `cargo run --release -p fsw-sim --bin soak -- 60 <seed>` on seeds 1 to 3, routines only, in the village the sim invents for itself (the soak founds one without a model):
 
-- Felling and mining start on the first morning; the lumber camp holds its 60 logs and the mine its 59 blocks within a week, and the market's overflow fills after that. At day 60 the stores hold 60 logs at the camp, 47 to 60 at the market and 60 to 73 blocks there.
-- The village takes on one project a day and finishes it the same morning: all 24 pads are built up by day 26, with two or three hands on each. Nothing is raised or enlarged, because routines never take a building down and beds are not short.
-- No villager set a fire in 180 game days of routines; the dead set three (seed 3), as before.
-- The twenty-day test in `crates/sim/tests/world.rs` (and its sixty-day `--ignored` twin) holds four of five trees standing and at least six of eight homes whole every day; the three seeds end with 30 to 38 changed things in the world and a population of 8 to 12.
+- Felling and mining start on the first morning. The lumber camp holds its 60 logs within a week in every seed, and the market's overflow holds 10 to 120 logs at day 60; stone comes in slower with fewer miners, so the mine holds 45 to 59 blocks and a lump of ore and the market none.
+- The village takes on one project a day and finishes it the same morning: all 24 pads are built up by day 25 or 26 in two seeds, and by day 48 in the third, where timber ran short. Nothing is raised or enlarged, because routines never take a building down and beds are not short.
+- No fire at all in 60 days on these seeds, by villagers or the dead: the watch holds and the gentler dead leave more people alive to stand it.
+- The twenty-day test in `crates/sim/tests/world.rs` (and its sixty-day `--ignored` twin) holds four of five trees standing and at least six of eight homes whole every day; the three seeds end with 29 to 47 changed things in the world and a population of 11 to 13.
 
 ## Left out on purpose
 
