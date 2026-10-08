@@ -100,6 +100,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
         oh: if c.tool.as_deref().is_some_and(|t| !t.is_empty()) || ease { None } else { c.look.off_hand.clone() },
         act,
         z: c.asleep,
+        y: None,
     }
 }
 
@@ -128,6 +129,7 @@ pub fn monster_dyn(m: &Monster) -> Dyn {
         oh: m.look.off_hand.clone(),
         act: None,
         z: false,
+        y: (m.alt > 0.0).then(|| centi(m.alt)),
     }
 }
 
@@ -155,6 +157,7 @@ pub fn corpse_dyn(corpse: &Corpse) -> Dyn {
         oh: corpse.look.off_hand.clone(),
         act: None,
         z: false,
+        y: None,
     }
 }
 
@@ -196,6 +199,7 @@ pub fn diff_dyn(id: &str, prev: &Dyn, next: &Dyn) -> Option<DynDelta> {
     field!(oh);
     field!(act);
     field!(z);
+    field!(y);
     changed.then_some(delta)
 }
 
@@ -218,6 +222,7 @@ pub fn apply_delta(dyn_: &Dyn, delta: &DynDelta) -> Dyn {
     field!(oh);
     field!(act);
     field!(z);
+    field!(y);
     next
 }
 
@@ -494,6 +499,7 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                     Projectile::Bolt => Ranged::Bolt,
                     Projectile::Magic => Ranged::Magic,
                     Projectile::Food => Ranged::Food,
+                    Projectile::Fire => Ranged::Fire,
                 }),
                 from: point(*from),
                 to: point(*to),

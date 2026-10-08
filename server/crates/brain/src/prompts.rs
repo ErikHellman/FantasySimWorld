@@ -72,14 +72,14 @@ fn assemble(sections: Vec<Section>, max_tokens: usize) -> String {
 
 const WORLD: &str = "You are the mind of one villager in a small fantasy village in a valley. You decide what this one person says and intends to do; the world carries it out (walking, working and fighting happen on their own).
 
-The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Death is permanent.
+The valley: a village with a tavern (The Gilded Tankard), a market, a smithy, a chapel, a village green with a well, a training yard and cottages; around it a farm, a lumber camp, an old mine, the lake shore, a forest glade with a shrine, and a watchtower by the bridge. East of the river lie an old graveyard and ruins. On some nights the dead rise from the graveyard and attack; the watch raises the alarm and those who can fight defend the village. Once in a long while, by day, a dragon comes over the hills and sets homes alight; only bows, crossbows and magic reach it in the air. Death is permanent.
 
 How to play:
 - Stay in character. Act from your personality, needs, relationships and memories, not from what would be nice. People here hold grudges, flirt, gossip, sulk, forgive, lie and get things wrong.
 - Answer only by calling the tools you are given. No narration.
 - Anything said aloud is one or two short sentences in your own voice, with no stage directions and no quotation marks.
 - A \"thought\" is one private sentence in the first person.
-- Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead.";
+- Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead and, very rarely, a dragon.";
 
 /// From here a character's spite shows in the prompts; below it, it only shows in what they do.
 const SPITEFUL: f64 = 0.5;
@@ -479,11 +479,15 @@ fn header(state: &SimState, c: &Character) -> String {
     }
     inventory.push_str(&format!(", and {} gold", c.gold));
     let monsters: Vec<_> = state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).collect();
-    let danger = if monsters.is_empty() {
+    let dragon = monsters.iter().find(|m| m.kind.def().flies);
+    let dead: Vec<_> = monsters.iter().filter(|m| m.kind.def().undead).collect();
+    let danger = if let Some(dragon) = dragon {
+        format!("A dragon is burning the village, {} paces from you.", js_round(dist(dragon.pos, c.pos)))
+    } else if dead.is_empty() {
         "All is quiet: there are no monsters about.".to_owned()
     } else {
-        let nearest = monsters.iter().map(|m| dist(m.pos, c.pos)).fold(f64::INFINITY, f64::min);
-        format!("The dead are abroad: {} of them, the nearest {} paces from you.", monsters.len(), js_round(nearest))
+        let nearest = dead.iter().map(|m| dist(m.pos, c.pos)).fold(f64::INFINITY, f64::min);
+        format!("The dead are abroad: {} of them, the nearest {} paces from you.", dead.len(), js_round(nearest))
     };
     let mut lines = vec![
         format!(
@@ -868,6 +872,11 @@ pub fn react_prompt(state: &SimState, c: &Character) -> Prompt {
                 _ => "at range with a bow".to_owned(),
             }
         ),
+        if weapon.style == WeaponStyle::Melee && monsters.iter().any(|m| m.kind.def().flies) {
+            "The dragon is in the air, out of reach of your weapon.".to_owned()
+        } else {
+            String::new()
+        },
         "Decide now: fight, or flee to your home. One tool call. If you shout something, keep it to a few words."
             .to_owned(),
     ];
@@ -1033,7 +1042,7 @@ fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
 
 const SCENE: &str = "You write short, natural conversations between two villagers in a small fantasy village, as a playwright would. Each speaks in their own voice and acts from their own personality, mood, memories and feelings about the other. Conversations may go badly: people can be cold, evasive, jealous, angry or hurt. Not every talk ends warmly, and a romantic approach is only welcomed if the other person feels the same.
 
-Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. The village is small: nobody lives here but the people named in the message, and the only monsters are the walking dead that rise from the graveyard at night. Answer only by calling the conversation tool.";
+Rules: each line is one or two short sentences, with no stage directions and no quotation marks. Neither knows the other's private thoughts or memories. The village is small: nobody lives here but the people named in the message, and the only monsters are the walking dead that rise from the graveyard at night and, very rarely, a dragon that comes by day. Answer only by calling the conversation tool.";
 
 /// One call that writes the rest of a conversation for both speakers.
 pub fn conversation_prompt(

@@ -43,7 +43,7 @@ Not yet done or not yet tried:
 - **Node.js 22** and **pnpm 10** (`corepack enable` picks the version in `package.json`), for the web client.
 - **Rust 1.88 or newer** (stable), for the server.
 - A browser with WebGPU or WebGL 2.
-- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props), and the KayKit collection (rebuilding the models).
+- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props and the dragon), and the KayKit collection (rebuilding the models).
 
 ## Run
 
@@ -251,7 +251,7 @@ Other tools:
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
-| `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
+| `tools` | Asset and audio builds, Blender prop and dragon generators, mock model endpoint, stream probe, world dump for the golden fixtures |
 | `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, casting, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store), `testing` (the original cast, for tests) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
@@ -275,6 +275,12 @@ A few props the collection lacks at character scale (a wooden fence, wildflowers
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_props.py
+```
+
+The dragon is made the same way, in the KayKit style, with its own skeleton and six animations (flying, hovering, breathing fire, roaring, being hit and falling). The script writes `tools/blender/rigged/Dragon.glb`, and `pnpm assets` turns it into a character and a rig of its own (`dragon` in `tools/assets/asset-list.mjs`). The sim times the dragon's clips by that rig, since the medium rig has none of them.
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_dragon.py
 ```
 
 ## Working on the code

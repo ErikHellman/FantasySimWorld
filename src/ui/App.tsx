@@ -66,6 +66,7 @@ function TopBar() {
         <span class="pill" title="People watching">👁 {ui.viewers.value}</span>
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
+        {ui.dragon.value && <span class="pill danger" title="A dragon over the valley">🐉</span>}
         <Stores />
         <Chest />
         {ui.graves.value.length > 0 && (

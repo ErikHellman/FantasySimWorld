@@ -1,7 +1,7 @@
 //! Abstract animation states the sim puts on characters and monsters. The
 //! renderer maps them to KayKit clips; the sim uses the durations for timing.
 
-use fsw_world::assets::timing_clips;
+use fsw_world::assets::{asset_manifest, timing_clips};
 use serde::{Deserialize, Serialize};
 
 pub struct AnimDef {
@@ -104,7 +104,18 @@ anims! {
     SkeletonWalk = "skeleton_walk" => ("Skeletons_Walking", true),
     SkeletonTaunt = "skeleton_taunt" => ("Skeletons_Taunt", false),
     SkeletonDeath = "skeleton_death" => ("Skeletons_Death", false),
+    DragonFly = "dragon_fly" => ("Dragon_Fly", true),
+    DragonHover = "dragon_hover" => ("Dragon_Hover", true),
+    DragonBreath = "dragon_breath" => ("Dragon_Breath", false),
+    DragonRoar = "dragon_roar" => ("Dragon_Roar", false),
+    DragonHit = "dragon_hit" => ("Dragon_Hit", false),
+    DragonDeath = "dragon_death" => ("Dragon_Death", false),
 }
+
+/// The rig only the dragon plays, and the prefix of its clips. The timing rig has none of them, so
+/// they are timed by their own.
+pub const DRAGON_RIG: &str = "dragon";
+const DRAGON_CLIPS: &str = "Dragon_";
 
 impl AnimId {
     pub fn loops(self) -> bool {
@@ -118,8 +129,13 @@ impl AnimId {
     /// Seconds one play of the animation takes at its playback speed.
     pub fn seconds(self) -> f64 {
         let def = self.def();
+        let clips = if def.clip.starts_with(DRAGON_CLIPS) {
+            &asset_manifest().rigs.get(DRAGON_RIG).expect("the dragon's rig is in the asset manifest").clips
+        } else {
+            timing_clips()
+        };
         let duration =
-            timing_clips().get(def.clip).unwrap_or_else(|| panic!("Clip {} missing from the asset manifest", def.clip));
+            clips.get(def.clip).unwrap_or_else(|| panic!("Clip {} missing from the asset manifest", def.clip));
         duration / def.speed
     }
 }
@@ -143,6 +159,10 @@ mod tests {
                 let clip = anim.def().clip;
                 // Only the dead play these, and they are all on the timing rig.
                 if rig != TIMING_RIG && clip.starts_with("Skeletons_") {
+                    continue;
+                }
+                // The dragon plays its own clips and nothing else.
+                if (rig == DRAGON_RIG) != clip.starts_with(DRAGON_CLIPS) {
                     continue;
                 }
                 assert!(entry.clips.contains_key(clip), "rig {rig} has no {clip}");

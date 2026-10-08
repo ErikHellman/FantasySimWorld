@@ -91,21 +91,21 @@ export function HelpPanel() {
         <h3>On the screen</h3>
         {phone ? (
           <ul class="help-list">
-            <li><strong>Top</strong>: the day and time, and 💀 when the dead are abroad.</li>
+            <li><strong>Top</strong>: the day and time, 💀 when the dead are abroad and 🐉 when the dragon is.</li>
             <li><strong>Tabs</strong> along the bottom (down the side when the phone lies on its side): 👥 the villagers, 📜 the chronicle and what they have said, 💬 the chat, 👤 the villager you follow, and ☰ for how many are watching, the language model, the graveyard, settings and this help. One pane opens at a time; tap its tab again or tap the world to put it away.</li>
             <li><strong>Following</strong>: the chip above the tabs names the villager the camera follows. Tap it for their page, ✕ to let them go.</li>
             <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
-            <li><strong>One of the dead</strong>: follow it for a card with its health, what it is after, where it rose and who it has slain.</li>
+            <li><strong>One of the dead, or the dragon</strong>: follow it for a card with its health, what it is after, where it came from and who it has slain.</li>
             <li><strong>A building's page</strong>: tap a building, or something the village built, for its condition, who lives and is there, the work on it and its history.</li>
             {banner}
           </ul>
         ) : (
         <ul class="help-list">
-          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, the dead abroad 💀, the graveyard 🪦 (click it to read the names), the stores of wood 🪵, stone 🪨 and ore ⛏ once the village has gathered any, and the village chest 🪙 with 🧺 what the market's stalls hold. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
+          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, the dead abroad 💀 (and 🐉 while the dragon is over the valley), the graveyard 🪦 (click it to read the names), the stores of wood 🪵, stone 🪨 and ore ⛏ once the village has gathered any, and the village chest 🪙 with 🧺 what the market's stalls hold. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹. A 🧒 marks a child.</li>
           <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
-          <li><strong>One of the dead</strong> (right, when you follow it): its health, what it is after, where and how it rose, who it once was, and how many villagers it has slain.</li>
+          <li><strong>One of the dead, or the dragon</strong> (right, when you follow it): its health, what it is after, where and how it came, who it once was, and how many villagers it has slain.</li>
           <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
@@ -122,6 +122,7 @@ export function HelpPanel() {
           <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
+          <li>Once in a long while, by day, a dragon comes over the hills. It swoops on one to three homes and sets them alight, and its breath burns anyone caught in the open. Villagers run indoors, all but those with a bow, a crossbow or magic, who may stand and shoot at it while it circles. It is very hard to bring down, and flies off once its burning is done or it is badly hurt. Whoever kills it is remembered for it, and its hoard spills where it falls.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>
           <li>Coin: the village chest pays villagers for what they put down at the stores and sell at the market, and they spend it there or on one another's goods. Once a day a trader buys the surplus and refills the chest. The dead drop coin and trinkets that villagers pick up, and a villager who has saved enough pays for a bigger cottage or something for the yard. A meal and a bed are always free.</li>
           <li>Five big billboards stand around the village, each with a new slogan every morning. Now and then a villager stops to read one and says what they think: some laugh, some scoff, and the gloomier notices unsettle the timid. Villagers take the boards to heart: one that urges them to pray, eat, rest, train, shop, get to work or be friendly sends some of its readers off to do just that, most often those it cheered.</li>

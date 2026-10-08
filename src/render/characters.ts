@@ -3,7 +3,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { lerp, lerpAngle } from '../core/math2d';
 import type { Look } from '../generated/api';
 import { TIMING_RIG } from '../core/assetTypes';
-import { ANIMS, type AnimDef, type AnimId, clipSeconds } from './anims';
+import { ANIMS, type AnimDef, type AnimId, clipSeconds, hasClip } from './anims';
 import type { Assets } from './assets';
 
 const FADE_SECONDS = 0.18;
@@ -23,6 +23,9 @@ const SEAT_TOLERANCE = 0.02;
  * on its blade.
  */
 const UPSIDE_DOWN_IN_HAND = new Set(['tools/shovel']);
+/** Where a breathing monster's mouth is, ahead of and above its origin, as a share of its height. */
+const MOUTH_AHEAD = 0.7;
+const MOUTH_UP = 0.72;
 
 export type ActorLook = Look;
 
@@ -31,6 +34,8 @@ export interface ActorSnapshot {
   x: number;
   z: number;
   facing: number;
+  /** height above the ground (only the dragon leaves it) */
+  alt: number;
   /** an AnimId; anything else plays as idle */
   anim: string;
   animSeq: number;
@@ -54,8 +59,8 @@ export class ActorView {
   private current: THREE.AnimationAction | null = null;
   private anim: string | null = null;
   private animSeq = -1;
-  private prev = { x: 0, z: 0, facing: 0 };
-  private next = { x: 0, z: 0, facing: 0 };
+  private prev = { x: 0, z: 0, facing: 0, alt: 0 };
+  private next = { x: 0, z: 0, facing: 0, alt: 0 };
   private fresh = true;
   private readonly hands: { r: THREE.Object3D | null; l: THREE.Object3D | null };
   private held: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };
@@ -138,7 +143,8 @@ export class ActorView {
    */
   private timeScale(def: AnimDef): number {
     const speed = def.speed ?? 1;
-    if (def.loop || this.rig === TIMING_RIG) return speed;
+    // The dragon's clips are on no other rig: the sim times them by their own length.
+    if (def.loop || this.rig === TIMING_RIG || !hasClip(TIMING_RIG, def.clip)) return speed;
     return speed * (clipSeconds(this.rig, def.clip) / clipSeconds(TIMING_RIG, def.clip));
   }
 
@@ -163,8 +169,9 @@ export class ActorView {
 
   /** Called once per tick with the entity's new state. */
   sync(snapshot: ActorSnapshot): void {
-    this.prev = this.fresh ? { x: snapshot.x, z: snapshot.z, facing: snapshot.facing } : this.next;
-    this.next = { x: snapshot.x, z: snapshot.z, facing: snapshot.facing };
+    const next = { x: snapshot.x, z: snapshot.z, facing: snapshot.facing, alt: snapshot.alt };
+    this.prev = this.fresh ? next : this.next;
+    this.next = next;
     this.root.visible = snapshot.visible;
     this.hold('r', snapshot.mainHand);
     this.hold('l', snapshot.offHand);
@@ -182,7 +189,7 @@ export class ActorView {
     if (!this.root.visible) return;
     const x = lerp(this.prev.x, this.next.x, alpha);
     const z = lerp(this.prev.z, this.next.z, alpha);
-    const y = heightAt(x, z);
+    const y = heightAt(x, z) + lerp(this.prev.alt, this.next.alt, alpha);
     this.root.position.set(x, y, z);
     this.root.rotation.y = lerpAngle(this.prev.facing, this.next.facing, alpha);
     // Out of view, neither the body nor its animation is worth the work; the clip catches up when it comes back.
@@ -203,6 +210,14 @@ export class ActorView {
     }
   }
 
+  /** Roughly where its mouth is in the world now: ahead of it and high up (for the dragon's breath). */
+  mouth(): THREE.Vector3 {
+    const facing = this.root.rotation.y;
+    const { x, y, z } = this.root.position;
+    const ahead = this.height * MOUTH_AHEAD;
+    return new THREE.Vector3(x + Math.sin(facing) * ahead, y + this.height * MOUTH_UP, z + Math.cos(facing) * ahead);
+  }
+
   dispose(): void {
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.model);
@@ -221,6 +236,7 @@ function seatShift(assets: Assets, rig: string, scale: number): THREE.Vector3 | 
     const hips = assets.clip(rig, ANIMS.sit_chair.clip).tracks.find((track) => track.name === HIPS_TRACK);
     return hips ? new THREE.Vector3().fromArray(hips.values) : null;
   };
+  if (!hasClip(rig, ANIMS.sit_chair.clip)) return null; // the dragon never sits
   const target = seated(TIMING_RIG);
   const own = seated(rig);
   if (!target || !own) return null;
