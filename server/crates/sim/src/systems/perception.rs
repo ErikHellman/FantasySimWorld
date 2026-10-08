@@ -20,6 +20,8 @@ const WATCH_SIGHT: f64 = 48.0;
 const RESPONDER_BRAVERY: f64 = 0.6;
 const ALARM_RANGE: f64 = 150.0;
 const FIRE_COURAGE: f64 = 0.2;
+/// Heartened by music, people find a little more nerve.
+const MUSIC_COURAGE: f64 = 0.1;
 
 fn nearest_monster<'m>(monsters: &'m [Monster], c: &Character, limit: f64) -> Option<&'m Monster> {
     let mut best = None;
@@ -35,12 +37,14 @@ fn nearest_monster<'m>(monsters: &'m [Monster], c: &Character, limit: f64) -> Op
 }
 
 /// Stand and fight, or run? Instinct only; an LLM "react" decision may overrule it.
-fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_burning: bool) -> bool {
+fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_burning: bool, tick: i64) -> bool {
     let hp_left = c.hp / max_hp(c);
     let score = c.profile.bravery * 0.75 + hp_left * 0.35 + allies_near as f64 * 0.08
         - (monsters_near as f64 - 1.0).max(0.0) * 0.07;
     // With a house on fire there is more to lose by running: people find courage they did not know they had.
-    score + if house_burning { FIRE_COURAGE } else { 0.0 } > 0.72
+    let fire = if house_burning { FIRE_COURAGE } else { 0.0 };
+    let music = if c.heartened(tick) { MUSIC_COURAGE } else { 0.0 };
+    score + fire + music > 0.72
 }
 
 fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
@@ -154,7 +158,7 @@ pub fn update_perception(ctx: &mut Ctx) {
                 .filter(|o| o.id != c.id && o.inside.is_none() && o.intent.as_ref().is_some_and(|i| i.is_fight()))
                 .filter(|o| dist(o.pos, c.pos) < 20.0)
                 .count();
-            if !c.is_child() && (on_watch || stands_ground(c, monsters_near, allies_near, house_burning)) {
+            if !c.is_child() && (on_watch || stands_ground(c, monsters_near, allies_near, house_burning, tick)) {
                 start_fight(ctx, id, &seen.id, FightMode::Monster, IntentSource::Reflex, None);
             } else {
                 start_flee(ctx, id, IntentSource::Reflex);

@@ -26,6 +26,7 @@ use crate::systems::economy::{
 };
 use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelter_of};
 use crate::systems::movement::{advance, route_to, step_toward};
+use crate::systems::music::{run_listen, run_perform};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::world::{deliver_next, run_world_work};
@@ -163,7 +164,7 @@ pub(crate) fn give(c: &mut Character, item: ItemId) {
 }
 
 /// Per-game-minute effects of doing an activity.
-fn activity_minute(c: &mut Character, activity_id: ActivityId, minutes_done: i64) {
+pub(crate) fn activity_minute(c: &mut Character, activity_id: ActivityId, minutes_done: i64) {
     let def = activity(activity_id);
     if let Some(needs) = def.needs {
         c.needs.hunger = (c.needs.hunger + needs.hunger).clamp(0.0, 100.0);
@@ -228,10 +229,18 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
     };
     let phase = ctx.cr(id).act.phase;
 
+    if phase == ActPhase::Start
+        && let Some(Intent { action: IntentAction::Activity { minutes: m, .. }, .. }) = &mut ctx.c(id).intent
+    {
+        *m = Some(minutes);
+    }
+    // Music has a spot of its own in front of the tavern or on the green, and an audience; see `systems::music`.
+    if activity_id == ActivityId::Perform {
+        run_perform(ctx, id, place_id, minutes);
+        return;
+    }
+
     if phase == ActPhase::Start {
-        if let Some(Intent { action: IntentAction::Activity { minutes: m, .. }, .. }) = &mut ctx.c(id).intent {
-            *m = Some(minutes);
-        }
         if activity_id == ActivityId::Sleep {
             let c = ctx.c(id);
             if c.inside.as_deref() == Some(c.home_id.as_str()) {
@@ -1116,6 +1125,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),
             IntentAction::Fetch { target_id } => run_fetch(ctx, &id, target_id),
             IntentAction::Attend { place_id } => run_attend(ctx, &id, place_id),
+            IntentAction::Listen { performer_id } => run_listen(ctx, &id, performer_id),
             IntentAction::WorldWork { job, target, minutes } => run_world_work(ctx, &id, *job, target, *minutes),
             IntentAction::Wait { minutes } => {
                 let c = ctx.c(&id);

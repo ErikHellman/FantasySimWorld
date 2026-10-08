@@ -64,7 +64,7 @@ const BASE: ActivityDef = ActivityDef {
 };
 
 /// In the TypeScript object's key order (`ACTIVITY_IDS`).
-pub static ACTIVITIES: [ActivityDef; 22] = [
+pub static ACTIVITIES: [ActivityDef; 23] = [
     ActivityDef {
         id: ActivityId::Eat,
         label: "eat a meal at the tavern",
@@ -292,6 +292,18 @@ pub static ACTIVITIES: [ActivityDef; 22] = [
         anim: AnimId::Cheer,
         minutes: [40, 90],
         needs: needs(0.0, -0.03, 0.3),
+        kind: ActivityKind::Leisure,
+        ..BASE
+    },
+    // And music: a song or a tune in public, with no slot; the performer takes a spot of their own in front of
+    // the tavern or on the green and whoever is about gathers round (`systems::music`).
+    ActivityDef {
+        id: ActivityId::Perform,
+        label: "sing or play music for whoever will listen, outside the tavern",
+        verb: "making music",
+        anim: AnimId::Hold,
+        minutes: [25, 45],
+        needs: needs(0.0, -0.03, 0.4),
         kind: ActivityKind::Leisure,
         ..BASE
     },

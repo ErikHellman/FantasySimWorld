@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -213,7 +213,7 @@ export type WorldReset = {
  */
 reason: string, };
 
-export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift";
+export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift" | "music";
 
 export type Ranged = "arrow" | "bolt" | "magic" | "food";
 

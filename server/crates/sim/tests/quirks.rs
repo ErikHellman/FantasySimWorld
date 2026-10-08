@@ -409,7 +409,10 @@ fn the_drunk_gets_drunk_and_starts_fights() {
         c.pos = fsw_core::vec2(spot.x + dx, spot.z);
         c.inside = None;
         c.asleep = false;
-        c.intent = Some(Intent::new(IntentAction::Wait { minutes: 600.0 }, IntentSource::Routine));
+        // Kael is told to stay put, as the model might tell him: a routine wait would let a tune outside
+        // the tavern draw him off to listen, out of the drunk's reach.
+        let source = if *id == kael { IntentSource::Llm } else { IntentSource::Routine };
+        c.intent = Some(Intent::new(IntentAction::Wait { minutes: 600.0 }, source));
         // A fresh clock, or the wait is measured from whatever they were doing before and ends at once.
         c.act = fresh_act(tick);
     }

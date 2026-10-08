@@ -18,6 +18,7 @@ use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
+use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::systems::world;
@@ -494,17 +495,30 @@ fn header(state: &SimState, c: &Character) -> String {
             describe_activity(state, c)
         ),
         format!(
-            "You are {}{}. You carry {inventory}.",
+            "You are {}{}{}. You carry {inventory}.",
             need_words(c),
-            if c.drunk(state.tick) { ", and drunk" } else { "" }
+            if c.drunk(state.tick) { ", and drunk" } else { "" },
+            if c.heartened(state.tick) { ", and in good spirits after some music" } else { "" }
         ),
         danger,
     ];
+    lines.extend(music_line(c));
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
     lines.extend(market_line(state));
     lines.join("\n")
+}
+
+/// What this character sings or plays, and how well, for those with a talent; empty for the rest.
+fn music_line(c: &Character) -> Option<String> {
+    music::talent(c)?;
+    let (instrument, skill) = music::skill_of(c);
+    Some(format!(
+        "You {} {}, and now and then do so in public (perform), outside the tavern as a rule.",
+        instrument.to_do(),
+        music::skill_word(skill)
+    ))
 }
 
 /// What the market's stalls hold and what the village chest holds, while the stalls hold anything.

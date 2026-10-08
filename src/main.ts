@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { ambientLevels, playEffects } from './audio/ambient';
 import { AudioEngine } from './audio/engine';
-import { MoodTracker } from './audio/mood';
+import { MoodTracker, inView } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
@@ -299,13 +299,15 @@ async function start(): Promise<void> {
   const updateMusic = (hour: number): void => {
     const spot = listener();
     let monstersNear = 0;
+    let performanceNear = false;
     for (const entity of world.entities.values()) {
       if (entity.kind === 'monster' && entity.hp > 0 && Math.hypot(entity.x - spot.x, entity.z - spot.z) < MONSTERS_NEAR) monstersNear++;
+      if (entity.kind === 'villager' && entity.visible && entity.act === 'perform' && inView(entity.x, entity.z, spot)) performanceNear = true;
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
     const ceremony = ui.ceremony.value;
-    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase } };
+    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
     audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);

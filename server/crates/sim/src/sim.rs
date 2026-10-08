@@ -25,6 +25,7 @@ use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
+use crate::systems::music::update_music;
 use crate::systems::needs::update_needs;
 use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
@@ -77,6 +78,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Fetch { .. } => false,
         // Nor a wedding or a funeral: the village is called to them.
         IntentAction::Attend { .. } => false,
+        // Nor an audience: the music itself draws people over.
+        IntentAction::Listen { .. } => false,
         // Carrying materials follows from gathering them; the rest needs a target that takes the job.
         // A child does no work on the world, whoever asks.
         IntentAction::WorldWork { job, target, .. } => {
@@ -361,6 +364,7 @@ impl Sim {
         update_quirks(&mut ctx);
         update_children(&mut ctx);
         update_intents(&mut ctx);
+        update_music(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
         update_fire(&mut ctx);

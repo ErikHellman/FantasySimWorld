@@ -11,6 +11,9 @@ const HUNGER_PER_MINUTE: f64 = -0.11;
 const ENERGY_PER_MINUTE: f64 = -0.092;
 const SOCIAL_PER_MINUTE: f64 = -0.075;
 const HP_PER_MINUTE: f64 = 0.03;
+/// Heartened by music (`systems::music`): tiredness comes on slower, and hurts mend faster.
+const HEARTENED_ENERGY_FACTOR: f64 = 0.75;
+const HEARTENED_HP_PER_MINUTE: f64 = 0.02;
 
 fn warn(ctx: &mut Ctx, id: &str, text: &str) {
     let tick = ctx.tick();
@@ -26,13 +29,16 @@ pub fn update_needs(ctx: &mut Ctx) {
     for id in living_ids(ctx.state) {
         let c = ctx.c(&id);
         c.needs.hunger = (c.needs.hunger + HUNGER_PER_MINUTE * dt * if c.asleep { 0.5 } else { 1.0 }).max(0.0);
+        let heartened = c.heartened(tick);
         if !c.asleep {
-            c.needs.energy = (c.needs.energy + ENERGY_PER_MINUTE * dt).max(0.0);
+            let pace = if heartened { HEARTENED_ENERGY_FACTOR } else { 1.0 };
+            c.needs.energy = (c.needs.energy + ENERGY_PER_MINUTE * dt * pace).max(0.0);
             c.needs.social = (c.needs.social + SOCIAL_PER_MINUTE * dt * (0.5 + c.profile.sociability)).max(0.0);
         }
         let fighting = c.intent.as_ref().is_some_and(|i| i.is_fight());
         if !fighting && c.needs.hunger > 20.0 {
-            c.hp = max_hp(c).min(c.hp + HP_PER_MINUTE * dt);
+            let heal = HP_PER_MINUTE + if heartened { HEARTENED_HP_PER_MINUTE } else { 0.0 };
+            c.hp = max_hp(c).min(c.hp + heal * dt);
         }
 
         if tick % 40 != 0 {

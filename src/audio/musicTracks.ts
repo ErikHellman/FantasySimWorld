@@ -15,10 +15,10 @@ export interface MusicTrack {
 
 export const MUSIC_TRACKS: readonly MusicTrack[] = [
   { id: 'market_day', title: 'Market Day', moods: ['day', 'celebration'], gain: 0.8 },
-  { id: 'minstrel_dance', title: 'Minstrel Dance', moods: ['day', 'celebration'], gain: 0.8 },
+  { id: 'minstrel_dance', title: 'Minstrel Dance', moods: ['day', 'celebration', 'performance'], gain: 0.8 },
   { id: 'harvest_season', title: 'Harvest Season', moods: ['day'], gain: 0.8 },
   { id: 'old_tower_inn', title: 'The Old Tower Inn', moods: ['evening'], gain: 0.85 },
-  { id: 'bards_tale', title: "The Bard's Tale", moods: ['evening'], gain: 0.85 },
+  { id: 'bards_tale', title: "The Bard's Tale", moods: ['evening', 'performance'], gain: 0.85 },
   { id: 'rising_moon', title: 'Rising Moon', moods: ['night'], gain: 0.6 },
   { id: 'peaceful_forest', title: 'Peaceful Forest', moods: ['night'], gain: 0.6 },
   { id: 'dark_forest', title: 'Dark Forest Theme', moods: ['tension'], gain: 0.9 },
