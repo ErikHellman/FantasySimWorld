@@ -10,6 +10,7 @@ pub mod combat;
 pub mod conversation;
 pub mod death;
 pub mod director;
+pub mod dragon;
 pub mod economy;
 pub mod fire;
 pub mod founding;

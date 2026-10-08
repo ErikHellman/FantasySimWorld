@@ -45,6 +45,8 @@ pub fn create_state(seed: u32) -> SimState {
             newcomer_deadline_tick: 0,
             awaiting_funeral: Vec::new(),
             next_project_tick: 0,
+            next_dragon_tick: 0,
+            alarm_dragon: false,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),

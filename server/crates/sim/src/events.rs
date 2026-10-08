@@ -30,6 +30,8 @@ pub enum Projectile {
     Magic,
     /// an apple thrown by a child; it startles, and does no harm
     Food,
+    /// the dragon's breath, poured onto the ground below it
+    Fire,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

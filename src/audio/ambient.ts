@@ -72,7 +72,9 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
   const volumeAt = (x: number, z: number): number => near(Math.hypot(x - listener.x, z - listener.z), 30 + listener.distance);
   for (const event of events) {
     if (event.type === 'attack') {
-      if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
+      // The dragon's breath has the rush of a spell, only louder.
+      if (event.ranged === 'fire') engine.play('magic_cast', Math.min(1, volumeAt(event.to.x, event.to.z) * 1.5));
+      else if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
       else if (event.ranged && event.ranged !== 'food') engine.play('arrow_shot', volumeAt(event.from.x, event.from.z)); // an apple flies in silence
     } else if (event.type === 'hit') {
       engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
@@ -81,7 +83,7 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'monster_spawn') {
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
-    } else if (event.type === 'speech' && event.loud && (event.text.startsWith('To arms') || event.text.startsWith('Fire!'))) {
+    } else if (event.type === 'speech' && event.loud && /^(To arms|Fire!|A dragon!)/.test(event.text)) {
       engine.play('alarm', 0.9);
     } else if (event.type === 'ceremony' && event.ceremony.kind === 'wedding' && event.ceremony.phase === 'rite') {
       // The same church bells as the alarm, rung for a happier reason.

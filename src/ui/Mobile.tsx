@@ -32,6 +32,7 @@ function TopBar() {
       <div class="pills">
         {connection !== 'live' && <span class="pill danger" title="The connection to the server">{connection === 'down' ? 'offline' : 'reconnecting…'}</span>}
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
+        {ui.dragon.value && <span class="pill danger" title="A dragon over the valley">🐉</span>}
       </div>
     </header>
   );
