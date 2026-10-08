@@ -44,7 +44,8 @@ export function AboutTechPanel() {
           <li><strong>Preact</strong> with signals for the panes, the chat and windows like this one.</li>
           <li>
             The 3D models are the <a href="https://kaylousberg.com" target="_blank" rel="noopener noreferrer">KayKit</a>{' '}
-            collection by Kay Lousberg (CC0); the sounds and music are CC0, public domain or CC BY.
+            collection by Kay Lousberg (CC0), with a few props and the animals made in Blender in the same style; the
+            sounds and music are CC0, public domain or CC BY.
           </li>
         </ul>
 
