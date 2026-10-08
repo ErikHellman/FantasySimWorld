@@ -21,7 +21,7 @@ import { App } from './ui/App';
 import { watchLayout } from './ui/layout';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, isSiteId,
-  loadAudioSettings, loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse,
+  loadAudioSettings, loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse, setWeather,
   setStockpile, setWorldObject, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
@@ -193,6 +193,7 @@ async function start(): Promise<void> {
       else if (event.type === 'ceremony') setCeremony(event.ceremony);
       else if (event.type === 'stockpile') setStockpile(event.stockpile);
       else if (event.type === 'economy') setEconomy(event.economy);
+      else if (event.type === 'weather') setWeather(event.weather);
       else if (event.type === 'world_object') {
         setWorldObject(event.object);
         // A built thing that is gone has no page; the server stops sending one too.
@@ -332,7 +333,7 @@ async function start(): Promise<void> {
     audioTimer += dt;
     if (audioTimer >= 0.5) {
       audioTimer = 0;
-      audio.mix(ambientLevels(ambient, hour, listener(), [...world.houses.values()]));
+      audio.mix(ambientLevels(ambient, hour, listener(), [...world.houses.values()], world.weather));
       updateMusic(hour);
     }
     uiTimer += dt;

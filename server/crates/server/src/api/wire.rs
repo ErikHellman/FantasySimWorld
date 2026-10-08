@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// Character, monster, ghost, corpse and conversation ids (`c1`, `m7`, `g9`, …).
 pub type Id = String;
@@ -243,6 +243,8 @@ pub struct Snapshot {
     pub economy: Economy,
     /// what the dead left lying about
     pub loot: Vec<Loot>,
+    /// what the sky is doing
+    pub weather: Weather,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -372,6 +374,32 @@ pub enum WireEvent {
     Loot {
         loot: Loot,
     },
+    /// the weather changed, or grew or eased
+    Weather {
+        weather: Weather,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherKind {
+    Clear,
+    Rain,
+    Wind,
+    Hail,
+}
+
+/// What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+    pub intensity: u8,
+    /// the wind, whatever the kind, 0..100 in steps of 5
+    pub wind: u8,
+    /// the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+    pub wind_dir: u16,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1320,6 +1348,8 @@ pub fn typescript() -> String {
         Economy,
         Loot,
         LootKind,
+        WeatherKind,
+        Weather,
         Goods,
         LlmState,
         LlmStatus,

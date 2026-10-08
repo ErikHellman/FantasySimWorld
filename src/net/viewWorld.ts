@@ -1,4 +1,4 @@
-import type { Billboard, Ceremony, Dyn, DynDelta, Economy, Entity, EntityKind, Grave, House, Look, Loot, Snapshot, Stockpile, TickFrame, WorldObject } from '../generated/api';
+import type { Billboard, Ceremony, Dyn, DynDelta, Economy, Entity, EntityKind, Grave, House, Look, Loot, Snapshot, Stockpile, TickFrame, Weather, WorldObject } from '../generated/api';
 
 /** One thing to draw: what the renderer needs each tick, decoded from the wire. */
 export interface ViewEntity {
@@ -100,6 +100,10 @@ export class ViewWorld {
   readonly loot = new Map<string, Loot>();
   /** bumped when loot appears or goes */
   lootVersion = 0;
+  /** what the sky is doing */
+  weather: Weather = { kind: 'clear', intensity: 0, wind: 0, windDir: 0 };
+  /** bumped when the weather changes */
+  weatherVersion = 0;
 
   reset(snapshot: Snapshot): void {
     this.tick = snapshot.tick;
@@ -127,6 +131,8 @@ export class ViewWorld {
     this.loot.clear();
     for (const loot of snapshot.loot) this.loot.set(loot.id, loot);
     this.lootVersion++;
+    this.weather = snapshot.weather;
+    this.weatherVersion++;
   }
 
   /** Applies one tick: additions, removals, changed fields, new graves, billboards and houses. */
@@ -163,6 +169,9 @@ export class ViewWorld {
         if (event.loot.gone) this.loot.delete(event.loot.id);
         else this.loot.set(event.loot.id, event.loot);
         this.lootVersion++;
+      } else if (event.type === 'weather') {
+        this.weather = event.weather;
+        this.weatherVersion++;
       }
     }
   }

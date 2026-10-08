@@ -19,6 +19,7 @@ import { PartCache, SceneryBuilder } from './scenery';
 import { Structures, isBuilding } from './structures';
 import { Terrain } from './terrain';
 import { Vegetation, isVegetation } from './vegetation';
+import { WeatherView } from './weather';
 
 const GRAVE_MODELS = ['gravestone', 'gravemarker_A', 'gravemarker_B'];
 /** Props that give light at night, and how high above their base the light sits. */
@@ -58,6 +59,8 @@ export class WorldView {
   private lootVersion = -1;
   private readonly builder: SceneryBuilder;
   private worldObjectsVersion = -1;
+  private readonly weather: WeatherView;
+  private weatherVersion = -1;
   private readonly actorGroup = new THREE.Group();
   private readonly heightAt = (x: number, z: number): number => this.terrain.heightAt(x, z);
   private readonly projected = new THREE.Vector3();
@@ -105,7 +108,8 @@ export class WorldView {
     this.billboards = new Billboards(billboards, this.heightAt, quality.billboardPixels);
     this.structures = new Structures(assets, places, this.heightAt, quality);
     this.dressing = new CeremonyDressing(assets, this.heightAt);
-    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.loot.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group);
+    this.weather = new WeatherView(quality, this.heightAt);
+    this.scene.add(builder.build(), this.vegetation.group, this.structures.group, this.marks.group, this.loot.group, this.dressing.group, this.billboards.group, this.actorGroup, this.effects.group, this.weather.group);
     this.lighting.setLamps(places.flatMap((place) => place.models.flatMap((model) => {
       const height = LAMP_HEIGHTS[model.model];
       return height === undefined ? [] : [{ x: model.x, y: model.y + this.terrain.heightAt(model.x, model.z) + height, z: model.z, power: model.model.startsWith('Campfire') ? 1.5 : 1 }];
@@ -174,6 +178,10 @@ export class WorldView {
       this.ceremonyVersion = world.ceremonyVersion;
       this.dressing.show(world.ceremony, world.graves);
     }
+    if (this.weatherVersion !== world.weatherVersion) {
+      this.weatherVersion = world.weatherVersion;
+      this.weather.show(world.weather);
+    }
     if (this.lootVersion !== world.lootVersion) {
       this.lootVersion = world.lootVersion;
       this.loot.show(world.loot);
@@ -217,6 +225,11 @@ export class WorldView {
   /** Per rendered frame: camera, light, interpolated actors, effects and labels. */
   frame(dt: number, simDt: number, alpha: number, hour: number): void {
     this.rig.update(dt);
+    this.weather.update(dt, this.rig.target, this.rig.distance);
+    const sky = this.weather.sky;
+    this.structures.setWind(Math.cos(sky.windDir) * sky.wind * 6, Math.sin(sky.windDir) * sky.wind * 6);
+    this.vegetation.setWind(sky.wind, sky.windDir);
+    this.lighting.setOvercast(sky.overcast);
     this.structures.update(dt);
     this.vegetation.update(dt, alpha);
     this.lighting.setFire(this.structures.light());

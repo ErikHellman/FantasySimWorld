@@ -13,6 +13,7 @@ const entity = (id: string, x: number): Entity => ({
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
   tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], ceremony: null, worldObjects: [], stockpiles: [],
   economy: { purse: 80, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }, loot: [],
+  weather: { kind: 'clear', intensity: 0, wind: 0, windDir: 0 },
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
@@ -139,6 +140,16 @@ describe('view world', () => {
     world.apply({ t: 2, ev: [{ type: 'economy', economy: { purse: 74, food: 3, potion: 0, gift: 0, trinket: 0, relic: 0 } }] });
     expect(world.economy).toMatchObject({ purse: 74, food: 3 });
     expect(world.economyVersion).toBe(chest + 1);
+  });
+
+  it('follows the weather as it comes on and turns', () => {
+    const world = new ViewWorld();
+    world.reset(snapshot(1, []));
+    expect(world.weather.kind).toBe('clear');
+    const sky = world.weatherVersion;
+    world.apply({ t: 2, ev: [{ type: 'weather', weather: { kind: 'rain', intensity: 35, wind: 20, windDir: 90 } }] });
+    expect(world.weather).toEqual({ kind: 'rain', intensity: 35, wind: 20, windDir: 90 });
+    expect(world.weatherVersion).toBe(sky + 1);
   });
 
   it('follows the server frame for frame', () => {

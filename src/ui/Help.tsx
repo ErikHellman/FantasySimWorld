@@ -27,7 +27,7 @@ export function HelpPanel() {
     ui.panel.value = 'none';
   };
   const banner = (
-    <li><strong>A banner</strong> across the top says when the alarm is up, a house is on fire, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
+    <li><strong>A banner</strong> across the top says when the alarm is up, a house is on fire, hail is falling, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
   );
   return (
     <div class="modal" onClick={close}>
@@ -126,6 +126,7 @@ export function HelpPanel() {
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>
           <li>About one in three of those the dead cut down comes back as a ghost: the same person, pale and see-through, seen only after dark. For two or three nights it drifts between its grave, its home and the homes of those it loved, keeping them from their sleep. Whoever meets it in the dark runs, or stands their ground, or grieves if they loved them; its touch leaves them cold and weak but never kills. Nobody can fight a ghost. Then it finds rest and is seen no more.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
+          <li>The weather changes through the day: clear skies, rain, wind and now and then hail. Each villager takes it their own way: some love the rain and some hate it, some enjoy a good wind and some can't stand it, and it shows in their mood. Those who hate the rain go indoors when it pours. Hail hurts, so everyone runs for cover until it passes. Rain helps keep a fire down, and wind fans it. The weather is shown next to the clock.</li>
           <li>Once in a long while, by day, a dragon comes over the hills. It swoops on one to three homes and sets them alight, and its breath burns anyone caught in the open. Villagers run indoors, all but those with a bow, a crossbow or magic, who may stand and shoot at it while it circles. It is very hard to bring down, and flies off once its burning is done or it is badly hurt. Whoever kills it is remembered for it, and its hoard spills where it falls.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>
           <li>Coin: the village chest pays villagers for what they put down at the stores and sell at the market, and they spend it there or on one another's goods. Once a day a trader buys the surplus and refills the chest. The dead drop coin and trinkets that villagers pick up, and a villager who has saved enough pays for a bigger cottage or something for the yard. A meal and a bed are always free.</li>

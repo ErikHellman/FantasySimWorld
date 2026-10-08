@@ -24,4 +24,5 @@ pub mod perception;
 pub mod quirks;
 pub mod relationships;
 pub mod routine;
+pub mod weather;
 pub mod world;

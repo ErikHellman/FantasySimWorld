@@ -14,6 +14,7 @@ import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
 import type { GuestEndReason } from '../generated/api';
 import { ceremonyBanner } from './ceremony';
+import { WeatherWord } from './Weather';
 import { actions, closeSheet, isAdmin, togglePanel, ui, villageStores } from './store';
 
 /** What the village has put by: wood, stone and ore in its stockpiles. Nothing is shown until it has gathered some. */
@@ -55,6 +56,7 @@ function TopBar() {
         <span class="clock-day">Day {clock.day}</span>
         <span class="clock-time">{clock.time}</span>
         <span class="clock-part">{clock.part}</span>
+        <WeatherWord />
       </div>
       {admin ? (
         <Speeds />
@@ -196,6 +198,7 @@ export function App() {
   const burning = ui.houses.value.find((house) => house.phase === 'burning');
   const ceremony = ui.ceremony.value;
   const alight = ui.fires.value[0];
+  const hail = ui.weather.value.kind === 'hail' && ui.weather.value.intensity >= 15;
   const alightName = alight ? alight.name.charAt(0).toUpperCase() + alight.name.slice(1) : '';
   return (
     <>
@@ -224,8 +227,9 @@ export function App() {
       {burning && <div class="alarm">🔥 {burning.name.charAt(0).toUpperCase() + burning.name.slice(1)} is on fire</div>}
       {!burning && alight && <div class="alarm">🔥 {alightName} is on fire</div>}
       {ui.alarm.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
-      {ceremony && !ui.alarm.value && !burning && !alight && <div class="alarm festive">{ceremonyBanner(ceremony)}</div>}
-      {ui.throttled.value && !ui.alarm.value && !burning && !alight && !ceremony && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
+      {hail && !ui.alarm.value && !burning && !alight && <div class="alarm">🌨️ Hail! Everyone is running for cover</div>}
+      {ceremony && !hail && !ui.alarm.value && !burning && !alight && <div class="alarm festive">{ceremonyBanner(ceremony)}</div>}
+      {ui.throttled.value && !hail && !ui.alarm.value && !burning && !alight && !ceremony && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>
   );
 }

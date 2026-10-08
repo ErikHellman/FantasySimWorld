@@ -21,7 +21,7 @@ use fsw_sim::state::{
     ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
     ChronicleKind as SimChronicleKind, Corpse, Ghost, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
     ItemId, Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
-    VoiceProfile as SimVoice, WorldObject as SimWorldObject,
+    VoiceProfile as SimVoice, WeatherKind as SimWeatherKind, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::combat::max_hp;
@@ -35,7 +35,7 @@ use indexmap::IndexMap;
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
     Economy, Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Loot, LootKind, Placed, Ranged,
-    Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
+    Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind, WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -435,6 +435,24 @@ pub fn economy_of(state: &SimState) -> Economy {
     }
 }
 
+/// The weather, as viewers are told of it: rounded, so it changes in steps rather than every minute.
+pub fn weather_of(state: &SimState) -> Weather {
+    let w = &state.weather;
+    let step = |value: f64| (js_round(value.clamp(0.0, 1.0) * 20.0) * 5.0) as u8;
+    let degrees = js_round(w.wind_dir.to_degrees() / 15.0) * 15.0;
+    Weather {
+        kind: match w.kind {
+            SimWeatherKind::Clear => WeatherKind::Clear,
+            SimWeatherKind::Rain => WeatherKind::Rain,
+            SimWeatherKind::Wind => WeatherKind::Wind,
+            SimWeatherKind::Hail => WeatherKind::Hail,
+        },
+        intensity: step(w.intensity),
+        wind: step(w.wind),
+        wind_dir: (degrees.rem_euclid(360.0)) as u16,
+    }
+}
+
 pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
     match tone {
         BoardTone::Uplifting => BillboardTone::Uplifting,
@@ -575,6 +593,7 @@ pub struct Tracker {
     stockpiles: Vec<Stockpile>,
     economy: Option<Economy>,
     loot: Vec<Loot>,
+    weather: Option<Weather>,
 }
 
 impl Tracker {
@@ -594,6 +613,7 @@ impl Tracker {
         self.stockpiles = stockpiles_of(state);
         self.economy = Some(economy_of(state));
         self.loot = loot_of(state);
+        self.weather = Some(weather_of(state));
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -634,6 +654,11 @@ impl Tracker {
     /// What viewers have been told the chest and the stalls hold (for a snapshot).
     pub fn economy(&self) -> Economy {
         self.economy.clone().unwrap_or(Economy { purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 })
+    }
+
+    /// What viewers have been told of the weather (for a snapshot).
+    pub fn weather(&self) -> Weather {
+        self.weather.clone().unwrap_or(Weather { kind: WeatherKind::Clear, intensity: 0, wind: 0, wind_dir: 0 })
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -760,6 +785,12 @@ impl Tracker {
         if self.economy.as_ref() != Some(&economy) {
             frame.ev.push(WireEvent::Economy { economy: economy.clone() });
             self.economy = Some(economy);
+        }
+
+        let weather = weather_of(state);
+        if self.weather.as_ref() != Some(&weather) {
+            frame.ev.push(WireEvent::Weather { weather: weather.clone() });
+            self.weather = Some(weather);
         }
         frame
     }
@@ -1071,6 +1102,24 @@ mod tests {
         assert_eq!((told[0].purse, told[0].food, told[0].gift), (74, 3, 0));
         assert!(chests(&tracker.frame(&sim.state, &[])).is_empty());
         assert_eq!(tracker.economy(), economy_of(&sim.state));
+
+        // The weather: told when it changes by a step, not for every slight change, and the snapshot has the latest.
+        let skies = |frame: &TickFrame| -> Vec<Weather> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Weather { weather } = e { Some(weather.clone()) } else { None })
+                .collect()
+        };
+        assert!(skies(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.weather.kind = SimWeatherKind::Rain;
+        sim.state.weather.intensity = 0.42;
+        sim.state.weather.wind_dir = std::f64::consts::FRAC_PI_2;
+        let told = skies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told, vec![Weather { kind: WeatherKind::Rain, intensity: 40, wind: 0, wind_dir: 90 }]);
+        sim.state.weather.intensity = 0.41;
+        assert!(skies(&tracker.frame(&sim.state, &[])).is_empty());
+        assert_eq!(tracker.weather(), weather_of(&sim.state));
     }
 
     #[test]

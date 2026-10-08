@@ -11,7 +11,7 @@ One shared village runs on a Rust server; browsers only watch it.
 - Every type that crosses the wire is a Rust struct in `server/crates/server/src/api/wire.rs`, exported to `src/generated/api.ts`.
 - The TypeScript simulation and brain the Rust port was checked against live only at the `ts-sim-reference` tag. Comments in the crates that name `src/sim/…`, `src/brain/…` or `tools/…` files that no longer exist refer to that tag. Do not bring those folders back to `src/`.
 
-Design and history: [the design](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md) (read its "Since the server migration" section first) and [the migration plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md) (its "Progress" section records what was built, measured and left open). Each later feature (billboards, house fires, combat, a world that changes, children, weddings and funerals, coin) has its own note beside them in `docs/superpowers/specs/`, with where it lives in the code and what was left out on purpose; read the one for the area you are changing.
+Design and history: [the design](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md) (read its "Since the server migration" section first) and [the migration plan](docs/superpowers/specs/2026-10-02-backend-migration-plan.md) (its "Progress" section records what was built, measured and left open). Each later feature (billboards, house fires, combat, a world that changes, children, weddings and funerals, coin, weather) has its own note beside them in `docs/superpowers/specs/`, with where it lives in the code and what was left out on purpose; read the one for the area you are changing.
 
 ## Commands
 
