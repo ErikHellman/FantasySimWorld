@@ -129,6 +129,9 @@ export const bundles = [
       { dir: `${S6}/1 - July 2025 - Lorekeeper/assets/gltf`, include: /^Lorekeeper_Staff$/ },
       { dir: `${S5}/5 - November 2024 - Witch/assets/gltf`, include: /^Broom$/ },
       { dir: `${S6}/12 - June 2026 - Farmers/assets/gltf`, include: /^pitchfork$/, rename: () => 'farmer_pitchfork' },
+      // The raiders' axe and club ship only as .gltf.glb; the brute's pack has its own Orc_Axe, so only the large one comes from there.
+      { dir: `${S4}/1 - July 2023 - Orc Raider/assets/gltf`, include: /^Orc_(Axe|Club)$/ },
+      { dir: `${S6}/2 - August 2025 - Orc Brute/assets/gltf`, include: /^Orc_Axe_Large$/ },
     ],
   },
 ];
@@ -139,7 +142,9 @@ bundles.push({ id: 'custom', sources: [{ dir: 'tools/blender/out', local: true }
 /**
  * Rigged characters, one GLB each (mesh + skeleton, no clips). `rig` names the
  * clip set they play (see `rigs` below; medium unless given). `scale` shrinks a
- * model that would otherwise tower over doors and chairs.
+ * model that would otherwise tower over doors and chairs. `texture` names the
+ * palette of a model whose material has none embedded. `seats: false` marks a
+ * model that never sits (a monster), so it may be drawn at any scale.
  */
 export const characters = [
   ...['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue', 'Rogue_Hooded', 'Druid', 'Engineer'].map((name) => ({
@@ -158,6 +163,10 @@ export const characters = [
   { id: 'Farmer_A', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_A.glb` },
   { id: 'Farmer_B', file: `${S6}/12 - June 2026 - Farmers/characters/Farmer_B.glb` },
   { id: 'Barbarian_Large', file: `${ADV}/Characters/gltf/Barbarian_Large.glb`, rig: 'large', scale: 0.7 },
+  // Raiders and bosses (docs/superpowers/specs/2026-10-04-combat-design.md).
+  { id: 'OrcRaider', file: `${S4}/1 - July 2023 - Orc Raider/character/OrcRaider.glb`, texture: 'orc_texture_A' },
+  { id: 'OrcBrute', file: `${S6}/2 - August 2025 - Orc Brute/characters/OrcBrute.glb`, rig: 'large', scale: 0.8, seats: false },
+  { id: 'Skeleton_Golem', file: `${SKEL}/characters/gltf/Skeleton_Golem.glb`, rig: 'large', scale: 0.9, seats: false },
   // Children: the adult meshes drawn small. The sim's `data/children.rs` names these.
   ...['Knight', 'Barbarian', 'Mage', 'Ranger', 'Rogue', 'Druid', 'Engineer'].map((name) => ({
     id: `Child_${name}`,
@@ -176,6 +185,7 @@ export const extraTextures = [
     })),
   ),
   { id: 'skeleton_texture_B', file: `${SKEL}/textures/skeleton_texture_B.png` },
+  ...['A', 'B'].map((v) => ({ id: `orc_texture_${v}`, file: `${S4}/1 - July 2023 - Orc Raider/textures/orc_texture_${v}.png` })),
 ];
 
 /**
@@ -195,6 +205,10 @@ const medium = {
     {
       file: `${ANIM}/Rig_Medium_MovementBasic.glb`,
       clips: ['Walking_A', 'Walking_B', 'Walking_C', 'Running_A', 'Running_B'],
+    },
+    {
+      file: `${ANIM}/Rig_Medium_MovementAdvanced.glb`,
+      clips: ['Dodge_Backward', 'Dodge_Forward', 'Dodge_Left', 'Dodge_Right'],
     },
     {
       file: `${ANIM}/Rig_Medium_CombatMelee.glb`,
@@ -246,6 +260,10 @@ const large = {
     { file: `${ANIM_LARGE}/Rig_Large_General.glb`, clips: ['Idle_A', 'Idle_B', 'Death_A', 'Death_A_Pose', 'Hit_A'] },
     { file: `${ANIM_LARGE}/Rig_Large_MovementBasic.glb`, clips: ['Walking_A', 'Running_A'] },
     {
+      file: `${ANIM_LARGE}/Rig_Large_MovementAdvanced.glb`,
+      clips: [['Dodge_Backwards', 'Dodge_Backward'], 'Dodge_Forward', 'Dodge_Left', 'Dodge_Right'],
+    },
+    {
       file: `${ANIM_LARGE}/Rig_Large_CombatMelee.glb`,
       clips: [
         'Melee_2H_Idle', 'Melee_Block', 'Melee_Blocking', 'Melee_Block_Hit', 'Melee_Unarmed_Idle',
@@ -259,11 +277,10 @@ const large = {
       ],
     },
   ],
-  // Only the dead play the Skeletons_ clips, and none of them is Large.
   // Borrowed hips move as far as the longer legs need, except on a chair: there
   // they keep the medium rig's height in the world, so the seat is where the
   // chair is when the model is drawn at `drawnAt` (its `scale` above).
-  borrow: { from: 'medium', exclude: /^Skeletons_/, seated: /^Sit_Chair_/, drawnAt: 0.7 },
+  borrow: { from: 'medium', seated: /^Sit_Chair_/, drawnAt: 0.7 },
 };
 
 export const rigs = [medium, large];
