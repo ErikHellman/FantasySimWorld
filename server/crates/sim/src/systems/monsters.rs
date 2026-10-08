@@ -10,7 +10,7 @@ use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
 use crate::data::monsters::{MONSTERS, MonsterKind};
 use crate::events::{Projectile, SimEvent};
-use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterPhase};
+use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterPhase, SimState};
 use crate::systems::combat::{Assailant, damage_character};
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
@@ -104,21 +104,27 @@ pub fn random_monster_kind(ctx: &mut Ctx) -> MonsterKind {
     kinds[index].kind
 }
 
-fn find_target(ctx: &Ctx, monster: &Monster, sight: f64) -> Option<Id> {
-    let mut best = None;
-    let mut best_distance = sight;
-    for c in living(ctx.state) {
-        if c.inside.is_some() {
-            continue;
+/// The living villager a monster goes for: the nearest in the open, with a preference for whoever it
+/// already chases. Public so the tests can ask.
+pub fn find_target(state: &SimState, monster: &Monster, sight: f64) -> Option<Id> {
+    // The dead go for a grown villager while one is in sight; a child alone is still prey.
+    let nearest = |want_child: bool| {
+        let mut best = None;
+        let mut best_distance = sight;
+        for c in living(state) {
+            if c.inside.is_some() || c.is_child() != want_child {
+                continue;
+            }
+            let bias = if monster.target_id.as_deref() == Some(c.id.as_str()) { 0.75 } else { 1.0 };
+            let d = dist(c.pos, monster.pos) * bias;
+            if d < best_distance {
+                best_distance = d;
+                best = Some(c.id.clone());
+            }
         }
-        let bias = if monster.target_id.as_deref() == Some(c.id.as_str()) { 0.75 } else { 1.0 };
-        let d = dist(c.pos, monster.pos) * bias;
-        if d < best_distance {
-            best_distance = d;
-            best = Some(c.id.clone());
-        }
-    }
-    best
+        best
+    };
+    nearest(false).or_else(|| nearest(true))
 }
 
 fn die(tick: i64, monster: &mut Monster) {
@@ -194,7 +200,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
 
         if (tick + id_number(&id)) % 10 == 0 {
             let sight = if monster.target_id.is_some() { def.sight * 1.8 } else { def.sight };
-            let found = find_target(ctx, &ctx.state.monsters[&id], sight);
+            let found = find_target(ctx.state, &ctx.state.monsters[&id], sight);
             let monster = ctx.m(&id);
             monster.phase = if found.is_some() { MonsterPhase::Chase } else { MonsterPhase::Roam };
             monster.target_id = found;

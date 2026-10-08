@@ -54,6 +54,9 @@ export class Effects {
       let object: THREE.Object3D;
       if (event.ranged === 'magic') {
         object = new THREE.Mesh(this.boltGeometry, isMonster(event.attackerId) ? this.materials.dark : this.materials.magic);
+      } else if (event.ranged === 'food') {
+        // A child's apple, lobbed at someone's ear.
+        object = this.assets.model('resource', 'Food_Apple_Red').clone();
       } else {
         object = this.assets.model('weapons', event.ranged === 'arrow' ? 'arrow_bow' : 'arrow_crossbow').clone();
       }

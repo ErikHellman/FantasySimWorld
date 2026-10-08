@@ -568,6 +568,194 @@
      "timbre": "deep, soft, hesitant"
     }
    }
+  },
+  {
+   "key": "pip",
+   "classId": "knight",
+   "homeId": "home_2",
+   "child": {
+    "mischief": 0.5,
+    "parents": [
+     "aldric"
+    ]
+   },
+   "profile": {
+    "name": "Pip Vane",
+    "pronouns": "he/him",
+    "age": 11,
+    "occupation": "child",
+    "backstory": "Aldric's son, born the year before the border wars took his mother. Raised by a father who says little and a watch that says less, he has decided to become the finest guard the village has ever had, starting with a wooden sword and the chickens.",
+    "traits": [
+     "earnest",
+     "brave past his size",
+     "a terrible liar",
+     "desperate to be useful"
+    ],
+    "goals": [
+     "be allowed on the watch one day",
+     "make Father laugh",
+     "find out what happened to Mother"
+    ],
+    "speechStyle": "Formal like his father, then forgets and talks in a rush. Calls everyone by their full name when nervous.",
+    "temper": 0.3,
+    "bravery": 0.8,
+    "sociability": 0.6,
+    "voice": {
+     "pitch": 1.35,
+     "rate": 1.1,
+     "timbre": "clear, piping, trying to sound deeper"
+    }
+   }
+  },
+  {
+   "key": "tansy",
+   "classId": "barbarian",
+   "homeId": "home_1",
+   "child": {
+    "mischief": 0.7,
+    "parents": [
+     "garrick"
+    ]
+   },
+   "profile": {
+    "name": "Tansy Stonefist",
+    "pronouns": "she/her",
+    "age": 9,
+    "occupation": "child",
+    "backstory": "Daughter of Halric Stonefist, the brother Garrick lost to the dead three winters ago. Her mother went back to the hill clans; Tansy would not. She lives with her uncle at the red cottage and is as loud as he is sullen.",
+    "traits": [
+     "loud",
+     "fearless",
+     "quick with her fists",
+     "secretly tender with small creatures"
+    ],
+    "goals": [
+     "grow up to be as strong as Uncle Garrick",
+     "find the skeleton that took her father and kick it to pieces",
+     "get Dorn to make her a real axe"
+    ],
+    "speechStyle": "Shouts most things. Hill-clan words when excited. Dares everyone to do everything.",
+    "temper": 0.75,
+    "bravery": 0.9,
+    "sociability": 0.7,
+    "voice": {
+     "pitch": 1.3,
+     "rate": 1.2,
+     "timbre": "loud, hoarse from shouting"
+    }
+   }
+  },
+  {
+   "key": "finn",
+   "classId": "ranger",
+   "homeId": "home_7",
+   "child": {
+    "mischief": 0.4,
+    "parents": [
+     "kael"
+    ]
+   },
+   "profile": {
+    "name": "Finn Thornwood",
+    "pronouns": "he/him",
+    "age": 8,
+    "occupation": "child",
+    "backstory": "Kael's boy. His mother took a boat downriver when he was four and the river has not brought her back. He fishes beside his father in silence and knows every bird by its call.",
+    "traits": [
+     "quiet",
+     "watchful",
+     "patient",
+     "happiest alone by the water"
+    ],
+    "goals": [
+     "catch a fish bigger than Father's",
+     "see the sea where the river goes",
+     "keep a secret pet"
+    ],
+    "speechStyle": "Soft and brief, mostly questions. Can go a whole day without speaking and not notice.",
+    "temper": 0.2,
+    "bravery": 0.5,
+    "sociability": 0.3,
+    "voice": {
+     "pitch": 1.25,
+     "rate": 0.9,
+     "timbre": "soft, a little hoarse"
+    }
+   }
+  },
+  {
+   "key": "hollis",
+   "classId": "engineer",
+   "homeId": "home_1",
+   "child": {
+    "mischief": 0.6,
+    "parents": [
+     "dorn"
+    ]
+   },
+   "profile": {
+    "name": "Hollis Copperkettle",
+    "pronouns": "she/her",
+    "age": 10,
+    "occupation": "child",
+    "backstory": "Dorn's daughter, raised in the smithy among the sparks. She has taken apart every latch, lantern and lock in the village, and put most of them back. Her mother died of a winter fever when Hollis was six.",
+    "traits": [
+     "clever",
+     "nosy",
+     "talks too much",
+     "cannot leave a thing alone"
+    ],
+    "goals": [
+     "build something nobody has seen before",
+     "get into the mine",
+     "find out what is behind Elowen's locked door"
+    ],
+    "speechStyle": "Fast and full of questions, with long words she half understands. Explains things to adults.",
+    "temper": 0.4,
+    "bravery": 0.55,
+    "sociability": 0.8,
+    "voice": {
+     "pitch": 1.3,
+     "rate": 1.25,
+     "timbre": "bright, quick, slightly nasal"
+    }
+   }
+  },
+  {
+   "key": "moss",
+   "classId": "druid",
+   "homeId": "home_5",
+   "child": {
+    "mischief": 0.3,
+    "parents": []
+   },
+   "profile": {
+    "name": "Moss",
+    "pronouns": "they/them",
+    "age": 7,
+    "occupation": "child",
+    "backstory": "Found as a baby in a basket in the glade one midsummer morning, with a sprig of moss in each fist and no note. Nobody claimed them, so everybody did. They sleep at Rowan's lane cottage and eat at whichever table is nearest.",
+    "traits": [
+     "dreamy",
+     "gentle",
+     "wanders off",
+     "talks to plants and thinks they answer"
+    ],
+    "goals": [
+     "find out who left the basket",
+     "make friends with a fox",
+     "learn every plant in the glade"
+    ],
+    "speechStyle": "Slow, wondering, trails off mid-sentence. Names things oddly.",
+    "temper": 0.15,
+    "bravery": 0.4,
+    "sociability": 0.5,
+    "voice": {
+     "pitch": 1.3,
+     "rate": 0.85,
+     "timbre": "small, breathy, far away"
+    }
+   }
   }
  ],
  "seedBonds": [
@@ -880,6 +1068,94 @@
    "trust": 50,
    "familiarity": 60,
    "summary": "Strong as an ox and twice as quiet. I would trust him with my life, if I could get him to talk."
+  },
+  {
+   "from": "pip",
+   "to": "aldric",
+   "affinity": 80,
+   "trust": 85,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "My father. He is the bravest man alive and he never says anything."
+  },
+  {
+   "from": "aldric",
+   "to": "pip",
+   "affinity": 85,
+   "trust": 60,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "My son. The one thing I came home for. I do not know how to tell him so."
+  },
+  {
+   "from": "tansy",
+   "to": "garrick",
+   "affinity": 70,
+   "trust": 75,
+   "familiarity": 90,
+   "kin": true,
+   "summary": "Uncle Garrick. Grumpy as a bear, but he let me stay."
+  },
+  {
+   "from": "garrick",
+   "to": "tansy",
+   "affinity": 75,
+   "trust": 55,
+   "familiarity": 90,
+   "kin": true,
+   "summary": "Halric's girl. All his fire and none of his sense. I will not lose her too."
+  },
+  {
+   "from": "finn",
+   "to": "kael",
+   "affinity": 80,
+   "trust": 85,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "Father. We do not need to talk. He understands the river and me."
+  },
+  {
+   "from": "kael",
+   "to": "finn",
+   "affinity": 85,
+   "trust": 65,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "My boy. Too quiet since his mother left. He watches the river the way I do."
+  },
+  {
+   "from": "hollis",
+   "to": "dorn",
+   "affinity": 75,
+   "trust": 80,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "Papa. He pretends to be cross when I take things apart, then shows me how they go back."
+  },
+  {
+   "from": "dorn",
+   "to": "hollis",
+   "affinity": 85,
+   "trust": 60,
+   "familiarity": 95,
+   "kin": true,
+   "summary": "My Hollis. Sharper than any blade I ever made, and twice as likely to cut herself."
+  },
+  {
+   "from": "moss",
+   "to": "rowan",
+   "affinity": 55,
+   "trust": 60,
+   "familiarity": 80,
+   "summary": "Rowan. Old and slow and knows every plant. Lets me sleep by the fire."
+  },
+  {
+   "from": "rowan",
+   "to": "moss",
+   "affinity": 50,
+   "trust": 40,
+   "familiarity": 80,
+   "summary": "The glade's foundling. Not mine, and yet. They see what I see in the green."
   }
  ],
  "newcomers": [

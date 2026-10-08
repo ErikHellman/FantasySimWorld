@@ -73,7 +73,7 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
   for (const event of events) {
     if (event.type === 'attack') {
       if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
-      else if (event.ranged) engine.play('arrow_shot', volumeAt(event.from.x, event.from.z));
+      else if (event.ranged && event.ranged !== 'food') engine.play('arrow_shot', volumeAt(event.from.x, event.from.z)); // an apple flies in silence
     } else if (event.type === 'hit') {
       engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
       if (isVillager(event.targetId)) engine.play('hurt', volumeAt(event.pos.x, event.pos.z) * 0.7);

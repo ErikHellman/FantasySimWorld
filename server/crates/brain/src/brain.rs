@@ -266,6 +266,7 @@ fn describe_intent(state: &SimState, intent: &Intent) -> String {
         IntentAction::Nap { .. } => "nap".into(),
         IntentAction::Stalk { target_id } => format!("stalk {}", name_of(state, target_id)),
         IntentAction::FightFire { place_id } => format!("fight the fire at {place_id}"),
+        IntentAction::Fetch { target_id } => format!("bring {} home", name_of(state, target_id)),
         IntentAction::Attend { place_id } => format!("attend the ceremony at {place_id}"),
         IntentAction::WorldWork { job, target, .. } => format!("{} {target}", job.as_str()),
     }
@@ -724,8 +725,12 @@ impl Brain {
                     let mind = Self::mind(s, &c.id);
                     let urgency = c.stimuli.iter().map(|st| st.urgency).max().unwrap_or(-1);
 
-                    // Danger: one quick fight-or-flee call, while instinct has already acted.
+                    // Danger: one quick fight-or-flee call, while instinct has already acted. A child is never
+                    // asked: they run, and that is that.
                     if is_fighting(c) {
+                        if c.is_child() {
+                            continue;
+                        }
                         let fresh = c.stimuli.iter().any(|st| {
                             matches!(st.kind, StimulusKind::Threat | StimulusKind::Attacked | StimulusKind::Alarm)
                                 && state.tick - st.tick < 200

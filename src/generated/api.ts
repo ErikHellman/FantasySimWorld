@@ -207,7 +207,7 @@ reason: string, };
 
 export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift";
 
-export type Ranged = "arrow" | "bolt" | "magic";
+export type Ranged = "arrow" | "bolt" | "magic" | "food";
 
 /**
  * One spoken line, with everything a sink needs to show it or say it aloud.
@@ -400,7 +400,11 @@ status: string,
 /**
  * fraction of max hit points, 0..1
  */
-hp: number, mood: Mood, partner: boolean, };
+hp: number, mood: Mood, partner: boolean, 
+/**
+ * a child, not yet of age
+ */
+child: boolean, };
 
 export type RelationLabel = "stranger" | "acquaintance" | "friend" | "close friend" | "lover" | "rival" | "enemy" | "family" | "spouse";
 
@@ -431,7 +435,11 @@ time: string, text: string, current: boolean, };
 /**
  * The inspector, with every label already rendered (the client has no sim helpers).
  */
-export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, 
+export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, 
+/**
+ * a child, not yet of age
+ */
+child: boolean, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, 
 /**
  * raw materials in their arms
  */

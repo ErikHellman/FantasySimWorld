@@ -330,7 +330,7 @@ fn water_near(pos: Vec2) -> &'static Place {
     best
 }
 
-fn residents(state: &SimState, place_id: &str) -> Vec<Id> {
+pub(crate) fn residents(state: &SimState, place_id: &str) -> Vec<Id> {
     living(state).filter(|c| c.home_id == place_id).map(|c| c.id.clone()).collect()
 }
 
@@ -447,13 +447,13 @@ fn burn(ctx: &mut Ctx, id: &str, amount: i64, place: &Place) {
     ctx.stimulate(id, StimulusKind::Attacked, "The fire burned you.", 2, None);
 }
 
-/// Sets a house on fire. Whoever is inside is thrown out of bed, burnt, onto the street.
+/// Sets a house on fire, the dead's way: whoever is inside is thrown out of bed, burnt, onto the street.
 pub fn ignite(ctx: &mut Ctx, place_id: &str) {
     ignite_home(ctx, place_id, None);
 }
 
 /// A home catches, set alight by a villager or (`None`) by the dead.
-fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
+pub fn ignite_home(ctx: &mut Ctx, place_id: &str, arsonist: Option<&str>) {
     let tick = ctx.tick();
     let Some(place) = find_place(place_id) else { return };
     if ctx.state.houses.contains_key(place_id) {
@@ -521,6 +521,7 @@ fn muster(ctx: &mut Ctx, sites: &[String]) {
     for (i, id) in living_ids(ctx.state).iter().enumerate() {
         let Some(c) = ctx.state.characters.get(id) else { continue };
         if (tick + i as i64 * 3) % 10 != 0
+            || c.is_child()
             || c.combat.yielded
             || is_fighting(c)
             || fighting_fire(c)

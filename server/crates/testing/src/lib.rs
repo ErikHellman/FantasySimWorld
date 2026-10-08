@@ -9,7 +9,7 @@ use fsw_sim::create_state;
 use fsw_sim::data::classes::ClassId;
 use fsw_sim::state::{Id, Profile, Quirk, Relationship, SimState, present};
 use fsw_sim::systems::arrivals::arrive_with;
-use fsw_sim::systems::founding::{Blueprint, found_village};
+use fsw_sim::systems::founding::{Blueprint, ChildSeed, found_village};
 use fsw_sim::systems::relationships::label_for;
 use fsw_sim::util::{Ctx, living, rel};
 use fsw_world::places::ActivityId;
@@ -44,6 +44,17 @@ struct CastEntry {
     bonds: Vec<SeedBond>,
     #[serde(default)]
     quirks: Vec<Quirk>,
+    /// Set for a child; the class is the one they will grow into.
+    #[serde(default)]
+    child: Option<ChildEntry>,
+}
+
+/// A child as authored: how naughty they are and who raises them, by cast key.
+#[derive(Clone, Debug, Deserialize)]
+struct ChildEntry {
+    mischief: f64,
+    #[serde(default)]
+    parents: Vec<String>,
 }
 
 /// A relationship that exists before the simulation starts. Applied one way.
@@ -100,6 +111,8 @@ fn blueprint(entry: &CastEntry) -> Blueprint {
         hobbies: entry.hobbies.clone(),
         profile: entry.profile.clone(),
         quirks: entry.quirks.clone(),
+        // The parents' ids are filled in once everyone has one (`create_test_state`).
+        child: entry.child.as_ref().map(|child| ChildSeed { mischief: child.mischief, parents: Vec::new() }),
     }
 }
 
@@ -119,6 +132,21 @@ pub fn create_test_state(seed: u32) -> SimState {
                 panic!("Seed bond refers to unknown cast member {} -> {}", bond.from, bond.to);
             };
             bond.apply(&mut state.characters[&ids[from]].relationships[&ids[to]]);
+        }
+        // A child knows who raises them; the authored keys become ids now that everyone has one.
+        for (index, entry) in CAST.cast.iter().enumerate() {
+            let Some(child) = &entry.child else { continue };
+            let parents: Vec<Id> = child
+                .parents
+                .iter()
+                .map(|key| {
+                    let at = CAST.cast.iter().position(|e| &e.key == key);
+                    ids[at.unwrap_or_else(|| panic!("{}: unknown parent {key}", entry.key))].clone()
+                })
+                .collect();
+            if let Some(childhood) = &mut state.characters[&ids[index]].child {
+                childhood.parents = parents;
+            }
         }
     });
     state
@@ -186,7 +214,7 @@ mod tests {
     #[test]
     fn the_test_world_is_founded_and_housed() {
         let state = create_test_state(1);
-        assert_eq!(state.order.len(), 13);
+        assert_eq!(state.order.len(), 18);
         assert!(!state.director.founding);
         assert_eq!(founder_names()[0], "Aldric Vane");
         assert_eq!(newcomer_keys()[0], "bjarke");

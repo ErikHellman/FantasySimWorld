@@ -296,11 +296,11 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
             let core = world.core.read();
             if !core.sim.state.director.founding {
-                return (core.sim.state.order.len(), false);
+                return (fsw_sim::util::adult_count(&core.sim.state), false);
             }
         }
         let core = world.core.read();
-        (core.sim.state.order.len(), core.sim.state.director.founding)
+        (fsw_sim::util::adult_count(&core.sim.state), core.sim.state.director.founding)
     }
 
     #[tokio::test]
@@ -328,7 +328,11 @@ mod tests {
         assert_eq!(settled(&world).await, (FOUNDERS, false));
         {
             let core = world.core.read();
-            assert!(living(&core.sim.state).all(|c| c.profile.name.starts_with("Fake")), "the model's people");
+            // The grown-ups are the model's; the children are the sim's own.
+            assert!(
+                fsw_sim::util::adults(&core.sim.state).all(|c| c.profile.name.starts_with("Fake")),
+                "the model's people"
+            );
             assert!(core.sim.state.chronicle.iter().any(|e| e.text.starts_with("The village is founded")));
         }
         let asked = transport.requests().len();

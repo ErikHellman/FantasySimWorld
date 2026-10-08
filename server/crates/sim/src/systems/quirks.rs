@@ -21,7 +21,9 @@ use crate::systems::death::{detach, schedule_arrival_after_loss};
 use crate::systems::intents::fresh_act;
 use crate::systems::monsters::spawn_monster;
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::util::{Ctx, bump_epoch, first_name, is_fighting, is_present, living, living_ids, place_name_at, rel};
+use crate::util::{
+    Ctx, adult_count, bump_epoch, first_name, is_fighting, is_present, living, living_ids, place_name_at, rel,
+};
 
 /// A plan block with this note is a nap on the grass rather than the activity it names.
 pub const NAP_NOTE: &str = "a nap on the grass";
@@ -50,7 +52,7 @@ const DRUNK_TAUNTS: [&str; 4] = [
 ];
 
 /// Whether this character is free for a quirk to take over what they are doing.
-fn idle_enough(ctx: &Ctx, id: &str) -> bool {
+pub(crate) fn idle_enough(ctx: &Ctx, id: &str) -> bool {
     let c = ctx.cr(id);
     let tick = ctx.tick();
     if c.convo_id.is_some() || c.combat.yielded || is_fighting(c) || tick < c.watch_until_tick && c.inside.is_none() {
@@ -67,7 +69,7 @@ fn idle_enough(ctx: &Ctx, id: &str) -> bool {
     }
 }
 
-fn replace_intent(ctx: &mut Ctx, id: &str, intent: Intent) {
+pub(crate) fn replace_intent(ctx: &mut Ctx, id: &str, intent: Intent) {
     detach(ctx, id);
     let tick = ctx.tick();
     let c = ctx.c(id);
@@ -146,7 +148,7 @@ fn killing_allowed(ctx: &Ctx, id: &str) -> bool {
     let c = ctx.cr(id);
     tick - c.arrived_tick >= TICKS_PER_DAY * 2
         && tick - ctx.state.director.last_lethal_tick >= TICKS_PER_DAY * 3
-        && ctx.state.order.len() >= HUNT_MIN_POPULATION
+        && adult_count(ctx.state) >= HUNT_MIN_POPULATION
         && c.hp >= max_hp(c) * 0.7
 }
 
@@ -180,6 +182,7 @@ fn pick_prey(ctx: &mut Ctx, id: &str) -> Option<Id> {
     let candidates: Vec<(Id, f64)> = living(ctx.state)
         .filter(|o| {
             o.id != id
+                && !o.is_child()
                 && o.inside.is_none()
                 && o.convo_id.is_none()
                 && !is_fighting(o)
@@ -244,7 +247,7 @@ fn drunken_trouble(ctx: &mut Ctx, id: &str) {
     let (pos, steady) = (c.pos, c.hp >= max_hp(c) * 0.5);
     if steady && ctx.chance(0.012) {
         let near = living(ctx.state)
-            .filter(|o| o.id != id && is_present(o) && !is_fighting(o) && !o.combat.yielded)
+            .filter(|o| o.id != id && !o.is_child() && is_present(o) && !is_fighting(o) && !o.combat.yielded)
             .map(|o| (o.id.clone(), dist(o.pos, pos)))
             .filter(|(_, d)| *d <= 8.0)
             .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -263,10 +266,18 @@ fn drunken_trouble(ctx: &mut Ctx, id: &str) {
 
 // --- The gossip ---------------------------------------------------------------
 
-/// A story for a gossip to tell `listener` about someone else; mostly invented.
+/// A story for a gossip to tell `listener` about someone else; mostly invented. A child
+/// with a tall tale to tell is a gossip for the day, and theirs is always made up.
 pub fn pick_rumour(ctx: &mut Ctx, teller: &str, listener: &str) -> Option<Rumour> {
-    if !ctx.cr(teller).has(Quirk::Rumourmonger) {
+    let tall_tale = pending_tall_tale(ctx.cr(teller));
+    if !ctx.cr(teller).has(Quirk::Rumourmonger) && !tall_tale {
         return None;
+    }
+    if tall_tale {
+        let tick = ctx.tick();
+        if let Some(plan) = ctx.c(teller).child.as_mut().and_then(|child| child.plan.as_mut()) {
+            plan.done_tick = tick;
+        }
     }
     let others: Vec<(Id, f64)> = living(ctx.state)
         .filter(|o| o.id != teller && o.id != listener)
@@ -289,7 +300,9 @@ pub fn pick_rumour(ctx: &mut Ctx, teller: &str, listener: &str) -> Option<Rumour
         .find(|m| m.kind == MemoryKind::Event && m.tick >= since && m.subjects.iter().any(|s| s == &about))
         .map(|m| m.text.clone());
     let rumour = match true_story {
-        Some(text) if ctx.chance(0.25) => Rumour { about, text: format!("Saw it myself: {text}"), truthful: true },
+        Some(text) if !tall_tale && ctx.chance(0.25) => {
+            Rumour { about, text: format!("Saw it myself: {text}"), truthful: true }
+        }
         _ => {
             let story = ctx.pick(&FALSE_STORIES);
             let text = story.replace("{t}", &subject).replace("{b}", &listener_name);
@@ -306,7 +319,9 @@ pub fn pass_on_rumour(ctx: &mut Ctx, teller: &str, listener: &str, rumour: &Rumo
     }
     let trust = rel(ctx.c(listener), teller).trust;
     let belief = ((trust + 40.0) / 80.0).clamp(0.2, 1.0);
-    let delta = RelationDelta { affinity: -6.0 * belief, trust: -5.0 * belief, ..Default::default() };
+    // A child's tall tale sets grown-ups a little against each other.
+    let grievance = if ctx.cr(teller).is_child() { 4.0 * belief } else { 0.0 };
+    let delta = RelationDelta { affinity: -6.0 * belief, trust: -5.0 * belief, grievance, ..Default::default() };
     adjust(ctx, listener, &rumour.about, delta);
     let (teller_name, listener_name, subject) = (
         first_name(ctx.cr(teller)).to_owned(),
@@ -326,6 +341,14 @@ pub fn pass_on_rumour(ctx: &mut Ctx, teller: &str, listener: &str, rumour: &Rumo
         format!("{teller_name} told {listener_name} {what} about {subject}."),
         vec![teller.into(), listener.into(), rumour.about.clone()],
     );
+}
+
+/// Whether this child has a tall tale planned for today and not yet told.
+fn pending_tall_tale(c: &crate::state::Character) -> bool {
+    c.child
+        .as_ref()
+        .and_then(|child| child.plan.as_ref())
+        .is_some_and(|plan| plan.kind == crate::state::Mischief::TallTale && plan.done_tick == 0)
 }
 
 fn lowercase_first(text: &str) -> String {

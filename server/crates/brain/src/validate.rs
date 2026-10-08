@@ -346,6 +346,9 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                 None => decision.problems.push(format!("unknown place \"{}\"", shown(args.get("place")))),
             },
             "do_activity" => match resolve_doable(state, args.get("activity")) {
+                Some(activity) if c.is_child() && !ActivityId::CHILD_OFFERED.contains(&activity) => {
+                    decision.problems.push(format!("a child does not {}", activity.as_str()));
+                }
                 // Chopping wood and mining mean a real tree or rock when there is one within reach.
                 Some(activity) => match real_work(state, c, activity) {
                     Some(action) => decision.intents.push(intent(action)),
@@ -374,6 +377,11 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
                     (Some(_), None) => decision.problems.push("talk_to without a message".into()),
                     (None, _) => decision.problems.push(format!("unknown person \"{}\"", shown(args.get("person")))),
                 }
+            }
+            // A child has nothing to give, never raises a hand and does no work on the world; the sim would
+            // refuse it too.
+            "give" | "brawl" | "attack" | "work_on" if c.is_child() => {
+                decision.problems.push(format!("a child does not {}", call.name));
             }
             "work_on" => {
                 let job = norm(args.get("job"));

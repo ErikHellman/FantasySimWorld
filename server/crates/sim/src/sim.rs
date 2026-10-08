@@ -14,6 +14,7 @@ use crate::state::{
 };
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
+use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
 use crate::systems::conversation::{add_lines, force_local, update_conversations};
 use crate::systems::death::detach;
@@ -37,7 +38,11 @@ const MAX_QUEUE: usize = 3;
 fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
     match &intent.action {
         IntentAction::GoTo { place_id } => find_place(place_id).is_some(),
-        IntentAction::Activity { place_id, .. } => place_id.as_deref().is_none_or(|p| find_place(p).is_some()),
+        // A child has no trade: nothing outside a child's activities, whoever asks.
+        IntentAction::Activity { activity, place_id, .. } => {
+            (!ctx.cr(id).is_child() || ActivityId::CHILD_OFFERED.contains(activity))
+                && place_id.as_deref().is_none_or(|p| find_place(p).is_some())
+        }
         IntentAction::Talk { target_id, .. } | IntentAction::Give { target_id, .. } => {
             target_id != id && ctx.alive(target_id)
         }
@@ -46,6 +51,10 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
                 return get_monster(ctx.state, Some(target_id)).is_some();
             }
             if target_id == id || !ctx.alive(target_id) {
+                return false;
+            }
+            // Nobody raises a hand to a child, and no child to anyone.
+            if ctx.cr(id).is_child() || ctx.cr(target_id).is_child() {
                 return false;
             }
             // Being attacked always allows fighting back; starting it needs the ladder.
@@ -63,11 +72,14 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         IntentAction::Stalk { .. } => false,
         // Nor is the bucket chain: the fire itself calls people to it.
         IntentAction::FightFire { .. } => false,
+        // Nor is fetching a child home: whoever notices goes.
+        IntentAction::Fetch { .. } => false,
         // Nor a wedding or a funeral: the village is called to them.
         IntentAction::Attend { .. } => false,
         // Carrying materials follows from gathering them; the rest needs a target that takes the job.
+        // A child does no work on the world, whoever asks.
         IntentAction::WorldWork { job, target, .. } => {
-            *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
+            !ctx.cr(id).is_child() && *job != WorldJob::Deliver && job_accepts(ctx.state, *job, target)
         }
     }
 }
@@ -84,11 +96,10 @@ fn apply_intents(ctx: &mut Ctx, id: &str, intents: Vec<Intent>) {
         return;
     }
     let first = valid.remove(0);
-    // Nobody talks their way out of the bucket chain, or leaves a wedding or a funeral; only a fight or
-    // flight comes before those.
-    if (fighting_fire(ctx.cr(id)) || attending(ctx.cr(id)))
-        && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee)
-    {
+    // Nobody talks their way out of the bucket chain, out of fetching a child home, or leaves a wedding or a
+    // funeral; only a fight or flight comes before those.
+    let bound = fighting_fire(ctx.cr(id)) || fetching(ctx.cr(id)) || attending(ctx.cr(id));
+    if bound && !matches!(first.action, IntentAction::Fight { .. } | IntentAction::Flee) {
         return;
     }
     let thought = first.thought.clone().filter(|t| !t.is_empty());
@@ -141,6 +152,15 @@ fn apply_plan(ctx: &mut Ctx, id: &str, blocks: Vec<PlanBlock>, thought: Option<S
     valid.sort_by(|a, b| a.hour.partial_cmp(&b.hour).unwrap_or(std::cmp::Ordering::Equal));
     if valid.len() < 2 {
         return;
+    }
+    // A child has no trade: a block that names one becomes play.
+    if ctx.cr(id).is_child() {
+        for block in &mut valid {
+            if !ActivityId::CHILD_OFFERED.contains(&block.activity) {
+                block.activity = ActivityId::Play;
+                block.place_id = None;
+            }
+        }
     }
     // Everyone sleeps: a plan that forgets to is given a bedtime.
     if !valid.iter().any(|block| block.activity == ActivityId::Sleep) {
@@ -313,6 +333,7 @@ impl Sim {
         if ctx.time.day != previous_day {
             daily_relationships(&mut ctx);
             ceremonies::daily(&mut ctx);
+            daily_children(&mut ctx);
             let day = ctx.time.day;
             ctx.emit(SimEvent::NewDay { day });
             ctx.emit(SimEvent::SavePoint { reason: "new day".into() });
@@ -325,6 +346,7 @@ impl Sim {
         update_director(&mut ctx);
         update_routine(&mut ctx);
         update_quirks(&mut ctx);
+        update_children(&mut ctx);
         update_intents(&mut ctx);
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);

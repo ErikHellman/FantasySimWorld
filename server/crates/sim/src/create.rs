@@ -39,6 +39,7 @@ pub fn create_state(seed: u32) -> SimState {
             arrivals: 0,
             population_target: FOUNDERS,
             last_fire_tick: 0,
+            last_birth_tick: 0,
             founding: true,
             newcomer_draft: None,
             newcomer_deadline_tick: 0,

@@ -125,8 +125,9 @@ fn with_everyone_asleep_a_monster_burns_a_house_and_the_village_is_woken() {
     let mut carrying = 0;
     for id in living_ids(&sim.state) {
         let c = &sim.state.characters[&id];
-        // Whoever ran from the monster is still hiding; everyone else is on the bucket chain.
-        if matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Flee)) {
+        // Whoever ran from the monster is still hiding, and the children are not called; everyone else is on the
+        // bucket chain.
+        if matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Flee)) || c.is_child() {
             continue;
         }
         assert!(fighting_fire(&sim.state, &id), "{} is {}", c.profile.name, describe_activity(&sim.state, c));
@@ -192,8 +193,9 @@ fn two_villagers_and_a_fire() -> (Sim, String, String) {
             sim.state.order.retain(|o| o != &id);
         }
     }
-    // Nobody new arrives to change the count.
+    // Nobody new arrives to change the count, and the one who lost the home has working hours to give up.
     sim.state.director.population_target = 2;
+    sim.state.characters.get_mut(&resident).unwrap().jobs = vec![ActivityId::Train];
     set_alight(&mut sim, &home);
     (sim, resident, home)
 }

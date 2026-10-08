@@ -5,6 +5,7 @@ use fsw_sim::data::classes::ClassId;
 use fsw_sim::state::{Bond, BondKind, NewVillager, Pronouns, Quirk, RelationLabel, SaveFile};
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::founding::ALLOWED_QUIRKS;
+use fsw_sim::util::adult_count;
 use fsw_sim::util::living;
 use fsw_sim::{Command, FOUNDERS, Sim, create_state};
 use fsw_world::assets::asset_manifest;
@@ -74,18 +75,19 @@ fn settlers_arrive_one_by_one_know_each_other_and_the_thirteenth_ends_the_foundi
         settle(&mut sim, villager(&format!("Settler{i} Ashby"), ClassId::Ranger));
     }
     let state = &sim.state;
-    assert_eq!(state.order.len(), FOUNDERS);
+    assert_eq!(adult_count(state), FOUNDERS);
     assert!(!state.director.founding);
     assert!(state.chronicle.iter().any(|e| e.text.starts_with("The village is founded")));
+    // Everyone knows everyone, the founding's children included.
     for c in living(state) {
-        assert_eq!(c.relationships.len(), FOUNDERS - 1, "{}", c.profile.name);
+        assert_eq!(c.relationships.len(), state.order.len() - 1, "{}", c.profile.name);
     }
     // The first wave comes the evening of the day the founding ended.
     assert_eq!(state.director.next_wave_tick, tick_at(1, 20.6));
 
     // Once founded, more settlers are turned away.
     settle(&mut sim, villager("Late Comer", ClassId::Cleric));
-    assert_eq!(sim.state.order.len(), FOUNDERS);
+    assert_eq!(adult_count(&sim.state), FOUNDERS);
 }
 
 #[test]
@@ -96,13 +98,13 @@ fn found_village_fills_the_rest_after_some_have_settled() {
     }
     sim.enqueue(Command::FoundVillage);
     sim.step();
-    assert_eq!(sim.state.order.len(), FOUNDERS);
+    assert_eq!(adult_count(&sim.state), FOUNDERS);
     assert!(!sim.state.director.founding);
     assert!(living(&sim.state).filter(|c| c.profile.name.starts_with("Early")).count() == 5);
     // Not twice.
     sim.enqueue(Command::FoundVillage);
     sim.step();
-    assert_eq!(sim.state.order.len(), FOUNDERS);
+    assert_eq!(adult_count(&sim.state), FOUNDERS);
 }
 
 #[test]

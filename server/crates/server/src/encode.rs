@@ -23,6 +23,7 @@ use fsw_sim::state::{
     Look as SimLook, Monster, Resource, Rite, SimState, VoiceProfile as SimVoice, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::built_fraction;
 use fsw_sim::systems::world::{object_name, progress_of};
 use fsw_sim::util::{first_name, name_of};
@@ -68,7 +69,7 @@ pub fn character_static(c: &Character) -> EntityStatic {
         kind: EntityKind::Villager,
         name: first_name(c).to_owned(),
         look: look(&c.look),
-        max_hp: c.class_id.def().max_hp,
+        max_hp: max_hp(c),
         hostile: false,
         voice: Some(voice(&c.profile.voice)),
     }
@@ -450,6 +451,7 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                     Projectile::Arrow => Ranged::Arrow,
                     Projectile::Bolt => Ranged::Bolt,
                     Projectile::Magic => Ranged::Magic,
+                    Projectile::Food => Ranged::Food,
                 }),
                 from: point(*from),
                 to: point(*to),
@@ -549,11 +551,14 @@ impl Tracker {
                     frame.add.push(entity.clone());
                     next.insert(id, entity);
                 }
+                // The static part changes only when a child comes of age (a new look and more hit points). A
+                // viewer learns of it as a removal now and an addition next frame, never both in one frame: the
+                // client applies additions before removals.
+                Some(before) if before.fixed != entity.fixed => {}
                 Some(before) => {
                     if let Some(delta) = diff_dyn(&id, &before.state, &entity.state) {
                         frame.d.push(delta);
                     }
-                    // The static part never changes while an entity exists; keep the one viewers were sent.
                     next.insert(id, Entity { fixed: before.fixed.clone(), state: entity.state });
                 }
             }
@@ -712,6 +717,30 @@ mod tests {
         }
         // By day, about 4 KB/s at 20 ticks a second.
         assert!(sizes / 150 < 8000, "{} bytes per second", sizes / 150);
+    }
+
+    #[test]
+    fn a_changed_look_is_sent_as_a_removal_then_an_addition() {
+        let mut sim = Sim::new(create_test_state(1));
+        let mut tracker = Tracker::new(&sim.state);
+        let pip = sim.state.characters.values().find(|c| c.profile.name == "Pip Vane").unwrap().id.clone();
+        sim.step();
+        tracker.frame(&sim.state, &[]);
+        // Growing up changes the look and the hit points: the static part viewers were sent is stale.
+        let c = sim.state.characters.get_mut(&pip).unwrap();
+        c.child = None;
+        c.look.model = "Knight".into();
+        c.hp = 120.0;
+        let first = tracker.frame(&sim.state, &[]);
+        assert!(first.del.contains(&pip), "{:?}", first.del);
+        assert!(!first.add.iter().any(|e| e.fixed.id == pip), "del and add never share a frame");
+        let second = tracker.frame(&sim.state, &[]);
+        let added = second.add.iter().find(|e| e.fixed.id == pip).expect("re-added with the new look");
+        assert_eq!(added.fixed.look.model, "Knight");
+        assert_eq!(added.fixed.max_hp, 120.0);
+        assert!(!second.del.contains(&pip));
+        let third = tracker.frame(&sim.state, &[]);
+        assert!(third.add.is_empty() && third.del.is_empty());
     }
 
     #[test]

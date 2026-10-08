@@ -161,6 +161,20 @@ pub fn living(state: &SimState) -> impl Iterator<Item = &Character> {
     state.order.iter().filter_map(|id| state.characters.get(id))
 }
 
+/// Living adults in a stable order: the people the director and the hostility ladder count.
+pub fn adults(state: &SimState) -> impl Iterator<Item = &Character> {
+    living(state).filter(|c| !c.is_child())
+}
+
+pub fn adult_count(state: &SimState) -> usize {
+    adults(state).count()
+}
+
+/// Living children in a stable order.
+pub fn children(state: &SimState) -> impl Iterator<Item = &Character> {
+    living(state).filter(|c| c.is_child())
+}
+
 /// Ids of the monsters, including dying ones, in creation order.
 pub fn monster_ids(state: &SimState) -> Vec<Id> {
     state.monsters.keys().cloned().collect()
@@ -397,7 +411,8 @@ const TRUSTED: f64 = 40.0;
 /// it is lowest with women they do not trust yet and rises as trust grows.
 pub fn openness(me: &Character, other: &Character) -> f64 {
     let shyness = me.profile.shyness;
-    if shyness == 0.0 {
+    // Nobody is tongue-tied with a child, and a child's shyness is their own affair.
+    if shyness == 0.0 || other.is_child() {
         return 1.0;
     }
     let trust = me.relationships.get(&other.id).map_or(0.0, |r| r.trust);
@@ -409,7 +424,7 @@ pub fn openness(me: &Character, other: &Character) -> f64 {
 /// Whether `from` could fall for `to` at all, whatever the chemistry: never for
 /// those sworn off love, and only for women for those who love only women.
 pub fn open_to(from: &Character, to: &Character) -> bool {
-    if from.has(Quirk::Chaste) {
+    if from.has(Quirk::Chaste) || from.is_child() || to.is_child() {
         return false;
     }
     !from.has(Quirk::LovesWomen) || to.profile.pronouns == Pronouns::SheHer

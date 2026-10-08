@@ -18,6 +18,7 @@ use crate::state::{
     Bond, BondKind, ChronicleKind, Id, NewVillager, Profile, Pronouns, Quirk, RelationLabel, SimState, VoiceProfile,
 };
 use crate::systems::arrivals::{free_home, make_character};
+use crate::systems::children::found_children;
 use crate::systems::director::tick_at;
 use crate::systems::relationships::{label_for, looks_welcome};
 use crate::util::{Ctx, first_name, living, new_relationship, rel};
@@ -39,6 +40,17 @@ pub struct Blueprint {
     pub hobbies: Option<Vec<ActivityId>>,
     pub profile: Profile,
     pub quirks: Vec<Quirk>,
+    /// set for a child; the class is the one they will grow into
+    pub child: Option<ChildSeed>,
+}
+
+/// A child as described: how naughty they are and who raises them.
+#[derive(Clone, Debug)]
+pub struct ChildSeed {
+    /// 0 never up to anything .. 1 trouble every day
+    pub mischief: f64,
+    /// ids of the people who raise them; empty for a child the village raises
+    pub parents: Vec<Id>,
 }
 
 /// The models that come with alternative textures (`<base>_texture_alt_{A,B,C}`).
@@ -101,6 +113,7 @@ impl Blueprint {
                 secret: v.secret.clone(),
             },
             quirks: v.quirks.iter().copied().filter(|q| ALLOWED_QUIRKS.contains(q)).collect(),
+            child: None,
         }
     }
 }
@@ -267,7 +280,8 @@ pub fn found_village(state: &mut SimState, blueprints: &[Blueprint], bonds: impl
     for a in &ids {
         relabel(state, a);
     }
-    state.director.population_target = state.director.population_target.max(ids.len());
+    let grown = ids.iter().filter(|id| !state.characters[*id].is_child()).count();
+    state.director.population_target = state.director.population_target.max(grown);
     finish_founding(state);
 }
 
@@ -280,15 +294,21 @@ pub fn settle_villager(ctx: &mut Ctx, v: &NewVillager) {
     let blueprint = Blueprint::from_villager(ctx, v);
     settle_and_introduce(ctx, &blueprint, &v.bonds);
     if ctx.state.order.len() >= ctx.state.director.population_target {
-        finish_founding(ctx.state);
-        let souls = ctx.state.order.len();
-        ctx.chronicle(
-            ChronicleKind::World,
-            format!("The village is founded: {souls} souls under the valley's sky."),
-            Vec::new(),
-        );
-        ctx.emit(SimEvent::SavePoint { reason: "founded".into() });
+        conclude_founding(ctx);
     }
+}
+
+/// The last founder is in: the village has its children, the chronicle says so, and the dead may come.
+fn conclude_founding(ctx: &mut Ctx) {
+    finish_founding(ctx.state);
+    let souls = ctx.state.order.len();
+    ctx.chronicle(
+        ChronicleKind::World,
+        format!("The village is founded: {souls} souls under the valley's sky."),
+        Vec::new(),
+    );
+    found_children(ctx);
+    ctx.emit(SimEvent::SavePoint { reason: "founded".into() });
 }
 
 /// Settles one person during the founding and makes them known to everyone already here.
@@ -323,14 +343,7 @@ pub fn fill_village(ctx: &mut Ctx) {
         let blueprint = Blueprint::from_villager(ctx, &v);
         settle_and_introduce(ctx, &blueprint, &v.bonds);
     }
-    finish_founding(ctx.state);
-    let souls = ctx.state.order.len();
-    ctx.chronicle(
-        ChronicleKind::World,
-        format!("The village is founded: {souls} souls under the valley's sky."),
-        Vec::new(),
-    );
-    ctx.emit(SimEvent::SavePoint { reason: "founded".into() });
+    conclude_founding(ctx);
 }
 
 /// A villager made up from the lists in `data::names`: a founder knows a few of the others already,

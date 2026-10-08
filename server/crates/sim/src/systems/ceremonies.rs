@@ -311,9 +311,11 @@ pub fn hold_speech(ctx: &mut Ctx, ceremony_id: &str, speaker_id: &str, text: Str
     ceremony.speeches.push(Speech { speaker_id: speaker_id.to_owned(), text });
 }
 
-/// A cleric, a paladin or a druid, in that order of preference; otherwise the eldest. Never one of `except`.
+/// A cleric, a paladin or a druid, in that order of preference; otherwise the eldest. Never one of `except`,
+/// and never a child, whatever they will grow into.
 fn officiant_for(state: &SimState, except: &[&str]) -> Id {
-    let candidates: Vec<&Character> = living(state).filter(|c| !except.contains(&c.id.as_str())).collect();
+    let candidates: Vec<&Character> =
+        living(state).filter(|c| !c.is_child() && !except.contains(&c.id.as_str())).collect();
     for class in [ClassId::Cleric, ClassId::Paladin, ClassId::Druid] {
         if let Some(c) = candidates.iter().find(|c| c.class_id == class) {
             return c.id.clone();
@@ -861,8 +863,10 @@ fn move_in_together(ctx: &mut Ctx, a: &str, b: &str) -> String {
     if home_a == home_b {
         return home_a;
     }
-    let others =
-        |state: &SimState, home: &str| living(state).filter(|c| c.home_id == home && c.id != a && c.id != b).count();
+    // Children share their parents' beds, so only the grown-ups count against a house.
+    let others = |state: &SimState, home: &str| {
+        living(state).filter(|c| !c.is_child() && c.home_id == home && c.id != a && c.id != b).count()
+    };
     let usable_a = home_usable(ctx.state, ctx.cr(a));
     let usable_b = home_usable(ctx.state, ctx.cr(b));
     let pick_a = match (usable_a, usable_b) {

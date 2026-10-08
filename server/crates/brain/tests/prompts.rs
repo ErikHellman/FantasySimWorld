@@ -138,14 +138,19 @@ fn prompts_match_the_typescript_brain_word_for_word() {
         }
         let prompt = build(&sim.state, case);
         let names: Vec<&str> = prompt.tools.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, case.tools, "{} {} tick {}", case.kind, case.ids[0], case.tick);
+        assert_eq!(names, case.tools, "{} {} tick {}", case.kind, case.ids.join(","), case.tick);
         let text = prompt_text(&prompt);
         if text != case.text {
             let at = text.chars().zip(case.text.chars()).take_while(|(a, b)| a == b).count();
             let from = at.saturating_sub(80);
             let got: String = text.chars().skip(from).take(200).collect();
             let want: String = case.text.chars().skip(from).take(200).collect();
-            wrong.push(format!("{} {} tick {}:\n  got:  {got:?}\n  want: {want:?}", case.kind, case.ids[0], case.tick));
+            wrong.push(format!(
+                "{} {} tick {}:\n  got:  {got:?}\n  want: {want:?}",
+                case.kind,
+                case.ids.join(","),
+                case.tick
+            ));
         }
     }
     assert!(wrong.is_empty(), "{} of {} prompts differ:\n{}", wrong.len(), fixture.cases.len(), wrong.join("\n"));

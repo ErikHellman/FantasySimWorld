@@ -5,6 +5,7 @@ pub mod activities;
 pub mod anims;
 pub mod billboards;
 pub mod ceremonies;
+pub mod children;
 pub mod classes;
 pub mod jobs;
 pub mod monsters;

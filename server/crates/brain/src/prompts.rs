@@ -14,6 +14,7 @@ use fsw_sim::state::{
     Relationship, Rite, SimState, TalkTone,
 };
 use fsw_sim::systems::charm;
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
@@ -94,7 +95,14 @@ fn level(value: f64, words: [&'static str; 3]) -> &'static str {
 /// only the world rules, which never change, so a server can cache them.
 pub fn persona(c: &Character) -> String {
     let p = &c.profile;
-    let mut lines = vec![
+    let who = if c.is_child() {
+        format!(
+            "You are {}, a child of {} ({}). You have no trade yet: your days are for playing, meals and the people who raise you.",
+            p.name,
+            p.age,
+            p.pronouns.as_str()
+        )
+    } else {
         format!(
             "You are {}, {}, {} ({}). You are a {}.",
             p.name,
@@ -102,7 +110,10 @@ pub fn persona(c: &Character) -> String {
             p.occupation,
             p.pronouns.as_str(),
             c.class_id.def().label
-        ),
+        )
+    };
+    let mut lines = vec![
+        who,
         format!("Background: {}", p.backstory),
         format!(
             "Personality: {}. You are {}, {} and {}.",
@@ -154,7 +165,7 @@ fn as_character(c: &Character, situation: String) -> Vec<ChatMessage> {
 
 fn need_words(c: &Character) -> String {
     let n = &c.needs;
-    let max = c.class_id.def().max_hp;
+    let max = max_hp(c);
     let hp = c.hp / max;
     let health = js_round(c.hp);
     let hurt = if hp < 0.35 {
@@ -307,6 +318,16 @@ fn place_list() -> String {
     format!("Places: {}, home.", names.join(", "))
 }
 
+/// What this character may choose from: a child's short list, or everything a grown-up does (play is
+/// for children).
+fn offered_to(c: &Character) -> Vec<ActivityId> {
+    if c.is_child() {
+        ActivityId::CHILD_OFFERED.to_vec()
+    } else {
+        ActivityId::OFFERED.iter().copied().filter(|id| *id != ActivityId::Play).collect()
+    }
+}
+
 /// The most things a prompt offers to work on.
 const TARGETS_NAMED: usize = 6;
 
@@ -329,14 +350,14 @@ fn targets_line(state: &SimState, c: &Character) -> String {
 
 /// What a plan for the day may hold. Rebuilding is left out: the routine already turns working hours
 /// over to it while a house lies in ruins.
-fn activity_list() -> String {
-    activities(&ActivityId::OFFERED)
+fn activity_list(c: &Character) -> String {
+    activities(&offered_to(c))
 }
 
 /// What can be done right now: the usual activities, and rebuilding while a house lies in ruins.
-fn doable_list(state: &SimState) -> String {
-    let mut offered = ActivityId::OFFERED.to_vec();
-    if fire::ruin(state).is_some() {
+fn doable_list(state: &SimState, c: &Character) -> String {
+    let mut offered = offered_to(c);
+    if fire::ruin(state).is_some() && !c.is_child() {
         offered.push(ActivityId::Rebuild);
     }
     activities(&offered)
@@ -592,20 +613,26 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
 
     let feuds: Vec<&Character> = living(state).filter(|o| o.id != c.id && brawl_unlocked(c, &o.id)).collect();
     let killable = feuds.iter().any(|o| lethal_unlocked_read(state, c, &o.id));
-    let mut tools = vec![
-        TOOLS.go_to.clone(),
-        TOOLS.do_activity.clone(),
-        TOOLS.talk_to.clone(),
-        TOOLS.give.clone(),
-        TOOLS.continue_.clone(),
-    ];
+    // A child goes places, plays, talks and carries on; they never give, brawl or attack.
+    let mut tools = if c.is_child() {
+        vec![TOOLS.go_to.clone(), TOOLS.do_activity.clone(), TOOLS.talk_to.clone(), TOOLS.continue_.clone()]
+    } else {
+        vec![
+            TOOLS.go_to.clone(),
+            TOOLS.do_activity.clone(),
+            TOOLS.talk_to.clone(),
+            TOOLS.give.clone(),
+            TOOLS.continue_.clone(),
+        ]
+    };
     if !feuds.is_empty() {
         tools.push(TOOLS.brawl.clone());
     }
     if killable {
         tools.push(TOOLS.attack.clone());
     }
-    let targets = targets_line(state, c);
+    // A child is offered no work on the world: no felling, mining, or fire.
+    let targets = if c.is_child() { String::new() } else { targets_line(state, c) };
     if !targets.is_empty() {
         tools.push(TOOLS.work_on.clone());
     }
@@ -670,7 +697,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
                     String::new()
                 },
             ),
-            section(0, format!("{}\n{}", place_list(), doable_list(state))),
+            section(0, format!("{}\n{}", place_list(), doable_list(state, c))),
             section(
                 0,
                 format!(
@@ -765,7 +792,14 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize, recall: O
     let user = assemble(
         vec![
             section(0, format!("{}\nIt is morning and the day is ahead of you.", header(state, c))),
-            section(1, format!("Your usual work: {}. What you enjoy: {}. {watch}", list(&c.jobs), list(&c.hobbies))),
+            section(
+                1,
+                if c.is_child() {
+                    "You have no work: your days are for playing, meals and the people who raise you.".to_owned()
+                } else {
+                    format!("Your usual work: {}. What you enjoy: {}. {watch}", list(&c.jobs), list(&c.hobbies))
+                },
+            ),
             section(
                 2,
                 if notable.is_empty() {
@@ -785,7 +819,7 @@ pub fn plan_prompt(state: &SimState, c: &Character, max_tokens: usize, recall: O
                     format!("Things you remember:\n{}", memory_lines(&memories, time.day))
                 },
             ),
-            section(0, activity_list()),
+            section(0, activity_list(c)),
             section(
                 0,
                 "Plan your day with set_plan: four to seven blocks from now until bedtime, each with the hour it starts. Include meals (eat) and end with sleep. Let the plan reflect what is on your mind, not only your duties.",
@@ -810,11 +844,11 @@ fn brief(c: &Character) -> String {
     } else {
         format!("\nOnly {} knows this, and never admits it: {}", first_name(c), p.secret)
     };
+    let what = if c.is_child() { format!("a child of {}", p.age) } else { format!("{}, {}", p.age, p.occupation) };
     format!(
-        "{}, {}, {} ({}). {}.{}{noted} Speaks: {}{secret}",
+        "{}, {} ({}). {}.{}{noted} Speaks: {}{secret}",
         p.name,
-        p.age,
-        p.occupation,
+        what,
         p.pronouns.as_str(),
         capital(&p.traits.join(", ")),
         if p.spite >= SPITEFUL { " Holds grudges and picks quarrels." } else { "" },
@@ -869,8 +903,12 @@ fn tone_words(tone: TalkTone, a: &Character, b: &Character) -> String {
     // The spiteful go looking for a quarrel even with someone who has done them no wrong.
     let picking_a_quarrel = a.profile.spite >= SPITEFUL && rel_or_default(a, &b.id).grievance < RUNG_GRUDGE;
     let a_allure = a.profile.allure;
+    let (a_child, b_child) = (a.is_child(), b.is_child());
     let (a, b) = (first_name(a), first_name(b));
     match tone {
+        // A hard word between a grown-up and a child is a telling-off, or cheek.
+        TalkTone::Hostile if b_child && !a_child => format!("{a} is telling {b} off."),
+        TalkTone::Hostile if a_child && !b_child => format!("{a} is giving {b} cheek."),
         TalkTone::Hostile if picking_a_quarrel => format!("{a} has come looking for a quarrel with {b}."),
         TalkTone::Hostile => format!("{a} has come to confront {b} over a grievance."),
         TalkTone::Romantic if a_allure >= charm::CHARMER => {

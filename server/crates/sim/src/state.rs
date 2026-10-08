@@ -207,6 +207,47 @@ impl QuirkState {
     }
 }
 
+/// What a child is until they come of age; `None` for adults, and left out of a
+/// save, so worlds saved before children existed load unchanged.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Childhood {
+    /// the sim day they next turn a year older
+    pub next_birthday_day: i64,
+    /// 0 never up to anything .. 1 trouble every day
+    pub mischief: f64,
+    /// ids of the people who raise them; empty for a child the village raises
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parents: Vec<Id>,
+    /// today's piece of trouble, decided at dawn and carried out when the chance comes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<MischiefPlan>,
+}
+
+/// The kinds of trouble a child gets into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mischief {
+    PinchFood,
+    WanderOff,
+    PlayWithFire,
+    HideTool,
+    TallTale,
+    ThrowFood,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MischiefPlan {
+    pub kind: Mischief,
+    /// where it happens, for the kinds that need a place
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place_id: Option<String>,
+    /// the tick it was carried out, or 0 while it is still to come
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub done_tick: i64,
+}
+
 fn is_zero_tick(value: &i64) -> bool {
     *value == 0
 }
@@ -549,6 +590,10 @@ pub enum IntentAction {
     FightFire {
         place_id: String,
     },
+    /// runs after a child who has wandered off and brings them home
+    Fetch {
+        target_id: Id,
+    },
     /// stands with the village at a wedding or a funeral
     Attend {
         place_id: String,
@@ -613,6 +658,7 @@ impl IntentAction {
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
             Self::FightFire { .. } => "fight_fire",
+            Self::Fetch { .. } => "fetch",
             Self::Attend { .. } => "attend",
             Self::WorldWork { .. } => "world_work",
         }
@@ -623,7 +669,8 @@ impl IntentAction {
             Self::Talk { target_id, .. }
             | Self::Give { target_id, .. }
             | Self::Fight { target_id, .. }
-            | Self::Stalk { target_id } => Some(target_id),
+            | Self::Stalk { target_id }
+            | Self::Fetch { target_id } => Some(target_id),
             _ => None,
         }
     }
@@ -716,6 +763,8 @@ pub enum StimulusKind {
     Favour,
     /// harm a viewer sent, from the same days; kept so those saves still load
     Wrath,
+    /// a birth, a child coming of age, or a child's mischief reported to those who raise them
+    Family,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -838,11 +887,18 @@ pub struct Character {
     pub quirks: Vec<Quirk>,
     #[serde(default, skip_serializing_if = "QuirkState::is_default")]
     pub quirk_state: QuirkState,
+    /// set while this character is a child
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child: Option<Childhood>,
 }
 
 impl Character {
     pub fn has(&self, quirk: Quirk) -> bool {
         self.quirks.contains(&quirk)
+    }
+
+    pub fn is_child(&self) -> bool {
+        self.child.is_some()
     }
 
     /// Drunk at this tick.
@@ -1389,6 +1445,9 @@ pub struct Director {
     /// the dead who have a grave but have not yet been buried before the village
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub awaiting_funeral: Vec<Id>,
+    /// tick the last child was born; births are spaced out
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_birth_tick: i64,
     /// when the village next looks over what wants building
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_project_tick: i64,

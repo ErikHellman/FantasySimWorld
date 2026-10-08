@@ -241,6 +241,10 @@ fn woodcutters_fell_real_trees_and_stack_the_logs_at_the_camp() {
         .map(|c| c.id.clone())
         .collect();
     assert!(!woodcutters.is_empty());
+    // Their other trades are set aside, so the day's work is at the trees whatever the routine draws.
+    for id in &woodcutters {
+        sim.state.characters.get_mut(id).unwrap().jobs = vec![fsw_sim::state::ActivityId::ChopWood];
+    }
     let felled = |state: &SimState| state.objects.values().any(|o| matches!(o, WorldObject::Tree { .. }));
     let took = run_until(&mut sim, TICKS_PER_DAY, felled);
     assert!(took < TICKS_PER_DAY, "no tree came down in a day");

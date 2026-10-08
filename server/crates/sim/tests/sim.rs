@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::state::Quirk;
 use fsw_sim::state::{ActPhase, Character};
-use fsw_sim::util::living;
+use fsw_sim::util::{adult_count, living};
 use fsw_sim::{Command, FOUNDERS, Sim, SimEvent, SimState, create_state};
 use fsw_testing::create_test_state;
 use fsw_world::navgrid::{is_walkable, nearest_walkable};
@@ -28,7 +28,8 @@ fn round_trip(state: &SimState) -> SimState {
 #[test]
 fn the_test_cast_starts_all_housed() {
     let state = create_test_state(1);
-    assert_eq!(state.order.len(), 13);
+    assert_eq!(state.order.len(), 18);
+    assert_eq!(adult_count(&state), 13);
     assert_eq!(state.director.population_target, 13);
     assert!(!state.director.founding);
     for c in living(&state) {
@@ -57,7 +58,7 @@ fn found_village_fills_the_village_from_the_sims_own_lists_and_ends_the_founding
     sim.enqueue(Command::FoundVillage);
     sim.step();
     let state = &sim.state;
-    assert_eq!(state.order.len(), FOUNDERS);
+    assert_eq!(adult_count(state), FOUNDERS);
     assert!(!state.director.founding);
     let firsts: Vec<String> = living(state).map(|c| c.profile.name.split(' ').next().unwrap().to_lowercase()).collect();
     let mut unique = firsts.clone();
@@ -68,8 +69,10 @@ fn found_village_fills_the_village_from_the_sims_own_lists_and_ends_the_founding
         assert!(c.home_id.starts_with("home_"));
         assert!(is_walkable(c.pos.x, c.pos.z), "{}", c.profile.name);
         assert!(!c.has(Quirk::Murderous) && !c.has(Quirk::Occultist), "{}", c.profile.name);
-        assert_eq!(c.relationships.len(), FOUNDERS - 1, "{}", c.profile.name);
-        assert_eq!(c.profile.traits.len(), 3);
+        assert_eq!(c.relationships.len(), state.order.len() - 1, "{}", c.profile.name);
+        if !c.is_child() {
+            assert_eq!(c.profile.traits.len(), 3);
+        }
     }
     // The first night comes at the usual hour, and the village runs on like any other.
     assert_eq!(state.director.next_wave_tick, fsw_sim::systems::director::tick_at(1, 20.6));

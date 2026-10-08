@@ -5897,6 +5897,62 @@ export const assetManifest: AssetManifest = {
    "height": 2.9,
    "rig": "large",
    "scale": 0.7
+  },
+  "Child_Knight": {
+   "url": "assets/characters/Child_Knight.glb?v=d9d4ac2a31",
+   "texture": "knight_texture",
+   "height": 1.53,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Barbarian": {
+   "url": "assets/characters/Child_Barbarian.glb?v=a05c5e4633",
+   "texture": "barbarian_texture",
+   "height": 1.44,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Mage": {
+   "url": "assets/characters/Child_Mage.glb?v=2475be896a",
+   "texture": "mage_texture",
+   "height": 1.59,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Ranger": {
+   "url": "assets/characters/Child_Ranger.glb?v=31b8bbd4e2",
+   "texture": "ranger_texture",
+   "height": 1.36,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Rogue": {
+   "url": "assets/characters/Child_Rogue.glb?v=0661279d26",
+   "texture": "rogue_texture",
+   "height": 1.31,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Druid": {
+   "url": "assets/characters/Child_Druid.glb?v=c8189f74bf",
+   "texture": "druid_texture",
+   "height": 1.65,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Engineer": {
+   "url": "assets/characters/Child_Engineer.glb?v=28d4ec2c99",
+   "texture": "engineer_texture",
+   "height": 1.36,
+   "rig": "medium",
+   "scale": 0.6
+  },
+  "Child_Farmer": {
+   "url": "assets/characters/Child_Farmer.glb?v=808ed08cd3",
+   "texture": "farmer_texture_A",
+   "height": 1.45,
+   "rig": "medium",
+   "scale": 0.6
   }
  },
  "rigs": {

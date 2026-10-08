@@ -43,8 +43,10 @@ const PANIC_LINES: [&str; 4] = [
     "No, no, no! I'm going home!",
 ];
 
+/// Hit points when whole: the class's, or a child's share of them.
 pub fn max_hp(c: &crate::state::Character) -> f64 {
-    c.class_id.def().max_hp
+    let class = c.class_id.def().max_hp;
+    if c.is_child() { class * crate::data::children::CHILD_HP_FRACTION } else { class }
 }
 
 pub fn weapon_of(c: &crate::state::Character, mode: FightMode) -> &'static Weapon {
@@ -141,7 +143,8 @@ fn reflex_defend(ctx: &mut Ctx, victim: &str, attacker_id: &str, mode: FightMode
     }
     let hp_left = v.hp / max_hp(v);
     let stands = v.profile.bravery * 0.75 + hp_left * 0.35 + if mode == FightMode::Brawl { 0.2 } else { 0.0 } > 0.62;
-    let stands = !v.has(Quirk::Coward) && (stands || v.has(Quirk::Fighter));
+    // A child always runs.
+    let stands = !v.has(Quirk::Coward) && !v.is_child() && (stands || v.has(Quirk::Fighter));
     if stands {
         start_fight(ctx, victim, attacker_id, mode, IntentSource::Reflex, None);
     } else {

@@ -9,6 +9,7 @@ use fsw_sim::state::{
     ActPhase, Character, IntentAction, MemoryKind as SimMemoryKind, MonsterPhase, PlanSource,
     RelationLabel as SimLabel, Resource, SimState,
 };
+use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::is_homeless;
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
@@ -25,10 +26,6 @@ use crate::encode::chronicle_entry;
 pub const CHRONICLE_TAIL: usize = 120;
 /// How many memories the inspector shows, newest first.
 pub const DETAIL_MEMORIES: usize = 40;
-
-fn max_hp(c: &Character) -> f64 {
-    c.class_id.def().max_hp
-}
 
 pub fn mood_of(c: &Character) -> Mood {
     if matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Fight { .. } | IntentAction::Flee)) {
@@ -54,6 +51,7 @@ pub fn roster_of(state: &SimState) -> Vec<RosterEntry> {
             hp: c.hp / max_hp(c),
             mood: mood_of(c),
             partner: c.partner_id.is_some(),
+            child: c.is_child(),
         })
         .collect()
 }
@@ -176,6 +174,7 @@ pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
         age: c.profile.age.max(0) as u32,
         occupation: c.profile.occupation.clone(),
         class_name: c.class_id.def().label.into(),
+        child: c.is_child(),
         backstory: c.profile.backstory.clone(),
         traits: c.profile.traits.clone(),
         goals: c.profile.goals.clone(),
@@ -257,13 +256,30 @@ mod tests {
     }
 
     #[test]
+    fn a_child_is_whole_at_half_the_class_hit_points() {
+        let state = create_test_state(1);
+        let pip = living(&state).find(|c| c.profile.name == "Pip Vane").unwrap();
+        let row = roster_of(&state).into_iter().find(|row| row.id == pip.id).unwrap();
+        assert_eq!(row.hp, 1.0);
+        assert_eq!(row.role, "child");
+        assert!(row.child);
+        assert_eq!(crate::encode::character_static(pip).max_hp, pip.class_id.def().max_hp * 0.5);
+        assert_eq!(mood_of(pip), Mood::Ok);
+        let detail = detail_of(&state, &pip.id).unwrap();
+        assert!(detail.child);
+        let aldric = living(&state).find(|c| c.profile.name == "Aldric Vane").unwrap();
+        assert!(!roster_of(&state).into_iter().find(|row| row.id == aldric.id).unwrap().child);
+        assert!(!detail_of(&state, &aldric.id).unwrap().child);
+    }
+
+    #[test]
     fn renders_the_inspector_and_roster() {
         let mut sim = Sim::new(create_test_state(4));
         for _ in 0..2000 {
             sim.step();
         }
         let roster = roster_of(&sim.state);
-        assert_eq!(roster.len(), 13);
+        assert_eq!(roster.len(), 18);
         assert!(roster.iter().all(|row| !row.status.is_empty()));
         let id = sim.state.order[0].clone();
         let detail = detail_of(&sim.state, &id).unwrap();

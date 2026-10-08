@@ -8,7 +8,7 @@ use crate::state::{ActPhase, Character, FightMode, IntentAction, Rite, SimState,
 use crate::systems::fire::home_usable;
 use crate::systems::quirks::reading_late;
 use crate::systems::world::describe_target;
-use crate::util::{join_names, name_of};
+use crate::util::{join_names, name_of, place_name_at};
 
 pub fn describe_activity(state: &SimState, c: &Character) -> String {
     let doing = doing(state, c);
@@ -48,6 +48,13 @@ fn doing(state: &SimState, c: &Character) -> String {
             }
             if *id == ActivityId::Stroll {
                 return "strolling around the village".into();
+            }
+            if *id == ActivityId::Play {
+                return if c.act.phase == ActPhase::Perform || c.act.dest.is_none() {
+                    format!("playing at {}", place_name_at(c.pos))
+                } else {
+                    "playing".into()
+                };
             }
             if *id == ActivityId::Rebuild {
                 let name = place_id.as_deref().and_then(find_place).map_or("the ruin", |place| place.name);
@@ -94,6 +101,7 @@ fn doing(state: &SimState, c: &Character) -> String {
                 format!("fetching water for the fire at {name}")
             }
         }
+        IntentAction::Fetch { target_id } => format!("fetching {} home", name_of(state, target_id)),
         IntentAction::Attend { .. } => {
             let there = c.act.phase == ActPhase::Perform;
             match state.ceremony.as_ref().map(|ceremony| &ceremony.rite) {
