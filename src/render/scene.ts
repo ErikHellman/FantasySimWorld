@@ -234,25 +234,28 @@ export class WorldView {
   }
 
   /**
-   * What a tap on a screen point picks: the villager nearest to it within `radius` pixels, or failing that the
-   * building or built thing under it (`b:<place>`, `n:<n>`), or null.
+   * What a tap on a screen point picks: the villager or monster nearest to it within `radius` pixels, or failing
+   * that the building or built thing under it (`b:<place>`, `n:<n>`), or null.
    */
   pick(clientX: number, clientY: number, radius = 46): string | null {
-    const villager = this.pickVillager(clientX, clientY, radius);
-    if (villager) return villager;
+    const actor = this.pickActor(clientX, clientY, radius);
+    if (actor) return actor;
     const ray = this.rig.rayAt(clientX, clientY);
     const hits = [this.structures.pick(ray), this.marks.pick(ray)].filter((hit) => hit !== null);
     hits.sort((a, b) => a.distance - b.distance);
     return hits[0]?.id ?? null;
   }
 
-  /** The character nearest to a screen point, if any is within `radius` pixels of it and so counts as clicked. */
-  private pickVillager(clientX: number, clientY: number, radius: number): string | null {
+  /**
+   * The villager or monster nearest to a screen point, if any is within `radius` pixels of it and so counts as
+   * clicked. A body has no card and cannot be picked.
+   */
+  private pickActor(clientX: number, clientY: number, radius: number): string | null {
     const rect = this.canvas.getBoundingClientRect();
     let best: string | null = null;
     let bestDistance = radius;
     for (const [id, actor] of this.actors) {
-      if (actor.entity.kind !== 'villager' || !actor.entity.visible) continue;
+      if (actor.entity.kind === 'corpse' || !actor.entity.visible) continue;
       const position = actor.view.root.position;
       this.projected.set(position.x, position.y + actor.view.height * 0.5, position.z).project(this.rig.camera);
       if (this.projected.z > 1) continue;

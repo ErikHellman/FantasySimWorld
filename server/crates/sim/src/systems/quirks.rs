@@ -14,7 +14,7 @@ use crate::data::smalltalk::FALSE_STORIES;
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActivityId, ChronicleKind, DeadRecord, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind,
-    MemoryKind::Event, MonsterKind, Quirk, Rumour,
+    MemoryKind::Event, MonsterKind, MonsterOrigin, Quirk, Rumour,
 };
 use crate::systems::combat::{max_hp, start_fight, witnesses};
 use crate::systems::death::{detach, schedule_arrival_after_loss};
@@ -431,7 +431,8 @@ pub fn raise_the_dead(ctx: &mut Ctx, id: &str) {
         let x = home.door.x + reach * fsw_core::jsmath::cos(angle);
         let z = home.door.z + reach * fsw_core::jsmath::sin(angle);
         let Some(pos) = ctx.state.nav.nearest_walkable(vec2(x, z), 6) else { continue };
-        spawn_monster(ctx, MonsterKind::SkeletonMinion, pos, home.facing);
+        let monster = spawn_monster(ctx, MonsterKind::SkeletonMinion, pos, home.facing, MonsterOrigin::Raised);
+        ctx.m(&monster).raised_by = Some(id.to_owned());
         raised += 1;
     }
     if raised == 0 {
@@ -526,7 +527,7 @@ pub fn fall_to_necromancy(ctx: &mut Ctx, id: &str) {
             Some(id),
         );
     }
-    let monster = spawn_monster(ctx, MonsterKind::Necromancer, fallen.pos, fallen.facing);
+    let monster = spawn_monster(ctx, MonsterKind::Necromancer, fallen.pos, fallen.facing, MonsterOrigin::Turned);
     let m = ctx.m(&monster);
     m.name = Some(format!("{name} the Necromancer"));
     m.lasting = true;

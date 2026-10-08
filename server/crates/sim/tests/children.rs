@@ -140,7 +140,7 @@ mod protection {
     use fsw_core::time::TICKS_PER_DAY;
     use fsw_core::vec2;
     use fsw_sim::commands::TuningPatch;
-    use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MonsterKind, RelationLabel};
+    use fsw_sim::state::{FightMode, Intent, IntentAction, IntentSource, MonsterKind, MonsterOrigin, RelationLabel};
     use fsw_sim::systems::combat::max_hp;
     use fsw_sim::systems::fire::ignite;
     use fsw_sim::systems::monsters::{find_target, spawn_monster};
@@ -237,7 +237,13 @@ mod protection {
         }
         let mut events = Vec::new();
         let mut ctx = Ctx::new(&mut state, &mut events);
-        let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, vec2(door.x - 2.0, door.z), 0.0);
+        let monster = spawn_monster(
+            &mut ctx,
+            MonsterKind::SkeletonMinion,
+            vec2(door.x - 2.0, door.z),
+            0.0,
+            MonsterOrigin::Graveyard,
+        );
         let monster = ctx.state.monsters[&monster].clone();
         assert_eq!(find_target(ctx.state, &monster, 30.0).as_deref(), Some(aldric.as_str()));
         ctx.state.characters.get_mut(&aldric).unwrap().inside = Some("home_2".into());
@@ -261,7 +267,13 @@ mod protection {
                 let mut ctx = Ctx::new(&mut sim.state, &mut events);
                 let green = fsw_world::places::get_place("green").door;
                 for i in 0..4 {
-                    spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, vec2(green.x + i as f64, green.z + 3.0), 0.0);
+                    spawn_monster(
+                        &mut ctx,
+                        MonsterKind::SkeletonMinion,
+                        vec2(green.x + i as f64, green.z + 3.0),
+                        0.0,
+                        MonsterOrigin::Graveyard,
+                    );
                 }
             }
             if tick == TICKS_PER_DAY + 1000 {

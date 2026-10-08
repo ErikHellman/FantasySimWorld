@@ -11,7 +11,8 @@ use fsw_sim::data::economy::{
     starting_gold,
 };
 use fsw_sim::state::{
-    ActivityId, ChronicleKind, Economy, Intent, IntentAction, IntentSource, ItemId, Resource, SimState, WorldJob,
+    ActivityId, ChronicleKind, Economy, Intent, IntentAction, IntentSource, ItemId, MonsterOrigin, Resource, SimState,
+    WorldJob,
 };
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::economy::wages_for;
@@ -270,7 +271,7 @@ mod loot {
     fn slay(sim: &mut Sim, kind: MonsterKind) -> Vec<LootKind> {
         let pos = get_place("green").origin;
         with(sim, |ctx| {
-            let id = spawn_monster(ctx, kind, pos, 0.0);
+            let id = spawn_monster(ctx, kind, pos, 0.0, MonsterOrigin::Graveyard);
             damage_monster(ctx, &id, 10_000, "c1");
         });
         sim.state.loot.values().map(|l| l.kind).collect()
@@ -349,7 +350,8 @@ mod loot {
         let coins = drop_near(&mut sim, "c1", LootKind::Coins { count: 3 });
         let at = sim.state.loot[&coins].pos;
         let post = vec2(at.x + 6.0, at.z);
-        let warrior = with(&mut sim, |ctx| spawn_monster(ctx, MonsterKind::SkeletonWarrior, post, 0.0));
+        let warrior =
+            with(&mut sim, |ctx| spawn_monster(ctx, MonsterKind::SkeletonWarrior, post, 0.0, MonsterOrigin::Graveyard));
         // The warrior is held at its post all morning: unkillable, and not one to crumble or lie low.
         for _ in 0..600 {
             let m = sim.state.monsters.get_mut(&warrior).unwrap();

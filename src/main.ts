@@ -5,7 +5,7 @@ import { MoodTracker } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
-import type { AmbientCounts, WireEvent } from './generated/api';
+import type { AmbientCounts, Detail, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
 import { GuestQueue } from './net/guestQueue';
 import { Playback } from './net/playback';
@@ -164,7 +164,10 @@ async function start(): Promise<void> {
         if (ui.selectedId.value === id) ui.site.value = site;
       }, letGo);
     } else {
-      api.character(id).then((detail) => {
+      const fetched: Promise<Detail> = world.isMonster(id)
+        ? api.monster(id).then((detail) => ({ kind: 'monster', ...detail }))
+        : api.character(id).then((detail) => ({ kind: 'villager', ...detail }));
+      fetched.then((detail) => {
         if (ui.selectedId.value === id) ui.detail.value = detail;
       }, letGo);
     }

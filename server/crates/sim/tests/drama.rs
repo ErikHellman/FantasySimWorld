@@ -6,8 +6,8 @@ use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::anims::AnimId;
 use fsw_sim::data::classes::ClassId;
 use fsw_sim::state::{
-    Bond, BondKind, ConvoPhase, FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, NewVillager,
-    Pronouns, Quirk, RelationLabel, TalkTone,
+    Bond, BondKind, ConvoPhase, FightMode, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind, MonsterOrigin,
+    NewVillager, Pronouns, Quirk, RelationLabel, TalkTone,
 };
 use fsw_sim::systems::combat::{Assailant, PANIC_MAX, damage_character, max_hp, panic_chance, run_fight, start_fight};
 use fsw_sim::systems::death::kill_character;
@@ -288,7 +288,7 @@ fn take_blows(bravery: f64, temper: f64, blows: usize) -> (World, String, bool) 
     let mut events = Vec::new();
     let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
     let pos = ctx.cr(&id).pos;
-    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0);
+    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0, MonsterOrigin::Graveyard);
     start_fight(&mut ctx, &id, &monster, FightMode::Monster, IntentSource::Reflex, None);
     let mut ran = false;
     for _ in 0..blows {
@@ -511,7 +511,7 @@ fn stand_at(hp_share: f64) -> bool {
     let mut events = Vec::new();
     let mut ctx = Ctx::new(&mut w.sim.state, &mut events);
     let pos = ctx.cr(&id).pos;
-    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0);
+    let monster = spawn_monster(&mut ctx, MonsterKind::SkeletonMinion, pos, 0.0, MonsterOrigin::Graveyard);
     start_fight(&mut ctx, &id, &monster, FightMode::Monster, IntentSource::Llm, None);
     let cap = max_hp(ctx.cr(&id));
     ctx.c(&id).hp = cap * hp_share;

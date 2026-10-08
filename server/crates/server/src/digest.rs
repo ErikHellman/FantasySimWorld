@@ -1,7 +1,7 @@
 //! The HUD's view of the world, rendered on the server because the client has
-//! no sim helpers: the roster, the status line, the inspector's
-//! `CharacterDetail` (port of `tools/ref-server/digest.ts` at the `ts-sim-reference` tag) and a
-//! site's `SiteDetail`.
+//! no sim helpers: the roster, the status line and the inspector's
+//! `CharacterDetail` (port of `tools/ref-server/digest.ts` at the `ts-sim-reference` tag),
+//! plus the card of one of the dead (`MonsterDetail`) and a site's page (`SiteDetail`).
 
 use fsw_core::jsmath::js_round;
 use fsw_core::time::{format_clock, game_time, part_of_day};
@@ -9,21 +9,21 @@ use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, Character, HousePhase, IntentAction, MemoryKind as SimMemoryKind, MonsterPhase, PlanSource, ProjectKind,
-    PropStage, RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
+    ActPhase, Character, HousePhase, IntentAction, MemoryKind as SimMemoryKind, Monster, MonsterOrigin, MonsterPhase,
+    PlanSource, ProjectKind, PropStage, RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::systems::world::{beds_of, object_name, project_label};
-use fsw_sim::util::{first_name, living, name_of};
+use fsw_sim::util::{first_name, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
-    AmbientCounts, CharacterDetail, ChronicleEntry, Founding, Goods, Inventory, LlmStatus, Memory, MemoryKind, Mood,
-    Needs, Person, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject,
-    Status,
+    AmbientCounts, CharacterDetail, ChronicleEntry, Detail, Founding, Goods, Inventory, LlmStatus, Memory, MemoryKind,
+    MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind,
+    SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 
@@ -172,8 +172,95 @@ fn memory_kind(kind: SimMemoryKind) -> MemoryKind {
     }
 }
 
+/// The inspector for whatever a viewer watches: a living villager, or one of the dead.
+pub fn detail_of(state: &SimState, id: &str) -> Option<Detail> {
+    character_detail_of(state, id)
+        .map(|detail| Detail::Villager(Box::new(detail)))
+        .or_else(|| monster_detail_of(state, id).map(|detail| Detail::Monster(Box::new(detail))))
+}
+
+/// The card of one of the dead, with its state and what it has done rendered as text.
+pub fn monster_detail_of(state: &SimState, id: &str) -> Option<MonsterDetail> {
+    let m = state.monsters.get(id)?;
+    let def = m.kind.def();
+    // A target outlives the chase in the struct (one crumbling still names its last quarry); the card only shows
+    // who it is after right now.
+    let target = m
+        .target_id
+        .as_deref()
+        .filter(|_| m.phase == MonsterPhase::Chase)
+        .and_then(|t| state.characters.get(t))
+        .map(|c| NamedId { id: c.id.clone(), name: name_of(state, &c.id) });
+    Some(MonsterDetail {
+        id: m.id.clone(),
+        name: m.name.clone().unwrap_or_else(|| def.label.into()),
+        species: def.label.into(),
+        hp: m.hp.max(0.0),
+        max_hp: def.max_hp,
+        status: monster_status(state, m, target.as_ref()),
+        target,
+        rose: monster_rose(state, m),
+        was: m.was_id.as_deref().and_then(|was| state.dead.get(was)).map(|dead| dead.name.clone()),
+        lasting: m.lasting,
+        kills: m.kills.max(0) as u32,
+        blows: m.blows.max(0) as u32,
+        damage: [def.damage[0].max(0) as u32, def.damage[1].max(0) as u32],
+    })
+}
+
+/// What one of the dead is doing, as `update_monsters` sees it (daylight is hour 5.6 to 19.4 there too).
+fn monster_status(state: &SimState, m: &Monster, target: Option<&NamedId>) -> String {
+    let hour = game_time(state.tick).hour;
+    let daylight = (5.6..19.4).contains(&hour);
+    let here = place_name_at(m.pos);
+    match m.phase {
+        MonsterPhase::Rising => format!("Rising from the ground at {here}"),
+        MonsterPhase::Dying if m.was_id.is_some() => "Laid to rest at last".into(),
+        MonsterPhase::Dying => "Crumbling to dust".into(),
+        MonsterPhase::Chase if target.is_some() => format!("Hunting {} near {here}", target.expect("checked").name),
+        MonsterPhase::Chase | MonsterPhase::Roam => match &m.arson {
+            Some(plan) => {
+                let house = find_place(&plan.place_id).map_or(plan.place_id.as_str(), |place| place.name);
+                if plan.light_tick > 0 {
+                    format!("Setting {house} alight")
+                } else {
+                    format!("Creeping towards {house} to set it alight")
+                }
+            }
+            None if daylight && m.lasting => "Lying low in the ruins".into(),
+            None => format!("Prowling near {here}"),
+        },
+    }
+}
+
+/// When and where it rose, for the card; empty for one from a save that did not keep it.
+fn monster_rose(state: &SimState, m: &Monster) -> String {
+    let Some(rose_tick) = m.rose_tick else { return String::new() };
+    let how = match m.origin {
+        Some(MonsterOrigin::Ruins) => "Crept out of the old ruins".to_owned(),
+        Some(MonsterOrigin::Summoned) => "Called up by a necromancer".to_owned(),
+        Some(MonsterOrigin::Raised) => {
+            let by = m.raised_by.as_deref().map_or_else(|| "someone".to_owned(), |by| name_of(state, by));
+            let home = m
+                .raised_by
+                .as_deref()
+                .and_then(|by| state.characters.get(by))
+                .and_then(|c| find_place(&c.home_id))
+                .map(|place| place.name);
+            match home {
+                Some(home) => format!("Raised by {by} near {home}"),
+                None => format!("Raised by {by}, far from any grave"),
+            }
+        }
+        Some(MonsterOrigin::Turned) => "Gave themself to the dark".to_owned(),
+        Some(MonsterOrigin::Graveyard) | None => "Rose from the graveyard".to_owned(),
+    };
+    let time = game_time(rose_tick);
+    format!("{how} on day {} at {}", time.day, format_clock(time.minute_of_day))
+}
+
 /// The inspector for one living character.
-pub fn detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
+pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
     let c = state.characters.get(id)?;
     let current = block_at(&c.plan, game_time(state.tick).hour);
     Some(CharacterDetail {
@@ -259,8 +346,8 @@ pub fn detail_json(state: &SimState, id: &str) -> Option<String> {
     }
 }
 
-fn person(c: &Character) -> Person {
-    Person { id: c.id.clone(), name: first_name(c).to_owned() }
+fn person(c: &Character) -> NamedId {
+    NamedId { id: c.id.clone(), name: first_name(c).to_owned() }
 }
 
 /// The page for a building (`b:<place>`) or something the village built (`n:<n>`); `None` for anything
@@ -289,7 +376,7 @@ pub fn site_of(state: &SimState, id: &str) -> Option<SiteDetail> {
         (None, None) => ("whole".to_owned(), 0, 0, 0),
     };
     let home = building && place.kind == PlaceKind::Home;
-    let mut present: Vec<Person> = if building {
+    let mut present: Vec<NamedId> = if building {
         living(state)
             .filter(|c| {
                 c.inside.as_deref() == Some(place.id.as_str())
@@ -469,7 +556,7 @@ mod tests {
         assert_eq!((smithy.stage.as_str(), smithy.since_tick, smithy.progress), ("raising", 5, 20));
         let project = smithy.project.unwrap();
         assert_eq!((project.label.as_str(), project.progress), ("raising the smithy", 25));
-        assert_eq!(project.helpers, vec![Person { id: "c1".into(), name: "Aldric".into() }]);
+        assert_eq!(project.helpers, vec![NamedId { id: "c1".into(), name: "Aldric".into() }]);
         let needs: Vec<(&str, u32, u32)> =
             project.needs.iter().map(|n| (n.resource.as_str(), n.delivered, n.needed)).collect();
         assert_eq!(needs, [("wood", 6, 10), ("stone", 0, 4)]);
@@ -511,11 +598,11 @@ mod tests {
         assert!(row.child);
         assert_eq!(crate::encode::character_static(pip).max_hp, pip.class_id.def().max_hp * 0.5);
         assert_eq!(mood_of(pip), Mood::Ok);
-        let detail = detail_of(&state, &pip.id).unwrap();
+        let detail = character_detail_of(&state, &pip.id).unwrap();
         assert!(detail.child);
         let aldric = living(&state).find(|c| c.profile.name == "Aldric Vane").unwrap();
         assert!(!roster_of(&state).into_iter().find(|row| row.id == aldric.id).unwrap().child);
-        assert!(!detail_of(&state, &aldric.id).unwrap().child);
+        assert!(!character_detail_of(&state, &aldric.id).unwrap().child);
     }
 
     #[test]
@@ -528,11 +615,60 @@ mod tests {
         assert_eq!(roster.len(), 18);
         assert!(roster.iter().all(|row| !row.status.is_empty()));
         let id = sim.state.order[0].clone();
-        let detail = detail_of(&sim.state, &id).unwrap();
+        let detail = character_detail_of(&sim.state, &id).unwrap();
         assert_eq!(detail.plan.iter().filter(|row| row.current).count(), 1);
         assert!(!detail.relations.is_empty());
         assert!(detail.memories.len() <= DETAIL_MEMORIES);
         assert!(detail_of(&sim.state, "nobody").is_none());
+    }
+
+    #[test]
+    fn renders_one_of_the_dead() {
+        use fsw_sim::state::{MonsterKind, MonsterOrigin};
+        use fsw_sim::systems::director::tick_at;
+        use fsw_sim::systems::monsters::spawn_monster;
+        use fsw_sim::util::Ctx;
+        use fsw_world::places::get_place;
+
+        let mut state = create_test_state(1);
+        state.tick = tick_at(3, 21.5);
+        let aldric = living(&state).find(|c| c.profile.name == "Aldric Vane").unwrap().id.clone();
+        let green = get_place("green").origin;
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut state, &mut events);
+        let id = spawn_monster(&mut ctx, MonsterKind::SkeletonWarrior, green, 0.0, MonsterOrigin::Graveyard);
+        let m = ctx.m(&id);
+        m.phase = MonsterPhase::Chase;
+        m.target_id = Some(aldric.clone());
+        m.kills = 1;
+        m.blows = 3;
+
+        let detail = monster_detail_of(&state, &id).unwrap();
+        assert_eq!(detail.name, "skeleton warrior");
+        assert_eq!(detail.species, "skeleton warrior");
+        assert_eq!(detail.status, "Hunting Aldric near the village green");
+        assert_eq!(detail.target.as_ref().map(|t| (t.id.as_str(), t.name.as_str())), Some((aldric.as_str(), "Aldric")));
+        assert_eq!(detail.rose, "Rose from the graveyard on day 3 at 21:30");
+        assert_eq!((detail.kills, detail.blows), (1, 3));
+        assert_eq!(detail.damage, [10, 16]);
+        assert_eq!((detail.hp, detail.max_hp), (82.0, 82.0));
+        assert!(!detail.lasting && detail.was.is_none());
+        assert!(matches!(detail_of(&state, &id), Some(Detail::Monster(_))));
+        assert!(matches!(detail_of(&state, &aldric), Some(Detail::Villager(_))));
+
+        // One still rising, from a save that did not keep when it rose.
+        let m = state.monsters.get_mut(&id).unwrap();
+        m.phase = MonsterPhase::Rising;
+        m.rose_tick = None;
+        let detail = monster_detail_of(&state, &id).unwrap();
+        assert_eq!(detail.status, "Rising from the ground at the village green");
+        assert_eq!(detail.rose, "");
+        // One crumbling has nobody left to hunt, whatever it was after.
+        state.monsters.get_mut(&id).unwrap().phase = MonsterPhase::Dying;
+        let detail = monster_detail_of(&state, &id).unwrap();
+        assert_eq!(detail.status, "Crumbling to dust");
+        assert!(detail.target.is_none());
+        assert!(monster_detail_of(&state, "m99").is_none());
     }
 }
 

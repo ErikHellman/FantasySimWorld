@@ -1,5 +1,5 @@
 import {
-  PROTOCOL_VERSION, type BrainLogRecord, type CharacterDetail, type ChatMessage, type ChatWelcome, type ChatYou, type GuestEnd, type Hello,
+  PROTOCOL_VERSION, type BrainLogRecord, type ChatMessage, type ChatWelcome, type ChatYou, type Detail, type GuestEnd, type Hello,
   type RosterEntry, type SiteDetail, type Snapshot, type Status, type TickFrame, type WorldReset,
 } from '../generated/api';
 import { HttpError, api } from './api';
@@ -13,8 +13,9 @@ export interface StreamHandlers {
   status(status: Status): void;
   /** the roster, when it changes (at most once a second) */
   roster(roster: RosterEntry[]): void;
-  detail(detail: CharacterDetail): void;
-  /** the page of the site this viewer watches, when it changes */
+  /** the inspector for the villager or monster this tab watches */
+  detail(detail: Detail): void;
+  /** the page of the site this tab watches, when it changes */
   site(site: SiteDetail): void;
   brainlog(record: BrainLogRecord): void;
   worldReset(reset: WorldReset): void;
@@ -142,7 +143,7 @@ export class Stream {
       this.handlers.status(status);
     });
     on<RosterEntry[]>('roster', (roster) => this.handlers.roster(roster));
-    on<CharacterDetail>('detail', (detail) => this.handlers.detail(detail));
+    on<Detail>('detail', (detail) => this.handlers.detail(detail));
     on<SiteDetail>('site', (site) => this.handlers.site(site));
     on<BrainLogRecord>('brainlog', (record) => this.handlers.brainlog(record));
     on<ChatWelcome>('chat_welcome', (welcome) => this.handlers.chatWelcome(welcome));

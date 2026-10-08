@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
-import { actions, closeSheet, ui, type CharacterDetail, type RelationRow } from './store';
+import { actions, closeSheet, ui, type CharacterDetail, type MonsterDetail, type RelationRow } from './store';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -112,14 +112,37 @@ function Memories({ d }: { d: CharacterDetail }) {
   );
 }
 
-export function Inspector() {
-  const [tab, setTab] = useState<Tab>('about');
-  const d = ui.detail.value;
-  if (!d) return null;
+/** The card of one of the dead: what it is, how it fares, what it is after and what it has done. No tabs. */
+function MonsterCard({ d }: { d: MonsterDetail }) {
+  const target = d.target;
+  const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
   return (
-    <aside class="panel inspector">
-      {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
-      <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
+    <>
+      <h2>{d.name}</h2>
+      <p class="subtitle">{d.species} · one of the dead{d.lasting && ' · does not fear the dawn'}</p>
+      <p class="status">{d.status}</p>
+      <div class="tab-body">
+        {/* Red whatever it has left, as its label's bar is. */}
+        <Meter label="Health" value={d.hp} max={d.maxHp} tone="low" />
+        {target && (
+          <p>
+            Hunting <button class="link" onClick={() => actions.select(target.id)}>{target.name}</button>
+          </p>
+        )}
+        {d.rose && <p class="muted">{d.rose}.</p>}
+        {d.was && <p class="muted">Once {d.was}.</p>}
+        <p class="muted inventory">
+          {plural(d.kills, 'villager')} slain · {plural(d.blows, 'blow')} landed · strikes for {d.damage[0]}–{d.damage[1]}
+        </p>
+      </div>
+    </>
+  );
+}
+
+function VillagerCard({ d }: { d: CharacterDetail }) {
+  const [tab, setTab] = useState<Tab>('about');
+  return (
+    <>
       <h2>{d.name}</h2>
       <p class="subtitle">{d.occupation} · {d.age} · {d.pronouns}</p>
       <p class="status">{d.status}</p>
@@ -134,6 +157,18 @@ export function Inspector() {
         <div class="tab-body"><ul class="relations">{d.relations.map((row) => <Relation row={row} key={row.id} />)}</ul></div>
       )}
       {tab === 'memory' && <Memories d={d} />}
+    </>
+  );
+}
+
+export function Inspector() {
+  const d = ui.detail.value;
+  if (!d) return null;
+  return (
+    <aside class="panel inspector">
+      {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
+      <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
+      {d.kind === 'monster' ? <MonsterCard d={d} /> : <VillagerCard d={d} />}
     </aside>
   );
 }

@@ -502,13 +502,63 @@ spouse: string | null, kills: number, planSource: string, plan: Array<PlanRow>, 
 memories: Array<Memory>, };
 
 /**
- * Someone named on a site's page, as a link to their own.
+ * A villager to link to from a card.
  */
-export type Person = { id: string, 
+export type NamedId = { id: string, 
 /**
- * first name
+ * their first name
  */
 name: string, };
+
+/**
+ * The inspector for one of the dead, every label rendered on the server.
+ */
+export type MonsterDetail = { id: string, 
+/**
+ * what its label says: the species, or the name of the villager it once was
+ */
+name: string, 
+/**
+ * e.g. "skeleton warrior" (`kind` is the tag of [`Detail`])
+ */
+species: string, hp: number, maxHp: number, 
+/**
+ * what it is doing now, e.g. "Hunting Mira near the well"
+ */
+status: string, 
+/**
+ * the villager it hunts, if any
+ */
+target: NamedId | null, 
+/**
+ * when and where it rose, e.g. "Rose from the graveyard on day 3 at 21:40"; empty when not known
+ */
+rose: string, 
+/**
+ * the full name of the villager it once was
+ */
+was: string | null, 
+/**
+ * does not crumble at dawn
+ */
+lasting: boolean, 
+/**
+ * villagers it has slain
+ */
+kills: number, 
+/**
+ * blows it has landed on a villager
+ */
+blows: number, 
+/**
+ * the least and the most one of its blows takes
+ */
+damage: [number, number], };
+
+/**
+ * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
+ */
+export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail;
 
 /**
  * What a site is: a place's building, or something the village put up on a pad.
@@ -531,7 +581,7 @@ export type SiteProject = {
 /**
  * "raising the smithy", "a fence by the red cottage"
  */
-label: string, helpers: Array<Person>, needs: Array<SiteNeed>, 
+label: string, helpers: Array<NamedId>, needs: Array<SiteNeed>, 
 /**
  * how far the hands-on work has got, in percent
  */
@@ -573,11 +623,11 @@ beds: number | null,
 /**
  * who lives there; homes only
  */
-residents: Array<Person>, 
+residents: Array<NamedId>, 
 /**
  * the villagers at the place right now
  */
-present: Array<Person>, project: SiteProject | null, 
+present: Array<NamedId>, project: SiteProject | null, 
 /**
  * the materials kept there, for a stockpile that holds any
  */
@@ -790,7 +840,7 @@ export type StreamEvents = {
   tick: TickFrame;
   status: Status;
   roster: RosterEntry[];
-  detail: CharacterDetail;
+  detail: Detail;
   site: SiteDetail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;
