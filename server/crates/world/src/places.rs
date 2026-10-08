@@ -6,12 +6,13 @@ use std::sync::LazyLock;
 use fsw_core::jsmath::{cos, js_hypot, sin};
 use fsw_core::math2d::rotate;
 use fsw_core::{Vec2, vec2};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::assets::model_bounds;
 use crate::hex::{HEX_SCALE, hex, hex_center};
 pub use crate::place_defs::{
-    ActivityId, BILLBOARD_DEPTH, BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_READ_AT, BILLBOARD_WIDTH, PlaceKind,
+    ActivityId, BILLBOARD_DEPTH, BILLBOARD_HEIGHT, BILLBOARD_LIFT, BILLBOARD_READ_AT, BILLBOARD_WIDTH, PadKind,
+    PlaceKind,
 };
 use crate::place_defs::{PlaceDef, place_defs};
 
@@ -30,7 +31,7 @@ pub struct PlacedModel {
 }
 
 /// A solid thing characters walk around: a rotated box or a circle.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
 pub enum Obstacle {
     Box { x: f64, z: f64, half_x: f64, half_z: f64, rotation: f64 },
@@ -47,6 +48,17 @@ pub struct Slot {
     pub facing: f64,
     pub anim: Option<&'static str>,
     pub ranged: bool,
+}
+
+/// A spot where the village may build something small, in world space.
+#[derive(Clone, Debug)]
+pub struct Pad {
+    /// `"{place}/{index}"`
+    pub id: String,
+    pub pos: Vec2,
+    /// radians, as a placed model's rotation
+    pub rotation: f64,
+    pub kinds: Vec<PadKind>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -87,6 +99,23 @@ pub struct Place {
     pub grave_plots: Vec<GravePlot>,
     pub spawn_points: Vec<Vec2>,
     pub billboards: Vec<Billboard>,
+    /// For each model, the index of its obstacle in `obstacles`, or `None` for one that blocks nothing
+    /// (billboards have obstacles but no model here). Not part of the golden dump.
+    #[serde(skip)]
+    pub obstacle_of: Vec<Option<usize>>,
+    /// Whether `models[0]` is the place's building (the rest are props). Not part of the golden dump.
+    #[serde(skip)]
+    pub has_building: bool,
+    /// where the village may build small things. Not part of the golden dump.
+    #[serde(skip)]
+    pub pads: Vec<Pad>,
+}
+
+impl Place {
+    /// The obstacle one of this place's models casts, if it is solid.
+    pub fn obstacle_of_model(&self, index: usize) -> Option<&Obstacle> {
+        self.obstacle_of.get(index).copied().flatten().map(|i| &self.obstacles[i])
+    }
 }
 
 fn bounds_of(reference: &str) -> (String, String, [f64; 6]) {
@@ -107,6 +136,7 @@ fn resolve(def: &PlaceDef) -> Place {
 
     let mut models = Vec::new();
     let mut obstacles = Vec::new();
+    let mut obstacle_of = Vec::new();
 
     if let Some(building) = &def.building {
         let (bundle, model, b) = bounds_of(&building.model);
@@ -119,6 +149,7 @@ fn resolve(def: &PlaceDef) -> Place {
         let pos = to_world(at);
         let centre_offset = rotate(vec2(cx, cz), rotation);
         models.push(PlacedModel { bundle, model, x: pos.x, y: 0.0, z: pos.z, rotation, scale });
+        obstacle_of.push(Some(obstacles.len()));
         obstacles.push(Obstacle::Box {
             x: pos.x + centre_offset.x,
             z: pos.z + centre_offset.z,
@@ -137,6 +168,7 @@ fn resolve(def: &PlaceDef) -> Place {
         let width = (b[3] - b[0]) * scale;
         let depth = (b[5] - b[2]) * scale;
         let height = (b[4] - b[1]) * scale;
+        let before = obstacles.len();
         if let Some(block) = prop.block {
             if block > 0.0 {
                 obstacles.push(Obstacle::Circle { x: pos.x, z: pos.z, radius: block });
@@ -155,6 +187,7 @@ fn resolve(def: &PlaceDef) -> Place {
                 obstacles.push(Obstacle::Circle { x: pos.x, z: pos.z, radius: width.max(depth) * 0.45 });
             }
         }
+        obstacle_of.push((obstacles.len() > before).then_some(before));
     }
 
     for board in &def.billboards {
@@ -227,7 +260,29 @@ fn resolve(def: &PlaceDef) -> Place {
         grave_plots: def.grave_plots.iter().map(|&p| GravePlot { pos: to_world(p), facing }).collect(),
         spawn_points: def.spawn_points.iter().map(|&p| to_world(p)).collect(),
         billboards,
+        obstacle_of,
+        has_building: def.building.is_some(),
+        pads: def
+            .pads
+            .iter()
+            .enumerate()
+            .map(|(index, pad)| Pad {
+                id: format!("{}/{index}", def.id),
+                pos: to_world(pad.at),
+                rotation: facing + pad.rot * DEG,
+                kinds: pad.kinds.to_vec(),
+            })
+            .collect(),
     }
+}
+
+/// Every pad in the village, in place order.
+pub fn pads() -> Vec<&'static Pad> {
+    places().iter().flat_map(|place| place.pads.iter()).collect()
+}
+
+pub fn find_pad(id: &str) -> Option<&'static Pad> {
+    pads().into_iter().find(|pad| pad.id == id)
 }
 
 struct Index {

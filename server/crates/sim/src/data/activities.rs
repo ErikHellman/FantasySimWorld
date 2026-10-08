@@ -3,7 +3,7 @@
 use fsw_world::places::ActivityId;
 
 use super::anims::AnimId;
-use crate::state::ItemId;
+use crate::state::{ItemId, Resource};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivityKind {
@@ -37,6 +37,8 @@ pub struct ActivityDef {
     pub heal: f64,
     /// item produced and how many game minutes of work one takes
     pub yields: Option<(ItemId, i64)>,
+    /// raw material produced (into the worker's arms) and how many game minutes one unit takes
+    pub materials: Option<(Resource, i64)>,
     /// done indoors, out of sight
     pub indoors: bool,
     pub kind: ActivityKind,
@@ -56,6 +58,7 @@ const BASE: ActivityDef = ActivityDef {
     needs: None,
     heal: 0.0,
     yields: None,
+    materials: None,
     indoors: false,
     kind: ActivityKind::Leisure,
 };
@@ -134,6 +137,7 @@ pub static ACTIVITIES: [ActivityDef; 21] = [
         anim: AnimId::Chop,
         tool: Some("tools/axe"),
         minutes: [80, 140],
+        materials: Some((Resource::Wood, 40)),
         kind: ActivityKind::Work,
         ..BASE
     },
@@ -156,6 +160,7 @@ pub static ACTIVITIES: [ActivityDef; 21] = [
         anim: AnimId::Pickaxe,
         tool: Some("tools/pickaxe"),
         minutes: [80, 140],
+        materials: Some((Resource::Stone, 50)),
         kind: ActivityKind::Work,
         ..BASE
     },

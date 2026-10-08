@@ -17,6 +17,7 @@ The server migration is complete. The world, the language-model brain and every 
 - A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
+- A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one and say what they think, and admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
@@ -27,7 +28,7 @@ Not yet done or not yet tried:
 
 - **The real deployment**: `fly deploy`, the event-stream check through Fly's proxy and `docker build` itself have not been run ([docs/deploy.md](docs/deploy.md) has the steps).
 - **Models**: one real model has been tried (`qwen/qwen3.6-35b-a3b` in LM Studio). No hosted endpoint has been tested yet.
-- **Later**: spoken lines (text to speech; the seam is in place), orc raiders and large bosses, block and dodge.
+- **Later**: spoken lines (text to speech; the seam is in place), coin and trade on top of the materials, new places built from scratch, orc raiders and large bosses, block and dodge.
 
 ## What you need
 
@@ -220,7 +221,7 @@ cd server && cargo fmt --check && cargo clippy --all-targets --locked -- -D warn
 
 - `pnpm test` covers the client's stream playback, the view of the world it builds from the stream, the world layer, the audio mood and settings, and the architecture rules (the browser never reaches the simulation, the brain or saves; three.js stays in `src/render`).
 - `cargo test` covers the Rust world against golden fixtures from the TypeScript version, the sim (determinism through a save round trip, invariants over several days, a 20-day run), old browser saves still loading, the founding of a village and its newcomers, the prompts byte for byte, the brain against a fake model, the casting against a fake model, the store, and the HTTP routes (the admin's token, guest seats and the line, the chat, the world's routes). The tests that know villagers by name use the original hand-written cast, kept in `server/crates/testing` for them.
-- `cargo test -- --ignored` adds the 200-day soak and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
+- `cargo test -- --ignored` adds the 200-day soak, a 60-day check that the village does not level its own trees and homes, and, with `node tools/mock-llm.mjs` running, a real HTTP round trip to the mock model.
 - Two committed files are written by the server and checked by its tests. In `server/`, after changing a type in `server/crates/server/src/api/wire.rs`, run `cargo run --bin export-api` (rewrites `src/generated/api.ts`); after changing the stream encoder, run `cargo run --bin export-frames` (rewrites `tests/fixtures/server-frames.json`, which the client's tests replay).
 
 Other tools:
@@ -237,7 +238,7 @@ Other tools:
 | `src/core` | Seeded RNG, 2D maths, game time |
 | `src/world` | The hex map, places and activity spots, scatter, navigation grid, pathfinding (terrain, scenery and camera bounds in the browser) |
 | `src/net` | The event stream, the world as this viewer knows it, the jitter buffer, REST calls |
-| `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table |
+| `src/render` | three.js scene, actors, effects, labels, camera, lighting, animation table; the trees and rocks, buildings and marks the server can change |
 | `src/ui` | The HUD, chat, admin panel and the launch screen with the line for a seat (Preact and signals) |
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |

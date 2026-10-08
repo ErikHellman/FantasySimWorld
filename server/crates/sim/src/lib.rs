@@ -12,6 +12,7 @@ pub mod create;
 pub mod data;
 pub mod describe;
 pub mod events;
+pub mod nav;
 pub mod sim;
 pub mod state;
 pub mod systems;

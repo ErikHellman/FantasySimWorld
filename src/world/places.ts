@@ -198,6 +198,9 @@ function resolve(def: PlaceDef): Place {
 
 export const places: readonly Place[] = PLACE_DEFS.map(resolve);
 
+/** The places whose first model is a building (the rest of a place's models are props). */
+export const buildingPlaces: ReadonlySet<string> = new Set(PLACE_DEFS.filter((def) => def.building).map((def) => def.id));
+
 const placeById = new Map(places.map((place) => [place.id, place]));
 const slotById = new Map(places.flatMap((place) => place.slots.map((slot) => [slot.id, slot] as const)));
 

@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -189,7 +189,15 @@ houses: Array<House>,
 /**
  * the wedding or funeral the village has arranged, if any
  */
-ceremony: Ceremony | null, };
+ceremony: Ceremony | null, 
+/**
+ * everything that differs from the map: felled trees, mined rocks, things taken apart, built or burnt
+ */
+worldObjects: Array<WorldObject>, 
+/**
+ * the materials the village has put by, for the stockpiles that hold any
+ */
+stockpiles: Array<Stockpile>, };
 
 export type WorldReset = { 
 /**
@@ -221,7 +229,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire";
 
@@ -301,6 +309,56 @@ names: Array<string>,
  */
 day: number, time: string, };
 
+export type WorldObjectKind = "tree" | "rock" | "prop" | "building" | "ground" | "built";
+
+/**
+ * Where something the village built stands, and what it looks like.
+ */
+export type Placed = { bundle: string, model: string, x: number, z: number, rotation: number, scale: number, };
+
+/**
+ * A thing of the world that is not as the map has it. Where it stands comes from the client's own
+ * copy of the map, by id: `s:<scatter index>`, `p:<place>:<model index>`, `b:<place>`, `h:<col>,<row>`;
+ * a thing the village built (`n:<n>`) carries its own placement.
+ */
+export type WorldObject = { id: string, kind: WorldObjectKind, 
+/**
+ * what the village calls it: "the bench at the village green", "The Gilded Tankard"
+ */
+name: string, 
+/**
+ * `standing`, `falling`, `stump`, `sapling`, `young`; `whole`, `mined_out`; `pieces`, `burning`, `ash`,
+ * `gone`; `ruin`, `dismantled`, `raising`, `expanded`; `dug`, `mown`; or `intact` when it is as the map
+ * has it again and can be forgotten
+ */
+stage: string, 
+/**
+ * the tick the stage began, or (for a standing tree or whole rock) the last minute anyone worked at it
+ */
+sinceTick: number, 
+/**
+ * how far the work on it has got, in percent, in steps of 5
+ */
+progress: number, 
+/**
+ * how far a fire has taken hold of it, 0..100 in steps of 5
+ */
+fire: number, placed: Placed | null, };
+
+/**
+ * The materials kept at one place.
+ */
+export type Stockpile = { 
+/**
+ * the place id
+ */
+place: string, name: string, wood: number, stone: number, ore: number, };
+
+/**
+ * Raw materials in a villager's arms.
+ */
+export type Goods = { wood: number, stone: number, ore: number, };
+
 export type LlmState = "off" | "ready" | "busy" | "error";
 
 export type LlmStatus = { state: LlmState, inFlight: number, queued: number, requests: number, failures: number, tokens: number, latencyMs: number, protocol: string, message: string, };
@@ -373,7 +431,11 @@ time: string, text: string, current: boolean, };
 /**
  * The inspector, with every label already rendered (the client has no sim helpers).
  */
-export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, home: string, 
+export type CharacterDetail = { id: string, name: string, pronouns: string, age: number, occupation: string, className: string, backstory: string, traits: Array<string>, goals: Array<string>, status: string, thought: string, summary: string, hp: number, maxHp: number, needs: Needs, inventory: Inventory, 
+/**
+ * raw materials in their arms
+ */
+carried: Goods, home: string, 
 /**
  * that home has burned down and is not yet rebuilt
  */

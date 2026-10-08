@@ -20,18 +20,19 @@ use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
     ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
-    Look as SimLook, Monster, Rite, SimState, VoiceProfile as SimVoice,
+    Look as SimLook, Monster, Resource, Rite, SimState, VoiceProfile as SimVoice, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::fire::built_fraction;
+use fsw_sim::systems::world::{object_name, progress_of};
 use fsw_sim::util::{first_name, name_of};
 use fsw_world::places::{billboards, find_place, get_place};
 use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
-    Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Ranged, TickFrame, Utterance, Vec2,
-    VoiceProfile, WireEvent,
+    Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Placed, Ranged, Stockpile, TickFrame,
+    Utterance, Vec2, VoiceProfile, WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -82,6 +83,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
     let act = match &c.intent {
         Some(intent) if c.act.phase == ActPhase::Perform => match intent.action {
             IntentAction::Activity { activity, .. } => Some(activity.as_str().to_owned()),
+            IntentAction::WorldWork { job, .. } => Some(job.as_str().to_owned()),
             _ => None,
         },
         _ => None,
@@ -298,6 +300,60 @@ pub fn houses_of(state: &SimState) -> Vec<House> {
         .collect()
 }
 
+/// Everything that differs from the map, as viewers are told of it.
+pub fn objects_of(state: &SimState) -> Vec<WorldObject> {
+    state.objects.iter().map(|(id, object)| wire_object(id, object)).collect()
+}
+
+fn wire_object(id: &str, object: &SimWorldObject) -> WorldObject {
+    let kind = match object {
+        SimWorldObject::Tree { .. } => WorldObjectKind::Tree,
+        SimWorldObject::Rock { .. } => WorldObjectKind::Rock,
+        SimWorldObject::Prop { .. } => WorldObjectKind::Prop,
+        SimWorldObject::Building { .. } => WorldObjectKind::Building,
+        SimWorldObject::Ground { .. } => WorldObjectKind::Ground,
+        SimWorldObject::Built { .. } => WorldObjectKind::Built,
+    };
+    let placed = match object {
+        SimWorldObject::Built { spec, .. } => Some(Placed {
+            bundle: spec.bundle.clone(),
+            model: spec.model.clone(),
+            x: spec.x,
+            z: spec.z,
+            rotation: spec.rotation,
+            scale: spec.scale,
+        }),
+        _ => None,
+    };
+    WorldObject {
+        id: id.to_owned(),
+        kind,
+        name: object_name(id, object),
+        stage: object.stage_name().to_owned(),
+        since_tick: object.since_tick().max(0) as u64,
+        // Coarse steps, so a shift of work is a handful of events rather than one a minute.
+        progress: (js_round(progress_of(object) * 20.0) * 5.0) as u8,
+        fire: (js_round(object.fire().clamp(0.0, 100.0) / 5.0) * 5.0) as u8,
+        placed,
+    }
+}
+
+/// The stockpiles that hold anything.
+pub fn stockpiles_of(state: &SimState) -> Vec<Stockpile> {
+    state
+        .stockpiles
+        .iter()
+        .filter(|(_, store)| !store.is_empty())
+        .map(|(place, store)| Stockpile {
+            place: place.clone(),
+            name: find_place(place).map_or(place.clone(), |p| p.name.into()),
+            wood: store.get(Resource::Wood).max(0) as u32,
+            stone: store.get(Resource::Stone).max(0) as u32,
+            ore: store.get(Resource::Ore).max(0) as u32,
+        })
+        .collect()
+}
+
 pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
     match tone {
         BoardTone::Uplifting => BillboardTone::Uplifting,
@@ -431,6 +487,8 @@ pub struct Tracker {
     billboards: Vec<Billboard>,
     houses: Vec<House>,
     ceremony: Option<Ceremony>,
+    objects: Vec<WorldObject>,
+    stockpiles: Vec<Stockpile>,
 }
 
 impl Tracker {
@@ -446,6 +504,8 @@ impl Tracker {
         self.billboards = billboards_of(state);
         self.houses = houses_of(state);
         self.ceremony = ceremony_of(state);
+        self.objects = objects_of(state);
+        self.stockpiles = stockpiles_of(state);
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -466,6 +526,16 @@ impl Tracker {
     /// What viewers have been told of the ceremony the village has arranged (for a snapshot).
     pub fn ceremony(&self) -> Option<Ceremony> {
         self.ceremony.clone()
+    }
+
+    /// What viewers have been told differs from the map (for a snapshot).
+    pub fn world_objects(&self) -> Vec<WorldObject> {
+        self.objects.clone()
+    }
+
+    /// What viewers have been told the stockpiles hold (for a snapshot).
+    pub fn stockpiles(&self) -> Vec<Stockpile> {
+        self.stockpiles.clone()
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -536,6 +606,38 @@ impl Tracker {
                 frame.ev.push(WireEvent::Ceremony { ceremony: told });
                 self.ceremony = now;
             }
+        }
+        // Nor is a tree coming down, a rock mined out, or anything else done to the map.
+        if !(state.objects.is_empty() && self.objects.is_empty()) {
+            let now = objects_of(state);
+            for object in &now {
+                if !self.objects.contains(object) {
+                    frame.ev.push(WireEvent::WorldObject { object: object.clone() });
+                }
+            }
+            for before in &self.objects {
+                if !now.iter().any(|object| object.id == before.id) {
+                    let whole = WorldObject { stage: "intact".into(), progress: 0, fire: 0, ..before.clone() };
+                    frame.ev.push(WireEvent::WorldObject { object: whole });
+                }
+            }
+            self.objects = now;
+        }
+        // Nor is a stockpile filling or emptying.
+        if !(state.stockpiles.is_empty() && self.stockpiles.is_empty()) {
+            let now = stockpiles_of(state);
+            for pile in &now {
+                if !self.stockpiles.contains(pile) {
+                    frame.ev.push(WireEvent::Stockpile { stockpile: pile.clone() });
+                }
+            }
+            for before in &self.stockpiles {
+                if !now.iter().any(|pile| pile.place == before.place) {
+                    let empty = Stockpile { wood: 0, stone: 0, ore: 0, ..before.clone() };
+                    frame.ev.push(WireEvent::Stockpile { stockpile: empty });
+                }
+            }
+            self.stockpiles = now;
         }
         frame
     }
@@ -734,6 +836,79 @@ mod tests {
         assert_eq!((told[0].id.as_str(), told[0].phase), ("y1", CeremonyPhase::Over));
         assert!(tracker.ceremony().is_none());
         assert!(ceremonies(&tracker.frame(&sim.state, &[])).is_empty());
+    }
+
+    #[test]
+    fn world_objects_and_stockpiles_are_announced_as_they_change() {
+        use fsw_sim::state::{Resource, RockStage, TreeStage, WorldObject as SimObject};
+        let mut sim = Sim::new(create_test_state(3));
+        let mut tracker = Tracker::new(&sim.state);
+        let objects = |frame: &TickFrame| -> Vec<WorldObject> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::WorldObject { object } = e { Some(object.clone()) } else { None })
+                .collect()
+        };
+        let piles = |frame: &TickFrame| -> Vec<Stockpile> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Stockpile { stockpile } = e { Some(stockpile.clone()) } else { None })
+                .collect()
+        };
+        let frame = tracker.frame(&sim.state, &[]);
+        assert!(objects(&frame).is_empty() && piles(&frame).is_empty());
+
+        // The first swings at a tree: progress in steps of five, so a minute's work is not always news.
+        sim.state
+            .objects
+            .insert("s:7".into(), SimObject::Tree { stage: TreeStage::Standing, since_tick: 40, work: 1.0 });
+        let told = objects(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told.len(), 1);
+        assert_eq!(
+            (told[0].id.as_str(), told[0].kind, told[0].stage.as_str()),
+            ("s:7", WorldObjectKind::Tree, "standing")
+        );
+        assert_eq!((told[0].since_tick, told[0].progress, told[0].fire, told[0].placed.is_none()), (40, 0, 0, true));
+        sim.state.objects["s:7"] = SimObject::Tree { stage: TreeStage::Standing, since_tick: 40, work: 2.0 };
+        assert!(objects(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.objects["s:7"] = SimObject::Tree { stage: TreeStage::Standing, since_tick: 40, work: 45.0 };
+        assert_eq!(objects(&tracker.frame(&sim.state, &[]))[0].progress, 50);
+
+        sim.state.objects["s:7"] = SimObject::Tree { stage: TreeStage::Falling, since_tick: 900, work: 0.0 };
+        let told = objects(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].stage.as_str(), told[0].since_tick, told[0].progress), ("falling", 900, 0));
+        sim.state.objects["s:7"] = SimObject::Tree { stage: TreeStage::Stump, since_tick: 930, work: 0.0 };
+        assert_eq!(objects(&tracker.frame(&sim.state, &[]))[0].stage, "stump");
+        assert_eq!(tracker.world_objects(), objects_of(&sim.state));
+
+        sim.state
+            .objects
+            .insert("s:9".into(), SimObject::Rock { stage: RockStage::MinedOut, since_tick: 950, work: 0.0 });
+        let told = objects(&tracker.frame(&sim.state, &[]));
+        assert_eq!(
+            (told[0].id.as_str(), told[0].kind, told[0].stage.as_str()),
+            ("s:9", WorldObjectKind::Rock, "mined_out")
+        );
+
+        sim.state.objects.shift_remove("s:7");
+        let told = objects(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].id.as_str(), told[0].stage.as_str()), ("s:7", "intact"));
+        assert_eq!(tracker.world_objects().len(), 1);
+
+        // Stockpiles: told when they change, and told empty when the last of it goes.
+        sim.state.stockpiles.entry("lumber_camp".into()).or_default().add(Resource::Wood, 4, 60);
+        let told = piles(&tracker.frame(&sim.state, &[]));
+        assert_eq!(
+            (told[0].place.as_str(), told[0].name.as_str(), told[0].wood, told[0].stone),
+            ("lumber_camp", "the lumber camp", 4, 0)
+        );
+        assert!(piles(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.stockpiles.clear();
+        let told = piles(&tracker.frame(&sim.state, &[]));
+        assert_eq!((told[0].place.as_str(), told[0].wood), ("lumber_camp", 0));
+        assert!(tracker.stockpiles().is_empty());
     }
 
     #[test]

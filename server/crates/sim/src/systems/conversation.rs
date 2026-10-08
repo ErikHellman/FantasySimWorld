@@ -417,6 +417,7 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
 
 pub fn update_conversations(ctx: &mut Ctx) {
     let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
     let ids: Vec<Id> = ctx.state.conversations.keys().cloned().collect();
     for id in ids {
         let Some(convo) = ctx.state.conversations.get(&id) else { continue };
@@ -444,7 +445,7 @@ pub fn update_conversations(ctx: &mut Ctx) {
             if d > TALK_DISTANCE && !timed_out {
                 let ac = ctx.c(&a);
                 if ac.act.path.is_empty() || tick >= ac.act.repath_tick {
-                    ac.act.path = route_to(ac.pos, b_pos).unwrap_or_default();
+                    ac.act.path = route_to(&nav, ac.pos, b_pos).unwrap_or_default();
                     ac.act.repath_tick = tick + seconds_to_ticks(1.0);
                 }
                 // Stop a comfortable distance short rather than standing on their toes.

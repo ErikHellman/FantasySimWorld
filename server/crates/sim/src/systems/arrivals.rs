@@ -2,7 +2,6 @@
 //! walked in by the west road.
 
 use fsw_core::vec2;
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::{get_place, homes};
 
 use crate::data::anims::AnimId;
@@ -14,6 +13,7 @@ use crate::state::{
 use crate::systems::founding::{Blueprint, apply_bonds, first_name_taken, invent_villager};
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
+use crate::systems::world::{beds_of, building_whole};
 use crate::util::{Ctx, first_name, living, living_ids, new_relationship};
 
 /// A home with a free bed (the emptiest one, so newcomers spread out). Nobody is given a house that is
@@ -22,11 +22,11 @@ pub fn free_home(state: &SimState) -> String {
     let mut best = homes()[0].id.clone();
     let mut best_free = f64::NEG_INFINITY;
     for home in homes() {
-        if state.houses.contains_key(&home.id) {
+        if state.houses.contains_key(&home.id) || !building_whole(state, &home.id) {
             continue;
         }
         let residents = living(state).filter(|c| c.home_id == home.id).count();
-        let free = home.beds as f64 - residents as f64;
+        let free = beds_of(state, &home.id) as f64 - residents as f64;
         if free > best_free {
             best_free = free;
             best = home.id.clone();
@@ -42,7 +42,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
     let rng = &mut state.rng;
     let x = home.door.x + fsw_core::rng::range(rng, -1.5, 1.5);
     let z = home.door.z + fsw_core::rng::range(rng, -0.5, 1.5);
-    let pos = nearest_walkable(vec2(x, z), 5).unwrap_or(home.door);
+    let pos = state.nav.nearest_walkable(vec2(x, z), 5).unwrap_or(home.door);
     let fighter = entry.profile.bravery >= 0.6;
     let id = state.new_id("c");
     let rng = &mut state.rng;
@@ -72,6 +72,8 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         hp: def.max_hp,
         needs,
         inventory: Inventory { food: 1, potion: if fighter { 1 } else { 0 }, gift: 0 },
+        carried: Default::default(),
+        last_arson_tick: 0,
         plan: Vec::new(),
         plan_day: 0,
         plan_source: PlanSource::Routine,
@@ -142,7 +144,7 @@ pub fn arrive_with(ctx: &mut Ctx, blueprint: &Blueprint, bonds: &[Bond], reason:
     let mut c = make_character(ctx.state, blueprint, &home);
     let road = get_place("west_road");
     let z = road.origin.z + ctx.range(-1.0, 1.0);
-    c.pos = nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
+    c.pos = ctx.state.nav.nearest_walkable(vec2(road.origin.x - 2.0, z), 6).unwrap_or(road.door);
     c.arrived_tick = tick;
     c.needs = Needs { hunger: 40.0, energy: 60.0, social: 30.0 };
     c.queue = vec![

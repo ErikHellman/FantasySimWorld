@@ -85,6 +85,8 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         billboards: core.tracker.billboards(),
         houses: core.tracker.houses(),
         ceremony: core.tracker.ceremony(),
+        world_objects: core.tracker.world_objects(),
+        stockpiles: core.tracker.stockpiles(),
     }
 }
 

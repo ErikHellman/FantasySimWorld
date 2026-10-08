@@ -94,7 +94,7 @@ export function HelpPanel() {
           </ul>
         ) : (
         <ul class="help-list">
-          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, monsters abroad 💀 and the graveyard 🪦 (click it to read the names). 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
+          <li><strong>Top bar</strong>: the day and time, how many people are watching 👁, villagers alive 👥, monsters abroad 💀, the graveyard 🪦 (click it to read the names) and, once the village has gathered any, its stores of wood 🪵 and stone 🪨. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹.</li>
           <li><strong>Chronicle</strong> (bottom left): the village's news, newest first. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs and what they carry; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>

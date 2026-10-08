@@ -10,7 +10,7 @@ use fsw_world::places::ActivityId;
 
 use crate::data::activities::{ActivityKind, activity};
 use crate::state::{
-    FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock, PlanSource, Quirk, StimulusKind, TalkTone,
+    FightMode, Id, Intent, IntentAction, IntentSource, PlanBlock, PlanSource, Quirk, StimulusKind, TalkTone, WorldJob,
 };
 use crate::systems::billboards::wants_to_read;
 use crate::systems::charm;
@@ -20,6 +20,7 @@ use crate::systems::fire::ruin_to_rebuild;
 use crate::systems::intents::{drink_potion_if_hurt, fresh_act};
 use crate::systems::quirks::{NAP_HOURS, NAP_NOTE, STUDY_NOTE};
 use crate::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, brawl_unlocked, lethal_unlocked};
+use crate::systems::world::{building_id, job_accepts, job_for_block};
 use crate::util::{Ctx, first_name, is_approachable, living, living_ids, openness, rel, rel_or_default};
 
 const SOCIAL_RADIUS: f64 = 15.0;
@@ -239,6 +240,21 @@ fn hostile_intent(ctx: &mut Ctx, id: &str) -> bool {
             );
             return true;
         }
+        // The spiteful, at the same rung, sometimes take a torch to the other's home by night instead.
+        let hour = ctx.time.hour;
+        if spite >= 0.5 && !(5.6..19.4).contains(&hour) && lethal_unlocked(ctx, id, &other) {
+            let target = building_id(&ctx.cr(&other).home_id);
+            if job_accepts(ctx.state, WorldJob::Burn, &target) && ctx.chance(0.01) {
+                let c = ctx.c(id);
+                c.intent = Some(Intent::new(
+                    IntentAction::WorldWork { job: WorldJob::Burn, target, minutes: None },
+                    IntentSource::Routine,
+                ));
+                c.queue.clear();
+                c.act = fresh_act(tick);
+                return true;
+            }
+        }
         if tick - r.last_offence_tick < TICKS_PER_DAY * 2 && ctx.chance(0.07 * temper + 0.06 * spite) {
             let line = format!("I have had enough of you, {name}!");
             start_fight(ctx, id, &other, FightMode::Brawl, IntentSource::Routine, Some(line));
@@ -335,6 +351,10 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     {
         return Some(act(ActivityId::Rebuild, Some(minutes), Some(ruin)));
     }
+    // Woodcutters fell real trees and miners break real rocks when there are any within reach.
+    if let Some(work) = job_for_block(ctx.state, ctx.cr(id), block.activity, minutes, ctx.time.day) {
+        return Some(work);
+    }
     Some(act(block.activity, Some(minutes), block.place_id))
 }
 
@@ -389,6 +409,15 @@ pub fn update_routine(ctx: &mut Ctx) {
                 if !sleeping_on && !on_duty && Some(current) != next {
                     c.act.until_tick = c.act.until_tick.min(tick);
                 }
+            }
+            // So does work in the woods or at the rocks; what is carried is still put down first.
+            if let Some(Intent { action: IntentAction::WorldWork { job, .. }, source: IntentSource::Routine, .. }) =
+                &c.intent
+                && *job != crate::state::WorldJob::Deliver
+                && c.act.phase == crate::state::ActPhase::Perform
+                && c.convo_id.is_none()
+            {
+                c.act.until_tick = c.act.until_tick.min(tick);
             }
         }
 

@@ -7,7 +7,6 @@ use fsw_core::math2d::dist;
 use fsw_core::rng;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks};
 use fsw_core::vec2;
-use fsw_world::navgrid::nearest_walkable;
 use fsw_world::places::get_place;
 
 use crate::data::activities::{ActivityKind, activity};
@@ -408,7 +407,7 @@ pub fn raise_the_dead(ctx: &mut Ctx, id: &str) {
         let reach = ctx.range(9.0, 16.0);
         let x = home.door.x + reach * fsw_core::jsmath::cos(angle);
         let z = home.door.z + reach * fsw_core::jsmath::sin(angle);
-        let Some(pos) = nearest_walkable(vec2(x, z), 6) else { continue };
+        let Some(pos) = ctx.state.nav.nearest_walkable(vec2(x, z), 6) else { continue };
         spawn_monster(ctx, MonsterKind::SkeletonMinion, pos, home.facing);
         raised += 1;
     }

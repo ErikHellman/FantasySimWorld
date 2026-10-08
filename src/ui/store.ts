@@ -4,7 +4,7 @@ import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
   Billboard, BrainLogRecord, Ceremony, CharacterDetail, ChatMessage, ChatWelcome, ChronicleEntry, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
-  Snapshot, Status, Utterance,
+  Snapshot, Status, Stockpile, Utterance, WorldObject,
 } from '../generated/api';
 import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
@@ -86,6 +86,10 @@ export const ui = {
   houses: signal<House[]>([]),
   /** the wedding or funeral the village has arranged, if any */
   ceremony: signal<Ceremony | null>(null),
+  /** the materials the village has put by, for the places that hold any */
+  stockpiles: signal<Stockpile[]>([]),
+  /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
+  fires: signal<WorldObject[]>([]),
   panel: signal<Panel>('none'),
   audio: signal<AudioSettings>(DEFAULT_AUDIO),
   llm: signal<LlmStatus>({ state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' }),
@@ -153,6 +157,8 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.billboards.value = snapshot.billboards;
   ui.houses.value = snapshot.houses;
   ui.ceremony.value = snapshot.ceremony;
+  ui.stockpiles.value = snapshot.stockpiles;
+  ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
   ui.voices.value = snapshot.voices.map(voiceLine);
@@ -188,6 +194,29 @@ export function setHouse(house: House): void {
 /** A wedding or funeral was arranged, moved on, or is over. */
 export function setCeremony(ceremony: Ceremony): void {
   ui.ceremony.value = ceremony.phase === 'over' ? null : ceremony;
+}
+
+/** A stockpile filled or emptied; one with nothing left is dropped. */
+export function setStockpile(pile: Stockpile): void {
+  const others = ui.stockpiles.value.filter((entry) => entry.place !== pile.place);
+  ui.stockpiles.value = pile.wood + pile.stone + pile.ore === 0 ? others : [...others, pile];
+}
+
+/** A thing of the world caught fire or stopped burning. */
+export function setWorldObject(object: WorldObject): void {
+  const others = ui.fires.value.filter((entry) => entry.id !== object.id);
+  ui.fires.value = object.stage === 'burning' ? [...others, object] : others;
+}
+
+/** Everything the village has put by, over every stockpile. */
+export function villageStores(): { wood: number; stone: number; ore: number } {
+  const all = { wood: 0, stone: 0, ore: 0 };
+  for (const pile of ui.stockpiles.value) {
+    all.wood += pile.wood;
+    all.stone += pile.stone;
+    all.ore += pile.ore;
+  }
+  return all;
 }
 
 export function setBillboard(board: Billboard): void {
