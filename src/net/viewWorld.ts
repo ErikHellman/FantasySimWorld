@@ -182,4 +182,8 @@ export class ViewWorld {
   isMonster(id: string): boolean {
     return this.entities.get(id)?.kind === 'monster';
   }
+
+  isGhost(id: string): boolean {
+    return this.entities.get(id)?.kind === 'ghost';
+  }
 }
