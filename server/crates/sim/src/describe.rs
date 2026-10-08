@@ -4,11 +4,12 @@ use fsw_world::places::{ActivityId, find_place, get_slot};
 
 use crate::data::activities::activity;
 use crate::data::anims::AnimId;
-use crate::state::{ActPhase, Character, FightMode, IntentAction, ItemId, Rite, SimState, WorldJob};
+use crate::state::{ActPhase, Character, FightMode, IntentAction, ItemId, Rite, SimState, WeatherKind, WorldJob};
 use crate::systems::economy::{Commission, loot_label};
 use crate::systems::fire::home_usable;
 use crate::systems::music::{performance, venue_phrase};
 use crate::systems::quirks::reading_late;
+use crate::systems::weather::feeling_words;
 use crate::systems::world::describe_target;
 use crate::util::{join_names, name_of, place_name_at};
 
@@ -18,6 +19,8 @@ pub fn describe_activity(state: &SimState, c: &Character) -> String {
         format!("{doing} (drunk)")
     } else if c.heartened(state.tick) {
         format!("{doing} (in good spirits)")
+    } else if let Some(feeling) = feeling_words(state, c) {
+        format!("{doing} ({feeling})")
     } else {
         doing
     }
@@ -130,6 +133,16 @@ fn doing(state: &SimState, c: &Character) -> String {
             FightMode::Lethal => format!("attacking {}", name_of(state, target_id)),
         },
         IntentAction::Flee => if c.inside.is_some() { "hiding indoors" } else { "running for safety" }.into(),
+        IntentAction::Shelter => {
+            let hail = state.weather.kind == WeatherKind::Hail;
+            match (c.inside.is_some(), hail) {
+                (true, true) => "sheltering from the hail",
+                (true, false) => "staying in out of the rain",
+                (false, true) => "running for cover from the hail",
+                (false, false) => "heading indoors out of the rain",
+            }
+            .into()
+        }
         IntentAction::Wait { .. } => {
             if c.anim == AnimId::SitFloor { "sitting on the ground, recovering" } else { "pausing a moment" }.into()
         }

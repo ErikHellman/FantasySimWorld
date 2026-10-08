@@ -89,6 +89,7 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         stockpiles: core.tracker.stockpiles(),
         economy: core.tracker.economy(),
         loot: core.tracker.loot(),
+        weather: core.tracker.weather(),
     }
 }
 

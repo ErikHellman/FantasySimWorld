@@ -12,7 +12,7 @@ use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory, MonsterPhase,
-    Pronouns, Relationship, Rite, SimState, TalkTone,
+    Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
 };
 use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
@@ -21,6 +21,7 @@ use fsw_sim::systems::fire;
 use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::weather;
 use fsw_sim::systems::world;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, places};
@@ -502,12 +503,37 @@ fn header(state: &SimState, c: &Character) -> String {
         ),
         danger,
     ];
+    lines.extend(weather_line(state, c));
     lines.extend(music_line(c));
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
     lines.extend(market_line(state));
     lines.join("\n")
+}
+
+/// What the sky is doing, and how this character takes it; nothing under a clear sky, so a fair day costs
+/// no room.
+fn weather_line(state: &SimState, c: &Character) -> Option<String> {
+    let w = &state.weather;
+    if w.kind == WeatherKind::Clear || w.intensity < 0.1 {
+        return None;
+    }
+    let sky = match w.kind {
+        WeatherKind::Rain if w.intensity < 0.5 => "A light rain is falling.",
+        WeatherKind::Rain => "Rain is pouring down.",
+        WeatherKind::Wind if w.intensity < 0.7 => "A stiff wind is blowing.",
+        WeatherKind::Wind => "A gale is blowing.",
+        _ => "Hail is pelting down: it hurts to be out in it, and everyone is running indoors.",
+    };
+    let feeling = match (w.kind, weather::taste(c).of(w.kind)) {
+        (WeatherKind::Rain, 1) => " You love the rain.",
+        (WeatherKind::Rain, -1) => " You hate being out in the rain.",
+        (WeatherKind::Wind, 1) => " You love a good wind.",
+        (WeatherKind::Wind, -1) => " You hate the wind.",
+        _ => "",
+    };
+    Some(format!("{sky}{feeling}"))
 }
 
 /// What this character sings or plays, and how well, for those with a talent; empty for the rest.

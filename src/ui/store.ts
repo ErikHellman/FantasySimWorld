@@ -4,7 +4,7 @@ import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
   Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
   RosterEntry,
-  SiteDetail, Snapshot, Status, Stockpile, Utterance, WorldObject,
+  SiteDetail, Snapshot, Status, Stockpile, Utterance, Weather, WorldObject,
 } from '../generated/api';
 import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
@@ -97,6 +97,8 @@ export const ui = {
   stockpiles: signal<Stockpile[]>([]),
   /** the village chest and what the market's stalls hold */
   economy: signal<Economy>({ purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }),
+  /** what the sky is doing */
+  weather: signal<Weather>({ kind: 'clear', intensity: 0, wind: 0, windDir: 0 }),
   /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
   fires: signal<WorldObject[]>([]),
   panel: signal<Panel>('none'),
@@ -168,6 +170,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.ceremony.value = snapshot.ceremony;
   ui.stockpiles.value = snapshot.stockpiles;
   ui.economy.value = snapshot.economy;
+  ui.weather.value = snapshot.weather;
   ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
@@ -215,6 +218,11 @@ export function setStockpile(pile: Stockpile): void {
 /** Coin moved through the village chest, or goods on or off the market's stalls. */
 export function setEconomy(economy: Economy): void {
   ui.economy.value = economy;
+}
+
+/** The weather changed, or came on harder or eased. */
+export function setWeather(weather: Weather): void {
+  ui.weather.value = weather;
 }
 
 /** A thing of the world caught fire or stopped burning. */

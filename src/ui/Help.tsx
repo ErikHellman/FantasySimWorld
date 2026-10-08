@@ -27,7 +27,7 @@ export function HelpPanel() {
     ui.panel.value = 'none';
   };
   const banner = (
-    <li><strong>A banner</strong> across the top says when the alarm is up, a house is on fire, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
+    <li><strong>A banner</strong> across the top says when the alarm is up, a house is on fire, hail is falling, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
   );
   return (
     <div class="modal" onClick={close}>
@@ -123,6 +123,7 @@ export function HelpPanel() {
           <li>A couple who stay together are married on the green, with the whole village there and a feast at the tavern after, and they move in together. When someone dies, the village buries them in the graveyard the next morning, and everyone goes to the graveside and then to the wake.</li>
           <li>From dusk the dead rise from the old graveyard. Some villagers keep watch, and when the alarm is raised the fighters come running. The dead are dangerous, and anyone can lose their nerve in a fight and run for home; the timid do so more often. They go after grown villagers before children. Follow one to see what it is after.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
+          <li>The weather changes through the day: clear skies, rain, wind and now and then hail. Each villager takes it their own way: some love the rain and some hate it, some enjoy a good wind and some can't stand it, and it shows in their mood. Those who hate the rain go indoors when it pours. Hail hurts, so everyone runs for cover until it passes. Rain helps keep a fire down, and wind fans it. The weather is shown next to the clock.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>
           <li>Coin: the village chest pays villagers for what they put down at the stores and sell at the market, and they spend it there or on one another's goods. Once a day a trader buys the surplus and refills the chest. The dead drop coin and trinkets that villagers pick up, and a villager who has saved enough pays for a bigger cottage or something for the yard. A meal and a bed are always free.</li>
           <li>Five big billboards stand around the village, each with a new slogan every morning. Now and then a villager stops to read one and says what they think: some laugh, some scoff, and the gloomier notices unsettle the timid. Villagers take the boards to heart: one that urges them to pray, eat, rest, train, shop, get to work or be friendly sends some of its readers off to do just that, most often those it cheered.</li>

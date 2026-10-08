@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -205,7 +205,11 @@ economy: Economy,
 /**
  * what the dead left lying about
  */
-loot: Array<Loot>, };
+loot: Array<Loot>, 
+/**
+ * what the sky is doing
+ */
+weather: Weather, };
 
 export type WorldReset = { 
 /**
@@ -237,7 +241,7 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -389,6 +393,25 @@ count: number, pos: Vec2,
 gone: boolean, };
 
 export type LootKind = "coins" | "trinket" | "relic";
+
+export type WeatherKind = "clear" | "rain" | "wind" | "hail";
+
+/**
+ * What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+ */
+export type Weather = { kind: WeatherKind, 
+/**
+ * how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+ */
+intensity: number, 
+/**
+ * the wind, whatever the kind, 0..100 in steps of 5
+ */
+wind: number, 
+/**
+ * the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+ */
+windDir: number, };
 
 /**
  * Raw materials in a villager's arms.

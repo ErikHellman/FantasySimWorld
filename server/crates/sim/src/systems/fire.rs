@@ -31,6 +31,7 @@ use crate::systems::death::{detach, kill_character};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::relationships::{RelationDelta, adjust};
+use crate::systems::weather::wetness;
 use crate::systems::world::{
     building_id, building_whole, drop_object, place_model, position_of, prop_name, put_object,
 };
@@ -48,6 +49,12 @@ const START_FIRE: f64 = 20.0;
 /// with the fire itself, so a blaze that is not being beaten back soon gets out of hand.
 const GROWTH_PER_MINUTE: f64 = 1.0;
 const GROWTH_PER_FIRE: f64 = 0.02;
+/// Weather (`systems::weather`): at full strength rain or hail takes this share off a fire's growth and
+/// knocks it back this much more each game minute, so a downpour can drown a small fire; a full gale
+/// adds this share to its growth.
+const RAIN_DAMPING: f64 = 0.6;
+const RAIN_DROWNING: f64 = 0.8;
+const WIND_FANNING: f64 = 0.5;
 /// How much one bucket of water knocks it back.
 const BUCKET: f64 = 3.0;
 const FILL_SECONDS: f64 = 2.0;
@@ -688,11 +695,12 @@ fn put_out(ctx: &mut Ctx, site: &str) {
         drop_object(ctx.state, site);
     }
     let name = site_name(site);
-    ctx.chronicle(
-        ChronicleKind::Fire,
-        format!("The fire at {name} is out. {} carried the water that saved it.", names(ctx.state, &helpers)),
-        ids_with(helpers.clone(), site),
-    );
+    let text = if helpers.is_empty() {
+        format!("The rain has put out the fire at {name}.")
+    } else {
+        format!("The fire at {name} is out. {} carried the water that saved it.", names(ctx.state, &helpers))
+    };
+    ctx.chronicle(ChronicleKind::Fire, text, ids_with(helpers.clone(), site));
     for id in &helpers {
         let others: Vec<Id> = helpers.iter().filter(|other| *other != id).cloned().collect();
         for other in &others {
@@ -851,11 +859,17 @@ pub fn update_fire(ctx: &mut Ctx) {
     }
     let tick = ctx.tick();
     if tick % TICKS_PER_GAME_MINUTE == 0 {
+        let (wet, wind) = (wetness(ctx.state), ctx.state.weather.wind);
+        let pace = (1.0 + WIND_FANNING * wind) * (1.0 - RAIN_DAMPING * wet);
         for site in &sites {
             let Some(level) = fire_of(ctx.state, site) else { continue };
-            let grown = level + GROWTH_PER_MINUTE + level * GROWTH_PER_FIRE;
+            let grown = level + (GROWTH_PER_MINUTE + level * GROWTH_PER_FIRE) * pace - RAIN_DROWNING * wet;
             if grown >= 100.0 {
                 burn_down(ctx, site);
+                continue;
+            }
+            if grown <= 0.0 {
+                put_out(ctx, site);
                 continue;
             }
             if is_home_site(site) {

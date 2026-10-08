@@ -14,7 +14,7 @@ export interface AudioSlot {
 
 export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'birds_day', label: 'Birdsong, daytime loop', kind: 'ambient', gain: 0.6 },
-  { id: 'wind', label: 'Soft wind loop, heard when zoomed out', kind: 'ambient', gain: 0.5 },
+  { id: 'wind', label: 'Wind loop, heard when zoomed out and louder as the wind gets up', kind: 'ambient', gain: 0.5 },
   { id: 'forest', label: 'Forest loop (leaves, distant birds)', kind: 'ambient', gain: 0.6 },
   { id: 'river', label: 'Running water loop, near the river', kind: 'ambient', gain: 0.7 },
   { id: 'shore', label: 'Lapping water loop, near the lake', kind: 'ambient', gain: 0.6 },
@@ -23,6 +23,8 @@ export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'tavern', label: 'Tavern chatter loop, when people are at the tables', kind: 'ambient', gain: 0.7 },
   { id: 'smithy', label: 'Hammer on anvil loop, when someone is at the forge', kind: 'ambient', gain: 0.7 },
   { id: 'campfire', label: 'Crackling fire loop, at the glade', kind: 'ambient', gain: 0.7 },
+  { id: 'rain', label: 'Rain loop, while it rains', kind: 'ambient', gain: 0.7 },
+  { id: 'hail', label: 'Hail drumming loop, while it hails', kind: 'ambient', gain: 0.7 },
   { id: 'sword_hit', label: 'A weapon striking', kind: 'effect', gain: 0.8 },
   { id: 'arrow_shot', label: 'A bow or crossbow loosing', kind: 'effect', gain: 0.7 },
   { id: 'magic_cast', label: 'A spell being cast', kind: 'effect', gain: 0.7 },

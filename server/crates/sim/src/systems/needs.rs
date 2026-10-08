@@ -4,6 +4,7 @@ use fsw_core::time::{GAME_MINUTES_PER_TICK, minutes_to_ticks};
 
 use crate::state::StimulusKind;
 use crate::systems::combat::max_hp;
+use crate::systems::weather::{MOOD_PACE, mood};
 use crate::util::{Ctx, has_recent_stimulus, living_ids};
 
 /// Change per game minute while awake. A full belly lasts about 15 hours, a night's sleep about 18.
@@ -27,13 +28,16 @@ pub fn update_needs(ctx: &mut Ctx) {
     let tick = ctx.tick();
     let lifetime = minutes_to_ticks(100.0);
     for id in living_ids(ctx.state) {
+        // Weather they love keeps their spirits up; weather they hate wears them down.
+        let weather = 1.0 - MOOD_PACE * mood(ctx.state, ctx.cr(&id));
         let c = ctx.c(&id);
         c.needs.hunger = (c.needs.hunger + HUNGER_PER_MINUTE * dt * if c.asleep { 0.5 } else { 1.0 }).max(0.0);
         let heartened = c.heartened(tick);
         if !c.asleep {
-            let pace = if heartened { HEARTENED_ENERGY_FACTOR } else { 1.0 };
+            let pace = if heartened { HEARTENED_ENERGY_FACTOR } else { 1.0 } * weather;
             c.needs.energy = (c.needs.energy + ENERGY_PER_MINUTE * dt * pace).max(0.0);
-            c.needs.social = (c.needs.social + SOCIAL_PER_MINUTE * dt * (0.5 + c.profile.sociability)).max(0.0);
+            let lonely = SOCIAL_PER_MINUTE * dt * (0.5 + c.profile.sociability) * weather;
+            c.needs.social = (c.needs.social + lonely).max(0.0);
         }
         let fighting = c.intent.as_ref().is_some_and(|i| i.is_fight());
         if !fighting && c.needs.hunger > 20.0 {
