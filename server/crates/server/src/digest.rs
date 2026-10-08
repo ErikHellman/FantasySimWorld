@@ -1,32 +1,40 @@
 //! The HUD's view of the world, rendered on the server because the client has
 //! no sim helpers: the roster, the status line and the inspector's
 //! `CharacterDetail` (port of `tools/ref-server/digest.ts` at the `ts-sim-reference` tag),
-//! plus the card of one of the dead (`MonsterDetail`).
+//! plus the card of one of the dead (`MonsterDetail`) and a site's page (`SiteDetail`).
 
+use fsw_core::jsmath::js_round;
 use fsw_core::time::{format_clock, game_time, part_of_day};
+use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, Character, IntentAction, MemoryKind as SimMemoryKind, Monster, MonsterOrigin, MonsterPhase, PlanSource,
-    RelationLabel as SimLabel, Resource, SimState,
+    ActPhase, Character, HousePhase, IntentAction, MemoryKind as SimMemoryKind, Monster, MonsterOrigin, MonsterPhase,
+    PlanSource, ProjectKind, PropStage, RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
-use fsw_sim::systems::fire::is_homeless;
+use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
-use fsw_sim::util::{living, name_of, place_name_at};
-use fsw_world::places::{ActivityId, find_place};
+use fsw_sim::systems::world::{beds_of, object_name, project_label};
+use fsw_sim::util::{first_name, living, name_of, place_name_at};
+use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
     AmbientCounts, CharacterDetail, ChronicleEntry, Detail, Founding, Goods, Inventory, LlmStatus, Memory, MemoryKind,
-    MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, Status,
+    MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind,
+    SiteNeed, SiteProject, Status,
 };
-use crate::encode::chronicle_entry;
+use crate::encode::{chronicle_entry, object_facts};
 
 /// How many chronicle entries a snapshot carries; older ones come from `GET /api/chronicle`.
 pub const CHRONICLE_TAIL: usize = 120;
 /// How many memories the inspector shows, newest first.
 pub const DETAIL_MEMORIES: usize = 40;
+/// How many chronicle lines a site's page shows, newest first.
+pub const SITE_HISTORY: usize = 20;
+/// A villager this close to a place's origin counts as being there (the same reach as `place_name_at`).
+const PRESENT_REACH: f64 = 16.0;
 
 pub fn mood_of(c: &Character) -> Mood {
     if matches!(c.intent.as_ref().map(|i| &i.action), Some(IntentAction::Fight { .. } | IntentAction::Flee)) {
@@ -324,6 +332,130 @@ pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail
     })
 }
 
+/// Whether an id names a site (a building or something the village built) rather than a villager.
+pub fn is_site_id(id: &str) -> bool {
+    id.starts_with("b:") || id.starts_with("n:")
+}
+
+/// The page the watcher of `id` receives, serialised: a villager's detail or a site's.
+pub fn detail_json(state: &SimState, id: &str) -> Option<String> {
+    if is_site_id(id) {
+        site_of(state, id).map(|d| serde_json::to_string(&d).expect("site details serialise"))
+    } else {
+        detail_of(state, id).map(|d| serde_json::to_string(&d).expect("details serialise"))
+    }
+}
+
+fn person(c: &Character) -> NamedId {
+    NamedId { id: c.id.clone(), name: first_name(c).to_owned() }
+}
+
+/// The page for a building (`b:<place>`) or something the village built (`n:<n>`); `None` for anything
+/// else, including a built thing that is gone.
+pub fn site_of(state: &SimState, id: &str) -> Option<SiteDetail> {
+    let object = state.objects.get(id);
+    let (kind, place) = if let Some(place_id) = id.strip_prefix("b:") {
+        (SiteKind::Building, find_place(place_id).filter(|place| place.has_building)?)
+    } else {
+        let Some(SimWorldObject::Built { spec, stage, .. }) = object else { return None };
+        if *stage == PropStage::Gone {
+            return None;
+        }
+        (SiteKind::Built, nearest_place(vec2(spec.x, spec.z), f64::MAX)?)
+    };
+    let building = kind == SiteKind::Building;
+    // A home's fire and ruin live in `houses`; everything else done to a building is in `objects`.
+    let (stage, since_tick, progress, fire) = match (object, state.houses.get(&place.id).filter(|_| building)) {
+        (Some(object), _) => object_facts(object),
+        (None, Some(house)) => match house.phase {
+            HousePhase::Burning => ("burning".to_owned(), house.since_tick, 0, round5(house.fire)),
+            HousePhase::Ruined => {
+                ("ruin".to_owned(), house.since_tick, (built_fraction(house) * 100.0).floor() as u8, 0)
+            }
+        },
+        (None, None) => ("whole".to_owned(), 0, 0, 0),
+    };
+    let home = building && place.kind == PlaceKind::Home;
+    let mut present: Vec<NamedId> = if building {
+        living(state)
+            .filter(|c| {
+                c.inside.as_deref() == Some(place.id.as_str())
+                    || nearest_place(c.pos, PRESENT_REACH).is_some_and(|near| near.id == place.id)
+            })
+            .map(person)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    present.sort_by(|a, b| a.name.cmp(&b.name));
+    let project = state
+        .projects
+        .iter()
+        .find(|p| {
+            p.target == id
+                || (building
+                    && p.kind == ProjectKind::Construct
+                    && p.target.split('/').next() == Some(place.id.as_str()))
+        })
+        .map(|p| SiteProject {
+            label: project_label(state, p),
+            helpers: p.helpers.iter().filter_map(|h| state.characters.get(h)).map(person).collect(),
+            needs: p
+                .cost
+                .iter()
+                .map(|(resource, needed)| SiteNeed {
+                    resource: resource.as_str().to_owned(),
+                    delivered: p.delivered.get(resource).clamp(0, needed) as u32,
+                    needed: needed.max(0) as u32,
+                })
+                .collect(),
+            progress: if p.need > 0.0 { ((p.work / p.need).clamp(0.0, 1.0) * 100.0).floor() as u8 } else { 0 },
+        });
+    let stockpile =
+        state.stockpiles.get(&place.id).filter(|_| building).filter(|store| !store.is_empty()).map(|store| Goods {
+            wood: store.get(Resource::Wood).max(0) as u32,
+            stone: store.get(Resource::Stone).max(0) as u32,
+            ore: store.get(Resource::Ore).max(0) as u32,
+        });
+    Some(SiteDetail {
+        id: id.to_owned(),
+        kind,
+        name: match object {
+            Some(object) if !building => object_name(id, object),
+            _ => site_name(id),
+        },
+        place_id: place.id.clone(),
+        place_name: place.name.to_owned(),
+        description: place.description.to_owned(),
+        stage,
+        since_tick: since_tick.max(0) as u64,
+        progress,
+        fire,
+        beds: home.then(|| beds_of(state, &place.id)),
+        residents: if home {
+            living(state).filter(|c| c.home_id == place.id).map(person).collect()
+        } else {
+            Vec::new()
+        },
+        present,
+        project,
+        stockpile,
+        history: state
+            .chronicle
+            .iter()
+            .rev()
+            .filter(|entry| entry.ids.iter().any(|entry_id| entry_id == id))
+            .take(SITE_HISTORY)
+            .map(chronicle_entry)
+            .collect(),
+    })
+}
+
+/// A percentage in steps of five, as the wire rounds fires.
+fn round5(value: f64) -> u8 {
+    (js_round(value.clamp(0.0, 100.0) / 5.0) * 5.0) as u8
+}
+
 pub fn chronicle_tail(state: &SimState) -> Vec<ChronicleEntry> {
     let start = state.chronicle.len().saturating_sub(CHRONICLE_TAIL);
     state.chronicle[start..].iter().map(chronicle_entry).collect()
@@ -344,6 +476,116 @@ mod tests {
         sim.step();
         assert_eq!(status_of(&sim.state, extras()).founding, None);
         assert_eq!(status_of(&create_test_state(4), extras()).founding, None);
+    }
+
+    #[test]
+    fn a_site_page_names_the_place_and_who_lives_there() {
+        let state = create_test_state(1);
+        let home = site_of(&state, "b:home_4").unwrap();
+        assert_eq!(
+            (home.kind, home.stage.as_str(), home.since_tick, home.beds),
+            (SiteKind::Building, "whole", 0, Some(2))
+        );
+        let residents: Vec<&str> = home.residents.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(residents, ["Elowen", "Theron"]);
+        assert!(home.project.is_none() && home.stockpile.is_none() && home.history.is_empty());
+        let tavern = site_of(&state, "b:tavern").unwrap();
+        assert_eq!(
+            (tavern.name.as_str(), tavern.place_name.as_str(), tavern.beds),
+            ("The Gilded Tankard", "The Gilded Tankard", None)
+        );
+        assert!(tavern.residents.is_empty() && !tavern.description.is_empty());
+        // Villagers, places without a building, trees and nothing at all have no site page.
+        for id in ["c1", "b:green", "b:nowhere", "s:3", "n:404"] {
+            assert!(site_of(&state, id).is_none(), "{id}");
+        }
+        assert!(detail_json(&state, "c1").unwrap().contains("\"backstory\""));
+        assert!(detail_json(&state, "b:tavern").unwrap().contains("\"placeName\""));
+    }
+
+    #[test]
+    fn a_site_page_shows_its_condition_and_the_work_on_it() {
+        use fsw_sim::state::{
+            BuildTarget, BuildingStage, BuiltSpec, ChronicleEntry as SimChronicleEntry,
+            ChronicleKind as SimChronicleKind, House, Project, Store,
+        };
+        use fsw_sim::systems::world::put_object;
+        use fsw_world::places::get_place;
+
+        let mut state = create_test_state(1);
+        let raising = SimWorldObject::Building {
+            stage: BuildingStage::Raising { target: BuildTarget::Same },
+            since_tick: 5,
+            work: 300.0,
+            fire: 0.0,
+            helpers: Vec::new(),
+        };
+        put_object(&mut state, "b:smithy", raising);
+        let mut cost = Store::default();
+        cost.add(Resource::Wood, 10, i64::MAX);
+        cost.add(Resource::Stone, 4, i64::MAX);
+        let mut delivered = Store::default();
+        delivered.add(Resource::Wood, 6, i64::MAX);
+        state.projects.push(Project {
+            id: "j:1".into(),
+            kind: ProjectKind::Raise,
+            target: "b:smithy".into(),
+            cost,
+            delivered,
+            need: 100.0,
+            work: 25.0,
+            since_tick: 5,
+            helpers: vec!["c1".into()],
+            sponsor: None,
+            price: 0,
+            pad_kind: None,
+        });
+        state.chronicle.push(SimChronicleEntry {
+            tick: 9,
+            kind: SimChronicleKind::World,
+            text: "The village takes on raising the smithy.".into(),
+            ids: vec!["b:smithy".into()],
+        });
+        state.stockpiles.entry("lumber_camp".into()).or_default().add(Resource::Wood, 7, i64::MAX);
+        state.houses.insert(
+            "home_4".into(),
+            House { phase: HousePhase::Burning, fire: 42.0, built: 0.0, since_tick: 8, helpers: Vec::new() },
+        );
+
+        let smithy = site_of(&state, "b:smithy").unwrap();
+        assert_eq!((smithy.stage.as_str(), smithy.since_tick, smithy.progress), ("raising", 5, 20));
+        let project = smithy.project.unwrap();
+        assert_eq!((project.label.as_str(), project.progress), ("raising the smithy", 25));
+        assert_eq!(project.helpers, vec![NamedId { id: "c1".into(), name: "Aldric".into() }]);
+        let needs: Vec<(&str, u32, u32)> =
+            project.needs.iter().map(|n| (n.resource.as_str(), n.delivered, n.needed)).collect();
+        assert_eq!(needs, [("wood", 6, 10), ("stone", 0, 4)]);
+        assert_eq!(smithy.history.len(), 1);
+        assert_eq!(site_of(&state, "b:lumber_camp").unwrap().stockpile, Some(Goods { wood: 7, stone: 0, ore: 0 }));
+        let home = site_of(&state, "b:home_4").unwrap();
+        assert_eq!((home.stage.as_str(), home.fire, home.since_tick), ("burning", 40, 8));
+
+        let green = get_place("green");
+        let spec = BuiltSpec {
+            bundle: "halloween".into(),
+            model: "bench".into(),
+            x: green.origin.x,
+            z: green.origin.z,
+            rotation: 0.0,
+            scale: 1.0,
+            footprint: None,
+            pad: None,
+        };
+        let bench = |stage| SimWorldObject::Built { stage, since_tick: 40, work: 0.0, fire: 0.0, spec: spec.clone() };
+        put_object(&mut state, "n:9", bench(PropStage::Whole));
+        let page = site_of(&state, "n:9").unwrap();
+        assert_eq!(
+            (page.kind, page.name.as_str(), page.place_id.as_str(), page.since_tick),
+            (SiteKind::Built, "the bench near the village green", "green", 40)
+        );
+        assert!(page.beds.is_none() && page.present.is_empty());
+        put_object(&mut state, "n:9", bench(PropStage::Gone));
+        assert!(site_of(&state, "n:9").is_none());
     }
 
     #[test]
@@ -441,7 +683,7 @@ pub mod task {
 
     use tokio_util::sync::CancellationToken;
 
-    use super::{StatusExtras, detail_of, roster_of, status_of};
+    use super::{StatusExtras, detail_json, roster_of, status_of};
     use crate::AppState;
     use crate::world_task::Outgoing;
 
@@ -473,13 +715,8 @@ pub mod task {
                 };
                 (serde_json::to_string(&status_of(state, extras)), serde_json::to_string(&roster_of(state)))
             });
-            let details: Vec<(String, Option<String>)> = watched
-                .into_iter()
-                .map(|id| {
-                    let json = detail_of(state, &id).map(|d| serde_json::to_string(&d).expect("details serialise"));
-                    (id, json)
-                })
-                .collect();
+            let details: Vec<(String, Option<String>)> =
+                watched.into_iter().map(|id| (id.clone(), detail_json(state, &id))).collect();
             (status.as_ref().and_then(|s| s.0.as_ref().ok().cloned()), status.and_then(|s| s.1.ok()), details)
         };
         let mut changed = false;

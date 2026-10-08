@@ -395,6 +395,24 @@ async fn watching_sends_details_and_a_new_world_resets_viewers() {
 }
 
 #[tokio::test]
+async fn a_site_has_a_page_and_its_watcher_gets_it_on_the_stream() {
+    let (app, _, _data) = app("sites").await;
+    let page = text(app.clone().oneshot(authed("/api/sites/b:home_4")).await.unwrap()).await;
+    assert!(page.contains(r#""kind":"building""#) && page.contains(r#""beds":2"#), "{page}");
+    for missing in ["/api/sites/c1", "/api/sites/b:green", "/api/sites/n:404"] {
+        assert_eq!(app.clone().oneshot(authed(missing)).await.unwrap().status(), StatusCode::NOT_FOUND, "{missing}");
+    }
+    let stream = app.clone().oneshot(authed("/api/stream?viewer=tab9")).await.unwrap();
+    let mut body = stream.into_body();
+    read_events(&mut body, |seen| seen.contains("event: snapshot")).await;
+    let watch = json_request("POST", "/api/watch", r#"{"viewer":"tab9","id":"b:tavern"}"#);
+    assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let seen = read_events(&mut body, |seen| seen.contains("event: site")).await;
+    assert_eq!(last_event(&seen, "site")["name"], "The Gilded Tankard");
+    assert!(!seen.contains("event: detail"), "{seen}");
+}
+
+#[tokio::test]
 async fn a_quick_reconnect_replays_the_missed_ticks() {
     let (app, _, _data) = app("replay").await;
     let stream = app.clone().oneshot(authed("/api/stream")).await.unwrap();
@@ -715,6 +733,8 @@ async fn guests_watch_and_chat_without_signing_in_but_do_not_run_the_world() {
     assert!(name.is_string(), "a guest has a chat name: {seen}");
     let character = app.clone().oneshot(as_guest("GET", "/api/characters/c1", &cookie, "")).await.unwrap();
     assert_eq!(character.status(), StatusCode::OK);
+    let site = app.clone().oneshot(as_guest("GET", "/api/sites/b:tavern", &cookie, "")).await.unwrap();
+    assert_eq!(site.status(), StatusCode::OK);
     let monster = app.clone().oneshot(as_guest("GET", "/api/monsters/m1", &cookie, "")).await.unwrap();
     assert_eq!(monster.status(), StatusCode::NOT_FOUND, "none abroad yet, but the route is open to guests");
     let watch = as_guest("POST", "/api/watch", &cookie, r#"{"viewer":"tabG","id":"c1"}"#);

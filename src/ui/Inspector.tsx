@@ -8,7 +8,7 @@ const LABEL_CLASS: Record<string, string> = {
   spouse: 'love', lover: 'love', family: 'good', 'close friend': 'good', friend: 'good', acquaintance: '', stranger: '', rival: 'bad', enemy: 'bad',
 };
 
-function Meter({ label, value, max = 100, tone }: { label: string; value: number; max?: number; tone?: string }) {
+export function Meter({ label, value, max = 100, tone }: { label: string; value: number; max?: number; tone?: string }) {
   const fraction = Math.max(0, Math.min(1, value / max));
   return (
     <div class="meter">

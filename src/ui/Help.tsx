@@ -46,8 +46,8 @@ export function HelpPanel() {
               <Control keys={['Two fingers up or down']}>Tilt, from low over the ground to straight down</Control>
               <Control keys={['Tap']}>
                 {phone
-                  ? 'Tap a villager, a name in the villager list or a line in the chronicle to follow them; tap the “Following” chip for their page'
-                  : 'Tap a villager, a name in the villager list or a line in the chronicle to follow them and open their page'}
+                  ? 'Tap a villager, a name in the villager list or a line in the chronicle to follow them; tap the “Following” chip for their page. Tap a building or something the village built for its page'
+                  : 'Tap a villager, a name in the villager list or a line in the chronicle to follow them and open their page. Tap a building or something the village built for its page'}
               </Control>
             </dl>
           </>
@@ -66,7 +66,8 @@ export function HelpPanel() {
             <h3>Following someone</h3>
             <dl class="controls">
               <Control keys={['Click']}>Click a villager, a name in the villager list or a line in the chronicle to follow them and open their page</Control>
-              <Control keys={['Esc']}>Stop following and close their page (or close an open window)</Control>
+              <Control keys={['Click']}>Click a building, or something the village built, for its page: who lives and is there, the work on it and its history</Control>
+              <Control keys={['Esc']}>Stop following and close the page (or close an open window)</Control>
             </dl>
           </>
         )}

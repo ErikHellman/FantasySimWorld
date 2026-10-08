@@ -3,17 +3,19 @@ import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ChatPanel } from './Chat';
 import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
-import { actions, isAdmin, togglePanel, toggleSheet, ui, type Sheet } from './store';
+import { SitePanel, capitalised } from './SitePanel';
+import { actions, isAdmin, isSiteId, togglePanel, toggleSheet, ui, type Sheet } from './store';
 
 // The phone layout: the world fills the screen, a slim bar at the top keeps the time, and a tab bar opens one pane
 // at a time over the world. Windows (settings, help and the like) are shared with the desktop and fill the screen.
 
-/** The name of the villager being followed, as far as the HUD knows it yet. */
-const followedName = (): string | null => {
+/** The first name of the villager being followed, or the name of the site being looked at, as far as the HUD knows it yet. */
+export const selectedName = (): { name: string; site: boolean } | null => {
   const id = ui.selectedId.value;
   if (!id) return null;
+  if (isSiteId(id)) return { name: ui.site.value?.id === id ? capitalised(ui.site.value.name) : '…', site: true };
   const name = ui.detail.value?.id === id ? ui.detail.value.name : ui.roster.value.find((entry) => entry.id === id)?.name;
-  return name?.split(' ')[0] ?? '…';
+  return { name: name?.split(' ')[0] ?? '…', site: false };
 };
 
 function TopBar() {
@@ -38,7 +40,7 @@ function TopBar() {
 function TabBar({ barRef }: { barRef: RefObject<HTMLElement | null> }) {
   const open = ui.sheet.value;
   const unread = ui.chatUnread.value;
-  const followed = followedName();
+  const selected = selectedName();
   const tab = (sheet: Sheet, icon: string, label: string, badge?: number, disabled = false) => (
     <button class={`tab ${open === sheet ? 'on' : ''}`} disabled={disabled} aria-pressed={open === sheet} onClick={() => toggleSheet(sheet)}>
       <span class="tab-icon">{icon}</span>
@@ -51,22 +53,23 @@ function TabBar({ barRef }: { barRef: RefObject<HTMLElement | null> }) {
       {tab('villagers', '👥', 'Villagers')}
       {tab('feed', '📜', 'Chronicle')}
       {tab('chat', '💬', 'Chat', unread)}
-      {tab('character', '👤', followed ?? 'Character', 0, !followed)}
+      {tab('character', selected?.site ? '🏠' : '👤', selected?.name ?? 'Character', 0, !selected)}
       {tab('menu', '☰', 'More')}
     </nav>
   );
 }
 
-/** Names the villager being followed; tap it for their page. Hidden while a pane or window is open. */
+/** Names the villager being followed or the site being looked at; tap it for the page. Hidden while a pane or window is open. */
 function FollowChip() {
-  const name = followedName();
-  if (!name || ui.sheet.value !== 'none' || ui.panel.value !== 'none') return null;
+  const selected = selectedName();
+  if (!selected || ui.sheet.value !== 'none' || ui.panel.value !== 'none') return null;
+  const stop = selected.site ? 'Stop looking' : 'Stop following';
   return (
     <div class="follow-chip">
       <button class="follow-open" onClick={() => toggleSheet('character')}>
-        Following <strong>{name}</strong> ›
+        {selected.site ? 'Looking at' : 'Following'} <strong>{selected.name}</strong> ›
       </button>
-      <button class="follow-stop" title="Stop following" aria-label="Stop following" onClick={() => actions.select(null)}>✕</button>
+      <button class="follow-stop" title={stop} aria-label={stop} onClick={() => actions.select(null)}>✕</button>
     </div>
   );
 }
@@ -109,6 +112,7 @@ function SheetBody({ sheet }: { sheet: Sheet }) {
     case 'chat':
       return <ChatPanel sheet />;
     case 'character':
+      if (ui.site.value) return <SitePanel />;
       return ui.detail.value ? <Inspector /> : <p class="muted sheet-loading">Loading…</p>;
     case 'menu':
       return <MenuSheet />;

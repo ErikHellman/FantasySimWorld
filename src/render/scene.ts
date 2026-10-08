@@ -234,10 +234,23 @@ export class WorldView {
   }
 
   /**
+   * What a tap on a screen point picks: the villager or monster nearest to it within `radius` pixels, or failing
+   * that the building or built thing under it (`b:<place>`, `n:<n>`), or null.
+   */
+  pick(clientX: number, clientY: number, radius = 46): string | null {
+    const actor = this.pickActor(clientX, clientY, radius);
+    if (actor) return actor;
+    const ray = this.rig.rayAt(clientX, clientY);
+    const hits = [this.structures.pick(ray), this.marks.pick(ray)].filter((hit) => hit !== null);
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits[0]?.id ?? null;
+  }
+
+  /**
    * The villager or monster nearest to a screen point, if any is within `radius` pixels of it and so counts as
    * clicked. A body has no card and cannot be picked.
    */
-  pick(clientX: number, clientY: number, radius = 46): string | null {
+  private pickActor(clientX: number, clientY: number, radius: number): string | null {
     const rect = this.canvas.getBoundingClientRect();
     let best: string | null = null;
     let bestDistance = radius;

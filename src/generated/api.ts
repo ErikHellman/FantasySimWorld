@@ -560,6 +560,83 @@ damage: [number, number], };
  */
 export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail;
 
+/**
+ * What a site is: a place's building, or something the village put up on a pad.
+ */
+export type SiteKind = "building" | "built";
+
+/**
+ * One material a project calls for, and how much of it has been carried to the site.
+ */
+export type SiteNeed = { 
+/**
+ * `wood`, `stone` or `ore`
+ */
+resource: string, delivered: number, needed: number, };
+
+/**
+ * The work the village has taken on at a site.
+ */
+export type SiteProject = { 
+/**
+ * "raising the smithy", "a fence by the red cottage"
+ */
+label: string, helpers: Array<NamedId>, needs: Array<SiteNeed>, 
+/**
+ * how far the hands-on work has got, in percent
+ */
+progress: number, };
+
+/**
+ * The page for a building or something the village built (a site: `b:<place>` or `n:<n>`), with every
+ * label already rendered. Sent as the `site` event to the viewer watching it, and by `GET /api/sites/{id}`.
+ */
+export type SiteDetail = { id: string, kind: SiteKind, 
+/**
+ * "The Gilded Tankard", "a bench near the village green"
+ */
+name: string, 
+/**
+ * the place it is, or stands near
+ */
+placeId: string, placeName: string, description: string, 
+/**
+ * as [`WorldObject::stage`]; `whole` for a building that is as the map has it
+ */
+stage: string, 
+/**
+ * the tick the stage began; 0 for a building nobody has touched
+ */
+sinceTick: number, 
+/**
+ * how far the work on it has got, in percent
+ */
+progress: number, 
+/**
+ * how far a fire has taken hold of it, 0..100
+ */
+fire: number, 
+/**
+ * how many may sleep there; homes only
+ */
+beds: number | null, 
+/**
+ * who lives there; homes only
+ */
+residents: Array<NamedId>, 
+/**
+ * the villagers at the place right now
+ */
+present: Array<NamedId>, project: SiteProject | null, 
+/**
+ * the materials kept there, for a stockpile that holds any
+ */
+stockpile: Goods | null, 
+/**
+ * chronicle lines about it, newest first, at most 20
+ */
+history: Array<ChronicleEntry>, };
+
 export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
@@ -643,13 +720,17 @@ export type ChatRename = {
 viewer: string, name: string, };
 
 /**
- * `POST /api/watch`: which character's `detail` this viewer (one tab) receives.
+ * `POST /api/watch`: which character's `detail`, or which site's `site`, this viewer (one tab) receives.
  */
 export type WatchRequest = { 
 /**
  * random per tab
  */
-viewer: string, id: string | null, };
+viewer: string, 
+/**
+ * a villager id (`c7`) or a site id (`b:<place>`, `n:<n>`)
+ */
+id: string | null, };
 
 /**
  * `GET /api/me`
@@ -760,6 +841,7 @@ export type StreamEvents = {
   status: Status;
   roster: RosterEntry[];
   detail: Detail;
+  site: SiteDetail;
   brainlog: BrainLogRecord;
   world_reset: WorldReset;
   chat_welcome: ChatWelcome;
