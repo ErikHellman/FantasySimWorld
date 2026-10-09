@@ -23,6 +23,27 @@ const SEAT_TOLERANCE = 0.02;
  * on its blade.
  */
 const UPSIDE_DOWN_IN_HAND = new Set(['tools/shovel']);
+/** How far a rig's hips sit above its feet at rest, in metres at full size: a rider's root goes this far under the seat. */
+const HIPS_HEIGHT = 0.38;
+/**
+ * A rider's legs. A villager's legs are too short to hang down a horse's sides, so the thighs go out sideways over its
+ * back and the shins hang straight down: turns in the model's own axes (x across the body to its left, y up, z ahead).
+ */
+const RIDING_POSE: readonly [string, THREE.Quaternion][] = [
+  ['upperlegl', turnZ(1.25).multiply(turnX(-0.3))],
+  ['upperlegr', turnZ(-1.25).multiply(turnX(-0.3))],
+  ['lowerlegl', turnZ(-1.2)],
+  ['lowerlegr', turnZ(1.2)],
+];
+
+function turnX(angle: number): THREE.Quaternion {
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+}
+
+function turnZ(angle: number): THREE.Quaternion {
+  return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+}
+
 /** Where a breathing monster's mouth is, ahead of and above its origin, as a share of its height. */
 const MOUTH_AHEAD = 0.7;
 const MOUTH_UP = 0.72;
@@ -85,6 +106,13 @@ export class ActorView {
   private unplayed = 0;
   /** how far to move the body, while it sits on a seat, to bring its hips onto the seat (null when they are already there) */
   private readonly seatShift: THREE.Vector3 | null;
+  /** each leg bone's rest turn and the turn on top of it that sits it astride a horse */
+  private readonly riding: { bone: THREE.Object3D; rest: THREE.Quaternion; astride: THREE.Quaternion }[] = [];
+  private readonly hipsHeight: number;
+  /** where the hips go this frame while astride a horse, and the way it faces */
+  private readonly seat = new THREE.Vector3();
+  private seatFacing = 0;
+  private seated = false;
   /** a ghost's own see-through materials, so the villagers who share its texture stay solid */
   private readonly ghostMaterials: THREE.MeshLambertMaterial[] = [];
   /** how far a ghost has come into sight, 0..1, and where it is heading */
@@ -129,6 +157,27 @@ export class ActorView {
     this.mixer = new THREE.AnimationMixer(model);
     this.seatShift = seatShift(assets, this.rig, template.scale);
     this.hands = { r: model.getObjectByName('handslotr') ?? null, l: model.getObjectByName('handslotl') ?? null };
+    this.hipsHeight = HIPS_HEIGHT * template.scale;
+    // A turn in the model's axes becomes one in the bone's own: its rest turn in the model, undone, then the turn,
+    // then the rest turn again.
+    this.root.updateMatrixWorld(true);
+    for (const [name, turn] of RIDING_POSE) {
+      const bone = model.getObjectByName(name);
+      if (!bone) continue;
+      const inModel = bone.getWorldQuaternion(new THREE.Quaternion());
+      const astride = inModel.clone().invert().multiply(turn).multiply(inModel);
+      this.riding.push({ bone, rest: bone.quaternion.clone(), astride });
+    }
+  }
+
+  /**
+   * Seats the body astride a horse for the next `update`, its hips on the saddle's seat (in world space) and facing
+   * the way the horse does; null puts it back on its own feet.
+   */
+  ride(seat: THREE.Vector3 | null, facing = 0): void {
+    this.seated = seat !== null;
+    if (seat) this.seat.copy(seat);
+    this.seatFacing = facing;
   }
 
   /** A see-through copy of a material, for a ghost. */
@@ -239,11 +288,11 @@ export class ActorView {
   update(dt: number, alpha: number, heightAt: (x: number, z: number) => number, frustum: THREE.Frustum): void {
     if (this.ghost) this.haunt(dt);
     if (!this.root.visible) return;
-    const x = lerp(this.prev.x, this.next.x, alpha);
-    const z = lerp(this.prev.z, this.next.z, alpha);
-    const y = heightAt(x, z) + lerp(this.prev.alt, this.next.alt, alpha);
+    const x = this.seated ? this.seat.x : lerp(this.prev.x, this.next.x, alpha);
+    const z = this.seated ? this.seat.z : lerp(this.prev.z, this.next.z, alpha);
+    const y = this.seated ? this.seat.y - this.hipsHeight : heightAt(x, z) + lerp(this.prev.alt, this.next.alt, alpha);
     this.root.position.set(x, y, z);
-    this.root.rotation.y = lerpAngle(this.prev.facing, this.next.facing, alpha);
+    this.root.rotation.y = this.seated ? this.seatFacing : lerpAngle(this.prev.facing, this.next.facing, alpha);
     // Out of view, neither the body nor its animation is worth the work; the clip catches up when it comes back.
     this.bounds.center.set(x, y + this.height / 2, z);
     this.bounds.radius = this.height + CULL_MARGIN;
@@ -254,6 +303,8 @@ export class ActorView {
     }
     this.mixer.update(dt + this.unplayed);
     this.unplayed = 0;
+    // Astride, the legs' pose replaces whatever the clip gave them.
+    if (this.seated) for (const { bone, rest, astride } of this.riding) bone.quaternion.copy(rest).multiply(astride);
     if (this.seatShift) {
       // Follow the sitting clip's weight, so the body rises onto the seat as it sits down and steps off as it gets up.
       const sitting = this.actions.get(ANIMS.sit_chair.clip);

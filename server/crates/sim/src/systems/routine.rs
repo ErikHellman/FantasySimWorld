@@ -14,6 +14,7 @@ use crate::state::{
     FightMode, Id, Intent, IntentAction, IntentSource, ItemId, MonsterPhase, PlanBlock, PlanSource, Quirk, SimState,
     StimulusKind, TalkTone, WorldJob,
 };
+use crate::systems::animals;
 use crate::systems::billboards::wants_to_read;
 use crate::systems::charm;
 use crate::systems::combat::{max_hp, start_fight};
@@ -413,6 +414,12 @@ fn choose(ctx: &mut Ctx, id: &str) -> Option<Intent> {
     }
     if let Some(social) = social_intent(ctx, id) {
         return Some(social);
+    }
+    // Now and then, a pat for the dog (or, for a child, any dog or cat about).
+    if let Some(animal_id) = animals::pet_to_fuss(ctx.state, id)
+        && ctx.chance(0.3)
+    {
+        return Some(Intent::new(IntentAction::Pet { animal_id }, IntentSource::Routine));
     }
 
     let c = ctx.cr(id);

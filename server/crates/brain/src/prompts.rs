@@ -12,9 +12,10 @@ use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory, MonsterPhase,
-    Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
+    Animal, Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory,
+    MonsterPhase, Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
 };
+use fsw_sim::systems::animals;
 use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::economy;
@@ -81,7 +82,7 @@ How to play:
 - Answer only by calling the tools you are given. No narration.
 - Anything said aloud is one or two short sentences in your own voice, with no stage directions and no quotation marks.
 - A \"thought\" is one private sentence in the first person.
-- Only name people and places that appear in the message. The village is small: nobody lives here but the people named, and the only monsters are the walking dead, the orc raiders who sometimes come up the road and, very rarely, a dragon.";
+- Only name people, animals and places that appear in the message. The village is small: nobody lives here but the people and animals named, and the only monsters are the walking dead, the orc raiders who sometimes come up the road and, very rarely, a dragon.";
 
 /// From here a character's spite shows in the prompts; below it, it only shows in what they do.
 const SPITEFUL: f64 = 0.5;
@@ -337,6 +338,9 @@ fn offered_to(c: &Character) -> Vec<ActivityId> {
 const TARGETS_NAMED: usize = 6;
 /// How many pieces of loot, and how many deals, the decide prompt names.
 const LOOT_NAMED: usize = 4;
+/// Animals within this many paces are near enough to go over to.
+pub const ANIMAL_REACH: f64 = 22.0;
+const ANIMALS_NAMED: usize = 6;
 const TRADES_NAMED: usize = 4;
 
 /// What this character could fell, mine, dig, mow, take apart or set alight from where they stand; empty
@@ -517,11 +521,98 @@ fn header(state: &SimState, c: &Character) -> String {
     ];
     lines.extend(weather_line(state, c));
     lines.extend(music_line(c));
+    lines.extend(animal_lines(state, c));
     lines.extend(fire_lines(state, c));
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
     lines.extend(market_line(state));
     lines.join("\n")
+}
+
+/// The horse a character rides and the pets they keep, and where those are; empty for most, so the prompt reads as
+/// it did.
+fn animal_lines(state: &SimState, c: &Character) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(horse) = c.mount.as_deref().and_then(|h| state.animals.get(h)) {
+        lines.push(format!("You are riding {}, one of the farm's horses.", animals::call(horse)));
+    }
+    for pet in animals::pets_of(state, &c.id) {
+        let noun = pet.species.def().noun;
+        let line = match &pet.name {
+            None => format!("A {noun} has just come to live with you; it has no name yet."),
+            Some(name) if c.inside.is_none() && dist(pet.pos, c.pos) < 6.0 => {
+                format!("{name}, your {noun}, is at your heels.")
+            }
+            Some(name) => format!("{name}, your {noun}, is waiting for you near {}.", place_name_at(pet.pos)),
+        };
+        lines.push(line);
+    }
+    lines
+}
+
+/// The animals near enough to go over to, nearest first: pets and horses by name, the rest by kind. Empty when
+/// there are none, so the prompt reads as it did.
+fn animals_line(state: &SimState, c: &Character) -> String {
+    let near = animals_near(state, c);
+    if near.is_empty() {
+        return String::new();
+    }
+    let mut named = Vec::new();
+    let mut kinds: Vec<(&str, &str, usize)> = Vec::new();
+    for animal in near {
+        let def = animal.species.def();
+        match &animal.name {
+            Some(name) => {
+                let whose = animal.owner.as_deref().map(|o| format!("{}'s {}", name_of(state, o), def.noun));
+                named.push(format!("{name} ({})", whose.unwrap_or_else(|| def.label.to_owned())));
+            }
+            None if animal.owner.is_some() => {
+                let owner = animal.owner.as_deref().unwrap_or_default();
+                named.push(format!("{}'s new {}", name_of(state, owner), def.noun));
+            }
+            None => match kinds.iter_mut().find(|(label, ..)| *label == def.label) {
+                Some((.., count)) => *count += 1,
+                None => kinds.push((def.label, def.plural, 1)),
+            },
+        }
+    }
+    let kinds = kinds
+        .into_iter()
+        .map(|(label, plural, count)| if count == 1 { label.to_owned() } else { format!("{count} {plural}") });
+    let all: Vec<String> = named.into_iter().chain(kinds).take(ANIMALS_NAMED).collect();
+    format!("Animals near you (pet): {}.", all.join(", "))
+}
+
+/// The animals within reach of a villager that nobody is riding, nearest first.
+pub fn animals_near<'s>(state: &'s SimState, c: &Character) -> Vec<&'s Animal> {
+    let mut near: Vec<&Animal> = state
+        .animals
+        .values()
+        .filter(|a| a.rider.is_none() && c.mount.as_deref() != Some(a.id.as_str()) && dist(a.pos, c.pos) < ANIMAL_REACH)
+        .collect();
+    near.sort_by(|a, b| dist(a.pos, c.pos).total_cmp(&dist(b.pos, c.pos)));
+    near
+}
+
+/// Asks a villager what to call the dog or cat that has come to live with them.
+pub fn name_pet_prompt(state: &SimState, me: &Character, pet: &Animal) -> Prompt {
+    let noun = pet.species.def().noun;
+    let taken: Vec<&str> = state.animals.values().filter_map(|a| a.name.as_deref()).collect();
+    let parts = [
+        header(state, me),
+        format!(
+            "A {noun} has come to live with you and follows you about. It needs a name: the kind of name you would \
+             give a {noun}, one word or two."
+        ),
+        if taken.is_empty() {
+            String::new()
+        } else {
+            format!("The animals already named in the valley: {}. Choose another.", taken.join(", "))
+        },
+        "Name it with one tool call.".to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(me, user), tools: vec![TOOLS.name_pet.clone()], max_calls: 1 }
 }
 
 /// What the sky is doing, and how this character takes it; nothing under a clear sky, so a fair day costs
@@ -782,6 +873,10 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
     if !afford.is_empty() {
         tools.push(TOOLS.commission.clone());
     }
+    let animals = animals_line(state, c);
+    if !animals.is_empty() {
+        tools.push(TOOLS.pet.clone());
+    }
 
     let feud_note = if feuds.is_empty() {
         String::new()
@@ -838,6 +933,7 @@ pub fn decide_prompt(state: &SimState, c: &Character, max_tokens: usize, recall:
             section(2, loot),
             section(2, trades),
             section(3, afford),
+            section(3, animals),
             section(
                 5,
                 if far.len() > 5 {

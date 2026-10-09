@@ -7,6 +7,7 @@ import type { Assets } from './assets';
 import { Billboards } from './billboards';
 import { CameraRig } from './camera';
 import { CeremonyDressing } from './ceremony';
+import { AnimalView } from './animals';
 import { ActorView } from './characters';
 import { buildDebugOverlay } from './debug';
 import { Effects } from './fx';
@@ -34,6 +35,11 @@ interface Actor {
   shown: boolean;
 }
 
+interface Beast {
+  view: AnimalView;
+  entity: ViewEntity;
+}
+
 /** The 3D view of the world: built once, then reconciled with the view world every tick. */
 export class WorldView {
   readonly scene = new THREE.Scene();
@@ -43,6 +49,7 @@ export class WorldView {
   readonly effects: Effects;
   readonly overlay: Overlay;
   private readonly actors = new Map<string, Actor>();
+  private readonly animals = new Map<string, Beast>();
   /** ghosts the world has let go of, fading where they stood */
   private readonly departed: ActorView[] = [];
   private readonly graves = new Map<string, THREE.Object3D>();
@@ -66,6 +73,7 @@ export class WorldView {
   private readonly projected = new THREE.Vector3();
   private readonly frustum = new THREE.Frustum();
   private readonly viewProjection = new THREE.Matrix4();
+  private readonly seatAt = new THREE.Vector3();
   selectedId: string | null = null;
 
   constructor(private readonly assets: Assets, private readonly canvas: HTMLCanvasElement, overlayElement: HTMLElement, private readonly quality: QualitySettings) {
@@ -129,6 +137,18 @@ export class WorldView {
   /** Brings the view in line with the world after a tick, and plays the tick's events. */
   sync(world: ViewWorld, events: readonly WireEvent[]): void {
     for (const entity of world.entities.values()) {
+      if (entity.kind === 'animal') {
+        let beast = this.animals.get(entity.id);
+        if (!beast) {
+          const view = new AnimalView(this.assets, entity.look, entity.id, this.quality.smallAnimalShadows);
+          this.actorGroup.add(view.root);
+          beast = { view, entity };
+          this.animals.set(entity.id, beast);
+        }
+        beast.entity = entity;
+        beast.view.sync(entity);
+        continue;
+      }
       let actor = this.actors.get(entity.id);
       const ghost = entity.kind === 'ghost';
       if (!actor) {
@@ -156,6 +176,12 @@ export class WorldView {
           actor.view.dispose();
         }
         this.actors.delete(id);
+      }
+    }
+    for (const [id, beast] of this.animals) {
+      if (!world.entities.has(id)) {
+        beast.view.dispose();
+        this.animals.delete(id);
       }
     }
     if (this.selectedId && !world.entities.has(this.selectedId)) this.selectedId = null;
@@ -249,9 +275,31 @@ export class WorldView {
       }
     }
     const labels: LabelState[] = [];
+    // Animals first: a rider sits on the seat of a horse already in place.
+    const target = this.rig.target;
+    for (const [id, beast] of this.animals) {
+      const position = beast.view.root.position;
+      const near = Math.hypot(position.x - target.x, position.z - target.z) < this.quality.animalMotion;
+      beast.view.update(simDt, alpha, this.heightAt, this.frustum, near);
+      // Only pets and horses have names; the rest go unlabelled, like the dead.
+      const entity = beast.entity;
+      if (!entity.name) continue;
+      labels.push({
+        id, name: entity.name, x: position.x, y: position.y + beast.view.height + 0.25, z: position.z, visible: entity.visible,
+        hp: 1, hurt: false, hostile: false, ghost: false, selected: id === this.selectedId, asleep: entity.asleep,
+      });
+    }
     for (const [id, actor] of this.actors) {
-      actor.view.update(simDt, alpha, this.heightAt, this.frustum);
       const entity = actor.entity;
+      const horse = entity.mount ? this.animals.get(entity.mount) : undefined;
+      const seat = horse?.view.seat();
+      if (horse && seat) {
+        seat.getWorldPosition(this.seatAt);
+        actor.view.ride(this.seatAt, horse.view.root.rotation.y);
+      } else {
+        actor.view.ride(null);
+      }
+      actor.view.update(simDt, alpha, this.heightAt, this.frustum);
       if (!entity.name) continue; // corpses have no label
       const position = actor.view.root.position;
       labels.push({
@@ -273,7 +321,7 @@ export class WorldView {
   }
 
   /**
-   * What a tap on a screen point picks: the villager or monster nearest to it within `radius` pixels, or failing
+   * What a tap on a screen point picks: the villager, monster or animal nearest to it within `radius` pixels, or failing
    * that the building or built thing under it (`b:<place>`, `n:<n>`), or null.
    */
   pick(clientX: number, clientY: number, radius = 46): string | null {
@@ -286,14 +334,14 @@ export class WorldView {
   }
 
   /**
-   * The villager or monster nearest to a screen point, if any is within `radius` pixels of it and so counts as
+   * The villager, monster or animal nearest to a screen point, if any is within `radius` pixels of it and so counts as
    * clicked. A body has no card and cannot be picked.
    */
   private pickActor(clientX: number, clientY: number, radius: number): string | null {
     const rect = this.canvas.getBoundingClientRect();
     let best: string | null = null;
     let bestDistance = radius;
-    for (const [id, actor] of this.actors) {
+    for (const [id, actor] of [...this.actors, ...this.animals]) {
       if (actor.entity.kind === 'corpse' || !actor.entity.visible) continue;
       const position = actor.view.root.position;
       this.projected.set(position.x, position.y + actor.view.height * 0.5, position.z).project(this.rig.camera);
@@ -312,7 +360,7 @@ export class WorldView {
   /** Follows a character with the camera; null stops following. */
   follow(id: string | null): void {
     this.rig.setFollow(id ? () => {
-      const actor = this.actors.get(id);
+      const actor = this.actors.get(id) ?? this.animals.get(id);
       return actor ? { x: actor.view.root.position.x, z: actor.view.root.position.z, lift: actor.entity.alt } : null;
     } : null);
   }

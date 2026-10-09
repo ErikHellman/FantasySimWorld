@@ -140,6 +140,8 @@ export const bundles = [
 
 // Props made for this project with Blender (tools/blender/make_props.py); `local` paths are relative to the repo.
 bundles.push({ id: 'custom', sources: [{ dir: 'tools/blender/out', local: true }] });
+// Pets, farm animals and birds, also made with Blender (tools/blender/make_animals.py); each is a tree of named joints.
+bundles.push({ id: 'animals', sources: [{ dir: 'tools/blender/out_animals', local: true }] });
 
 /**
  * Rigged characters, one GLB each (mesh + skeleton, no clips). `rig` names the

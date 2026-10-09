@@ -17,6 +17,8 @@ const def = (clip: string, loop: boolean, speed?: number): AnimDef => ({ clip, l
 export const ANIMS = {
   idle: def('Idle_A', true),
   idle_alt: def('Idle_B', true),
+  /** astride a horse: the idle clip for the body, with the legs posed over it (`ActorView.ride`) */
+  ride: def('Idle_A', true),
   walk: def('Walking_A', true),
   walk_b: def('Walking_B', true),
   walk_c: def('Walking_C', true),

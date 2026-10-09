@@ -9,7 +9,7 @@ import type {
 import type { GuestWait } from '../net/guestQueue';
 import type { ConnectionState } from '../net/stream';
 
-export type { CharacterDetail, Detail, GhostDetail, MonsterDetail, RelationRow, RosterEntry, SiteDetail } from '../generated/api';
+export type { AnimalDetail, CharacterDetail, Detail, GhostDetail, MonsterDetail, RelationRow, RosterEntry, SiteDetail } from '../generated/api';
 
 /** Whether a selectable id names a site (a building `b:<place>` or something built `n:<n>`) rather than a villager. */
 export const isSiteId = (id: string): boolean => id.startsWith('b:') || id.startsWith('n:');

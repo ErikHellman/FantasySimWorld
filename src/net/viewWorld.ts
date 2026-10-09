@@ -24,6 +24,8 @@ export interface ViewEntity {
   /** current activity id, if performing one */
   act: string | null;
   asleep: boolean;
+  /** for a villager, the horse they ride; for a horse, who rides it */
+  mount: string | null;
   /** height above the ground, for one in the air (the dragon) */
   alt: number;
 }
@@ -46,6 +48,7 @@ function decode(target: ViewEntity, dyn: Partial<Dyn> | DynDelta): void {
   if (dyn.oh !== undefined) target.offHand = dyn.oh;
   if (dyn.act !== undefined) target.act = dyn.act;
   if (dyn.z !== undefined) target.asleep = dyn.z;
+  if (dyn.mt !== undefined) target.mount = dyn.mt;
   // Absent from a snapshot, or null in a delta: on the ground.
   if (dyn.y !== undefined) target.alt = (dyn.y ?? 0) / 100;
 }
@@ -54,7 +57,7 @@ function fromEntity(entity: Entity): ViewEntity {
   const s = entity.static;
   const view: ViewEntity = {
     id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile, boss: s.boss ?? false,
-    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, alt: 0,
+    x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, mount: null, alt: 0,
   };
   decode(view, entity.dyn);
   return view;
@@ -206,5 +209,9 @@ export class ViewWorld {
 
   isGhost(id: string): boolean {
     return this.entities.get(id)?.kind === 'ghost';
+  }
+
+  isAnimal(id: string): boolean {
+    return this.entities.get(id)?.kind === 'animal';
   }
 }

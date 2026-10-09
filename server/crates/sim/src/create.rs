@@ -65,6 +65,8 @@ pub fn create_state(seed: u32) -> SimState {
         loot: Default::default(),
         war_band: None,
         plundered: Default::default(),
+        animals: Default::default(),
+        fauna: Default::default(),
         weather: Default::default(),
         ghosts: Default::default(),
         nav: Default::default(),

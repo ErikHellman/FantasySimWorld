@@ -48,6 +48,8 @@ macro_rules! anims {
 anims! {
     Idle = "idle" => ("Idle_A", true),
     IdleAlt = "idle_alt" => ("Idle_B", true),
+    // Astride a horse: the idle clip, with the legs posed over the saddle by the viewer.
+    Ride = "ride" => ("Idle_A", true),
     Walk = "walk" => ("Walking_A", true),
     WalkB = "walk_b" => ("Walking_B", true),
     WalkC = "walk_c" => ("Walking_C", true),

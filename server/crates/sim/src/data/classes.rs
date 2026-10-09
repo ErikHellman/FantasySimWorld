@@ -229,7 +229,7 @@ pub static CLASSES: [ClassDef; 14] = [
         weapon: melee([11, 16], 1.6, &[Attack2hSlice, Attack2hChop], Guard),
         main_hand: Some("farmer_pitchfork"),
         off_hand: None,
-        jobs: &[Farm, ChopWood],
+        jobs: &[Farm, Tend, ChopWood],
         hobbies: &[Drink, Rest, ActivityId::Fish],
     },
 ];

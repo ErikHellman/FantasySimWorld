@@ -68,7 +68,7 @@ export function HelpPanel() {
 
             <h3>Following someone</h3>
             <dl class="controls">
-              <Control keys={['Click']}>Click a villager (or one of the dead), a name in the villager list or a line in the chronicle to follow them and open their page</Control>
+              <Control keys={['Click']}>Click a villager (or one of the dead, or an animal), a name in the villager list or a line in the chronicle to follow them and open their page</Control>
               <Control keys={['Click']}>Click a building, or something the village built, for its page: who lives and is there, the work on it and its history</Control>
               <Control keys={['Esc']}>Stop following and close the page (or close an open window)</Control>
             </dl>
@@ -97,6 +97,7 @@ export function HelpPanel() {
             <li><strong>A villager's page</strong>: <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
             <li><strong>One of the dead, a raider or the dragon</strong>: follow it for a card with its health, what it is after, where it came from, what it is carrying off and who it has slain.</li>
             <li><strong>A ghost</strong>: follow it for a card with who it was, how they died and how many nights it has left.</li>
+            <li><strong>An animal</strong>: follow it for a card with what it is, what it is doing, and whose it is or who is riding it.</li>
             <li><strong>A building's page</strong>: tap a building, or something the village built, for its condition, who lives and is there, the work on it and its history.</li>
             {banner}
           </ul>
@@ -108,6 +109,7 @@ export function HelpPanel() {
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
           <li><strong>One of the dead, a raider or the dragon</strong> (right, when you follow it): its health, what it is after, where and how it came, who it once was, what it is carrying off, and how many villagers it has slain.</li>
           <li><strong>A ghost</strong> (right, when you follow it): who it was, how they died, what it is about and how many nights it has left.</li>
+          <li><strong>An animal</strong> (right, when you follow it): what it is, what it is doing, and whose it is or who is riding it. Only pets and horses have names over their heads.</li>
           <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
@@ -129,6 +131,7 @@ export function HelpPanel() {
           <li>In a fight, skill and luck count. Knights, paladins, swordsmen and barbarians can turn a blow aside (a clang and a spark: it does a quarter of the harm), and rogues, scouts and rangers can step out of one (a whoosh and a puff of dust). Arrows and spells can only be dodged. The brave and born fighters defend a little better, the badly hurt a little worse. Some of the dead can do it too.</li>
           <li>About one in three of those the dead cut down comes back as a ghost: the same person, pale and see-through, seen only after dark. For two or three nights it drifts between its grave, its home and the homes of those it loved, keeping them from their sleep. Whoever meets it in the dark runs, or stands their ground, or grieves if they loved them; its touch leaves them cold and weak but never kills. Nobody can fight a ghost. Then it finds rest and is seen no more.</li>
           <li>If every villager is asleep, the dead may set a house alight. Everyone is woken to carry water from the well or the lake. A house that cannot be saved burns down and is rebuilt over several days, and its people sleep by the campfire meanwhile.</li>
+          <li>Animals live here too. Cows, sheep, goats and horses graze the meadow south of the windmill, pigs and hens keep to the farmyard and ducks to the lake shore, and birds hop about the green and fly over the fields; an owl keeps the glade at night. Farmers tend the herd for eggs and milk. About half the homes keep a dog or a cat, which follows its keeper about and waits at the door; its keeper names it, and when a keeper dies someone else in the house takes it in. A villager setting off on a long walk with a free horse nearby rides it there, faster, and the horse waits for them, then wanders home at nightfall. Animals run from the dead, and the dead leave them be.</li>
           <li>The weather changes through the day: clear skies, rain, wind and now and then hail. Each villager takes it their own way: some love the rain and some hate it, some enjoy a good wind and some can't stand it, and it shows in their mood. Those who hate the rain go indoors when it pours. Hail hurts, so everyone runs for cover until it passes. Rain helps keep a fire down, and wind fans it. The weather is shown next to the clock.</li>
           <li>Once in a long while, by day, a dragon comes over the hills. It swoops on one to three homes and sets them alight, and its breath burns anyone caught in the open. Villagers run indoors, all but those with a bow, a crossbow or magic, who may stand and shoot at it while it circles. It is very hard to bring down, and flies off once its burning is done or it is badly hurt. Whoever kills it is remembered for it, and its hoard spills where it falls.</li>
           <li>The valley changes. Woodcutters fell trees, which grow back in a couple of weeks, miners break rocks, and farmers mow and dig. The village carries wood, stone and ore to its stores, and spends them on rebuilding, on enlarging crowded cottages and on fences, benches and crates.</li>

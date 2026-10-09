@@ -67,6 +67,8 @@ pub struct Tools {
     pub pick_up: ToolDef,
     pub trade: ToolDef,
     pub commission: ToolDef,
+    pub pet: ToolDef,
+    pub name_pet: ToolDef,
 }
 
 pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
@@ -291,5 +293,23 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             "thought": thought(),
         }),
         &["what"],
+    ),
+    pet: tool(
+        "pet",
+        "Go over to one of the animals near you and make a fuss of it.",
+        json!({
+            "animal": { "type": "string", "description": "Which animal, as the message names it: a name, or the kind of animal." },
+            "say": say(),
+            "thought": thought(),
+        }),
+        &["animal"],
+    ),
+    name_pet: tool(
+        "name_pet",
+        "Give the animal that has come to live with you its name.",
+        json!({
+            "name": { "type": "string", "description": "Its name: one word or two, no quotation marks." },
+        }),
+        &["name"],
     ),
 });

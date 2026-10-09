@@ -30,6 +30,7 @@ The server migration is complete. The world, the language-model brain and every 
 - Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
 - The dead have cards: click one of them and the inspector shows its health, what it is after, where and how it rose, who it once was and how many villagers it has slain.
 - Ghosts: about one in three villagers slain by the dead walks again, see-through and only after dark, for two or three nights. A ghost drifts between its grave and the homes of those it loved, troubles the sleepers inside and frightens whoever it meets; its touch chills and weakens but never kills, and nobody can fight one. Then it finds rest ([the design](docs/superpowers/specs/2026-10-08-ghosts-design.md)).
+- Animals: a herd and hens at the windmill farm, ducks on the shore, birds and an owl, and a dog or a cat in about half the homes, named by their keepers. Farmers tend the herd for food, villagers make a fuss of their pets, and anyone setting off on a long walk rides a free horse ([the design](docs/superpowers/specs/2026-10-08-animals-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one, say what they think and, if it urges something, may go and do it; admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
@@ -83,7 +84,7 @@ set -a; . ./.env; set +a
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the weather, the dead and their ghosts, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, animals, the weather, the dead and their ghosts, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", **Call a raid** (an orc war band comes up the west road at once by day, or at nine the next morning by night; one at a time), the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
@@ -278,6 +279,13 @@ A few props the collection lacks at character scale (a wooden fence, wildflowers
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_props.py
+```
+
+The pets, farm animals and birds are made the same way, into `tools/blender/out_animals/`, which the same command bundles as `animals`. A second script renders sheets for reviewing them (a lineup beside a villager, a villager riding a horse, a farmyard, every colour and four views of each species) into `tools/blender/preview/`, using ImageMagick's `montage`:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_animals.py
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/render_animals_preview.py
 ```
 
 The dragon is made the same way, in the KayKit style, with its own skeleton and six animations (flying, hovering, breathing fire, roaring, being hit and falling). The script writes `tools/blender/rigged/Dragon.glb`, and `pnpm assets` turns it into a character and a rig of its own (`dragon` in `tools/assets/asset-list.mjs`). The sim times the dragon's clips by that rig, since the medium rig has none of them.

@@ -9,3 +9,4 @@ server/data/backup
 tools/audio/.cache
 .env
 .env.*
+tools/blender/preview

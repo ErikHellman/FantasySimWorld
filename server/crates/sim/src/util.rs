@@ -10,8 +10,8 @@ use fsw_world::places::nearest_place;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
-    Character, ChronicleEntry, ChronicleKind, Ghost, Id, IntentAction, Memory, MemoryKind, Monster, MonsterPhase,
-    Pronouns, Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
+    Animal, Character, ChronicleEntry, ChronicleKind, Ghost, Id, IntentAction, Memory, MemoryKind, Monster,
+    MonsterPhase, Pronouns, Quirk, RelationLabel, Relationship, SimState, Stimulus, StimulusKind,
 };
 
 pub const MEMORY_CAP: usize = 140;
@@ -238,12 +238,16 @@ pub fn rel_or_default(from: &Character, to_id: &str) -> Relationship {
     from.relationships.get(to_id).cloned().unwrap_or_else(new_relationship)
 }
 
-/// Something with a position, a facing and an animation: a character or a monster.
+/// Something with a position and a facing that walks: a character, a monster or an animal.
 pub trait Body {
     fn pos(&self) -> Vec2;
     fn set_pos(&mut self, pos: Vec2);
     fn facing_mut(&mut self) -> &mut f64;
     fn set_moving(&mut self, moving: bool);
+}
+
+/// A body that plays the rigs' clips: a character or a monster. Animals have animations of their own.
+pub trait Animated: Body {
     fn anim_mut(&mut self) -> (&mut AnimId, &mut i64);
 }
 
@@ -262,17 +266,28 @@ macro_rules! body {
             fn set_moving(&mut self, moving: bool) {
                 self.moving = moving;
             }
+        }
+    };
+}
+body!(Character);
+body!(Monster);
+body!(Animal);
+body!(Ghost);
+
+macro_rules! animated {
+    ($t:ty) => {
+        impl Animated for $t {
             fn anim_mut(&mut self) -> (&mut AnimId, &mut i64) {
                 (&mut self.anim, &mut self.anim_seq)
             }
         }
     };
 }
-body!(Character);
-body!(Monster);
-body!(Ghost);
+animated!(Character);
+animated!(Monster);
+animated!(Ghost);
 
-pub fn set_anim(entity: &mut impl Body, anim: AnimId, restart: bool) {
+pub fn set_anim(entity: &mut impl Animated, anim: AnimId, restart: bool) {
     let (current, seq) = entity.anim_mut();
     if *current != anim || restart {
         *current = anim;

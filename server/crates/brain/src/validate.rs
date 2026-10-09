@@ -7,6 +7,7 @@ use fsw_sim::state::{
     Character, ConversationLine, Feeling, FightMode, Id, Intent, IntentAction, IntentSource, ItemId, Map, MonsterPhase,
     PlanBlock, SimState, TalkTone, WorldJob,
 };
+use fsw_sim::systems::animals;
 use fsw_sim::systems::ceremonies;
 use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
@@ -17,6 +18,7 @@ use fsw_world::places::{ActivityId, Place, places};
 use serde_json::{Map as JsonMap, Value};
 
 use crate::llm::types::ToolCall;
+use crate::prompts::animals_near;
 
 const MAX_SPOKEN: usize = 220;
 
@@ -373,6 +375,30 @@ pub fn resolve_loot(state: &SimState, c: &Character, value: Option<&Value>) -> O
     best.map(|(_, id)| id.clone()).or_else(|| near.first().map(|(_, id)| id.clone()))
 }
 
+/// The animal near `c` the model means: by name, or by kind ("the cow", "sheep"), the nearest that fits.
+pub fn resolve_animal(state: &SimState, c: &Character, value: Option<&Value>) -> Option<String> {
+    let text = norm(value);
+    if text.is_empty() {
+        return None;
+    }
+    let near = animals_near(state, c);
+    let by_name = near.iter().find(|a| a.name.as_deref().is_some_and(|n| text.contains(&norm_str(n))));
+    let by_kind = || {
+        near.iter().find(|a| {
+            let def = a.species.def();
+            text.split(' ').any(|w| w == def.noun || w == def.plural)
+        })
+    };
+    by_name.or_else(by_kind).map(|a| a.id.clone())
+}
+
+/// The name a villager gave their new pet, cleaned up the way the sim takes it.
+pub fn interpret_pet_name(calls: &[ToolCall]) -> Option<String> {
+    let call = calls.iter().find(|c| c.name == "name_pet")?;
+    let Some(Value::String(name)) = call.args.get("name") else { return None };
+    animals::clean_name(name)
+}
+
 /// Turns the tool calls of a "decide" or "react" reply into intents.
 pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -> Decision {
     let mut decision = Decision::default();
@@ -486,6 +512,10 @@ pub fn interpret_decision(state: &SimState, c: &Character, calls: &[ToolCall]) -
             "commission" => match resolve_commission(state, c, args.get("what")) {
                 Some(choice) => decision.intents.push(intent(IntentAction::Commission { what: choice.key() })),
                 None => decision.problems.push(format!("nothing to pay for at \"{}\"", shown(args.get("what")))),
+            },
+            "pet" => match resolve_animal(state, c, args.get("animal")) {
+                Some(animal_id) => decision.intents.push(intent(IntentAction::Pet { animal_id })),
+                None => decision.problems.push(format!("no animal near you called \"{}\"", shown(args.get("animal")))),
             },
             "pick_up" => match resolve_loot(state, c, args.get("what")) {
                 Some(loot_id) => decision.intents.push(intent(IntentAction::PickUp { loot_id })),

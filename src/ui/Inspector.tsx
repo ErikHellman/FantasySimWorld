@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
-import { actions, closeSheet, ui, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
+import { actions, closeSheet, ui, type AnimalDetail, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -143,6 +143,30 @@ function MonsterCard({ d }: { d: MonsterDetail }) {
   );
 }
 
+/** The card of one of the valley's animals: what it is, what it is doing, and whose it is. */
+function AnimalCard({ d }: { d: AnimalDetail }) {
+  const { owner, rider } = d;
+  return (
+    <>
+      <h2>{d.name}</h2>
+      <p class="subtitle">{d.species}{d.yields && ` · gives ${d.yields}`}</p>
+      <p class="status">{d.status}</p>
+      <div class="tab-body">
+        {owner && (
+          <p>
+            Kept by <button class="link" onClick={() => actions.select(owner.id)}>{owner.name}</button>
+          </p>
+        )}
+        {rider && (
+          <p>
+            Ridden by <button class="link" onClick={() => actions.select(rider.id)}>{rider.name}</button>
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** The card of a ghost: who it was, how they died, and how long it will walk. It cannot be fought, so no health. */
 function GhostCard({ d }: { d: GhostDetail }) {
   const nights = d.nightsLeft === 1 ? 'This is its last night.' : `It will walk ${d.nightsLeft} more nights.`;
@@ -188,7 +212,7 @@ export function Inspector() {
     <aside class="panel inspector">
       {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
       <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
-      {d.kind === 'monster' ? <MonsterCard d={d} /> : d.kind === 'ghost' ? <GhostCard d={d} /> : <VillagerCard d={d} />}
+      {d.kind === 'monster' ? <MonsterCard d={d} /> : d.kind === 'ghost' ? <GhostCard d={d} /> : d.kind === 'animal' ? <AnimalCard d={d} /> : <VillagerCard d={d} />}
     </aside>
   );
 }

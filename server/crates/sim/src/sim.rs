@@ -12,6 +12,7 @@ use crate::state::{
     ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
     SimState, WorldJob,
 };
+use crate::systems::animals::{self, update_animals};
 use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
 use crate::systems::blocking::update_blocking;
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
@@ -92,6 +93,8 @@ fn intent_allowed(ctx: &mut Ctx, id: &str, intent: &Intent) -> bool {
         }
         // Anyone may stoop for what the dead left, while it is still there.
         IntentAction::PickUp { loot_id } => ctx.state.loot.contains_key(loot_id),
+        // Anyone may make a fuss of an animal nobody is riding.
+        IntentAction::Pet { animal_id } => ctx.state.animals.get(animal_id).is_some_and(|a| a.rider.is_none()),
         // A deal needs two grown villagers; whether it goes through is settled face to face.
         IntentAction::Trade { target_id, .. } => {
             target_id != id && ctx.alive(target_id) && !ctx.cr(id).is_child() && !ctx.cr(target_id).is_child()
@@ -318,6 +321,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
         Command::CeremonySpeech { ceremony_id, speaker_id, text } => {
             ceremonies::hold_speech(ctx, &ceremony_id, &speaker_id, text);
         }
+        Command::NameAnimal { animal_id, name } => animals::name_pet(ctx, &animal_id, &name),
     }
 }
 
@@ -378,6 +382,7 @@ impl Sim {
         update_conversations(&mut ctx);
         update_monsters(&mut ctx);
         update_ghosts(&mut ctx);
+        update_animals(&mut ctx);
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_world(&mut ctx);

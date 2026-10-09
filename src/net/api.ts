@@ -1,5 +1,5 @@
 import type {
-  ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
+  AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
   GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
   SpeedRequest, WatchRequest,
 } from '../generated/api';
@@ -46,6 +46,7 @@ export const api = {
   /** the card of one of the dead */
   monster: (id: string) => request<MonsterDetail>('GET', `/api/monsters/${encodeURIComponent(id)}`),
   ghost: (id: string) => request<GhostDetail>('GET', `/api/ghosts/${encodeURIComponent(id)}`),
+  animal: (id: string) => request<AnimalDetail>('GET', `/api/animals/${encodeURIComponent(id)}`),
   /** the page for a building (`b:<place>`) or something the village built (`n:<n>`) */
   site: (id: string) => request<SiteDetail>('GET', `/api/sites/${encodeURIComponent(id)}`),
   /** says something in the viewers' chat; it comes back on the stream */
