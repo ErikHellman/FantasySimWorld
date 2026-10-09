@@ -54,6 +54,14 @@ export interface ChatSettings {
   name?: string;
 }
 
+/** A boss near enough to the camera to show its health at the top of the screen. */
+export interface BossInView {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+}
+
 export const ui = {
   loading: signal<string | null>('Loading the valley…'),
   started: signal(false),
@@ -75,6 +83,10 @@ export const ui = {
   monsters: signal(0),
   dragon: signal(false),
   alarm: signal(false),
+  /** an orc war band is in the valley */
+  raid: signal(false),
+  /** the nearest boss near the camera, for the bar at the top of the screen */
+  boss: signal<BossInView | null>(null),
   /** a new world still being founded: how many villagers have arrived; null once it is (or for a world that always was) */
   founding: signal<Founding | null>(null),
   roster: signal<RosterEntry[]>([]),
@@ -188,6 +200,7 @@ export function fromStatus(status: Status): void {
   ui.monsters.value = status.monsters;
   ui.dragon.value = status.dragon;
   ui.alarm.value = status.alarm;
+  ui.raid.value = status.raid;
   ui.founding.value = status.founding;
 }
 

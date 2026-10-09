@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { AboutTechPanel } from './About';
 import { AdminPanel } from './Admin';
+import { BossBar } from './BossBar';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
 import { FoundingDialog } from './Founding';
@@ -226,8 +227,10 @@ export function App() {
       )}
       {burning && <div class="alarm">🔥 {burning.name.charAt(0).toUpperCase() + burning.name.slice(1)} is on fire</div>}
       {!burning && alight && <div class="alarm">🔥 {alightName} is on fire</div>}
-      {ui.alarm.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
-      {hail && !ui.alarm.value && !burning && !alight && <div class="alarm">🌨️ Hail! Everyone is running for cover</div>}
+      <BossBar />
+      {ui.raid.value && !burning && <div class="alarm">⚔{'\uFE0F'} Orc raiders are in the valley</div>}
+      {ui.alarm.value && !ui.raid.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
+      {hail && !ui.alarm.value && !ui.raid.value && !burning && !alight && <div class="alarm">🌨️ Hail! Everyone is running for cover</div>}
       {ceremony && !hail && !ui.alarm.value && !burning && !alight && <div class="alarm festive">{ceremonyBanner(ceremony)}</div>}
       {ui.throttled.value && !hail && !ui.alarm.value && !burning && !alight && !ceremony && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>

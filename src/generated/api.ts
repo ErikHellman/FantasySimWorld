@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -90,7 +90,11 @@ export type EntityStatic = { id: string, kind: EntityKind, name: string, look: L
 /**
  * villagers only
  */
-voice: VoiceProfile | null, };
+voice: VoiceProfile | null, 
+/**
+ * set (true) for a boss the whole village must rally against; left out otherwise
+ */
+boss?: boolean, };
 
 /**
  * The parts of an entity that change from tick to tick, quantised so an idle
@@ -230,6 +234,21 @@ export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief"
 export type Ranged = "arrow" | "bolt" | "magic" | "food" | "fire";
 
 /**
+ * How a blow ended for the one it was aimed at.
+ */
+export type HitOutcome = "hit" | "blocked" | "dodged";
+
+/**
+ * The answer to `POST /api/admin/raid`: when the band will come.
+ */
+export type RaidCallAnswer = { message: string, };
+
+/**
+ * Where an orc raid has got to.
+ */
+export type RaidPhase = "coming" | "leaving" | "gone";
+
+/**
  * One spoken line, with everything a sink needs to show it or say it aloud.
  */
 export type Utterance = { tick: number, speakerId: string, speakerName: string, toId: string | null, toName: string | null, text: string, 
@@ -249,7 +268,11 @@ position: Vec2, };
 /**
  * The one-shot happenings of a tick that viewers need (the brain's internal events stay on the server).
  */
-export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
+export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id: string, emote: Emote, } | { "type": "attack", attackerId: string, targetId: string, ranged: Ranged | null, from: Vec2, to: Vec2, } | { "type": "hit", attackerId: string, targetId: string, damage: number, pos: Vec2, fatal: boolean, 
+/**
+ * left out when the blow simply landed
+ */
+outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -392,15 +415,19 @@ export type Loot = {
  */
 id: string, kind: LootKind, 
 /**
- * how many coins, for `coins`; 0 otherwise
+ * how many coins, goods or materials; 0 for a trinket or a relic
  */
-count: number, pos: Vec2, 
+count: number, 
+/**
+ * for goods, the item (`food`, `potion`, `gift`); for materials, the material (`wood`, `stone`, `ore`)
+ */
+item?: string, pos: Vec2, 
 /**
  * picked up or blown away: forget it
  */
 gone: boolean, };
 
-export type LootKind = "coins" | "trinket" | "relic";
+export type LootKind = "coins" | "trinket" | "relic" | "goods" | "materials";
 
 export type WeatherKind = "clear" | "rain" | "wind" | "hail";
 
@@ -456,6 +483,10 @@ monsters: number,
  * the dragon is over the valley
  */
 dragon: boolean, alarm: boolean, 
+/**
+ * an orc war band is in the valley
+ */
+raid: boolean, 
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
@@ -596,7 +627,19 @@ blows: number,
 /**
  * the least and the most one of its blows takes
  */
-damage: [number, number], };
+damage: [number, number], 
+/**
+ * one of the dead, an orc raider, or the dragon
+ */
+faction: MonsterFaction, 
+/**
+ * a raider's plunder, e.g. "12 coins and 6 logs of wood"
+ */
+carrying: string | null, 
+/**
+ * a boss: the skeleton golem or the orc warchief
+ */
+boss: boolean, };
 
 /**
  * The card of one of the valley's animals.
@@ -655,6 +698,8 @@ status: string,
  * nights it still has to walk, counting tonight; 0 before it first rises
  */
 nightsLeft: number, };
+
+export type MonsterFaction = "undead" | "orc" | "dragon";
 
 /**
  * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.

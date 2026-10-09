@@ -9,6 +9,8 @@ export interface ViewEntity {
   look: Look;
   maxHp: number;
   hostile: boolean;
+  /** a boss the whole village must rally against */
+  boss: boolean;
   x: number;
   z: number;
   facing: number;
@@ -54,7 +56,7 @@ function decode(target: ViewEntity, dyn: Partial<Dyn> | DynDelta): void {
 function fromEntity(entity: Entity): ViewEntity {
   const s = entity.static;
   const view: ViewEntity = {
-    id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile,
+    id: s.id, kind: s.kind, name: s.name, look: s.look, maxHp: s.maxHp, hostile: s.hostile, boss: s.boss ?? false,
     x: 0, z: 0, facing: 0, anim: 'idle', animSeq: 0, visible: true, mainHand: null, offHand: null, hp: 0, act: null, asleep: false, mount: null, alt: 0,
   };
   decode(view, entity.dyn);
@@ -197,6 +199,12 @@ export class ViewWorld {
 
   isMonster(id: string): boolean {
     return this.entities.get(id)?.kind === 'monster';
+  }
+
+  /** One of an orc war band, rather than one of the dead. */
+  isRaider(id: string): boolean {
+    const entity = this.entities.get(id);
+    return entity?.kind === 'monster' && entity.look.model.startsWith('Orc');
   }
 
   isGhost(id: string): boolean {

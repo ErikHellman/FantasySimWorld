@@ -1,5 +1,7 @@
 # Block, dodge, orc raids and bosses
 
+**Status (2026-10-08): built**, all three steps, plus an admin's "Call a raid". Each step's "Built" section says where the code differs from the plan and what the soak measured.
+
 Fights today are an exchange of blows. Every swing that is still in reach when its windup ends lands, and the only enemies are the dead, who rise at night and crumble at dawn. This design makes combat richer in three steps, each shipped on its own:
 
 1. **Block and dodge.** Defenders can turn a blow aside or step out of it, so skill and equipment show and fights last a little longer.
@@ -87,6 +89,8 @@ Before and after, run `cargo run --release -p fsw-sim --bin soak -- 30 <seed> --
 
 Orcs are not the dead. They do not rise from graves, they do not crumble at dawn, and their bodies are not buried; a fallen orc's corpse lies for a while and then is gone.
 
+**Plunder, as built.** The owner chose both halves: a plundered place is spoiled for a game day, and raiders carry off real goods. At the market an orc takes up to 12 coins from the chest and up to 3 goods off the stalls; at any stockpile (the market, the lumber camp, the mine) up to 10 materials. A farm, the smithy or a home is only spoiled. A raider who falls drops what it carried where it fell, as loot the villagers pick up (coins into the purse, goods into the pack, materials into their arms and on to the stores); what the band takes down the road is gone. This reverses the economy note's "no theft of coin".
+
 ### Where it lives
 
 - **Kinds** (`data/monsters.rs`): `MonsterKind::OrcAxe`, `OrcClub` and `OrcWarchief` (step 3), and a `faction()` returning `Undead` or `Orc`. Daylight, rising, burial and arson apply to the undead only. Orc corpses are not buried.
@@ -102,6 +106,21 @@ Orcs are not the dead. They do not rise from graves, they do not crumble at dawn
 - **The brain** (`prompts.rs`): the world text "the only monsters are the walking dead" becomes "the dead rise at night; orc raiders sometimes come up the road by day". Prompts say "raiders" for orcs in sight. This is a deliberate change to `prompts.json`.
 - **Wire**: a new `WireEvent::Raid { phase }` (`coming`, `leaving` or `gone`) for the horn and the music. `MonsterSpawn` and `look` already carry the rest. Older clients ignore an event they do not know. `export-api` is re-run.
 - **Client**: the war horn (`src/audio`, CC0, credited), the `tension` mood during a raid (`src/audio/mood.ts`), and the chronicle kind `combat`.
+
+### Built
+
+Built as above, with these details settled in the code:
+- **When**: the first raid is fixed by the seed (day 4 to 6, 9:00 to 15:00), so nothing is drawn and nothing written until it comes; `crates/sim/tests/raids.rs` holds a world before its first raid equal to one without raids. After that the next is drawn when a band appears. A raid that is due but cannot come waits for the same hour the next day.
+- **The band**: `MonsterKind::OrcAxe` and `OrcClub` (the OrcRaider model, two hides, some without a pack), at the end of `MONSTERS` with weight 0. They are as tough as a knight (150 and 130 health, 13–19 and 11–16 damage); at the first trial's 70 and 60 the village cut every band down within minutes and nobody was ever hurt.
+- **Where it lives**: `systems/raids.rs` is run from `update_director` (the schedule, the warning, the band's end) and from the monsters' loop for each orc (`update_orc`), so the system order in `Sim::step` is unchanged. The warning is skipped if someone has already seen the band and shouted. The alarm, the stand-down, panic and the prompts name raiders rather than the dead when it is orcs (`Director.alarm_raid`).
+- **Spoiling**: `activity_minute` skips an activity's goods at a plundered place (the check needs the slot's place, which `give` does not have).
+- **Bodies**: an orc dies like one of the dead (five seconds of `Death`), then lies as a corpse in the death pose for two hours; no grave.
+- **Wire** (protocol 13, after the ghosts, the weather, the dragon and the animals took 9 to 12: the new loot kinds would break an older page): `WireEvent::Raid`, `LootKind::Goods` and `Materials` with an `item`, `MonsterDetail.faction` and `carrying`, `Status.raid` (the banner and the music). Orcs send no `monster_spawn`: they walk up, they do not claw out of the ground.
+- **Sound**: the war horn is StumpyStrust's "Their Coming" (CC0); a fallen orc plays the villagers' fall, not the skeleton's clatter.
+- **Beside the dragon and the ghosts** (`2026-10-08-dragon-design.md`, `2026-10-08-ghosts-design.md`): the dragon keeps `Monster.raid` for its visit, so a raider's orders are `Monster.errand` and the band is `SimState.war_band`. `Faction` has `Dragon` too; a monster that is neither undead nor the dragon is not taken for it (the alarm, the status line and the prompts ask for the dragon by kind). The 💀 count and the prompts' header count the dead and the raiders together, the dragon apart. Nobody an orc kills comes back as a ghost: orcs are not the dead.
+- **Calling a raid** (added at the owner's request): `POST /api/admin/raid`, behind `require_admin`, sends `Command::CallRaid`, and **🛠 Admin → World → Call a raid** sends that. A called raid skips the schedule and the bar of eight villagers (three will do) but still waits for daylight, no fire and room on the road; it is refused (409) while the village is being settled, while a band is in the valley or when one is already called. Drawing nothing itself, the command keeps a replay of the command stream exact.
+
+Measured over 30 days, seeds 1 to 10 (means per village): 4.2 raids; 9.4 places plundered; 0.9 villagers killed by orcs; the band got away with plunder 0.8 times. Villagers dead, all causes, 6.4 (6.5 before raids). Most bands turn for home on losing 60% of their health, 20 to 50 minutes after they appear; a few take all they came for. The chest ends the month much as it did without raids. In practice the raiders seldom get past the farm, the lumber camp and the nearest cottages before the village is on them.
 
 ## Step 3: bosses
 
@@ -135,6 +154,18 @@ Orcs are not the dead. They do not rise from graves, they do not crumble at dawn
 - The rally in `perception.rs`.
 - **Wire**: `EntityStatic` gains an optional `boss` flag. The model's draw scale comes from `asset-list.mjs`.
 - **Client**: the boss bar in `src/ui`.
+
+### Built
+
+Built as above, with these differences:
+- **The golem's numbers**: at the planned 25–40 damage every 2.8 seconds its slam killed four villagers a month in each village, as fighters crowd round it. It is built at 18–28 every 3.2 seconds, after a 1.2-second windup, with 600 health and a reach of 2.6; it then kills about one villager a month and is always brought down. It drops a relic like the necromancer, and it never sets fires.
+- **The warchief's cleave** takes the one it swings at and one more in front of it; he is built with block 0.15 like the axe raiders. He leads every third raid (the third, sixth, …) from day 12 with at least ten alive, spawns first so the draws come in a fixed order, belongs to the band without counting in its size or its fallen, and when he falls the band turns for home at once.
+- **The large rig** borrows the `Skeletons_*` clips, so the golem rises, walks and crumbles like the rest of the dead. The models are drawn at 0.9 (golem, 3.8 units tall) and 0.8 (warchief, 3.4); the asset build allows any scale on the large rig for a model that never sits (`seats: false`).
+- **The rally**: a golem's rising raises the alarm and stirs everyone (`director::rally`); a warchief comes with his band's warning. While any boss is abroad, perception's responder bar is 0.45.
+- **Remembered**: every villager who struck the boss is kept in `Monster.foes`; when it falls the chronicle names them and who struck the last blow, each remembers it at importance 9 with the others as subjects, and the server saves (`SavePoint { "boss fallen" }`).
+- **The client**: `EntityStatic.boss` (optional) and `MonsterDetail.boss`; `src/ui/BossBar.tsx` shows the nearest boss within 60 units of the camera.
+
+Measured over 30 days, seeds 1 to 10 (means per village): 1.9 golems rose and all were brought down; 1.0 villagers killed by golems, 0.3 by a warchief and 0.3 by orc raiders. Villagers dead, all causes, 6.8 (6.6 before any of this work); monsters destroyed 177 (168).
 
 ## Tests
 

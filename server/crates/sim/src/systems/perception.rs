@@ -3,6 +3,7 @@
 use fsw_core::math2d::dist;
 use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 
+use crate::data::monsters::{Faction, MonsterKind};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActPhase, Character, ChronicleKind, FightMode, Id, IntentAction, IntentSource, MemoryKind, Monster, MonsterPhase,
@@ -12,12 +13,17 @@ use crate::systems::combat::{can_reach, max_hp, start_fight, start_flee};
 use crate::systems::conversation::abort_conversation;
 use crate::systems::fire::burning;
 use crate::systems::intents::leave_building;
+use crate::systems::raids::foe_noun;
 use crate::systems::relationships::{RelationDelta, adjust};
-use crate::util::{Ctx, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at};
+use crate::util::{
+    Ctx, a_noun_capital, first_name, has_recent_stimulus, is_fighting, join_names, living, living_ids, place_name_at,
+};
 
 const SIGHT: f64 = 18.0;
 const WATCH_SIGHT: f64 = 48.0;
 const RESPONDER_BRAVERY: f64 = 0.6;
+/// While a boss is abroad, the alarm rallies anyone with this much nerve.
+pub const BOSS_RESPONDER_BRAVERY: f64 = 0.45;
 const ALARM_RANGE: f64 = 150.0;
 const FIRE_COURAGE: f64 = 0.2;
 /// Heartened by music, people find a little more nerve.
@@ -53,13 +59,16 @@ fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_
 fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
     let tick = ctx.tick();
     let where_ = place_name_at(monster.pos);
-    let dragon = !monster.kind.def().undead;
+    let dragon = monster.kind == MonsterKind::Dragon;
+    let raiders = monster.kind.faction() == Faction::Orc;
     if tick >= ctx.state.director.alarm_until_tick || (dragon && !ctx.state.director.alarm_dragon) {
         let (shout, text) = if dragon {
             (
                 format!("A dragon! A dragon over {where_}! Take cover!"),
                 format!("raised the alarm: a dragon over {where_}!"),
             )
+        } else if raiders {
+            (format!("To arms! Orcs at {where_}!"), format!("raised the alarm: orc raiders are at {where_}."))
         } else {
             (
                 format!("To arms! The dead are at {where_}!"),
@@ -73,6 +82,9 @@ fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
     }
     ctx.state.director.alarm_until_tick = tick + minutes_to_ticks(40.0);
     ctx.state.director.alarm_pos = Some(monster.pos);
+    if raiders {
+        ctx.state.director.alarm_raid = true;
+    }
     if dragon {
         ctx.state.director.alarm_dragon = true;
     }
@@ -90,12 +102,21 @@ fn stand_down(ctx: &mut Ctx) {
         })
         .map(|c| (c.id.clone(), first_name(c).to_owned()))
         .collect();
+    let raiders = ctx.state.director.alarm_raid;
     ctx.state.director.alarm_until_tick = tick;
     ctx.state.director.alarm_pos = None;
+    ctx.state.director.alarm_raid = false;
     let dragon = std::mem::take(&mut ctx.state.director.alarm_dragon);
     if fighters.is_empty() {
         return;
     }
+    let (foe, gone) = if dragon {
+        ("the dragon", "the dragon is gone")
+    } else if raiders {
+        ("the orc raiders", "the raiders are gone")
+    } else {
+        ("the dead", "the dead are destroyed")
+    };
     let names: Vec<&str> = fighters.iter().map(|(_, name)| name.as_str()).collect();
     let ids: Vec<Id> = fighters.iter().map(|(id, _)| id.clone()).collect();
     ctx.chronicle(ChronicleKind::Combat, format!("The attack is over. {} held the line.", join_names(&names)), ids);
@@ -104,7 +125,6 @@ fn stand_down(ctx: &mut Ctx) {
         for (other, _) in &others {
             adjust(ctx, id, other, RelationDelta { affinity: 2.0, trust: 3.0, familiarity: 2.0, ..Default::default() });
         }
-        let foe = if dragon { "the dragon" } else { "the dead" };
         let text = if others.is_empty() {
             format!("Fought off {foe} alone.")
         } else {
@@ -112,12 +132,7 @@ fn stand_down(ctx: &mut Ctx) {
             format!("Fought off {foe} beside {}.", join_names(&names))
         };
         ctx.remember(id, text, 6.0, MemoryKind::Event, others.iter().map(|(o, _)| o.clone()).collect());
-        let over = if dragon {
-            "The fight is over and the dragon is gone."
-        } else {
-            "The fight is over and the dead are destroyed."
-        };
-        ctx.stimulate(id, StimulusKind::Victory, over, 1, None);
+        ctx.stimulate(id, StimulusKind::Victory, format!("The fight is over and {gone}."), 1, None);
     }
     ctx.emit(SimEvent::SavePoint { reason: "attack over".into() });
 }
@@ -129,6 +144,7 @@ pub fn update_perception(ctx: &mut Ctx) {
         ctx.state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying).cloned().collect();
     let alarm = tick < ctx.state.director.alarm_until_tick;
     let house_burning = burning(ctx.state).is_some();
+    let bar = if monsters.iter().any(|m| m.kind.def().boss) { BOSS_RESPONDER_BRAVERY } else { RESPONDER_BRAVERY };
 
     if monsters.is_empty() {
         if ctx.state.director.alarm_pos.is_some() {
@@ -165,7 +181,11 @@ pub fn update_perception(ctx: &mut Ctx) {
                 abort_conversation(ctx, &convo);
             }
             if !has_recent_stimulus(ctx.cr(id), StimulusKind::Threat, tick - seconds_to_ticks(30.0), None) {
-                let text = format!("A {} is coming at you near {}!", seen.kind.def().label, place_name_at(seen.pos));
+                let text = format!(
+                    "{} is coming at you near {}!",
+                    a_noun_capital(seen.kind.def().label),
+                    place_name_at(seen.pos)
+                );
                 ctx.stimulate(id, StimulusKind::Threat, text, 3, Some(&seen.id));
             }
             let c = ctx.cr(id);
@@ -193,7 +213,7 @@ pub fn update_perception(ctx: &mut Ctx) {
         if !alarm || is_fighting(c) {
             continue;
         }
-        let responder = !c.is_child() && c.profile.bravery >= RESPONDER_BRAVERY && c.hp > max_hp(c) * 0.4;
+        let responder = !c.is_child() && c.profile.bravery >= bar && c.hp > max_hp(c) * 0.4;
         // Those who cannot reach what the alarm is for stay where they are, or take cover.
         let answer = if responder { nearest_monster(&monsters, c, ALARM_RANGE) } else { None };
         if responder && answer.is_some_and(|m| can_reach(c, m)) {
@@ -204,8 +224,10 @@ pub fn update_perception(ctx: &mut Ctx) {
                 leave_building(&nav, c);
             }
             if !has_recent_stimulus(c, StimulusKind::Alarm, tick - minutes_to_ticks(30.0), None) {
-                let what =
-                    if target.kind.def().undead { "the dead are attacking" } else { "a dragon is burning the village" };
+                let what = match target.kind.faction() {
+                    Faction::Dragon => "a dragon is burning the village".to_owned(),
+                    faction => format!("{} are attacking", foe_noun(faction)),
+                };
                 let text = format!("The alarm has been raised: {what} near {}.", place_name_at(target.pos));
                 ctx.stimulate(id, StimulusKind::Alarm, text, 2, Some(&target.id));
             }

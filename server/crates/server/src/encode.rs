@@ -34,8 +34,9 @@ use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
-    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, House, HousePhase, Look, Loot, LootKind, Placed, Ranged,
-    Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind, WireEvent, WorldObject, WorldObjectKind,
+    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HitOutcome, House, HousePhase, Look, Loot, LootKind,
+    Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind, WireEvent,
+    WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -74,6 +75,7 @@ pub fn character_static(c: &Character) -> EntityStatic {
         max_hp: max_hp(c),
         hostile: false,
         voice: Some(voice(&c.profile.voice)),
+        boss: None,
     }
 }
 
@@ -117,6 +119,7 @@ pub fn monster_static(m: &Monster) -> EntityStatic {
         max_hp: def.max_hp,
         hostile: true,
         voice: None,
+        boss: def.boss.then_some(true),
     }
 }
 
@@ -146,6 +149,7 @@ pub fn corpse_static(corpse: &Corpse) -> EntityStatic {
         max_hp: 1.0,
         hostile: false,
         voice: None,
+        boss: None,
     }
 }
 
@@ -176,6 +180,7 @@ pub fn animal_static(a: &Animal) -> EntityStatic {
         max_hp: 0.0,
         hostile: false,
         voice: None,
+        boss: None,
     }
 }
 
@@ -205,6 +210,7 @@ pub fn ghost_static(ghost: &Ghost) -> EntityStatic {
         max_hp: 1.0,
         hostile: false,
         voice: None,
+        boss: None,
     }
 }
 
@@ -452,12 +458,16 @@ pub fn loot_of(state: &SimState) -> Vec<Loot> {
 }
 
 fn wire_loot(id: &str, loot: &SimLoot) -> Loot {
-    let (kind, count) = match loot.kind {
-        SimLootKind::Coins { count } => (LootKind::Coins, count.max(0) as u32),
-        SimLootKind::Trinket => (LootKind::Trinket, 0),
-        SimLootKind::Relic => (LootKind::Relic, 0),
+    let (kind, count, item) = match loot.kind {
+        SimLootKind::Coins { count } => (LootKind::Coins, count.max(0) as u32, None),
+        SimLootKind::Trinket => (LootKind::Trinket, 0, None),
+        SimLootKind::Relic => (LootKind::Relic, 0, None),
+        SimLootKind::Goods { item, count } => (LootKind::Goods, count.max(0) as u32, Some(item.as_str().to_owned())),
+        SimLootKind::Materials { resource, count } => {
+            (LootKind::Materials, count.max(0) as u32, Some(resource.as_str().to_owned()))
+        }
     };
-    Loot { id: id.to_owned(), kind, count, pos: point(loot.pos), gone: false }
+    Loot { id: id.to_owned(), kind, count, item, pos: point(loot.pos), gone: false }
 }
 
 /// The village chest and the market's stalls, as viewers are told of them.
@@ -595,18 +605,30 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                 from: point(*from),
                 to: point(*to),
             }),
-            SimEvent::Hit { attacker_id, target_id, damage, pos, fatal } => result.push(WireEvent::Hit {
+            SimEvent::Hit { attacker_id, target_id, damage, pos, fatal, outcome } => result.push(WireEvent::Hit {
                 attacker_id: attacker_id.clone(),
                 target_id: target_id.clone(),
                 damage: js_round(damage * 10.0) / 10.0,
                 pos: point(*pos),
                 fatal: *fatal,
+                outcome: match outcome {
+                    fsw_sim::events::HitOutcome::Hit => None,
+                    fsw_sim::events::HitOutcome::Blocked => Some(HitOutcome::Blocked),
+                    fsw_sim::events::HitOutcome::Dodged => Some(HitOutcome::Dodged),
+                },
             }),
             SimEvent::Death { id, name, pos, monster } => result.push(WireEvent::Death {
                 id: id.clone(),
                 name: name.clone(),
                 pos: point(*pos),
                 monster: *monster,
+            }),
+            SimEvent::Raid { phase } => result.push(WireEvent::Raid {
+                phase: match phase {
+                    fsw_sim::events::RaidPhase::Coming => RaidPhase::Coming,
+                    fsw_sim::events::RaidPhase::Leaving => RaidPhase::Leaving,
+                    fsw_sim::events::RaidPhase::Gone => RaidPhase::Gone,
+                },
             }),
             SimEvent::MonsterSpawn { id, pos } => {
                 result.push(WireEvent::MonsterSpawn { id: id.clone(), pos: point(*pos) })

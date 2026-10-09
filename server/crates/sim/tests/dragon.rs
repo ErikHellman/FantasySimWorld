@@ -26,6 +26,8 @@ fn late_morning(seed: u32) -> Sim {
     state.director.watch_day = game_time(state.tick).day;
     state.director.next_wave_tick = i64::MAX;
     state.director.next_dragon_tick = i64::MAX;
+    // No orc raid either, long overdue by this morning: its alarm would bring people out of doors.
+    state.director.next_raid_tick = i64::MAX;
     let mut sim = Sim::new(state);
     sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
     sim

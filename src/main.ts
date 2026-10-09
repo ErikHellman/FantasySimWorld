@@ -10,7 +10,7 @@ import { HttpError, api } from './net/api';
 import { GuestQueue } from './net/guestQueue';
 import { Playback } from './net/playback';
 import { Stream, viewerId } from './net/stream';
-import { ViewWorld } from './net/viewWorld';
+import { ViewWorld, type ViewEntity } from './net/viewWorld';
 import { Assets } from './render/assets';
 import { pickQuality, qualitySettings, thisDevice } from './render/quality';
 import { backendFromUrl, createRenderer, fitRenderer } from './render/renderer';
@@ -204,7 +204,7 @@ async function start(): Promise<void> {
     }
     speech.handle(events);
     if (!fast) {
-      playEffects(audio, events, (id) => world.isVillager(id), listener());
+      playEffects(audio, events, (id) => world.isVillager(id), listener(), (id) => world.isRaider(id));
       mood.noteEvents(events, listener(), ui.selectedId.value, seconds());
     }
   };
@@ -305,14 +305,27 @@ async function start(): Promise<void> {
     const spot = listener();
     let monstersNear = 0;
     let performanceNear = false;
+    let boss: ViewEntity | null = null;
+    let bossDistance = MONSTERS_NEAR;
     for (const entity of world.entities.values()) {
-      if (entity.kind === 'monster' && entity.hp > 0 && Math.hypot(entity.x - spot.x, entity.z - spot.z) < MONSTERS_NEAR) monstersNear++;
+      const distance = Math.hypot(entity.x - spot.x, entity.z - spot.z);
+      if (entity.kind === 'monster' && entity.hp > 0 && distance < MONSTERS_NEAR) monstersNear++;
+      if (entity.kind === 'monster' && entity.boss && entity.hp > 0 && distance < bossDistance) {
+        boss = entity;
+        bossDistance = distance;
+      }
       if (entity.kind === 'villager' && entity.visible && entity.act === 'perform' && inView(entity.x, entity.z, spot)) performanceNear = true;
+    }
+    const shown = ui.boss.value;
+    if (!boss) {
+      if (shown) ui.boss.value = null;
+    } else if (!shown || shown.id !== boss.id || shown.hp !== boss.hp) {
+      ui.boss.value = { id: boss.id, name: boss.name, hp: boss.hp, maxHp: boss.maxHp };
     }
     const selectedId = ui.selectedId.value;
     const selectedMood = selectedId ? (ui.roster.value.find((entry) => entry.id === selectedId)?.mood ?? null) : null;
     const ceremony = ui.ceremony.value;
-    const scene = { hour, alarm: ui.alarm.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
+    const scene = { hour, alarm: ui.alarm.value || ui.raid.value || burning(), monstersNear, selectedMood, ceremony: ceremony && { kind: ceremony.kind, phase: ceremony.phase }, performanceNear };
     audio.music.setMood(mood.update(scene, seconds()));
     const sting = mood.takeSting();
     if (sting) audio.music.playSting(sting);

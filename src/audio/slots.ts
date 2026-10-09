@@ -26,6 +26,8 @@ export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'rain', label: 'Rain loop, while it rains', kind: 'ambient', gain: 0.7 },
   { id: 'hail', label: 'Hail drumming loop, while it hails', kind: 'ambient', gain: 0.7 },
   { id: 'sword_hit', label: 'A weapon striking', kind: 'effect', gain: 0.8 },
+  { id: 'block_clang', label: 'A blow turned aside on steel', kind: 'effect', gain: 0.8 },
+  { id: 'dodge_whoosh', label: 'A blow that cuts only air', kind: 'effect', gain: 0.6 },
   { id: 'arrow_shot', label: 'A bow or crossbow loosing', kind: 'effect', gain: 0.7 },
   { id: 'magic_cast', label: 'A spell being cast', kind: 'effect', gain: 0.7 },
   { id: 'hurt', label: 'A villager crying out in pain', kind: 'effect', gain: 0.8 },
@@ -33,6 +35,7 @@ export const AUDIO_SLOTS: readonly AudioSlot[] = [
   { id: 'monster_spawn', label: 'The dead clawing out of the ground', kind: 'effect', gain: 0.9 },
   { id: 'monster_death', label: 'A skeleton collapsing', kind: 'effect', gain: 0.8 },
   { id: 'alarm', label: 'The alarm being raised (a bell or horn)', kind: 'effect', gain: 1 },
+  { id: 'war_horn', label: 'An orc war band sounding its horn on the road', kind: 'effect', gain: 1 },
 ];
 
 export const AUDIO_EXTENSIONS = ['ogg', 'mp3', 'wav'] as const;

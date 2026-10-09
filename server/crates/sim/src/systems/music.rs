@@ -244,7 +244,7 @@ pub fn run_perform(ctx: &mut Ctx, id: &str, place_id: Option<String>, minutes: f
             let c = ctx.c(id);
             let elapsed = tick - c.act.since_tick;
             if elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
-                activity_minute(c, ActivityId::Perform, elapsed / TICKS_PER_GAME_MINUTE);
+                activity_minute(c, ActivityId::Perform, elapsed / TICKS_PER_GAME_MINUTE, false);
             }
             // The note over their head is renewed while they play.
             if elapsed % seconds_to_ticks(6.0) == 0 {

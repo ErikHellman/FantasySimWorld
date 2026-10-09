@@ -7,10 +7,11 @@ use fsw_core::jsmath::js_round;
 use fsw_core::time::{format_clock, game_time, part_of_day};
 use fsw_core::vec2;
 use fsw_sim::data::activities::activity;
+use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
-    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Raid, RaidPhase,
+    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Raid, RaidOrder, RaidPhase,
     RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
@@ -23,8 +24,8 @@ use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
     AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory,
-    LlmStatus, Memory, MemoryKind, MonsterDetail, Mood, NamedId, Needs, PlanRow, RelationLabel, RelationRow,
-    RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
+    LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow, RelationLabel,
+    RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 
@@ -70,15 +71,14 @@ pub fn is_alarm(state: &SimState) -> bool {
     state.tick < state.director.alarm_until_tick
 }
 
-/// Monsters still in the fight (a dying one is not counted).
-/// The dead abroad (the dragon is counted on its own).
+/// The dead and the orc raiders abroad (a dying one is not counted, and the dragon is counted on its own).
 pub fn monster_count(state: &SimState) -> u32 {
-    state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying && m.kind.def().undead).count() as u32
+    state.monsters.values().filter(|m| m.phase != MonsterPhase::Dying && !m.kind.def().flies).count() as u32
 }
 
 /// Whether the dragon is over the valley.
 pub fn dragon_abroad(state: &SimState) -> bool {
-    state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && !m.kind.def().undead)
+    state.monsters.values().any(|m| m.phase != MonsterPhase::Dying && m.kind.def().flies)
 }
 
 /// Villagers performing an activity (not on their way to it).
@@ -115,6 +115,7 @@ pub fn status_of(state: &SimState, extras: StatusExtras) -> Status {
         monsters: monster_count(state),
         dragon: dragon_abroad(state),
         alarm: is_alarm(state),
+        raid: state.war_band.is_some(),
         part: part_of_day(game_time(state.tick).hour).into(),
         ambient: ambient_of(state),
         founding: state
@@ -288,6 +289,13 @@ pub fn monster_detail_of(state: &SimState, id: &str) -> Option<MonsterDetail> {
         kills: m.kills.max(0) as u32,
         blows: m.blows.max(0) as u32,
         damage: [def.damage[0].max(0) as u32, def.damage[1].max(0) as u32],
+        faction: match def.faction {
+            Faction::Undead => MonsterFaction::Undead,
+            Faction::Orc => MonsterFaction::Orc,
+            Faction::Dragon => MonsterFaction::Dragon,
+        },
+        carrying: m.errand.as_ref().and_then(|order| order.haul.describe()),
+        boss: def.boss,
     })
 }
 
@@ -302,6 +310,9 @@ fn monster_status(state: &SimState, m: &Monster, target: Option<&NamedId>) -> St
     let hour = game_time(state.tick).hour;
     let daylight = (5.6..19.4).contains(&hour);
     let here = place_name_at(m.pos);
+    if let Some(order) = &m.errand {
+        return raider_status(state, m, order, target, &here);
+    }
     match m.phase {
         MonsterPhase::Rising => format!("Rising from the ground at {here}"),
         MonsterPhase::Dying if m.was_id.is_some() => "Laid to rest at last".into(),
@@ -319,6 +330,21 @@ fn monster_status(state: &SimState, m: &Monster, target: Option<&NamedId>) -> St
             None if daylight && m.lasting => "Lying low in the ruins".into(),
             None => format!("Prowling near {here}"),
         },
+    }
+}
+
+/// What a raider is about, for the card.
+fn raider_status(state: &SimState, m: &Monster, order: &RaidOrder, target: Option<&NamedId>, here: &str) -> String {
+    let place = |id: &str| find_place(id).map_or_else(|| id.to_owned(), |p| p.name.to_owned());
+    match (m.phase, target, &order.target) {
+        (MonsterPhase::Dying, ..) => "Fallen".into(),
+        (_, Some(target), _) => format!("Fighting {} near {here}", target.name),
+        _ if order.leaving && order.haul.is_empty() => "Making for the west road".into(),
+        _ if order.leaving => "Running for the west road with its plunder".into(),
+        (_, _, Some(goal)) if order.work_until_tick > 0 => format!("Plundering {}", place(goal)),
+        (_, _, Some(goal)) => format!("Making for {}", place(goal)),
+        _ if state.war_band.is_some() => format!("Looking for something to steal near {here}"),
+        _ => format!("Prowling near {here}"),
     }
 }
 
@@ -358,6 +384,7 @@ fn monster_rose(state: &SimState, m: &Monster) -> String {
             }
         }
         Some(MonsterOrigin::Turned) => "Gave themself to the dark".to_owned(),
+        Some(MonsterOrigin::Road) => "Came up the west road with a war band".to_owned(),
         Some(MonsterOrigin::Sky) => "Came over the hills".to_owned(),
         Some(MonsterOrigin::Graveyard) | None => "Rose from the graveyard".to_owned(),
     };

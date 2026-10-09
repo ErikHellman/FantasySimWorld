@@ -188,8 +188,8 @@ function listModels(source) {
   const dir = path.join(source.local ? REPO : ROOT, source.dir);
   return fs
     .readdirSync(dir)
-    .filter((f) => /\.(gltf|glb)$/.test(f) && !f.endsWith('.gltf.glb'))
-    .map((f) => ({ name: f.replace(/\.(gltf|glb)$/, ''), file: path.join(dir, f) }))
+    .filter((f) => /\.(gltf|glb)$/.test(f))
+    .map((f) => ({ name: f.replace(/(\.gltf)?\.glb$|\.gltf$/, ''), file: path.join(dir, f) }))
     .filter(({ name }) => (!source.include || source.include.test(name)) && !(source.exclude && source.exclude.test(name)))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(({ name, file }) => ({ id: source.rename ? source.rename(name) : name, file }));
@@ -238,7 +238,7 @@ async function buildCharacter(character) {
   const doc = await io.read(path.join(character.local ? REPO : ROOT, character.file));
   doc.setLogger?.(quiet);
   const material = doc.getRoot().listMaterials().find((m) => m.getBaseColorTexture());
-  const texture = material ? textureId(material.getBaseColorTexture(), material) : null;
+  const texture = material ? textureId(material.getBaseColorTexture(), material) : (character.texture ?? null);
   stripTextures(doc);
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
   const { max } = getBounds(scene);
@@ -411,7 +411,8 @@ async function main() {
   for (const character of characters) {
     const rig = rigs.find((r) => r.id === (character.rig ?? 'medium'));
     if (!rig) throw new Error(`${character.id}: no rig ${character.rig}`);
-    if (rig.borrow?.drawnAt && rig.borrow.drawnAt !== (character.scale ?? 1)) {
+    // Only the seated clips depend on the scale a model is drawn at; a model that never sits may be any size.
+    if (rig.borrow?.drawnAt && character.seats !== false && rig.borrow.drawnAt !== (character.scale ?? 1)) {
       throw new Error(`${character.id} is drawn at ${character.scale ?? 1}, but rig ${rig.id} seats it for ${rig.borrow.drawnAt}`);
     }
     manifest.characters[character.id] = await buildCharacter(character);

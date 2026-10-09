@@ -60,6 +60,8 @@ anims! {
     HitB = "hit_b" => ("Hit_B", false),
     Death = "death" => ("Death_A", false),
     DeathB = "death_b" => ("Death_B", false),
+    // lying where it fell, without falling again: for a corpse that was a monster first
+    DeathPose = "death_pose" => ("Death_A_Pose", false),
     Interact = "interact" => ("Interact", false),
     PickUp = "pick_up" => ("PickUp", false),
     UseItem = "use_item" => ("Use_Item", false),
@@ -85,6 +87,10 @@ anims! {
     Guard = "guard" => ("Melee_2H_Idle", true),
     UnarmedIdle = "unarmed_idle" => ("Melee_Unarmed_Idle", true),
     Block = "block" => ("Melee_Blocking", true),
+    BlockHit = "block_hit" => ("Melee_Block_Hit", false),
+    DodgeBack = "dodge_back" => ("Dodge_Backward", false),
+    DodgeLeft = "dodge_left" => ("Dodge_Left", false),
+    DodgeRight = "dodge_right" => ("Dodge_Right", false),
     Attack1hChop = "attack_1h_chop" => ("Melee_1H_Attack_Chop", false),
     Attack1hSlice = "attack_1h_slice" => ("Melee_1H_Attack_Slice_Diagonal", false),
     Attack1hStab = "attack_1h_stab" => ("Melee_1H_Attack_Stab", false, 1.3),
@@ -155,14 +161,10 @@ mod tests {
 
     #[test]
     fn every_rig_carries_the_clips_villagers_play() {
-        use fsw_world::assets::{TIMING_RIG, asset_manifest};
+        use fsw_world::assets::asset_manifest;
         for (rig, entry) in &asset_manifest().rigs {
             for anim in AnimId::ALL {
                 let clip = anim.def().clip;
-                // Only the dead play these, and they are all on the timing rig.
-                if rig != TIMING_RIG && clip.starts_with("Skeletons_") {
-                    continue;
-                }
                 // The dragon plays its own clips and nothing else.
                 if (rig == DRAGON_RIG) != clip.starts_with(DRAGON_CLIPS) {
                     continue;

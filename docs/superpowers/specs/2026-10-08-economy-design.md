@@ -55,7 +55,7 @@ Headless, `cargo run --release -p fsw-sim --bin soak -- 60 <seed> --json` on see
 
 ## Left out on purpose
 
-- No shops with owners, no theft of coin, no debts: the chest can run dry and work goes unpaid until the trader comes.
+- No shops with owners, no theft of coin between villagers, no debts: the chest can run dry and work goes unpaid until the trader comes. (Orc raiders do take coin from the chest, goods off the stalls and materials from the stores; see the raids in `2026-10-04-combat-design.md`.)
 - A tavern meal and a bed stay free. Coin buys the market's goods, a room and the yard, nothing a villager needs to live.
 - No third pad by a cottage: the ground behind one is not known to be walkable.
 - Loot is not on the nav grid and is not a `WorldObject`: it blocks nothing and changes no map.

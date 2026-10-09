@@ -1,4 +1,4 @@
-//! Keeps the world neither empty nor quiet: night attacks, the watch rota, and newcomers.
+//! Keeps the world neither empty nor quiet: night attacks, orc raids by day, the watch rota, and newcomers.
 
 use fsw_core::jsmath::js_round;
 use fsw_core::time::{MINUTES_PER_DAY, START_MINUTE, TICKS_PER_DAY, TICKS_PER_GAME_MINUTE, minutes_to_ticks};
@@ -11,9 +11,15 @@ use crate::systems::arrivals::arrive;
 use crate::systems::dragon;
 use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
+use crate::systems::raids::update_raids;
 use crate::util::{Ctx, adult_count, first_name, join_names, living};
 
 const MAX_WAVE: i64 = 7;
+/// The first night a skeleton golem may rise, and then every so many nights after the last.
+const GOLEM_FIRST_NIGHT: i64 = 10;
+const GOLEM_GAP_NIGHTS: [i64; 2] = [8, 12];
+/// A village smaller than this is spared the golem.
+const GOLEM_LEAST_ALIVE: i64 = 10;
 
 /// Tick at which a given hour of a given day begins.
 pub fn tick_at(day: i64, hour: f64) -> i64 {
@@ -55,8 +61,13 @@ fn spawn_wave(ctx: &mut Ctx) {
     let place = get_place(if from_ruins { "ruins" } else { "graveyard" });
     let mut points = place.spawn_points.clone();
     // One necromancer abroad at a time: a fallen villager who walks with the dead counts.
-    let necromancer_abroad = ctx.state.monsters.values().any(|m| m.lasting);
+    let necromancer_abroad = ctx.state.monsters.values().any(|m| m.lasting && !m.kind.def().boss);
     let with_necromancer = first_of_night && night >= 4 && night % 4 == 0 && alive >= 9 && !necromancer_abroad;
+    // On some of those grim nights a skeleton golem rises in the necromancer's place.
+    let golem_abroad = ctx.state.monsters.values().any(|m| m.kind == MonsterKind::SkeletonGolem);
+    let golem_night = ctx.state.director.next_golem_night.max(GOLEM_FIRST_NIGHT);
+    let with_golem = with_necromancer && night >= golem_night && alive >= GOLEM_LEAST_ALIVE && !golem_abroad;
+    let mut golem = None;
 
     for i in 0..size {
         let point = if points.is_empty() {
@@ -68,9 +79,29 @@ fn spawn_wave(ctx: &mut Ctx) {
         let x = point.x + ctx.range(-0.6, 0.6);
         let z = point.z + ctx.range(-0.6, 0.6);
         let Some(pos) = ctx.state.nav.nearest_walkable(vec2(x, z), 5) else { continue };
-        let kind = if with_necromancer && i == 0 { MonsterKind::Necromancer } else { random_monster_kind(ctx) };
+        let kind = match (with_golem, with_necromancer) {
+            (true, _) if i == 0 => MonsterKind::SkeletonGolem,
+            (_, true) if i == 0 => MonsterKind::Necromancer,
+            _ => random_monster_kind(ctx),
+        };
         let origin = if from_ruins { MonsterOrigin::Ruins } else { MonsterOrigin::Graveyard };
-        spawn_monster(ctx, kind, pos, place.facing, origin);
+        let id = spawn_monster(ctx, kind, pos, place.facing, origin);
+        if kind == MonsterKind::SkeletonGolem {
+            // It does not crumble at dawn: by day it lies low in the ruins, and it comes back until destroyed.
+            ctx.m(&id).lasting = true;
+            golem = Some((id, pos));
+        }
+    }
+    if let Some((id, pos)) = golem {
+        let gap = ctx.int_range(GOLEM_GAP_NIGHTS[0], GOLEM_GAP_NIGHTS[1]);
+        ctx.state.director.next_golem_night = night + gap;
+        ctx.chronicle(
+            ChronicleKind::Combat,
+            "The ground heaves in the graveyard: a skeleton golem has risen, and the whole village must stand against it.",
+            Vec::new(),
+        );
+        rally(ctx, &id, pos, "A skeleton golem has risen from the graveyard! Everyone who can fight is needed.");
+        return;
     }
     if first_of_night {
         let text = if with_necromancer {
@@ -81,6 +112,16 @@ fn spawn_wave(ctx: &mut Ctx) {
             "As darkness falls, the graves in the old graveyard begin to stir."
         };
         ctx.chronicle(ChronicleKind::World, text, Vec::new());
+    }
+}
+
+/// A boss has come: everyone hears the alarm, and the brave answer it (see `perception`).
+pub fn rally(ctx: &mut Ctx, boss: &str, pos: fsw_core::Vec2, news: &str) {
+    let tick = ctx.tick();
+    ctx.state.director.alarm_until_tick = tick + minutes_to_ticks(40.0);
+    ctx.state.director.alarm_pos = Some(pos);
+    for id in crate::util::living_ids(ctx.state) {
+        ctx.stimulate(&id, crate::state::StimulusKind::Alarm, news, 3, Some(boss));
     }
 }
 
@@ -153,6 +194,7 @@ pub fn update_director(ctx: &mut Ctx) {
     }
 
     dragon::update_schedule(ctx);
+    update_raids(ctx);
 
     if tick >= ctx.state.director.next_wave_tick {
         let dark = !(4.0..19.5).contains(&hour);
@@ -162,9 +204,11 @@ pub fn update_director(ctx: &mut Ctx) {
         schedule_next_wave(ctx, dark);
     }
 
+    // Nobody walks up the west road while a war band is on it.
     if adult_count(ctx.state) < ctx.state.director.population_target
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
+        && ctx.state.war_band.is_none()
     {
         let director = &ctx.state.director;
         let deadline = director.newcomer_deadline_tick;

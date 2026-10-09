@@ -885,6 +885,9 @@ pub struct CombatState {
     /// attacker waiting for a spare / finish decision until this tick
     pub mercy_until_tick: i64,
     pub mercy_target_id: Option<Id>,
+    /// after a block or a dodge, no other until this tick
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub defend_ready_tick: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1166,6 +1169,8 @@ pub enum MonsterOrigin {
     Raised,
     /// a villager who gave themself to the dark
     Turned,
+    /// came up the west road with a war band
+    Road,
     /// the dragon, out of the sky
     Sky,
 }
@@ -1240,12 +1245,121 @@ pub struct Monster {
     /// blows it has landed on a villager
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub blows: i64,
+    /// after a block or a dodge, no other until this tick
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub defend_ready_tick: i64,
+    /// an orc's orders in a raid; see `systems::raids`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub errand: Option<RaidOrder>,
+    /// a boss's: every villager who has struck it, for the chronicle when it falls
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub foes: Vec<Id>,
     /// how high above the ground it flies, in metres; only the dragon leaves the ground
     #[serde(default, skip_serializing_if = "is_zero")]
     pub alt: f64,
     /// the dragon's plan for its visit
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raid: Option<Raid>,
+}
+
+/// What one raider is about: the place it means to plunder, and what it carries off.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RaidOrder {
+    /// the place it is making for; none while it picks the next or fights
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// at the place and at work: done on this tick (0 until it gets there)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub work_until_tick: i64,
+    /// making for the road and home
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub leaving: bool,
+    #[serde(default, skip_serializing_if = "Haul::is_empty")]
+    pub haul: Haul,
+}
+
+/// Plunder: coin, goods and materials taken from the village.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Haul {
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub coins: i64,
+    /// zero counts are not kept
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub goods: IndexMap<ItemId, i64>,
+    #[serde(default, skip_serializing_if = "Store::is_empty")]
+    pub materials: Store,
+}
+
+impl Haul {
+    pub fn is_empty(&self) -> bool {
+        self.coins == 0 && self.goods.is_empty() && self.materials.is_empty()
+    }
+
+    pub fn add(&mut self, other: &Haul) {
+        self.coins += other.coins;
+        for (&item, &count) in &other.goods {
+            *self.goods.entry(item).or_insert(0) += count;
+        }
+        for (resource, count) in other.materials.iter() {
+            self.materials.add(resource, count, i64::MAX);
+        }
+    }
+
+    /// "12 coins, 2 food and 6 logs of wood", or `None` for an empty haul.
+    pub fn describe(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if self.coins > 0 {
+            parts.push(LootKind::Coins { count: self.coins }.label());
+        }
+        for item in ItemId::ALL {
+            if let Some(&count) = self.goods.get(&item).filter(|&&n| n > 0) {
+                parts.push(item.label(count));
+            }
+        }
+        for (resource, count) in self.materials.iter() {
+            parts.push(resource.label(count));
+        }
+        match parts.len() {
+            0 => None,
+            1 => parts.pop(),
+            _ => {
+                let last = parts.pop().unwrap_or_default();
+                Some(format!("{} and {last}", parts.join(", ")))
+            }
+        }
+    }
+}
+
+/// An orc war band in the valley; see `systems::raids`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Band {
+    pub started_tick: i64,
+    /// how many came up the road
+    pub size: i64,
+    /// every orc of the band, the fallen and the gone included
+    pub members: Vec<Id>,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub fallen: i64,
+    /// the places it has plundered, in order
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plundered: Vec<String>,
+    /// the hit points the band came with, all told
+    pub max_hp: f64,
+    /// the village has been warned
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub warned: bool,
+    /// the band has had enough and makes for the road
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub leaving: bool,
+    /// what those who got away took with them
+    #[serde(default, skip_serializing_if = "Haul::is_empty")]
+    pub carried_off: Haul,
+    /// the orc warchief who leads it, if one does; one of `members`, but not counted in `size`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warchief: Option<Id>,
 }
 
 /// Where the dragon is in its visit: flying in at a home, hanging over the village, or flying off.
@@ -1930,6 +2044,21 @@ pub struct Director {
     /// when the village next looks over what wants building
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_project_tick: i64,
+    /// when the next orc raid is due; 0 until the first has come (that one is fixed by the seed)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_raid_tick: i64,
+    /// raids the village has seen
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub raids: i64,
+    /// an admin has called a raid: it comes as soon as it may
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub raid_called: bool,
+    /// the alarm that is up is for raiders, not the dead
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub alarm_raid: bool,
+    /// the night from which a skeleton golem may rise; 0 until the first has (it comes from night 10)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_golem_night: i64,
     /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_dragon_tick: i64,
@@ -2090,6 +2219,12 @@ pub struct SimState {
     /// what the dead left lying where they fell, by id (`l:<n>`); see [`Loot`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub loot: IndexMap<String, Loot>,
+    /// the orc war band in the valley, if one is
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub war_band: Option<Band>,
+    /// place id -> the tick it recovers from being plundered; until then work there yields no goods
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub plundered: IndexMap<String, i64>,
     /// the valley's animals, by id (`a<n>`); see [`Animal`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub animals: Map<Animal>,
@@ -2181,9 +2316,21 @@ pub struct Loot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LootKind {
-    Coins { count: i64 },
+    Coins {
+        count: i64,
+    },
     Trinket,
     Relic,
+    /// goods a slain raider carried off
+    Goods {
+        item: ItemId,
+        count: i64,
+    },
+    /// materials a slain raider carried off
+    Materials {
+        resource: Resource,
+        count: i64,
+    },
 }
 
 impl LootKind {
@@ -2194,15 +2341,18 @@ impl LootKind {
             Self::Coins { count } => format!("{count} coins"),
             Self::Trinket => "a trinket".into(),
             Self::Relic => "a relic".into(),
+            Self::Goods { item, count } => item.label(count),
+            Self::Materials { resource, count } => resource.label(count),
         }
     }
 
     /// The item a valuable goes into the pack as; coins go into the purse instead.
     pub fn item(self) -> Option<ItemId> {
         match self {
-            Self::Coins { .. } => None,
+            Self::Coins { .. } | Self::Materials { .. } => None,
             Self::Trinket => Some(ItemId::Trinket),
             Self::Relic => Some(ItemId::Relic),
+            Self::Goods { item, .. } => Some(item),
         }
     }
 }

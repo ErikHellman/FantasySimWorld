@@ -264,7 +264,7 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
     ),
     pick_up: tool(
         "pick_up",
-        "Go and pick up something the dead left on the ground nearby: coins for your purse, or a trinket or relic to sell at the market.",
+        "Go and pick up something left on the ground nearby: coins for your purse, a trinket or relic to sell at the market, or what a fallen raider carried off.",
         json!({
             "what": { "type": "string", "description": "What to pick up, as the message names it." },
             "say": say(),

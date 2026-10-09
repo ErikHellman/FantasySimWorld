@@ -50,6 +50,13 @@ fn main() {
         for event in sim.step() {
             let key = match &event {
                 fsw_sim::SimEvent::ConversationStarted { tone, .. } => format!("conversation:{}", tone.as_str()),
+                fsw_sim::SimEvent::Hit { outcome: fsw_sim::events::HitOutcome::Blocked, .. } => {
+                    "hit:blocked".to_owned()
+                }
+                fsw_sim::SimEvent::Hit { outcome: fsw_sim::events::HitOutcome::Dodged, .. } => "hit:dodged".to_owned(),
+                fsw_sim::SimEvent::Death { monster, .. } => {
+                    (if *monster { "death:monster" } else { "death:villager" }).to_owned()
+                }
                 other => other.kind().to_owned(),
             };
             *counts.entry(key).or_default() += 1;
@@ -108,6 +115,7 @@ fn main() {
             "alive": state.order.len(),
             "dead": state.dead.len(),
             "arrivals": state.director.arrivals,
+            "raids": state.director.raids,
             "deaths": state.dead.iter().map(|(id, r)| json!({"id": id, "name": r.name, "day": r.day, "cause": r.cause})).collect::<Vec<Value>>(),
             "chronicleKinds": kinds,
             "stockpiles": state.stockpiles,

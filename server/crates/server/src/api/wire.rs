@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// Character, monster, ghost, animal, corpse and conversation ids (`c1`, `m7`, `g9`, `a3`, …).
 pub type Id = String;
@@ -106,6 +106,10 @@ pub struct EntityStatic {
     pub hostile: bool,
     /// villagers only
     pub voice: Option<VoiceProfile>,
+    /// set (true) for a boss the whole village must rally against; left out otherwise
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub boss: Option<bool>,
 }
 
 /// The parts of an entity that change from tick to tick, quantised so an idle
@@ -296,6 +300,26 @@ pub enum Ranged {
     Fire,
 }
 
+/// Where an orc raid has got to.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RaidPhase {
+    Coming,
+    Leaving,
+    Gone,
+}
+
+/// How a blow ended for the one it was aimed at.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HitOutcome {
+    Hit,
+    /// turned aside: a quarter of the damage
+    Blocked,
+    /// stepped out of: no damage
+    Dodged,
+}
+
 /// One spoken line, with everything a sink needs to show it or say it aloud.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -338,6 +362,10 @@ pub enum WireEvent {
         damage: f64,
         pos: Vec2,
         fatal: bool,
+        /// left out when the blow simply landed
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        outcome: Option<HitOutcome>,
     },
     Death {
         id: Id,
@@ -348,6 +376,10 @@ pub enum WireEvent {
     MonsterSpawn {
         id: Id,
         pos: Vec2,
+    },
+    /// an orc war band came up the road, turned for home, or is gone
+    Raid {
+        phase: RaidPhase,
     },
     Chronicle {
         entry: ChronicleEntry,
@@ -478,8 +510,12 @@ pub struct Loot {
     /// `l:<n>`
     pub id: String,
     pub kind: LootKind,
-    /// how many coins, for `coins`; 0 otherwise
+    /// how many coins, goods or materials; 0 for a trinket or a relic
     pub count: u32,
+    /// for goods, the item (`food`, `potion`, `gift`); for materials, the material (`wood`, `stone`, `ore`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub item: Option<String>,
     pub pos: Vec2,
     /// picked up or blown away: forget it
     #[serde(default)]
@@ -492,6 +528,10 @@ pub enum LootKind {
     Coins,
     Trinket,
     Relic,
+    /// food, potions or gifts a fallen raider carried off; `item` says which
+    Goods,
+    /// wood, stone or ore a fallen raider carried off; `item` says which
+    Materials,
 }
 
 /// The village chest and what the market's stalls hold.
@@ -603,6 +643,13 @@ pub struct Billboard {
     pub custom: bool,
 }
 
+/// The answer to `POST /api/admin/raid`: when the band will come.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RaidCallAnswer {
+    pub message: String,
+}
+
 /// `POST /api/admin/billboards`: puts text up on a billboard, or with no text gives it back to the daily slogans.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -703,6 +750,8 @@ pub struct Status {
     /// the dragon is over the valley
     pub dragon: bool,
     pub alarm: bool,
+    /// an orc war band is in the valley
+    pub raid: bool,
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
     pub ambient: AmbientCounts,
@@ -906,6 +955,20 @@ pub struct MonsterDetail {
     pub blows: u32,
     /// the least and the most one of its blows takes
     pub damage: [u32; 2],
+    /// one of the dead, an orc raider, or the dragon
+    pub faction: MonsterFaction,
+    /// a raider's plunder, e.g. "12 coins and 6 logs of wood"
+    pub carrying: Option<String>,
+    /// a boss: the skeleton golem or the orc warchief
+    pub boss: bool,
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MonsterFaction {
+    Undead,
+    Orc,
+    Dragon,
 }
 
 /// The card of one of the valley's animals.
@@ -1360,6 +1423,9 @@ pub fn typescript() -> String {
         WorldReset,
         Emote,
         Ranged,
+        HitOutcome,
+        RaidCallAnswer,
+        RaidPhase,
         Utterance,
         WireEvent,
         ChronicleKind,
@@ -1402,6 +1468,7 @@ pub fn typescript() -> String {
         MonsterDetail,
         AnimalDetail,
         GhostDetail,
+        MonsterFaction,
         Detail,
         SiteKind,
         SiteNeed,
@@ -1482,7 +1549,10 @@ mod tests {
             damage: 4.0,
             pos: Vec2 { x: 0.0, z: 0.0 },
             fatal: false,
+            outcome: None,
         };
-        assert!(serde_json::to_string(&hit).unwrap().contains(r#""attackerId":"c1""#));
+        let json = serde_json::to_string(&hit).unwrap();
+        assert!(json.contains(r#""attackerId":"c1""#));
+        assert!(!json.contains("outcome"), "a plain hit says nothing of how it ended");
     }
 }

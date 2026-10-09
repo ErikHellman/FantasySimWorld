@@ -1,13 +1,15 @@
 //! Fights: with the dead, brawls, and the rare duel to the death.
 
-use fsw_core::Vec2;
 use fsw_core::jsmath::{js_hypot, js_round};
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::time::seconds_to_ticks;
+use fsw_core::{Vec2, vec2};
 
 use crate::data::anims::AnimId;
 use crate::data::classes::{FISTS, RUN_SPEED, Weapon, WeaponStyle};
-use crate::events::{Emote, Projectile, SimEvent};
+use crate::data::monsters::Faction;
+use crate::events::{Emote, HitOutcome, Projectile, SimEvent};
+use crate::nav::NavOverlay;
 use crate::state::{
     Act, ActPhase, Character, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, Monster,
     MonsterKind, MonsterPhase, Quirk, StimulusKind,
@@ -15,14 +17,15 @@ use crate::state::{
 use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, free_grave_plot, kill_character};
-use crate::systems::economy::drop_loot;
+use crate::systems::economy::{drop_haul, drop_loot};
 use crate::systems::ghosts;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
+use crate::systems::raids;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::util::{
-    Ctx, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting, nearby_characters, place_name_at,
-    set_anim, their,
+    Body, Ctx, a_noun, a_noun_capital, bump_epoch, first_name, get_monster, has_recent_stimulus, is_fighting,
+    join_names, nearby_characters, place_name_at, set_anim, their,
 };
 
 const BRAWL_YIELD: f64 = 0.3;
@@ -38,6 +41,12 @@ const COWARD_PANIC: f64 = 0.5;
 pub const PANIC_MAX: f64 = 0.15;
 /// A villager the model told to stand runs at this share of the usual breaking point.
 pub const LAST_RESORT: f64 = 0.5;
+/// The most anyone turns aside or steps out of, whatever their skill.
+const DEFEND_CAP: f64 = 0.5;
+/// After a block or a dodge, this long before the next, so a flurry still gets through.
+const DEFEND_COOLDOWN_SECONDS: f64 = 0.6;
+/// How far a dodge steps.
+const DODGE_STEP: f64 = 1.2;
 const PANIC_LINES: [&str; 4] = [
     "I can't, I can't do this!",
     "Gods help me, I'm getting out of here!",
@@ -87,6 +96,152 @@ fn fresh(tick: i64) -> Act {
         until_tick: 0,
         repath_tick: 0,
         stuck: 0,
+    }
+}
+
+/// What sort of blow is coming, for the defender's chances.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blow {
+    Melee,
+    /// an arrow, a bolt or a spell: never blocked, dodged at half the chance
+    Ranged,
+    /// a boss's slam: never blocked, and its long windup makes it easier to dodge
+    Slam,
+}
+
+impl Blow {
+    pub fn of(style: WeaponStyle) -> Blow {
+        if style == WeaponStyle::Melee { Blow::Melee } else { Blow::Ranged }
+    }
+}
+
+/// What a defender brings to a blow.
+pub struct Guard {
+    /// the weapon's (or the monster's) own chances
+    pub block: f64,
+    pub dodge: f64,
+    /// a villager's nerve; the dead and the orcs have none to speak of
+    pub bravery: Option<f64>,
+    pub fighter: bool,
+    /// hit points left, as a share of the whole
+    pub hp_share: f64,
+}
+
+/// The chances of a block and of a dodge against this blow. Skill and nerve only sharpen a defence the weapon has.
+pub fn defend_chances(guard: &Guard, blow: Blow) -> (f64, f64) {
+    let skilled = |base: f64| {
+        if base <= 0.0 {
+            return 0.0;
+        }
+        let mut chance = base + guard.bravery.unwrap_or(0.0) * 0.1;
+        if guard.fighter {
+            chance += 0.08;
+        }
+        if guard.hp_share < 0.3 {
+            chance -= 0.1;
+        }
+        clamp(chance, 0.0, DEFEND_CAP)
+    };
+    let (block, dodge) = (skilled(guard.block), skilled(guard.dodge));
+    match blow {
+        Blow::Melee => (block, dodge),
+        Blow::Ranged => (0.0, dodge * 0.5),
+        Blow::Slam => (0.0, (dodge * 1.5).min(DEFEND_CAP)),
+    }
+}
+
+/// One draw for each defence with a chance, the block first; nothing is drawn for a defence there is not.
+fn roll_defence(ctx: &mut Ctx, (block, dodge): (f64, f64)) -> HitOutcome {
+    if block > 0.0 && ctx.chance(block) {
+        return HitOutcome::Blocked;
+    }
+    if dodge > 0.0 && ctx.chance(dodge) {
+        return HitOutcome::Dodged;
+    }
+    HitOutcome::Hit
+}
+
+/// Steps out of a blow from `from`: straight back, or to the side when back is not walkable. Returns the clip.
+fn step_aside(body: &mut impl Body, from: Vec2, nav: &NavOverlay) -> AnimId {
+    let pos = body.pos();
+    let d = dist(pos, from);
+    if d < 1e-6 {
+        return AnimId::DodgeBack;
+    }
+    let away = vec2((pos.x - from.x) / d, (pos.z - from.z) / d);
+    // Facing the attacker, the left hand is a quarter turn from `away`.
+    let left = vec2(-away.z, away.x);
+    let right = vec2(away.z, -away.x);
+    for (dir, anim) in [(away, AnimId::DodgeBack), (left, AnimId::DodgeLeft), (right, AnimId::DodgeRight)] {
+        let to = vec2(pos.x + dir.x * DODGE_STEP, pos.z + dir.z * DODGE_STEP);
+        if nav.is_walkable(to.x, to.z) && nav.line_of_walk(pos, to) {
+            body.set_pos(to);
+            return anim;
+        }
+    }
+    AnimId::DodgeBack
+}
+
+/// A villager in a fight, awake and between swings, may turn a blow aside or step out of it.
+pub fn villager_defends(ctx: &mut Ctx, id: &str, attacker_pos: Vec2, blow: Blow) -> HitOutcome {
+    let tick = ctx.tick();
+    let v = ctx.cr(id);
+    let in_a_fight = v.combat.target_id.is_some() && !v.asleep && !v.combat.yielded && v.inside.is_none();
+    if !in_a_fight || v.combat.hit_tick != 0 || tick < v.combat.defend_ready_tick {
+        return HitOutcome::Hit;
+    }
+    let weapon = weapon_of(v, v.combat.mode);
+    let guard = Guard {
+        block: weapon.block,
+        dodge: weapon.dodge,
+        bravery: Some(v.profile.bravery),
+        fighter: v.has(Quirk::Fighter),
+        hp_share: v.hp / max_hp(v),
+    };
+    let outcome = roll_defence(ctx, defend_chances(&guard, blow));
+    if outcome != HitOutcome::Hit {
+        let nav = ctx.state.nav.clone();
+        let v = ctx.c(id);
+        v.combat.defend_ready_tick = tick + seconds_to_ticks(DEFEND_COOLDOWN_SECONDS);
+        if outcome == HitOutcome::Dodged {
+            let anim = step_aside(v, attacker_pos, &nav);
+            v.act.path.clear();
+            set_anim(v, anim, true);
+        }
+    }
+    outcome
+}
+
+/// A monster that is chasing, between swings, may turn a blow aside or step out of it.
+pub fn monster_defends(ctx: &mut Ctx, id: &str, attacker_pos: Vec2, blow: Blow) -> HitOutcome {
+    let tick = ctx.tick();
+    let m = &ctx.state.monsters[id];
+    if m.phase != MonsterPhase::Chase || m.hit_tick != 0 || tick < m.defend_ready_tick {
+        return HitOutcome::Hit;
+    }
+    let def = m.kind.def();
+    let guard =
+        Guard { block: def.block, dodge: def.dodge, bravery: None, fighter: false, hp_share: m.hp / def.max_hp };
+    let outcome = roll_defence(ctx, defend_chances(&guard, blow));
+    if outcome != HitOutcome::Hit {
+        let nav = ctx.state.nav.clone();
+        let m = ctx.m(id);
+        m.defend_ready_tick = tick + seconds_to_ticks(DEFEND_COOLDOWN_SECONDS);
+        if outcome == HitOutcome::Dodged {
+            let anim = step_aside(m, attacker_pos, &nav);
+            m.path.clear();
+            set_anim(m, anim, true);
+        }
+    }
+    outcome
+}
+
+/// What a blow does once it has been turned aside: a quarter, but never nothing.
+fn after_defence(amount: i64, outcome: HitOutcome) -> i64 {
+    match outcome {
+        HitOutcome::Hit => amount,
+        HitOutcome::Blocked => (js_round(amount as f64 / 4.0) as i64).max(1),
+        HitOutcome::Dodged => 0,
     }
 }
 
@@ -184,15 +339,15 @@ pub fn panic_chance(c: &crate::state::Character) -> f64 {
     PANIC_MAX * clamp(1.0 - c.profile.bravery * 0.85 - c.profile.temper * 0.15, 0.0, 1.0)
 }
 
-/// Someone fighting the dead loses their nerve and runs for home.
-fn panic(ctx: &mut Ctx, id: &str) {
+/// Someone fighting the dead (or the raiders) loses their nerve and runs for home.
+fn panic(ctx: &mut Ctx, id: &str, foe: &str) {
     let pos = ctx.cr(id).pos;
     let where_ = place_name_at(pos);
     start_flee(ctx, id, IntentSource::Reflex);
     let line = ctx.pick(&PANIC_LINES);
     ctx.say(id, line, None, true);
     ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Alert });
-    ctx.remember(id, format!("I panicked and ran from the dead at {where_}."), 6.0, MemoryKind::Event, Vec::new());
+    ctx.remember(id, format!("I panicked and ran from {foe} at {where_}."), 6.0, MemoryKind::Event, Vec::new());
     let name = ctx.cr(id).profile.name.clone();
     ctx.chronicle(
         ChronicleKind::Combat,
@@ -202,6 +357,12 @@ fn panic(ctx: &mut Ctx, id: &str) {
 }
 
 pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &str) {
+    damage_monster_with(ctx, monster_id, amount, attacker, HitOutcome::Hit);
+}
+
+/// A blow on a monster, after its defence: `outcome` says whether it was blocked or dodged.
+pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &str, outcome: HitOutcome) {
+    let amount = after_defence(amount, outcome);
     let tick = ctx.tick();
     let attacker_pos = ctx.cr(attacker).pos;
     let current_pos = {
@@ -219,12 +380,26 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
         damage: amount as f64,
         pos,
         fatal,
+        outcome,
     });
+    // A boss remembers everyone who stood against it, for the day it falls.
+    let m = ctx.m(monster_id);
+    if def.boss && !m.foes.iter().any(|f| f == attacker) {
+        m.foes.push(attacker.to_owned());
+    }
+    if outcome == HitOutcome::Dodged {
+        return;
+    }
     let m = ctx.m(monster_id);
     let dragon = m.kind == MonsterKind::Dragon;
     if !fatal {
         if m.hit_tick == 0 {
-            set_anim(m, if dragon { AnimId::DragonHit } else { AnimId::Hit }, true);
+            let anim = match (dragon, outcome) {
+                (true, _) => AnimId::DragonHit,
+                (false, HitOutcome::Blocked) => AnimId::BlockHit,
+                (false, _) => AnimId::Hit,
+            };
+            set_anim(m, anim, true);
         }
         if current_pos.is_none_or(|current| dist(m.pos, attacker_pos) < dist(m.pos, current)) {
             m.target_id = Some(attacker.to_owned());
@@ -240,30 +415,42 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
     m.hit_tick = 0;
     m.path.clear();
     m.raid = None;
-    set_anim(m, if dragon { AnimId::DragonDeath } else { AnimId::SkeletonDeath }, true);
+    set_anim(m, def.anims.death, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
+    if def.boss {
+        fell_boss(ctx, monster_id, attacker, pos);
+    }
+    if def.faction == Faction::Orc {
+        let haul = ctx.m(monster_id).errand.take().map(|order| order.haul).unwrap_or_default();
+        raids::on_fallen(ctx, monster_id);
+        drop_haul(ctx, &haul, pos, attacker);
+        if !def.boss {
+            let where_ = place_name_at(pos);
+            let text = format!("Slew {} at {where_}.", a_noun(def.label));
+            ctx.remember(attacker, text, 5.0, MemoryKind::Event, Vec::new());
+        }
+        ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
+        return;
+    }
     drop_loot(ctx, monster_id, kind, pos, attacker);
     let where_ = place_name_at(pos);
     let necromancer = kind == MonsterKind::Necromancer;
-    let deed = if dragon {
-        format!("Brought down the dragon at {where_}!")
-    } else {
-        format!("Destroyed a {} at {where_}.", def.label)
-    };
-    ctx.remember(
-        attacker,
-        deed,
-        if dragon {
+    if !def.boss {
+        let deed = if dragon {
+            format!("Brought down the dragon at {where_}!")
+        } else {
+            format!("Destroyed {} at {where_}.", a_noun(def.label))
+        };
+        let importance = if dragon {
             10.0
         } else if necromancer {
             8.0
         } else {
             4.0
-        },
-        MemoryKind::Event,
-        Vec::new(),
-    );
+        };
+        ctx.remember(attacker, deed, importance, MemoryKind::Event, Vec::new());
+    }
     let (fallen_name, was_id) = {
         let m = &ctx.state.monsters[monster_id];
         (m.name.clone(), m.was_id.clone())
@@ -306,6 +493,40 @@ pub fn damage_monster(ctx: &mut Ctx, monster_id: &str, amount: i64, attacker: &s
     ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
 }
 
+/// A boss has fallen: the chronicle names everyone who fought it, each of them remembers it as one of the great
+/// days of their life, and the server saves.
+fn fell_boss(ctx: &mut Ctx, monster_id: &str, killer: &str, pos: Vec2) {
+    let label = ctx.state.monsters[monster_id].kind.def().label;
+    let mut foes: Vec<Id> = ctx.state.monsters[monster_id].foes.iter().filter(|f| ctx.alive(f)).cloned().collect();
+    if !foes.iter().any(|f| f == killer) {
+        foes.push(killer.to_owned());
+    }
+    let where_ = place_name_at(pos);
+    let killer_name = first_name(ctx.cr(killer)).to_owned();
+    let names: Vec<String> = foes.iter().map(|f| first_name(ctx.cr(f)).to_owned()).collect();
+    let text = if foes.len() == 1 {
+        format!("{killer_name} brought down the {label} at {where_}, alone!")
+    } else {
+        format!(
+            "The {label} fell at {where_}, brought down by {}. {killer_name} struck the last blow.",
+            join_names(&names)
+        )
+    };
+    ctx.chronicle(ChronicleKind::Combat, text, foes.clone());
+    for foe in &foes {
+        let others: Vec<Id> = foes.iter().filter(|o| *o != foe).cloned().collect();
+        let memory = if others.is_empty() {
+            format!("I brought down the {label} at {where_}, alone.")
+        } else {
+            let names: Vec<String> = others.iter().map(|o| first_name(ctx.cr(o)).to_owned()).collect();
+            format!("We brought down the {label} at {where_}: I fought it beside {}.", join_names(&names))
+        };
+        ctx.remember(foe, memory, 9.0, MemoryKind::Event, others);
+        ctx.stimulate(foe, StimulusKind::Victory, format!("The {label} has fallen!"), 1, None);
+    }
+    ctx.emit(SimEvent::SavePoint { reason: "boss fallen".into() });
+}
+
 /// A grave, at last, for a villager who became one of the dead.
 fn bury_the_fallen(ctx: &mut Ctx, was_id: &str) {
     let Some(record) = ctx.state.dead.get(was_id).cloned() else { return };
@@ -330,6 +551,19 @@ pub struct Assailant {
 }
 
 pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant, mode: FightMode) {
+    damage_character_with(ctx, victim, amount, by, mode, HitOutcome::Hit);
+}
+
+/// A blow on a villager, after their defence: `outcome` says whether it was blocked or dodged.
+pub fn damage_character_with(
+    ctx: &mut Ctx,
+    victim: &str,
+    amount: i64,
+    by: Assailant,
+    mode: FightMode,
+    outcome: HitOutcome,
+) {
+    let amount = after_defence(amount, outcome);
     let tick = ctx.tick();
     let v = ctx.c(victim);
     let cap = max_hp(v);
@@ -339,16 +573,30 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     v.combat.last_hit_by_id = Some(by.id.clone());
     let fatal = v.hp <= 0.0;
     let pos = v.pos;
-    ctx.emit(SimEvent::Hit { attacker_id: by.id.clone(), target_id: victim.into(), damage: amount as f64, pos, fatal });
+    ctx.emit(SimEvent::Hit {
+        attacker_id: by.id.clone(),
+        target_id: victim.into(),
+        damage: amount as f64,
+        pos,
+        fatal,
+        outcome,
+    });
+    // Stepped clean out of it: nothing hurts, nothing to answer.
+    if outcome == HitOutcome::Dodged {
+        return;
+    }
 
     if fatal {
         let cause = match &by.character {
             Some(_) => format!("killed by {}", by.label),
-            None => format!("slain by a {} at {}", by.label, place_name_at(pos)),
+            None => format!("slain by {} at {}", a_noun(&by.label), place_name_at(pos)),
         };
-        // Some of those the dead cut down do not rest at once; see `systems::ghosts`.
+        // Some of those the dead cut down do not rest at once; see `systems::ghosts`. An orc's victim is not
+        // one of them.
+        let raider = ctx.state.monsters.get(&by.id).is_some_and(|m| m.kind.faction() == Faction::Orc);
         let ghost = (mode == FightMode::Monster
             && by.character.is_none()
+            && !raider
             && !ctx.cr(victim).is_child()
             && ghosts::returns(ctx.state.seed, victim))
         .then(|| ghosts::Haunt::of(ctx, victim));
@@ -364,7 +612,8 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
     }
     let v = ctx.c(victim);
     if v.combat.hit_tick == 0 {
-        set_anim(v, AnimId::Hit, true);
+        let anim = if outcome == HitOutcome::Blocked { AnimId::BlockHit } else { AnimId::Hit };
+        set_anim(v, anim, true);
     }
     if was_fresh {
         bump_epoch(v);
@@ -373,7 +622,7 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
                 let how = if mode == FightMode::Brawl { " with their fists" } else { " with a weapon" };
                 format!("{} is attacking you{how}!", by.label)
             } else {
-                format!("A {} is attacking you!", by.label)
+                format!("{} is attacking you!", a_noun_capital(&by.label))
             };
             ctx.stimulate(victim, StimulusKind::Attacked, text, 3, Some(&by.id));
         }
@@ -387,7 +636,8 @@ pub fn damage_character(ctx: &mut Ctx, victim: &str, amount: i64, by: Assailant,
             );
         let chance = panic_chance(v);
         if fighting_the_dead && ctx.chance(chance) {
-            panic(ctx, victim);
+            let faction = ctx.state.monsters.get(&by.id).map_or(Faction::Undead, |m| m.kind.faction());
+            panic(ctx, victim, raids::foe_noun(faction));
             return;
         }
     }
@@ -578,7 +828,8 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
             && reach_dist(pos, m) <= reach
         {
             let monster = m.id.clone();
-            damage_monster(ctx, &monster, damage, id);
+            let outcome = monster_defends(ctx, &monster, pos, Blow::of(weapon.style));
+            damage_monster_with(ctx, &monster, damage, id, outcome);
         }
         return;
     }
@@ -586,7 +837,9 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
     let v = ctx.cr(&victim);
     if v.inside.is_none() && dist(pos, v.pos) <= reach {
         let label = first_name(ctx.cr(id)).to_owned();
-        damage_character(ctx, &victim, damage, Assailant { id: id.into(), label, character: Some(id.into()) }, mode);
+        let outcome = villager_defends(ctx, &victim, pos, Blow::of(weapon.style));
+        let by = Assailant { id: id.into(), label, character: Some(id.into()) };
+        damage_character_with(ctx, &victim, damage, by, mode, outcome);
     }
 }
 

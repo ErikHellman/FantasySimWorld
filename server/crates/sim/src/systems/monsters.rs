@@ -1,20 +1,23 @@
 //! The walking dead: rising, roaming, chasing, striking, crumbling at dawn. (The dragon is in `dragon`.)
 
+use fsw_core::jsmath::{cos, sin};
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::rng;
-use fsw_core::time::seconds_to_ticks;
+use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 use fsw_core::{Vec2, vec2};
 use fsw_world::places::get_place;
 
 use crate::data::anims::AnimId;
 use crate::data::classes::WeaponStyle;
-use crate::data::monsters::{MONSTERS, MonsterKind};
+use crate::data::monsters::{Area, Faction, MONSTERS, MonsterKind};
+use crate::events::HitOutcome;
 use crate::events::{Projectile, SimEvent};
-use crate::state::{ChronicleKind, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
-use crate::systems::combat::{Assailant, damage_character};
+use crate::state::{ChronicleKind, Corpse, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
+use crate::systems::combat::{Assailant, Blow, damage_character_with, villager_defends};
 use crate::systems::dragon::update_dragon;
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
+use crate::systems::raids::{ORC_CORPSE_MINUTES, update_orc};
 use crate::util::{Ctx, living, monster_ids, set_anim};
 
 /// The most of the dead abroad at once, the dying included.
@@ -27,6 +30,11 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
     let def = kind.def();
     let tick = ctx.tick();
     let id = ctx.state.new_id("m");
+    // The dead climb out of the ground; anything else arrives ready.
+    let (phase, anim) = match def.anims.rise {
+        Some(rise) => (MonsterPhase::Rising, rise),
+        None => (MonsterPhase::Roam, def.anims.idle),
+    };
     let monster = Monster {
         id: id.clone(),
         kind,
@@ -41,7 +49,7 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         facing,
         moving: false,
         hp: def.max_hp,
-        phase: MonsterPhase::Rising,
+        phase,
         since_tick: tick,
         target_id: None,
         path: Vec::new(),
@@ -50,7 +58,7 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         hit_tick: 0,
         hit_target_id: None,
         next_summon_tick: tick + seconds_to_ticks(SUMMON_SECONDS),
-        anim: AnimId::SkeletonSpawn,
+        anim,
         anim_seq: 0,
         stuck: 0,
         name: None,
@@ -62,11 +70,17 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         raised_by: None,
         kills: 0,
         blows: 0,
+        defend_ready_tick: 0,
+        errand: None,
+        foes: Vec::new(),
         alt: 0.0,
         raid: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
-    ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
+    // The dead claw their way out of the ground and the dragon roars; a raider just walks up.
+    if def.faction != Faction::Orc {
+        ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
+    }
     id
 }
 
@@ -92,7 +106,7 @@ fn lie_low(ctx: &mut Ctx, id: &str) -> bool {
     monster.phase = MonsterPhase::Roam;
     if dist(monster.pos, lair) < 6.0 {
         monster.path.clear();
-        set_anim(monster, AnimId::SkeletonIdle, false);
+        set_anim(monster, def.anims.idle, false);
         return true;
     }
     if monster.path.is_empty() || tick >= monster.repath_tick {
@@ -102,7 +116,7 @@ fn lie_low(ctx: &mut Ctx, id: &str) -> bool {
     let mut path = std::mem::take(&mut monster.path);
     advance(monster, &mut path, def.speed * 0.8);
     monster.path = path;
-    set_anim(monster, AnimId::SkeletonWalk, false);
+    set_anim(monster, def.anims.walk, false);
     true
 }
 
@@ -140,11 +154,135 @@ fn die(tick: i64, monster: &mut Monster) {
     monster.since_tick = tick;
     monster.hit_tick = 0;
     monster.path.clear();
-    set_anim(monster, AnimId::SkeletonDeath, true);
+    set_anim(monster, monster.kind.def().anims.death, true);
+}
+
+/// A swing in the air lands, or misses if its victim got away or indoors.
+pub fn land_swing(ctx: &mut Ctx, id: &str) {
+    let tick = ctx.tick();
+    let monster = &ctx.state.monsters[id];
+    let def = monster.kind.def();
+    let victim = monster.hit_target_id.clone().filter(|v| ctx.state.characters.contains_key(v));
+    let victim_pos = victim.as_ref().map(|v| ctx.state.characters[v].pos);
+    let monster = ctx.m(id);
+    if let Some(pos) = victim_pos {
+        face(monster, pos);
+    }
+    if tick < monster.hit_tick {
+        return;
+    }
+    monster.hit_tick = 0;
+    let reach = def.range * if def.style == WeaponStyle::Melee { 1.45 } else { 1.5 };
+    let (monster_pos, facing) = (monster.pos, monster.facing);
+    let victim = victim.filter(|v| {
+        let c = &ctx.state.characters[v];
+        c.inside.is_none() && dist(c.pos, monster_pos) <= reach
+    });
+    match def.area {
+        None => {
+            if let Some(victim) = victim {
+                strike(ctx, id, &victim, Blow::of(def.style));
+            }
+        }
+        Some(Area::Slam { radius }) => {
+            // The blow comes down in front of it, where its quarry stood, and everyone near that spot is caught.
+            let aim = victim.as_ref().map_or(def.range, |v| dist(ctx.state.characters[v].pos, monster_pos));
+            let reach = aim.min(def.range);
+            let impact = vec2(monster_pos.x + sin(facing) * reach, monster_pos.z + cos(facing) * reach);
+            let caught: Vec<Id> = living(ctx.state)
+                .filter(|c| c.inside.is_none() && dist(c.pos, impact) <= radius)
+                .map(|c| c.id.clone())
+                .collect();
+            for victim in caught {
+                if ctx.alive(&victim) {
+                    strike(ctx, id, &victim, Blow::Slam);
+                }
+            }
+        }
+        Some(Area::Cleave { more }) => {
+            let Some(victim) = victim else { return };
+            // Whoever else stands within the sweep, in front of it, nearest first.
+            let mut beside: Vec<(f64, Id)> = living(ctx.state)
+                .filter(|c| c.id != victim && c.inside.is_none() && dist(c.pos, monster_pos) <= reach)
+                .filter(|c| {
+                    let d = dist(c.pos, monster_pos).max(1e-6);
+                    (sin(facing) * (c.pos.x - monster_pos.x) + cos(facing) * (c.pos.z - monster_pos.z)) / d > 0.5
+                })
+                .map(|c| (dist(c.pos, monster_pos), c.id.clone()))
+                .collect();
+            beside.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            strike(ctx, id, &victim, Blow::Melee);
+            for (_, other) in beside.into_iter().take(more) {
+                if ctx.alive(&other) {
+                    strike(ctx, id, &other, Blow::Melee);
+                }
+            }
+        }
+    }
+}
+
+/// One blow of a monster's on one villager, who may defend; it counts on the monster's card.
+fn strike(ctx: &mut Ctx, id: &str, victim: &str, blow: Blow) {
+    let def = ctx.state.monsters[id].kind.def();
+    let monster_pos = ctx.state.monsters[id].pos;
+    let damage = ctx.int_range(def.damage[0], def.damage[1]);
+    let outcome = villager_defends(ctx, victim, monster_pos, blow);
+    let by = Assailant { id: id.to_owned(), label: def.label.into(), character: None };
+    damage_character_with(ctx, victim, damage, by, FightMode::Monster, outcome);
+    // Its tally, for the viewer's card.
+    let slain = !ctx.state.characters.contains_key(victim);
+    let Some(monster) = ctx.state.monsters.get_mut(id) else { return };
+    if outcome != HitOutcome::Dodged {
+        monster.blows += 1;
+    }
+    if slain {
+        monster.kills += 1;
+    }
+}
+
+/// Closes on the villager it is after, and swings when in reach.
+pub fn chase_and_strike(ctx: &mut Ctx, id: &str, target_id: &str, target_pos: Vec2) {
+    let tick = ctx.tick();
+    let nav = ctx.state.nav.clone();
+    let monster = ctx.m(id);
+    let def = monster.kind.def();
+    let d = dist(monster.pos, target_pos);
+    if d > def.range * 0.9 {
+        if monster.path.is_empty() || tick >= monster.repath_tick {
+            monster.path = route_to(&nav, monster.pos, target_pos).unwrap_or_default();
+            monster.repath_tick = tick + seconds_to_ticks(0.7);
+        }
+        let mut path = std::mem::take(&mut monster.path);
+        advance(monster, &mut path, def.speed * 1.15);
+        monster.path = path;
+        set_anim(monster, def.anims.chase, false);
+        return;
+    }
+    monster.path.clear();
+    face(monster, target_pos);
+    if tick >= monster.next_attack_tick {
+        let anim = ctx.pick(def.attack_anims);
+        let monster = ctx.m(id);
+        set_anim(monster, anim, true);
+        let windup = def.windup.unwrap_or_else(|| clamp(anim.seconds() * 0.45, 0.35, 0.8));
+        monster.hit_tick = tick + seconds_to_ticks(windup);
+        monster.hit_target_id = Some(target_id.to_owned());
+        monster.next_attack_tick = tick + seconds_to_ticks(def.interval);
+        let from = monster.pos;
+        ctx.emit(SimEvent::Attack {
+            attacker_id: id.to_owned(),
+            target_id: target_id.to_owned(),
+            ranged: if def.style == WeaponStyle::Magic { Some(Projectile::Magic) } else { None },
+            from,
+            to: target_pos,
+        });
+    } else if tick > monster.next_attack_tick - seconds_to_ticks(def.interval * 0.4) {
+        set_anim(monster, def.anims.idle, false);
+    }
 }
 
 /// The number in a monster id ("m12" → 12), as `Number(id.slice(1))`.
-fn id_number(id: &str) -> i64 {
+pub(crate) fn id_number(id: &str) -> i64 {
     id.get(1..).and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
@@ -164,9 +302,25 @@ pub fn update_monsters(ctx: &mut Ctx) {
         monster.moving = false;
 
         if monster.phase == MonsterPhase::Dying {
-            if tick - monster.since_tick > seconds_to_ticks(5.0) {
-                ctx.state.monsters.shift_remove(&id);
+            if tick - monster.since_tick > seconds_to_ticks(5.0)
+                && let Some(gone) = ctx.state.monsters.shift_remove(&id)
+                && gone.kind.faction() == Faction::Orc
+            {
+                // The dead crumble to nothing; a raider's body lies where it fell for a while.
+                ctx.state.corpses.push(Corpse {
+                    id: gone.id,
+                    look: gone.look,
+                    pos: gone.pos,
+                    facing: gone.facing,
+                    anim: AnimId::DeathPose,
+                    until_tick: tick + minutes_to_ticks(ORC_CORPSE_MINUTES),
+                });
             }
+            continue;
+        }
+        // Raiders keep to their errand by day; the rest of this is for the dead.
+        if def.faction == Faction::Orc {
+            update_orc(ctx, &id);
             continue;
         }
         if daylight && !monster.lasting {
@@ -175,7 +329,8 @@ pub fn update_monsters(ctx: &mut Ctx) {
             continue;
         }
         if monster.phase == MonsterPhase::Rising {
-            if tick - monster.since_tick >= seconds_to_ticks(AnimId::SkeletonSpawn.seconds()) {
+            let rising = def.anims.rise.map_or(0.0, AnimId::seconds);
+            if tick - monster.since_tick >= seconds_to_ticks(rising) {
                 monster.phase = MonsterPhase::Roam;
                 monster.since_tick = tick;
             }
@@ -188,32 +343,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
 
         // A blow already swinging lands first.
         if monster.hit_tick > 0 {
-            let victim = monster.hit_target_id.clone().filter(|v| ctx.state.characters.contains_key(v));
-            let victim_pos = victim.as_ref().map(|v| ctx.state.characters[v].pos);
-            let monster = ctx.m(&id);
-            if let Some(pos) = victim_pos {
-                face(monster, pos);
-            }
-            if tick >= monster.hit_tick {
-                monster.hit_tick = 0;
-                let reach = def.range * if def.style == WeaponStyle::Melee { 1.45 } else { 1.5 };
-                let monster_pos = monster.pos;
-                if let Some(victim) = victim
-                    && ctx.state.characters[&victim].inside.is_none()
-                    && dist(ctx.state.characters[&victim].pos, monster_pos) <= reach
-                {
-                    let damage = ctx.int_range(def.damage[0], def.damage[1]);
-                    let by = Assailant { id: id.clone(), label: def.label.into(), character: None };
-                    damage_character(ctx, &victim, damage, by, FightMode::Monster);
-                    // Its tally, for the viewer's card.
-                    let slain = !ctx.state.characters.contains_key(&victim);
-                    let monster = ctx.m(&id);
-                    monster.blows += 1;
-                    if slain {
-                        monster.kills += 1;
-                    }
-                }
-            }
+            land_swing(ctx, &id);
             continue;
         }
 
@@ -267,45 +397,12 @@ pub fn update_monsters(ctx: &mut Ctx) {
         if monster.phase == MonsterPhase::Chase
             && let Some((target_id, target_pos)) = target
         {
-            let monster = ctx.m(&id);
-            let d = dist(monster.pos, target_pos);
-            if d > def.range * 0.9 {
-                if monster.path.is_empty() || tick >= monster.repath_tick {
-                    monster.path = route_to(&nav, monster.pos, target_pos).unwrap_or_default();
-                    monster.repath_tick = tick + seconds_to_ticks(0.7);
-                }
-                let mut path = std::mem::take(&mut monster.path);
-                advance(monster, &mut path, def.speed * 1.15);
-                monster.path = path;
-                let anim = if monster.kind == MonsterKind::SkeletonRogue { AnimId::Run } else { AnimId::SkeletonWalk };
-                set_anim(monster, anim, false);
-            } else {
-                monster.path.clear();
-                face(monster, target_pos);
-                if tick >= monster.next_attack_tick {
-                    let anim = ctx.pick(def.attack_anims);
-                    let monster = ctx.m(&id);
-                    set_anim(monster, anim, true);
-                    monster.hit_tick = tick + seconds_to_ticks(clamp(anim.seconds() * 0.45, 0.35, 0.8));
-                    monster.hit_target_id = Some(target_id.clone());
-                    monster.next_attack_tick = tick + seconds_to_ticks(def.interval);
-                    let from = monster.pos;
-                    ctx.emit(SimEvent::Attack {
-                        attacker_id: id.clone(),
-                        target_id,
-                        ranged: if def.style == WeaponStyle::Magic { Some(Projectile::Magic) } else { None },
-                        from,
-                        to: target_pos,
-                    });
-                } else if tick > monster.next_attack_tick - seconds_to_ticks(def.interval * 0.4) {
-                    set_anim(monster, AnimId::SkeletonIdle, false);
-                }
-            }
+            chase_and_strike(ctx, &id, &target_id, target_pos);
             continue;
         }
 
-        // With the whole village asleep, a roaming monster goes for a house instead.
-        if arson(ctx, &id, (tick + id_number(&id)) % 10 == 0) {
+        // With the whole village asleep, a roaming monster goes for a house instead (a boss has bigger quarry).
+        if !def.boss && arson(ctx, &id, (tick + id_number(&id)) % 10 == 0) {
             continue;
         }
 
@@ -313,7 +410,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
         let monster = ctx.m(&id);
         if monster.path.is_empty() {
             if tick < monster.repath_tick {
-                set_anim(monster, AnimId::SkeletonIdle, false);
+                set_anim(monster, def.anims.idle, false);
                 continue;
             }
             let place = get_place(ROAM_TARGETS[ctx.pick_index(ROAM_TARGETS.len())]);
@@ -332,7 +429,7 @@ pub fn update_monsters(ctx: &mut Ctx) {
             let mut path = std::mem::take(&mut monster.path);
             advance(monster, &mut path, def.speed * 0.8);
             monster.path = path;
-            set_anim(monster, AnimId::SkeletonWalk, false);
+            set_anim(monster, def.anims.walk, false);
         }
     }
 

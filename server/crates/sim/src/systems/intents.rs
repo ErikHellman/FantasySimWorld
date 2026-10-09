@@ -33,6 +33,7 @@ use crate::systems::fire::{self, home_usable, rough_spot, run_fight_fire, shelte
 use crate::systems::movement::{advance, route_to, step_toward};
 use crate::systems::music::{run_listen, run_perform};
 use crate::systems::quirks::{after_drink, end_hunt};
+use crate::systems::raids::plundered;
 use crate::systems::relationships::{RelationDelta, adjust};
 use crate::systems::weather::run_shelter;
 use crate::systems::world::{deliver_next, run_world_work};
@@ -176,8 +177,8 @@ pub(crate) fn give(c: &mut Character, item: ItemId) {
     *count = ITEM_CAP.min(*count + 1);
 }
 
-/// Per-game-minute effects of doing an activity.
-pub(crate) fn activity_minute(c: &mut Character, activity_id: ActivityId, minutes_done: i64) {
+/// Per-game-minute effects of doing an activity. At a place raiders have `spoiled`, the work yields no goods.
+pub(crate) fn activity_minute(c: &mut Character, activity_id: ActivityId, minutes_done: i64, spoiled: bool) {
     let def = activity(activity_id);
     if let Some(needs) = def.needs {
         c.needs.hunger = (c.needs.hunger + needs.hunger).clamp(0.0, 100.0);
@@ -188,6 +189,7 @@ pub(crate) fn activity_minute(c: &mut Character, activity_id: ActivityId, minute
         c.hp = max_hp(c).min(c.hp + def.heal);
     }
     if let Some((item, every)) = def.yields
+        && !spoiled
         && minutes_done > 0
         && minutes_done % every == 0
     {
@@ -432,10 +434,12 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
     }
 
     // Performing.
-    let c = ctx.c(id);
+    let c = ctx.cr(id);
     let elapsed = tick - c.act.since_tick;
     if elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
-        activity_minute(c, activity_id, elapsed / TICKS_PER_GAME_MINUTE);
+        let spoiled = !ctx.state.plundered.is_empty()
+            && c.slot_id.as_deref().is_some_and(|slot| plundered(ctx.state, &get_slot(slot).place_id));
+        activity_minute(ctx.c(id), activity_id, elapsed / TICKS_PER_GAME_MINUTE, spoiled);
     }
 
     if activity_id == ActivityId::Rebuild && elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
@@ -620,7 +624,7 @@ fn run_nap(ctx: &mut Ctx, id: &str, minutes: f64) {
                 set_anim(c, AnimId::Lie, false);
             }
             if elapsed > 0 && elapsed % TICKS_PER_GAME_MINUTE == 0 {
-                activity_minute(c, ActivityId::Sleep, 0);
+                activity_minute(c, ActivityId::Sleep, 0, false);
             }
             if tick >= c.act.until_tick || c.needs.energy >= 99.0 {
                 c.asleep = false;
@@ -1068,19 +1072,46 @@ fn run_pick_up(ctx: &mut Ctx, id: &str, loot_id: &str) {
                 return;
             }
             set_anim(c, AnimId::Idle, false);
-            match loot.kind.item() {
-                Some(item) if c.inventory.get(item) >= ITEM_CAP => {
-                    finish(ctx, id, format!("Your pack is too full for {}.", loot.kind.label()));
-                    return;
+            // What fits: a heap of goods or materials too big for the pack or the arms is left in part.
+            let (taken, left) = match loot.kind {
+                LootKind::Coins { count } => {
+                    c.gold += count;
+                    (loot.kind, None)
                 }
-                Some(item) => give(c, item),
-                None => {
-                    if let LootKind::Coins { count } = loot.kind {
-                        c.gold += count;
+                LootKind::Goods { item, count } => {
+                    let fits = count.min(ITEM_CAP - c.inventory.get(item)).max(0);
+                    *c.inventory.get_mut(item) += fits;
+                    let rest = (count > fits).then_some(LootKind::Goods { item, count: count - fits });
+                    (LootKind::Goods { item, count: fits }, rest)
+                }
+                LootKind::Materials { resource, count } => {
+                    let fits = c.carried.add(resource, count, CARRY_CAP - c.carried.total());
+                    let rest = (count > fits).then_some(LootKind::Materials { resource, count: count - fits });
+                    (LootKind::Materials { resource, count: fits }, rest)
+                }
+                LootKind::Trinket | LootKind::Relic => {
+                    let item = loot.kind.item().expect("a valuable is an item");
+                    if c.inventory.get(item) >= ITEM_CAP {
+                        (loot.kind, Some(loot.kind))
+                    } else {
+                        give(c, item);
+                        (loot.kind, None)
                     }
                 }
+            };
+            if left == Some(loot.kind) {
+                let full =
+                    if matches!(loot.kind, LootKind::Materials { .. }) { "Your arms are" } else { "Your pack is" };
+                finish(ctx, id, format!("{full} too full for {}.", loot.kind.label()));
+                return;
             }
-            ctx.state.loot.shift_remove(loot_id);
+            match left {
+                Some(rest) => ctx.state.loot[loot_id].kind = rest,
+                None => {
+                    ctx.state.loot.shift_remove(loot_id);
+                }
+            }
+            let loot = crate::state::Loot { kind: taken, ..loot };
             let text = format!("Picked up {} at {}.", loot.kind.label(), place_name_at(loot.pos));
             ctx.remember(id, text, 3.0, MemoryKind::Event, Vec::new());
             finish(ctx, id, format!("You picked up {}.", loot.kind.label()));

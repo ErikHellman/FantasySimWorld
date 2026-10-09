@@ -4,7 +4,7 @@ import { fromStatus, ui } from './store';
 
 const status = (founding: Status['founding']): Status => ({
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
-  viewers: 1, speed: 1, throttled: false, population: 0, monsters: 0, dragon: false, alarm: false, part: 'morning',
+  viewers: 1, speed: 1, throttled: false, population: 0, monsters: 0, dragon: false, alarm: false, raid: false, part: 'morning',
   ambient: { awake: 0, eating: 0, drinking: 0, smithing: 0, relaxing: 0 },
   founding,
 });

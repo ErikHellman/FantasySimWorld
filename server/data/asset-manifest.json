@@ -31,6 +31,9 @@
   "mage_texture_alt_A": "assets/textures/mage_texture_alt_A.png?v=6f45aa2789",
   "mage_texture_alt_B": "assets/textures/mage_texture_alt_B.png?v=c016d4b2e9",
   "mage_texture_alt_C": "assets/textures/mage_texture_alt_C.png?v=d2a62eed6a",
+  "orc_texture_A": "assets/textures/orc_texture_A.png?v=4c4f42da46",
+  "orc_texture_B": "assets/textures/orc_texture_B.png?v=d68d9f7874",
+  "orcbrute_texture_A": "assets/textures/orcbrute_texture_A.png?v=06d64de2d5",
   "paladin_texture_A": "assets/textures/paladin_texture_A.png?v=b240f31872",
   "ranger_texture": "assets/textures/ranger_texture.png?v=7638fcc837",
   "ranger_texture_alt_A": "assets/textures/ranger_texture_alt_A.png?v=c986ba36d5",
@@ -5237,7 +5240,7 @@
    }
   },
   "weapons": {
-   "url": "assets/bundles/weapons.glb?v=64c92d002b",
+   "url": "assets/bundles/weapons.glb?v=92430e6239",
    "models": {
     "arrow_bow": {
      "bounds": [
@@ -5627,6 +5630,36 @@
       0.311,
       1.397,
       0.116
+     ]
+    },
+    "Orc_Axe": {
+     "bounds": [
+      -0.638,
+      -0.318,
+      -0.131,
+      0.638,
+      1.198,
+      0.131
+     ]
+    },
+    "Orc_Club": {
+     "bounds": [
+      -0.298,
+      -0.318,
+      -0.297,
+      0.296,
+      1.298,
+      0.297
+     ]
+    },
+    "Orc_Axe_Large": {
+     "bounds": [
+      -1.159,
+      -0.584,
+      -0.166,
+      0.359,
+      1.088,
+      0.166
      ]
     }
    }
@@ -6160,6 +6193,27 @@
    "rig": "large",
    "scale": 0.7
   },
+  "OrcRaider": {
+   "url": "assets/characters/OrcRaider.glb?v=41ebb2cb41",
+   "texture": "orc_texture_A",
+   "height": 2.46,
+   "rig": "medium",
+   "scale": 1
+  },
+  "OrcBrute": {
+   "url": "assets/characters/OrcBrute.glb?v=00228c81c2",
+   "texture": "orcbrute_texture_A",
+   "height": 3.36,
+   "rig": "large",
+   "scale": 0.8
+  },
+  "Skeleton_Golem": {
+   "url": "assets/characters/Skeleton_Golem.glb?v=4845152913",
+   "texture": "skeleton_texture_A",
+   "height": 3.8,
+   "rig": "large",
+   "scale": 0.9
+  },
   "Child_Knight": {
    "url": "assets/characters/Child_Knight.glb?v=d9d4ac2a31",
    "texture": "knight_texture",
@@ -6226,7 +6280,7 @@
  },
  "rigs": {
   "medium": {
-   "url": "assets/animations/rig-medium.glb?v=c3b6c3376c",
+   "url": "assets/animations/rig-medium.glb?v=4a9c5d4d97",
    "clips": {
     "Death_A": 0.8,
     "Death_A_Pose": 0,
@@ -6245,6 +6299,10 @@
     "Walking_A": 1.067,
     "Walking_B": 1.067,
     "Walking_C": 1.6,
+    "Dodge_Backward": 0.4,
+    "Dodge_Forward": 0.4,
+    "Dodge_Left": 0.4,
+    "Dodge_Right": 0.4,
     "Melee_1H_Attack_Chop": 1.067,
     "Melee_1H_Attack_Slice_Diagonal": 1,
     "Melee_1H_Attack_Slice_Horizontal": 1.367,
@@ -6310,7 +6368,7 @@
    }
   },
   "large": {
-   "url": "assets/animations/rig-large.glb?v=3f27c7e577",
+   "url": "assets/animations/rig-large.glb?v=c8004debdc",
    "clips": {
     "Death_A": 1.667,
     "Death_A_Pose": 0,
@@ -6319,6 +6377,10 @@
     "Idle_B": 6,
     "Running_A": 1.067,
     "Walking_A": 1.067,
+    "Dodge_Backward": 0.333,
+    "Dodge_Forward": 0.333,
+    "Dodge_Left": 0.333,
+    "Dodge_Right": 0.333,
     "Melee_1H_Attack_Slice_Diagonal": 1.567,
     "Melee_1H_Attack_Stab": 1.4,
     "Melee_2H_Attack_Chop": 1.333,
@@ -6370,6 +6432,14 @@
     "Sit_Floor_StandUp": 1.133,
     "Sit_Ups": 1.733,
     "Waving": 2.133,
+    "Skeletons_Awaken_Floor": 2.3,
+    "Skeletons_Death": 2,
+    "Skeletons_Death_Pose": 0,
+    "Skeletons_Idle": 4.267,
+    "Skeletons_Inactive_Floor_Pose": 0,
+    "Skeletons_Spawn_Ground": 3.567,
+    "Skeletons_Taunt": 1.033,
+    "Skeletons_Walking": 1.6,
     "Chopping": 1.333,
     "Digging": 1.4,
     "Fishing_Cast": 1.933,

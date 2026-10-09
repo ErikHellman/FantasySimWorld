@@ -175,8 +175,12 @@ fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
         picked += spiteful;
         let state = &sim.state;
         let id = |name: &str| living(state).find(|c| first_name(c) == name).map(|c| c.id.clone());
+        // Spite alone does not turn him on his friend; a brawl Dorn starts and wins can, as in any world.
         if let (Some(garrick), Some(dorn)) = (id("Garrick"), id("Dorn")) {
-            assert!(state.characters[&garrick].relationships[&dorn].affinity > 0.0, "seed {seed}");
+            let wronged = state.characters[&garrick].memories.iter().any(|m| m.text.starts_with("Dorn beat me"));
+            if !wronged {
+                assert!(state.characters[&garrick].relationships[&dorn].affinity > 0.0, "seed {seed}");
+            }
         }
     }
     assert!(picked >= 6, "only {picked} quarrels picked");

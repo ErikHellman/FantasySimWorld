@@ -1,6 +1,7 @@
 import type {
   AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
-  GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, SiteDetail, SpeedRequest, WatchRequest,
+  GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
+  SpeedRequest, WatchRequest,
 } from '../generated/api';
 
 /** A failed request: the HTTP status, the server's `ApiError` message, and its `Retry-After`, if it sent one. */
@@ -57,6 +58,8 @@ export const api = {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),
     /** puts text up on a billboard, or without text gives it back to the daily slogans; the change comes back on the stream */
     billboard: (body: BillboardRequest) => request<void>('POST', '/api/admin/billboards', body),
+    /** calls an orc war band up the west road; the answer says when it will come */
+    callRaid: () => request<RaidCallAnswer>('POST', '/api/admin/raid'),
     llmSettings: () => request<LlmSettingsView>('GET', '/api/admin/settings/llm'),
     /** asks the model the server was started with for one decision */
     testLlm: () => request<LlmTestResult>('POST', '/api/admin/llm/test'),

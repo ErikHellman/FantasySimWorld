@@ -690,6 +690,8 @@ fn projects_survive_a_save_and_load() {
 /// The counter-pressure test: over many days the village does not level itself.
 fn village_stands(days: i64, seed: u32) {
     let mut sim = quiet(seed);
+    // What the village does to itself, not what comes over the hills: a dragon may burn three homes in one visit.
+    sim.state.director.next_dragon_tick = i64::MAX;
     let trees_total = scatter().models.iter().filter(|m| is_tree(&m.model)).count();
     let mut projects_done = 0;
     let mut had_projects = false;

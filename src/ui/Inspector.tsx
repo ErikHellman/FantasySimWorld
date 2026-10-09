@@ -112,15 +112,16 @@ function Memories({ d }: { d: CharacterDetail }) {
   );
 }
 
-/** The card of one of the dead, or the dragon: what it is, how it fares, what it is after and what it has done. No tabs. */
+/** The card of one of the dead, an orc raider or the dragon: what it is, how it fares, what it is after and what it has done. No tabs. */
 function MonsterCard({ d }: { d: MonsterDetail }) {
   const target = d.target;
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const side = { orc: 'one of a war band', undead: 'one of the dead', dragon: 'out of the sky' }[d.faction];
   return (
     <>
       <h2>{d.name}</h2>
       <p class="subtitle">
-        {d.species} · {d.undead ? 'one of the dead' : 'out of the sky'}{d.lasting && ' · does not fear the dawn'}
+        {d.species} · {side}{d.boss && ' · it takes the village to bring it down'}{d.lasting && ' · does not fear the dawn'}
       </p>
       <p class="status">{d.status}</p>
       <div class="tab-body">
@@ -133,6 +134,7 @@ function MonsterCard({ d }: { d: MonsterDetail }) {
         )}
         {d.rose && <p class="muted">{d.rose}.</p>}
         {d.was && <p class="muted">Once {d.was}.</p>}
+        {d.carrying && <p>Carrying off {d.carrying}.</p>}
         <p class="muted inventory">
           {plural(d.kills, 'villager')} slain · {plural(d.blows, 'blow')} landed · {d.undead ? 'strikes' : 'burns'} for {d.damage[0]}–{d.damage[1]}
         </p>

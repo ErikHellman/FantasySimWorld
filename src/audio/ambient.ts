@@ -78,7 +78,13 @@ export function ambientLevels(
 }
 
 /** Plays effects for a tick's events, quieter the further they are from where the camera looks. */
-export function playEffects(engine: AudioEngine, events: readonly WireEvent[], isVillager: (id: string) => boolean, listener: Listener): void {
+export function playEffects(
+  engine: AudioEngine,
+  events: readonly WireEvent[],
+  isVillager: (id: string) => boolean,
+  listener: Listener,
+  isRaider: (id: string) => boolean = () => false,
+): void {
   const volumeAt = (x: number, z: number): number => near(Math.hypot(x - listener.x, z - listener.z), 30 + listener.distance);
   for (const event of events) {
     if (event.type === 'attack') {
@@ -87,10 +93,20 @@ export function playEffects(engine: AudioEngine, events: readonly WireEvent[], i
       else if (event.ranged === 'magic') engine.play('magic_cast', volumeAt(event.from.x, event.from.z));
       else if (event.ranged && event.ranged !== 'food') engine.play('arrow_shot', volumeAt(event.from.x, event.from.z)); // an apple flies in silence
     } else if (event.type === 'hit') {
-      engine.play('sword_hit', volumeAt(event.pos.x, event.pos.z));
-      if (isVillager(event.targetId)) engine.play('hurt', volumeAt(event.pos.x, event.pos.z) * 0.7);
+      const volume = volumeAt(event.pos.x, event.pos.z);
+      if (event.outcome === 'dodged') {
+        engine.play('dodge_whoosh', volume);
+      } else if (event.outcome === 'blocked') {
+        engine.play('block_clang', volume);
+      } else {
+        engine.play('sword_hit', volume);
+        if (isVillager(event.targetId)) engine.play('hurt', volume * 0.7);
+      }
     } else if (event.type === 'death') {
-      engine.play(event.monster ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
+      // A raider falls like a man; only the dead clatter apart.
+      engine.play(event.monster && !isRaider(event.id) ? 'monster_death' : 'death', volumeAt(event.pos.x, event.pos.z));
+    } else if (event.type === 'raid' && event.phase === 'coming') {
+      engine.play('war_horn', 0.9);
     } else if (event.type === 'monster_spawn') {
       engine.play('monster_spawn', volumeAt(event.pos.x, event.pos.z));
     } else if (event.type === 'speech' && event.loud && /^(To arms|Fire!|A dragon!)/.test(event.text)) {
