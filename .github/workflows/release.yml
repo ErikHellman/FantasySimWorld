@@ -1,0 +1,126 @@
+# Cuts a release from main. Started by hand only (Actions → Release → Run workflow): pick how far the version
+# moves and, if you like, a one-line summary and a deploy. See docs/deploy.md ("Releasing").
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: How far the version moves
+        type: choice
+        options: [minor, patch, major]
+        default: minor
+      summary:
+        description: One line on what the release brings (optional; goes at the top of the notes)
+        type: string
+        required: false
+      deploy:
+        description: Deploy the release to Fly.io afterwards
+        type: boolean
+        default: false
+
+# Two releases at once would both take the same next version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The same checks as every push, so a red commit is never released.
+  checks:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      # The checks ran on the commit the workflow started from; refuse to release anything newer that they did not see.
+      - name: Check main has not moved
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo "::error::main moved on while the checks ran; start the release again"; exit 1
+          fi
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - id: bump
+        name: Bump the version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version="$(node tools/release/bump-version.mjs "$BUMP")"
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then echo "::error::$tag already exists"; exit 1; fi
+          # Fails if the lock file no longer matches the workspace after the bump.
+          (cd server && cargo metadata --locked --format-version 1 >/dev/null)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # The files a release ships: the web client and a Linux server that serves it (STATIC_DIR=dist).
+      - name: Build
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          (cd server && cargo build --release --locked --bin fsw-server)
+          name="fantasy-sim-world-$TAG-linux-x86_64"
+          mkdir -p "out/$name"
+          cp -r dist "out/$name/dist"
+          cp server/target/release/fsw-server "out/$name/"
+          cp README.md "out/$name/"
+          tar -C out -czf "out/$name.tar.gz" "$name"
+          tar -C dist -czf "out/fantasy-sim-world-$TAG-web.tar.gz" .
+          (cd out && sha256sum ./*.tar.gz > SHA256SUMS)
+
+      - name: Commit and tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+          SUMMARY: ${{ inputs.summary }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $TAG"
+          title="Fantasy Sim World $TAG"
+          git tag -a "$TAG" -m "$title${SUMMARY:+: $SUMMARY}"
+          git push --atomic origin HEAD:main "$TAG"
+
+      # The notes list the pull requests merged since the last release, under the summary when there is one.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          SUMMARY: ${{ inputs.summary }}
+        run: |
+          notes="${SUMMARY:+Fantasy Sim World $TAG: $SUMMARY}"
+          gh release create "$TAG" out/*.tar.gz out/SHA256SUMS \
+            --title "Fantasy Sim World $TAG" \
+            --notes "$notes" \
+            --generate-notes \
+            --verify-tag
+
+  deploy:
+    needs: release
+    if: inputs.deploy
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ref: ${{ needs.release.outputs.tag }}
+    secrets: inherit
