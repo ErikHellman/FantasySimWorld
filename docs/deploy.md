@@ -44,6 +44,18 @@ To deploy, open **Actions → Deploy to Fly.io → Run workflow** and pick the b
 
 Only one deploy runs at a time; a second one started meanwhile waits for the first to finish. Secrets are still set with `fly secrets set`, not from GitHub.
 
+## Releasing
+
+A release is cut from `main` by the **Release** workflow (`.github/workflows/release.yml`), which also runs only by hand. Open **Actions → Release → Run workflow** on `main` and choose:
+
+- **bump**: `minor` (the default) for new things in the village, `patch` for fixes only, `major` for a break with old saves or clients;
+- **summary**: one optional line on what the release brings, which goes at the top of the notes and in the tag's message;
+- **deploy**: tick it to deploy the release to Fly.io straight afterwards, through the deploy workflow above.
+
+The workflow runs the same checks as every push, moves the version in `package.json`, the Cargo workspace and `Cargo.lock` (with `tools/release/bump-version.mjs`, which can also be run by hand), commits that to `main` as "Release vX.Y.Z" and tags it. It then builds the web client and a Linux server and publishes a GitHub release with both, a checksum file, and notes that list the pull requests merged since the last release. It stops without releasing if `main` moved on while the checks ran or the tag already exists.
+
+The workflow pushes to `main` with the repository's own Actions token. If `main` is ever protected so that only pull requests may change it, allow GitHub Actions to bypass that rule, or the push step fails and nothing is released.
+
 ## Settings
 
 Secrets (`fly secrets set NAME=value`):

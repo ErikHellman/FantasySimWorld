@@ -1,9 +1,16 @@
-# Deploys the chosen branch or tag to Fly.io. Started by hand only (Actions → Deploy to Fly.io → Run workflow);
-# nothing deploys on push. See docs/deploy.md for the token and the settings it reads.
+# Deploys the chosen branch or tag to Fly.io. Started by hand (Actions → Deploy to Fly.io → Run workflow) or by the
+# release workflow when asked to; nothing deploys on push. See docs/deploy.md for the token and the settings it reads.
 name: Deploy to Fly.io
 
 on:
   workflow_dispatch:
+  # The release workflow deploys the tag it has just made, after running the checks itself.
+  workflow_call:
+    inputs:
+      ref:
+        description: The tag or branch to deploy
+        type: string
+        required: true
 
 # One machine and one volume: a second deploy must wait for the first, never cancel it halfway.
 concurrency:
@@ -16,10 +23,13 @@ permissions:
 jobs:
   # The same checks as every push, so a red commit cannot reach the live world.
   checks:
+    if: inputs.ref == ''
     uses: ./.github/workflows/ci.yml
 
   deploy:
     needs: checks
+    # Runs after the checks pass, or without them when the release workflow, which ran them, calls this one.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
     # Holds FLY_API_TOKEN. Required reviewers or a branch rule can be added to it in the repository settings.
     environment:
@@ -29,6 +39,8 @@ jobs:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: superfly/flyctl-actions/setup-flyctl@1.6
       # Fail early without a token. The app is the one in fly.toml unless the FLY_APP repository variable names another.
       - id: app
@@ -49,7 +61,7 @@ jobs:
           --app "$APP"
           --remote-only
           --ha=false
-          --image-label "git-${GITHUB_SHA::12}"
+          --image-label "git-$(git rev-parse --short=12 HEAD)"
           --wait-timeout 5m
       # Fly's proxy holds a request for minutes while it tries to start a machine that keeps crashing, so cap each
       # attempt: a server that refuses its settings fails this step in a few minutes rather than an hour.

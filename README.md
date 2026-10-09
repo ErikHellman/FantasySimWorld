@@ -35,7 +35,7 @@ The server migration is complete. The world, the language-model brain and every 
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
 - Ambient sound, effects and adaptive music.
-- A container image with Litestream backups and Fly.io settings, deployed from a GitHub Actions workflow started by hand ([docs/deploy.md](docs/deploy.md)).
+- A container image with Litestream backups and Fly.io settings, deployed from a GitHub Actions workflow started by hand, and a one-click release workflow that bumps the version, tags it and publishes the build ([docs/deploy.md](docs/deploy.md)).
 
 Not yet done or not yet tried:
 
