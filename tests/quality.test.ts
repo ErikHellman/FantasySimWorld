@@ -24,6 +24,11 @@ describe('qualitySettings', () => {
     expect(qualitySettings('high', 3)).toMatchObject({ pixelRatio: 2, antialias: true, shadowMapSize: 2048, lamps: 6, frameSeconds: 0, groundCoverStep: 1 });
   });
 
+  it('draws fewer raindrops on the low tier, and leaves the trees still in the wind there', () => {
+    expect(qualitySettings('high', 1)).toMatchObject({ rainDrops: 3000, windSway: true });
+    expect(qualitySettings('low', 1)).toMatchObject({ rainDrops: 800, windSway: false });
+  });
+
   it('draws fewer pixels on the low tier, and skips multisampling where pixels are already small', () => {
     expect(qualitySettings('low', 3)).toMatchObject({ pixelRatio: 1.5, antialias: false, adaptive: true });
     expect(qualitySettings('low', 1)).toMatchObject({ pixelRatio: 1, antialias: true });

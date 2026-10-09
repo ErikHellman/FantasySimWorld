@@ -30,6 +30,7 @@ use crate::systems::music::{run_listen, run_perform};
 use crate::systems::quirks::{after_drink, end_hunt};
 use crate::systems::raids::plundered;
 use crate::systems::relationships::{RelationDelta, adjust};
+use crate::systems::weather::run_shelter;
 use crate::systems::world::{deliver_next, run_world_work};
 use crate::util::{Ctx, children, first_name, is_approachable, living, living_ids, place_name_at, rel, set_anim};
 
@@ -1151,6 +1152,7 @@ pub fn update_intents(ctx: &mut Ctx) {
             }
             IntentAction::Fight { target_id, mode } => run_fight(ctx, &id, target_id, *mode, intent.source),
             IntentAction::Flee => run_flee(ctx, &id),
+            IntentAction::Shelter => run_shelter(ctx, &id),
             IntentAction::Nap { minutes } => run_nap(ctx, &id, *minutes),
             IntentAction::Stalk { target_id } => run_stalk(ctx, &id, target_id),
             IntentAction::FightFire { place_id } => run_fight_fire(ctx, &id, place_id),

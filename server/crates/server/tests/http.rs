@@ -122,6 +122,38 @@ async fn one_of_the_dead_has_a_card_of_its_own() {
     shutdown.cancel();
 }
 
+#[tokio::test]
+async fn a_ghost_has_a_card_of_its_own() {
+    use fsw_sim::systems::death::kill_character;
+    use fsw_sim::systems::ghosts::{Haunt, bind};
+    use fsw_sim::util::Ctx;
+
+    let (state, shutdown, _data) = state_with("ghost", &[("AUTH_TOKEN", TOKEN)]).await;
+    let id = {
+        let mut core = state.world.core.write();
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut core.sim.state, &mut events);
+        let haunt = Haunt::of(&ctx, "c1");
+        kill_character(&mut ctx, "c1", "slain by a Skeleton Warrior at the green", None);
+        bind(&mut ctx, haunt)
+    };
+    let app = router(state);
+    let card = app.clone().oneshot(authed(&format!("/api/ghosts/{id}"))).await.unwrap();
+    assert_eq!(card.status(), StatusCode::OK);
+    let card = text(card).await;
+    assert!(card.contains(r#""name":"Aldric Vane""#) && card.contains(r#""wasId":"c1""#), "{card}");
+    assert!(card.contains("slain by a Skeleton Warrior") && card.contains("not at rest"), "{card}");
+    assert_eq!(app.clone().oneshot(authed("/api/ghosts/g99")).await.unwrap().status(), StatusCode::NOT_FOUND);
+    assert_eq!(app.clone().oneshot(authed("/api/ghosts/c2")).await.unwrap().status(), StatusCode::NOT_FOUND);
+    // The stream's `detail` carries it, tagged, once a tab watches it.
+    let watch = json_request("POST", "/api/watch", &format!(r#"{{"viewer":"tabH","id":"{id}"}}"#));
+    assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
+    let mut body = app.clone().oneshot(authed("/api/stream?viewer=tabH")).await.unwrap().into_body();
+    let seen = read_events(&mut body, |seen| seen.contains("event: detail")).await;
+    assert_eq!(last_event(&seen, "detail")["kind"], serde_json::json!("ghost"), "{seen}");
+    shutdown.cancel();
+}
+
 fn get(uri: &str) -> Request<Body> {
     Request::get(uri).body(Body::empty()).unwrap()
 }
@@ -211,7 +243,7 @@ async fn stream_says_hello_then_ticks() {
     assert!(seen.contains("event: snapshot\n"), "{seen}");
     assert!(seen.contains(r#""entities":[{"static":{"id":"c1","kind":"villager""#), "{seen}");
     assert!(seen.contains("retry: 500"), "{seen}");
-    assert!(seen.contains(r#""protocolVersion":9"#), "{seen}");
+    assert!(seen.contains(r#""protocolVersion":12"#), "{seen}");
     assert!(seen.contains(r#"data: {"t":"#), "{seen}");
 
     // On shutdown the stream ends, so graceful shutdown does not hang on open viewers.
@@ -737,6 +769,8 @@ async fn guests_watch_and_chat_without_signing_in_but_do_not_run_the_world() {
     assert_eq!(site.status(), StatusCode::OK);
     let monster = app.clone().oneshot(as_guest("GET", "/api/monsters/m1", &cookie, "")).await.unwrap();
     assert_eq!(monster.status(), StatusCode::NOT_FOUND, "none abroad yet, but the route is open to guests");
+    let ghost = app.clone().oneshot(as_guest("GET", "/api/ghosts/g1", &cookie, "")).await.unwrap();
+    assert_eq!(ghost.status(), StatusCode::NOT_FOUND, "no ghost walks yet, but the route is open to guests");
     let watch = as_guest("POST", "/api/watch", &cookie, r#"{"viewer":"tabG","id":"c1"}"#);
     assert_eq!(app.clone().oneshot(watch).await.unwrap().status(), StatusCode::NO_CONTENT);
 
@@ -883,7 +917,7 @@ async fn admins_call_a_raid_up_the_road_once() {
         {
             let core = state.world.core.read();
             let state = &core.sim.state;
-            if state.director.raid_called || state.raid.is_some() {
+            if state.director.raid_called || state.war_band.is_some() {
                 break;
             }
         }

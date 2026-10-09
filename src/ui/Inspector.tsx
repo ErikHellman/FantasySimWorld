@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
-import { actions, closeSheet, ui, type CharacterDetail, type MonsterDetail, type RelationRow } from './store';
+import { actions, closeSheet, ui, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -112,15 +112,17 @@ function Memories({ d }: { d: CharacterDetail }) {
   );
 }
 
-/** The card of one of the dead or an orc raider: what it is, how it fares, what it is after and what it has done. No tabs. */
+/** The card of one of the dead, an orc raider or the dragon: what it is, how it fares, what it is after and what it has done. No tabs. */
 function MonsterCard({ d }: { d: MonsterDetail }) {
   const target = d.target;
   const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
-  const side = d.faction === 'orc' ? 'one of a war band' : 'one of the dead';
+  const side = { orc: 'one of a war band', undead: 'one of the dead', dragon: 'out of the sky' }[d.faction];
   return (
     <>
       <h2>{d.name}</h2>
-      <p class="subtitle">{d.species} · {side}{d.boss && ' · it takes the village to bring it down'}{d.lasting && ' · does not fear the dawn'}</p>
+      <p class="subtitle">
+        {d.species} · {side}{d.boss && ' · it takes the village to bring it down'}{d.lasting && ' · does not fear the dawn'}
+      </p>
       <p class="status">{d.status}</p>
       <div class="tab-body">
         {/* Red whatever it has left, as its label's bar is. */}
@@ -134,8 +136,24 @@ function MonsterCard({ d }: { d: MonsterDetail }) {
         {d.was && <p class="muted">Once {d.was}.</p>}
         {d.carrying && <p>Carrying off {d.carrying}.</p>}
         <p class="muted inventory">
-          {plural(d.kills, 'villager')} slain · {plural(d.blows, 'blow')} landed · strikes for {d.damage[0]}–{d.damage[1]}
+          {plural(d.kills, 'villager')} slain · {plural(d.blows, 'blow')} landed · {d.undead ? 'strikes' : 'burns'} for {d.damage[0]}–{d.damage[1]}
         </p>
+      </div>
+    </>
+  );
+}
+
+/** The card of a ghost: who it was, how they died, and how long it will walk. It cannot be fought, so no health. */
+function GhostCard({ d }: { d: GhostDetail }) {
+  const nights = d.nightsLeft === 1 ? 'This is its last night.' : `It will walk ${d.nightsLeft} more nights.`;
+  return (
+    <>
+      <h2>{d.name}</h2>
+      <p class="subtitle">ghost · {d.cause ? `${d.cause}, day ${d.diedDay}` : `died on day ${d.diedDay}`}</p>
+      <p class="status">{d.status}</p>
+      <div class="tab-body">
+        <p>Seen only after dark. It frightens whoever meets it, and its touch leaves them cold and weak, but it cannot kill and cannot be fought.</p>
+        {d.nightsLeft > 0 && <p class="muted">{nights} Then it will find rest.</p>}
       </div>
     </>
   );
@@ -170,7 +188,7 @@ export function Inspector() {
     <aside class="panel inspector">
       {/* On a phone this only puts the page away; the follow chip is where to stop following. */}
       <button class="close" title="Close (Esc)" onClick={() => (ui.mobile.value ? closeSheet() : actions.select(null))}>×</button>
-      {d.kind === 'monster' ? <MonsterCard d={d} /> : <VillagerCard d={d} />}
+      {d.kind === 'monster' ? <MonsterCard d={d} /> : d.kind === 'ghost' ? <GhostCard d={d} /> : <VillagerCard d={d} />}
     </aside>
   );
 }

@@ -3,13 +3,13 @@
 use fsw_core::math2d::dist;
 use fsw_core::time::{minutes_to_ticks, seconds_to_ticks};
 
-use crate::data::monsters::Faction;
+use crate::data::monsters::{Faction, MonsterKind};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActPhase, Character, ChronicleKind, FightMode, Id, IntentAction, IntentSource, MemoryKind, Monster, MonsterPhase,
     StimulusKind,
 };
-use crate::systems::combat::{max_hp, start_fight, start_flee};
+use crate::systems::combat::{can_reach, max_hp, start_fight, start_flee};
 use crate::systems::conversation::abort_conversation;
 use crate::systems::fire::burning;
 use crate::systems::intents::leave_building;
@@ -28,12 +28,15 @@ const ALARM_RANGE: f64 = 150.0;
 const FIRE_COURAGE: f64 = 0.2;
 /// Heartened by music, people find a little more nerve.
 const MUSIC_COURAGE: f64 = 0.1;
+/// A dragon in the sky is seen from this many times further off than the dead on the ground.
+const SKY_SIGHT: f64 = 1.8;
 
 fn nearest_monster<'m>(monsters: &'m [Monster], c: &Character, limit: f64) -> Option<&'m Monster> {
     let mut best = None;
     let mut best_distance = limit;
     for m in monsters {
         let d = dist(m.pos, c.pos);
+        let d = if m.kind.def().flies { d / SKY_SIGHT } else { d };
         if d < best_distance {
             best_distance = d;
             best = Some(m);
@@ -56,22 +59,34 @@ fn stands_ground(c: &Character, monsters_near: usize, allies_near: usize, house_
 fn raise_alarm(ctx: &mut Ctx, id: &str, monster: &Monster) {
     let tick = ctx.tick();
     let where_ = place_name_at(monster.pos);
+    let dragon = monster.kind == MonsterKind::Dragon;
     let raiders = monster.kind.faction() == Faction::Orc;
-    if tick >= ctx.state.director.alarm_until_tick {
-        let (shout, news) = if raiders {
-            (format!("To arms! Orcs at {where_}!"), format!("orc raiders are at {where_}"))
+    if tick >= ctx.state.director.alarm_until_tick || (dragon && !ctx.state.director.alarm_dragon) {
+        let (shout, text) = if dragon {
+            (
+                format!("A dragon! A dragon over {where_}! Take cover!"),
+                format!("raised the alarm: a dragon over {where_}!"),
+            )
+        } else if raiders {
+            (format!("To arms! Orcs at {where_}!"), format!("raised the alarm: orc raiders are at {where_}."))
         } else {
-            (format!("To arms! The dead are at {where_}!"), format!("the dead are walking at {where_}"))
+            (
+                format!("To arms! The dead are at {where_}!"),
+                format!("raised the alarm: the dead are walking at {where_}."),
+            )
         };
         ctx.say(id, shout, None, true);
         let name = first_name(ctx.cr(id)).to_owned();
-        ctx.chronicle(ChronicleKind::Combat, format!("{name} raised the alarm: {news}."), vec![id.into()]);
+        ctx.chronicle(ChronicleKind::Combat, format!("{name} {text}"), vec![id.into()]);
         ctx.emit(SimEvent::Emote { id: id.into(), emote: Emote::Alert });
     }
     ctx.state.director.alarm_until_tick = tick + minutes_to_ticks(40.0);
     ctx.state.director.alarm_pos = Some(monster.pos);
     if raiders {
         ctx.state.director.alarm_raid = true;
+    }
+    if dragon {
+        ctx.state.director.alarm_dragon = true;
     }
 }
 
@@ -91,11 +106,17 @@ fn stand_down(ctx: &mut Ctx) {
     ctx.state.director.alarm_until_tick = tick;
     ctx.state.director.alarm_pos = None;
     ctx.state.director.alarm_raid = false;
+    let dragon = std::mem::take(&mut ctx.state.director.alarm_dragon);
     if fighters.is_empty() {
         return;
     }
-    let (foe, gone) =
-        if raiders { ("the orc raiders", "the raiders are gone") } else { ("the dead", "the dead are destroyed") };
+    let (foe, gone) = if dragon {
+        ("the dragon", "the dragon is gone")
+    } else if raiders {
+        ("the orc raiders", "the raiders are gone")
+    } else {
+        ("the dead", "the dead are destroyed")
+    };
     let names: Vec<&str> = fighters.iter().map(|(_, name)| name.as_str()).collect();
     let ids: Vec<Id> = fighters.iter().map(|(id, _)| id.clone()).collect();
     ctx.chronicle(ChronicleKind::Combat, format!("The attack is over. {} held the line.", join_names(&names)), ids);
@@ -178,7 +199,10 @@ pub fn update_perception(ctx: &mut Ctx) {
                 .filter(|o| o.id != c.id && o.inside.is_none() && o.intent.as_ref().is_some_and(|i| i.is_fight()))
                 .filter(|o| dist(o.pos, c.pos) < 20.0)
                 .count();
-            if !c.is_child() && (on_watch || stands_ground(c, monsters_near, allies_near, house_burning, tick)) {
+            if !c.is_child()
+                && can_reach(c, &seen)
+                && (on_watch || stands_ground(c, monsters_near, allies_near, house_burning, tick))
+            {
                 start_fight(ctx, id, &seen.id, FightMode::Monster, IntentSource::Reflex, None);
             } else {
                 start_flee(ctx, id, IntentSource::Reflex);
@@ -190,17 +214,21 @@ pub fn update_perception(ctx: &mut Ctx) {
             continue;
         }
         let responder = !c.is_child() && c.profile.bravery >= bar && c.hp > max_hp(c) * 0.4;
-        if responder {
-            let Some(target) = nearest_monster(&monsters, c, ALARM_RANGE).cloned() else { continue };
+        // Those who cannot reach what the alarm is for stay where they are, or take cover.
+        let answer = if responder { nearest_monster(&monsters, c, ALARM_RANGE) } else { None };
+        if responder && answer.is_some_and(|m| can_reach(c, m)) {
+            let Some(target) = answer.cloned() else { continue };
             let nav = ctx.state.nav.clone();
             let c = ctx.c(id);
             if c.asleep || c.inside.is_some() {
                 leave_building(&nav, c);
             }
             if !has_recent_stimulus(c, StimulusKind::Alarm, tick - minutes_to_ticks(30.0), None) {
-                let foe = foe_noun(target.kind.faction());
-                let text =
-                    format!("The alarm has been raised: {foe} are attacking near {}.", place_name_at(target.pos));
+                let what = match target.kind.faction() {
+                    Faction::Dragon => "a dragon is burning the village".to_owned(),
+                    faction => format!("{} are attacking", foe_noun(faction)),
+                };
+                let text = format!("The alarm has been raised: {what} near {}.", place_name_at(target.pos));
                 ctx.stimulate(id, StimulusKind::Alarm, text, 2, Some(&target.id));
             }
             start_fight(ctx, id, &target.id, FightMode::Monster, IntentSource::Reflex, None);

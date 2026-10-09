@@ -2,6 +2,7 @@
 
 pub mod arrivals;
 pub mod billboards;
+pub mod blocking;
 pub mod ceremonies;
 pub mod charm;
 pub mod children;
@@ -9,9 +10,11 @@ pub mod combat;
 pub mod conversation;
 pub mod death;
 pub mod director;
+pub mod dragon;
 pub mod economy;
 pub mod fire;
 pub mod founding;
+pub mod ghosts;
 pub mod intents;
 pub mod monsters;
 pub mod movement;
@@ -22,4 +25,5 @@ pub mod quirks;
 pub mod raids;
 pub mod relationships;
 pub mod routine;
+pub mod weather;
 pub mod world;

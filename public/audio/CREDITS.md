@@ -17,6 +17,7 @@ Some sounds were cut, mixed, levelled and re-encoded for the game.
 | [RPG Sound Pack](https://opengameart.org/content/rpg-sound-pack) | artisticdude | CC0 | dodge_whoosh, arrow_shot, magic_cast |
 | [Dark Forest Theme](https://opengameart.org/content/dark-forest-theme) | cynicmusic | CC0 | music: dark_forest |
 | [Determined Pursuit](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) | Emma_MA | CC0 | music: determined_pursuit |
+| [light rain and heavy rain](https://opengameart.org/content/light-rain-and-heavy-rain) | haruta | CC0 | rain, hail |
 | [Evil Approach](https://opengameart.org/content/evil-approach) | nene | CC0 | music: evil_approach |
 | [Fantasy: Lament for a Warrior's Soul](https://opengameart.org/content/fantasy-lament-for-a-warriors-soul) | RandomMind | CC0 | music: lament |
 | [Fantasy: Rising Moon](https://opengameart.org/content/fantasy-rising-moon) | RandomMind | CC0 | music: rising_moon |

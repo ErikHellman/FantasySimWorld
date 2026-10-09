@@ -8,7 +8,7 @@ use fsw_sim::data::monsters::MonsterKind;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActivityId, CeremonyPhase, ChronicleKind, Intent, IntentAction, IntentSource, MonsterOrigin, RelationLabel, Rite,
-    SimState,
+    SimState, Weather,
 };
 use fsw_sim::systems::arrivals::free_home;
 use fsw_sim::systems::ceremonies::{BETROTHAL_DAYS, FUNERAL_HOUR, WEDDING_HOUR, attending};
@@ -291,6 +291,8 @@ fn a_wedding_slips_a_day_for_a_fire_or_the_dead_and_is_called_off_after_three() 
     assert_eq!(w.state().ceremony.as_ref().unwrap().phase, CeremonyPhase::Gathering);
 
     let (mut w, _, _) = betrothed(3);
+    // A dry spell: rain would put out the fires that are meant to keep the wedding off.
+    w.sim.state.weather = Weather { until_tick: i64::MAX, ..Weather::default() };
     for day in 5..8 {
         w.run_to(day, 13.2);
         if w.state().houses.is_empty() {
@@ -351,6 +353,11 @@ fn a_funeral_is_held_the_next_morning_for_everyone_who_died_since_the_last() {
         describe_activity(w.state(), k).contains("funeral") || describe_activity(w.state(), k).contains("graveside")
     );
     let trust_before = w.state().characters[&kael].relationships[&isolde].trust;
+    // Wherever the morning took him, the widower is at the graveside before the mourners speak.
+    let k = w.sim.state.characters.get_mut(&kael).unwrap();
+    let spot = k.act.dest.expect("the widower has a spot at the graveside");
+    k.pos = spot;
+    k.act.path = vec![spot];
 
     // The officiant may have been at the far end of the valley when the village was called, so the
     // rite can start as late as the grace allows; by ten the dead are in the ground either way.

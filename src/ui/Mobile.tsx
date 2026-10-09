@@ -5,6 +5,7 @@ import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SitePanel, capitalised } from './SitePanel';
 import { actions, isAdmin, isSiteId, togglePanel, toggleSheet, ui, type Sheet } from './store';
+import { WeatherWord } from './Weather';
 
 // The phone layout: the world fills the screen, a slim bar at the top keeps the time, and a tab bar opens one pane
 // at a time over the world. Windows (settings, help and the like) are shared with the desktop and fill the screen.
@@ -27,11 +28,13 @@ function TopBar() {
       <div class="clock" title={clock.part}>
         <span class="clock-day">Day {clock.day}</span>
         <span class="clock-time">{clock.time}</span>
+        <WeatherWord />
       </div>
       {speed !== 1 && <div class="pill" title="The world's speed, set by an admin">{speed === 0 ? '❚❚ paused' : `${speed}×`}</div>}
       <div class="pills">
         {connection !== 'live' && <span class="pill danger" title="The connection to the server">{connection === 'down' ? 'offline' : 'reconnecting…'}</span>}
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
+        {ui.dragon.value && <span class="pill danger" title="A dragon over the valley">🐉</span>}
       </div>
     </header>
   );

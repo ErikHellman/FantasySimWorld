@@ -6007,6 +6007,13 @@ export const assetManifest: AssetManifest = {
    "height": 1.45,
    "rig": "medium",
    "scale": 0.6
+  },
+  "Dragon": {
+   "url": "assets/characters/Dragon.glb?v=79d7a8dff0",
+   "texture": null,
+   "height": 5,
+   "rig": "dragon",
+   "scale": 1
   }
  },
  "rigs": {
@@ -6184,6 +6191,17 @@ export const assetManifest: AssetManifest = {
     "Working_A": 1.5,
     "Working_B": 2.533,
     "Working_C": 2
+   }
+  },
+  "dragon": {
+   "url": "assets/animations/rig-dragon.glb?v=283c30e96b",
+   "clips": {
+    "Dragon_Breath": 1.6,
+    "Dragon_Death": 2.4,
+    "Dragon_Fly": 1,
+    "Dragon_Hit": 0.6,
+    "Dragon_Hover": 1.4,
+    "Dragon_Roar": 2
    }
   }
  }

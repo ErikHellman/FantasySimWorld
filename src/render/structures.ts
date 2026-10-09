@@ -116,6 +116,8 @@ export class Structures {
   private readonly structures = new Map<string, Structure>();
   private readonly fires: Fire[] = [];
   private time = 0;
+  private windX = 0;
+  private windZ = 0;
 
   constructor(assets: Assets, places: readonly Place[], heightAt: (x: number, z: number) => number, quality: QualitySettings) {
     this.group.name = 'structures';
@@ -247,6 +249,12 @@ export class Structures {
     return id ? { id, distance: hit.distance } : null;
   }
 
+  /** The wind the smoke drifts on, in metres a second along x and z. */
+  setWind(x: number, z: number): void {
+    this.windX = x;
+    this.windZ = z;
+  }
+
   /** Per rendered frame: flames lick and smoke rises over the burning building. */
   update(dt: number): void {
     if (!this.fires.some((fire) => fire.at)) return;
@@ -263,7 +271,7 @@ export class Structures {
       for (const puff of fire.puffs) {
         const age = (this.time * 0.22 + puff.phase) % 1;
         const size = (0.6 + age * 2.4) * (0.5 + level);
-        puff.mesh.position.set(puff.dx + age * 2.5, 3 + level * FLAME_REACH * 0.6 + age * 12, puff.dz + age * 1.2);
+        puff.mesh.position.set(puff.dx + age * (2.5 + this.windX), 3 + level * FLAME_REACH * 0.6 + age * 12, puff.dz + age * (1.2 + this.windZ));
         puff.mesh.scale.setScalar(size);
         (puff.mesh.material as THREE.MeshBasicMaterial).opacity = 0.45 * (1 - age) * Math.min(1, age * 6);
       }

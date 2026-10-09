@@ -19,6 +19,10 @@ const STUMP_SCALE = 2.5;
 const SAPLING_SCALE = 0.25;
 const YOUNG_SCALE = 0.6;
 
+/** How far the wind bends a tree at full strength, in radians, and how often the trees are posed again while it blows. */
+const WIND_LEAN = 0.07;
+const WIND_SECONDS = 1 / 12;
+
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -72,6 +76,13 @@ export class Vegetation {
   private readonly turn = new THREE.Quaternion();
   private readonly axis = new THREE.Vector3();
   private readonly size = new THREE.Vector3();
+  private readonly world = new THREE.Matrix4();
+  /** the wind, 0..1, and the way it blows toward (radians from +x toward +z) */
+  private wind = 0;
+  private windDir = 0;
+  private windClock = 0;
+  /** some tree is bent by the wind and must be stood up straight once it drops */
+  private bent = false;
 
   constructor(
     assets: Assets,
@@ -152,6 +163,12 @@ export class Vegetation {
     return this.axis.set(Math.cos(angle), 0, Math.sin(angle));
   }
 
+  /** The wind the trees bend in. */
+  setWind(strength: number, direction: number): void {
+    this.wind = strength;
+    this.windDir = direction;
+  }
+
   /** The sim tick the view has reached; the fall and the sway are timed from it. */
   setTick(tick: number): void {
     this.tick = tick;
@@ -210,9 +227,10 @@ export class Vegetation {
     }
   }
 
-  /** Per rendered frame: trees under the axe sway, felled ones come down. */
+  /** Per rendered frame: trees under the axe sway, felled ones come down, and in a wind every tree bends. */
   update(dt: number, alpha: number): void {
     this.time += dt;
+    this.blow(dt);
     const now = this.tick + alpha;
     for (const [id, live] of this.live) {
       if (live.stage === 'falling') {
@@ -223,6 +241,29 @@ export class Vegetation {
         const sway = recent ? Math.sin(this.time * 6 + hashString(id)) * 0.06 * (0.4 + live.progress / 100) : 0;
         this.pose(live.item, 'standing', sway);
       }
+    }
+  }
+
+  /**
+   * Bends every standing tree away from the wind, gusting, a dozen times a second rather than every frame; trees
+   * the sim has changed are left to `update`. Only on machines that can afford it.
+   */
+  private blow(dt: number): void {
+    if (!this.quality.windSway || (this.wind < 0.05 && !this.bent)) return;
+    this.windClock += dt;
+    if (this.windClock < WIND_SECONDS) return;
+    this.windClock = 0;
+    this.bent = this.wind >= 0.05;
+    // A tree leans toward where the wind blows: it turns about the line across the wind.
+    this.axis.set(Math.sin(this.windDir), 0, -Math.cos(this.windDir));
+    for (const item of this.items) {
+      if (!item.tree || this.live.has(`s:${item.index}`)) continue;
+      const gust = 0.65 + 0.35 * Math.sin(this.time * 1.7 + item.index * 0.9);
+      const lean = this.bent ? WIND_LEAN * this.wind * gust : 0;
+      this.quaternion.setFromAxisAngle(UP, item.rotation);
+      if (lean !== 0) this.quaternion.premultiply(this.turn.setFromAxisAngle(this.axis, lean));
+      this.size.setScalar(item.scale);
+      this.setAll(item.pool, item.slot, this.world.compose(item.position, this.quaternion, this.size));
     }
   }
 }

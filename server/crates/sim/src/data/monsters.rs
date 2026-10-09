@@ -1,4 +1,4 @@
-//! The monsters: the walking dead, and the orc raiders who come up the road.
+//! The monsters: the walking dead, the dragon, and the orc raiders who come up the road.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,8 @@ pub enum MonsterKind {
     SkeletonRogue,
     SkeletonMage,
     Necromancer,
+    /// Not one of the dead: a rare raider from the sky, by day. See `systems::dragon`.
+    Dragon,
     OrcAxe,
     OrcClub,
     SkeletonGolem,
@@ -24,6 +26,8 @@ pub enum MonsterKind {
 pub enum Faction {
     Undead,
     Orc,
+    /// the dragon, which keeps to itself; see `systems::dragon`
+    Dragon,
 }
 
 /// A boss's blow that hits more than the one it is aimed at.
@@ -86,11 +90,15 @@ pub struct MonsterDef {
     pub windup: Option<f64>,
     /// a blow that hits more than one
     pub area: Option<Area>,
+    /// one of the walking dead: crumbles at dawn, burns houses only while the village sleeps
+    pub undead: bool,
+    /// keeps to the air, out of reach of a blade
+    pub flies: bool,
 }
 
-/// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks). The orcs
-/// come last and never in a wave of the dead (weight 0), so the picks among the dead are as they were.
-pub static MONSTERS: [MonsterDef; 9] = [
+/// In the TypeScript object's key order (`Object.values(MONSTERS)` order matters for weighted picks). The dragon,
+/// the orcs and the bosses come last and never in a wave of the dead (weight 0), so the picks among the dead are as they were.
+pub static MONSTERS: [MonsterDef; 10] = [
     MonsterDef {
         kind: MonsterKind::SkeletonMinion,
         faction: Faction::Undead,
@@ -114,6 +122,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonWarrior,
@@ -138,6 +148,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonRogue,
@@ -162,6 +174,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonMage,
@@ -186,6 +200,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::Necromancer,
@@ -205,6 +221,35 @@ pub static MONSTERS: [MonsterDef; 9] = [
         anims: UNDEAD,
         sight: 23.0,
         weight: 0.0,
+        block: 0.0,
+        dodge: 0.0,
+        boss: false,
+        windup: None,
+        area: None,
+        undead: true,
+        flies: false,
+    },
+    // Its "attack" is the breath: `damage` burns everyone in the open within `range` of where it lands.
+    MonsterDef {
+        kind: MonsterKind::Dragon,
+        label: "dragon",
+        model: "Dragon",
+        texture: None,
+        main_hand: None,
+        off_hand: None,
+        max_hp: 1200.0,
+        damage: [30, 50],
+        range: 7.0,
+        interval: 8.0,
+        speed: 11.0,
+        style: WeaponStyle::Magic,
+        attack_anims: &[DragonBreath],
+        sight: 40.0,
+        weight: 0.0,
+        undead: false,
+        flies: true,
+        faction: Faction::Dragon,
+        anims: MonsterAnims { rise: None, idle: DragonHover, walk: DragonFly, chase: DragonFly, death: DragonDeath },
         block: 0.0,
         dodge: 0.0,
         boss: false,
@@ -234,6 +279,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: false,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::OrcClub,
@@ -258,6 +305,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: false,
         windup: None,
         area: None,
+        undead: false,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::SkeletonGolem,
@@ -282,6 +331,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: true,
         windup: Some(1.2),
         area: Some(Area::Slam { radius: 2.8 }),
+        undead: true,
+        flies: false,
     },
     MonsterDef {
         kind: MonsterKind::OrcWarchief,
@@ -306,6 +357,8 @@ pub static MONSTERS: [MonsterDef; 9] = [
         boss: true,
         windup: None,
         area: Some(Area::Cleave { more: 1 }),
+        undead: false,
+        flies: false,
     },
 ];
 

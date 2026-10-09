@@ -50,6 +50,8 @@ pub fn create_state(seed: u32) -> SimState {
             raid_called: false,
             alarm_raid: false,
             next_golem_night: 0,
+            next_dragon_tick: 0,
+            alarm_dragon: false,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },
         billboards: Default::default(),
@@ -61,8 +63,10 @@ pub fn create_state(seed: u32) -> SimState {
         performances: Vec::new(),
         economy: Default::default(),
         loot: Default::default(),
-        raid: None,
+        war_band: None,
         plundered: Default::default(),
+        weather: Default::default(),
+        ghosts: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

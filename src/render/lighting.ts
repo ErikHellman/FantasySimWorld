@@ -27,6 +27,13 @@ const KEYFRAMES: Keyframe[] = [
 /** However far out the camera is, shadows are drawn at least this far around its target, in metres. */
 const MIN_SHADOW_RANGE = 30;
 const LAMP_COLOR = 0xffb45e;
+/** The grey a cloudy sky turns things toward, and how far at full overcast: dimmer sun, flatter light, a grey sky. */
+const CLOUD = 0x8e98a3;
+const OVERCAST_SUN = 0.65;
+const OVERCAST_AMBIENT = 0.2;
+const OVERCAST_TINT = 0.55;
+/** Under a clear sky the fog starts this far off, which is to say nowhere; it closes in as the clouds come. */
+const CLEAR_FOG = 5000;
 const FIRE_COLOR = 0xff6a24;
 
 export interface Lamp {
@@ -43,6 +50,14 @@ export class Lighting {
   readonly background = new THREE.Color(0x8fcdf0);
   /** 0 in full daylight, 1 at night; used for lamps and windows */
   night = 0;
+  /**
+   * Always there, so that rain coming on never changes which shaders are needed; under a clear sky it starts
+   * further off than anything is drawn.
+   */
+  readonly fog = new THREE.Fog(0x8fcdf0, CLEAR_FOG, CLEAR_FOG * 2);
+  /** how grey the weather makes the day, 0..1; set by the weather view */
+  private overcast = 0;
+  private readonly cloud = new THREE.Color(CLOUD);
   /** Point lights are a fixed pool (changing the number of lights recompiles shaders); they move to the lamps nearest the camera. */
   private readonly lampLights: THREE.PointLight[] = [];
   private readonly shadowRange: number;
@@ -68,6 +83,7 @@ export class Lighting {
     this.sun.shadow.normalBias = 0.08;
     scene.add(this.sun, this.sun.target, this.hemisphere);
     scene.background = this.background;
+    scene.fog = this.fog;
     for (let i = 0; i < quality.lamps; i++) {
       const light = new THREE.PointLight(LAMP_COLOR, 0, 26, 1.6);
       this.lampLights.push(light);
@@ -78,6 +94,11 @@ export class Lighting {
   /** Where the lanterns, torches and fires are. */
   setLamps(lamps: Lamp[]): void {
     this.lamps = lamps;
+  }
+
+  /** How grey the weather makes the day, 0 (clear) .. 1 (the worst of a storm). */
+  setOvercast(overcast: number): void {
+    this.overcast = THREE.MathUtils.clamp(overcast, 0, 1);
   }
 
   /** A house on fire borrows one light from the pool (so the number of lights never changes); null gives it back. */
@@ -117,6 +138,28 @@ export class Lighting {
     return out.copy(this.a.setHex(from)).lerp(this.b.setHex(to), t);
   }
 
+  /** Clouds dim the sun, flatten and grey the light, and draw the fog in; at night the grey is a dark one. */
+  private cloudOver(viewDistance: number): void {
+    const o = this.overcast;
+    this.fog.color.copy(this.background);
+    if (o <= 0) {
+      this.fog.near = CLEAR_FOG;
+      this.fog.far = CLEAR_FOG * 2;
+      return;
+    }
+    const grey = this.a.copy(this.cloud).multiplyScalar(1 - this.night * 0.8);
+    this.sun.intensity *= 1 - OVERCAST_SUN * o;
+    this.hemisphere.intensity *= 1 - OVERCAST_AMBIENT * o;
+    this.hemisphere.color.lerp(grey, OVERCAST_TINT * o);
+    this.sun.color.lerp(grey, OVERCAST_TINT * o * 0.5);
+    this.background.lerp(grey, o);
+    this.fog.color.copy(this.background);
+    // The fog closes in to a little beyond what the camera looks at, never so near as to hide the village.
+    const far = viewDistance * 2.4 + (CLEAR_FOG - viewDistance * 2.4) * (1 - o) ** 3;
+    this.fog.far = far;
+    this.fog.near = far * 0.25;
+  }
+
   /** Sets colours and sun direction for an hour of the day, keeping the shadow box around `focus`. */
   update(hour: number, focus: THREE.Vector3, viewDistance: number): void {
     let i = 0;
@@ -132,6 +175,7 @@ export class Lighting {
     this.hemisphere.intensity = THREE.MathUtils.lerp(from.ambient, to.ambient, t);
     this.mix(from.background, to.background, t, this.background);
     this.night = THREE.MathUtils.clamp(1 - (this.sun.intensity - 0.6) / 1.2, 0, 1);
+    this.cloudOver(viewDistance);
 
     // The sun (or moon) sweeps east to west; at night the moon takes a fixed high angle.
     const dayT = THREE.MathUtils.clamp((hour - 5.5) / 15, 0, 1);

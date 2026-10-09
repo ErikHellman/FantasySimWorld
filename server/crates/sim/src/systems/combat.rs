@@ -1,6 +1,6 @@
 //! Fights: with the dead, brawls, and the rare duel to the death.
 
-use fsw_core::jsmath::js_round;
+use fsw_core::jsmath::{js_hypot, js_round};
 use fsw_core::math2d::{clamp, dist};
 use fsw_core::time::seconds_to_ticks;
 use fsw_core::{Vec2, vec2};
@@ -11,13 +11,14 @@ use crate::data::monsters::Faction;
 use crate::events::{Emote, HitOutcome, Projectile, SimEvent};
 use crate::nav::NavOverlay;
 use crate::state::{
-    Act, ActPhase, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, MonsterKind,
-    MonsterPhase, Quirk, StimulusKind,
+    Act, ActPhase, Character, ChronicleKind, FightMode, Id, Intent, IntentAction, IntentSource, MemoryKind, Monster,
+    MonsterKind, MonsterPhase, Quirk, StimulusKind,
 };
 use crate::systems::charm;
 use crate::systems::conversation::abort_conversation;
 use crate::systems::death::{detach, free_grave_plot, kill_character};
 use crate::systems::economy::{drop_haul, drop_loot};
+use crate::systems::ghosts;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::quirks::{ambushed, end_hunt, escaped};
 use crate::systems::raids;
@@ -61,6 +62,16 @@ pub fn max_hp(c: &crate::state::Character) -> f64 {
 
 pub fn weapon_of(c: &crate::state::Character, mode: FightMode) -> &'static Weapon {
     if mode == FightMode::Brawl { &FISTS } else { &c.class_id.def().weapon }
+}
+
+/// Whether a villager can strike at a monster at all: nobody reaches the dragon in the air with a blade.
+pub fn can_reach(c: &Character, m: &Monster) -> bool {
+    !m.kind.def().flies || c.class_id.def().weapon.style != WeaponStyle::Melee
+}
+
+/// How far a monster is from a point on the ground, counting how high it flies.
+pub fn reach_dist(from: Vec2, m: &Monster) -> f64 {
+    if m.alt > 0.0 { js_hypot(dist(from, m.pos), m.alt) } else { dist(from, m.pos) }
 }
 
 fn projectile_of(weapon: &Weapon) -> Option<Projectile> {
@@ -243,6 +254,14 @@ pub fn start_fight(
     source: IntentSource,
     say: Option<String>,
 ) {
+    // Whoever cannot reach the monster takes cover from it instead.
+    if mode == FightMode::Monster
+        && let Some(m) = ctx.state.monsters.get(target_id)
+        && !can_reach(ctx.cr(id), m)
+    {
+        start_flee(ctx, id, source);
+        return;
+    }
     detach(ctx, id);
     let tick = ctx.tick();
     let c = ctx.c(id);
@@ -372,15 +391,21 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
         return;
     }
     let m = ctx.m(monster_id);
+    let dragon = m.kind == MonsterKind::Dragon;
     if !fatal {
         if m.hit_tick == 0 {
-            let anim = if outcome == HitOutcome::Blocked { AnimId::BlockHit } else { AnimId::Hit };
+            let anim = match (dragon, outcome) {
+                (true, _) => AnimId::DragonHit,
+                (false, HitOutcome::Blocked) => AnimId::BlockHit,
+                (false, _) => AnimId::Hit,
+            };
             set_anim(m, anim, true);
         }
         if current_pos.is_none_or(|current| dist(m.pos, attacker_pos) < dist(m.pos, current)) {
             m.target_id = Some(attacker.to_owned());
         }
-        if m.phase == MonsterPhase::Roam {
+        // (The dragon keeps to its own plan; it only notes who shot at it.)
+        if m.phase == MonsterPhase::Roam && !dragon {
             m.phase = MonsterPhase::Chase;
         }
         return;
@@ -389,6 +414,7 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     m.since_tick = tick;
     m.hit_tick = 0;
     m.path.clear();
+    m.raid = None;
     set_anim(m, def.anims.death, true);
     let kind = m.kind;
     ctx.c(attacker).kills += 1;
@@ -396,7 +422,7 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
         fell_boss(ctx, monster_id, attacker, pos);
     }
     if def.faction == Faction::Orc {
-        let haul = ctx.m(monster_id).raid.take().map(|order| order.haul).unwrap_or_default();
+        let haul = ctx.m(monster_id).errand.take().map(|order| order.haul).unwrap_or_default();
         raids::on_fallen(ctx, monster_id);
         drop_haul(ctx, &haul, pos, attacker);
         if !def.boss {
@@ -411,13 +437,19 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
     let where_ = place_name_at(pos);
     let necromancer = kind == MonsterKind::Necromancer;
     if !def.boss {
-        ctx.remember(
-            attacker,
-            format!("Destroyed {} at {where_}.", a_noun(def.label)),
-            if necromancer { 8.0 } else { 4.0 },
-            MemoryKind::Event,
-            Vec::new(),
-        );
+        let deed = if dragon {
+            format!("Brought down the dragon at {where_}!")
+        } else {
+            format!("Destroyed {} at {where_}.", a_noun(def.label))
+        };
+        let importance = if dragon {
+            10.0
+        } else if necromancer {
+            8.0
+        } else {
+            4.0
+        };
+        ctx.remember(attacker, deed, importance, MemoryKind::Event, Vec::new());
     }
     let (fallen_name, was_id) = {
         let m = &ctx.state.monsters[monster_id];
@@ -440,6 +472,23 @@ pub fn damage_monster_with(ctx: &mut Ctx, monster_id: &str, amount: i64, attacke
             format!("{name} struck down the necromancer at {where_}!"),
             vec![attacker.into()],
         );
+    } else if dragon {
+        let name = ctx.cr(attacker).profile.name.clone();
+        let first = first_name(ctx.cr(attacker)).to_owned();
+        ctx.chronicle(
+            ChronicleKind::Combat,
+            format!("{name} brought down the dragon at {where_}! It will never burn another home."),
+            vec![attacker.into()],
+        );
+        for witness in witnesses(ctx, pos, &[attacker]) {
+            ctx.remember(
+                &witness,
+                format!("Saw {first} bring the dragon down at {where_}."),
+                8.0,
+                MemoryKind::Event,
+                vec![attacker.into()],
+            );
+        }
     }
     ctx.emit(SimEvent::Death { id: monster_id.into(), name: def.label.into(), pos, monster: true });
 }
@@ -542,7 +591,19 @@ pub fn damage_character_with(
             Some(_) => format!("killed by {}", by.label),
             None => format!("slain by {} at {}", a_noun(&by.label), place_name_at(pos)),
         };
+        // Some of those the dead cut down do not rest at once; see `systems::ghosts`. An orc's victim is not
+        // one of them.
+        let raider = ctx.state.monsters.get(&by.id).is_some_and(|m| m.kind.faction() == Faction::Orc);
+        let ghost = (mode == FightMode::Monster
+            && by.character.is_none()
+            && !raider
+            && !ctx.cr(victim).is_child()
+            && ghosts::returns(ctx.state.seed, victim))
+        .then(|| ghosts::Haunt::of(ctx, victim));
         kill_character(ctx, victim, &cause, by.character.as_deref());
+        if let Some(haunt) = ghost {
+            ghosts::bind(ctx, haunt);
+        }
         return;
     }
 
@@ -764,7 +825,7 @@ fn land_hit(ctx: &mut Ctx, id: &str, weapon: &Weapon, mode: FightMode) {
     let damage = if fighter { js_round(damage as f64 * FIGHTER_DAMAGE) as i64 } else { damage };
     if mode == FightMode::Monster {
         if let Some(m) = get_monster(ctx.state, target.as_deref())
-            && dist(pos, m.pos) <= reach
+            && reach_dist(pos, m) <= reach
         {
             let monster = m.id.clone();
             let outcome = monster_defends(ctx, &monster, pos, Blow::of(weapon.style));
@@ -798,8 +859,14 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         return;
     }
 
-    let monster_pos =
-        if mode == FightMode::Monster { get_monster(ctx.state, Some(target_id)).map(|m| m.pos) } else { None };
+    let monster = if mode == FightMode::Monster { get_monster(ctx.state, Some(target_id)) } else { None };
+    if monster.is_some_and(|m| !can_reach(c, m)) {
+        start_flee(ctx, id, IntentSource::Reflex);
+        return;
+    }
+    // Where the monster is, and how high: archers shoot up at the dragon from the ground below it.
+    let flying = monster.map(|m| m.alt).filter(|&alt| alt > 0.0);
+    let monster_pos = monster.map(|m| m.pos);
     let foe = if mode == FightMode::Monster { None } else { ctx.state.characters.get(target_id) };
     let Some(target_pos) = monster_pos.or(foe.map(|f| f.pos)) else {
         let outcome = if mode == FightMode::Monster { "The monster is destroyed." } else { "Your opponent is down." };
@@ -871,10 +938,15 @@ pub fn run_fight(ctx: &mut Ctx, id: &str, target_id: &str, mode: FightMode, sour
         return;
     }
 
-    let d = dist(c.pos, target_pos);
+    let d = match flying {
+        Some(alt) => js_hypot(dist(c.pos, target_pos), alt),
+        None => dist(c.pos, target_pos),
+    };
     if d > weapon.range {
         if c.act.path.is_empty() || tick >= c.act.repath_tick {
-            let route = route_to(&nav, c.pos, target_pos);
+            let goal =
+                if flying.is_some() { nav.nearest_walkable(target_pos, 8).unwrap_or(target_pos) } else { target_pos };
+            let route = route_to(&nav, c.pos, goal);
             c.act.repath_tick = tick + seconds_to_ticks(0.6);
             let Some(route) = route else {
                 c.act.stuck += 1;

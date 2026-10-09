@@ -8,6 +8,7 @@ use fsw_world::places::{ActivityId, get_place};
 use crate::events::SimEvent;
 use crate::state::{ChronicleKind, Id, MemoryKind, MonsterKind, MonsterOrigin};
 use crate::systems::arrivals::arrive;
+use crate::systems::dragon;
 use crate::systems::founding::NEWCOMER_PATIENCE_MINUTES;
 use crate::systems::monsters::{MAX_MONSTERS, random_monster_kind, spawn_monster};
 use crate::systems::raids::update_raids;
@@ -192,6 +193,7 @@ pub fn update_director(ctx: &mut Ctx) {
         return;
     }
 
+    dragon::update_schedule(ctx);
     update_raids(ctx);
 
     if tick >= ctx.state.director.next_wave_tick {
@@ -206,7 +208,7 @@ pub fn update_director(ctx: &mut Ctx) {
     if adult_count(ctx.state) < ctx.state.director.population_target
         && tick >= ctx.state.director.next_arrival_tick
         && (8.0..17.0).contains(&hour)
-        && ctx.state.raid.is_none()
+        && ctx.state.war_band.is_none()
     {
         let director = &ctx.state.director;
         let deadline = director.newcomer_deadline_tick;

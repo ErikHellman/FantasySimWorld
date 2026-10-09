@@ -7,6 +7,7 @@ use fsw_core::{Vec2, vec2};
 
 use crate::nav::NavOverlay;
 use crate::state::{MonsterPhase, SimState};
+use crate::systems::blocking::brushing_past;
 use crate::util::Body;
 
 /// radians per second
@@ -74,7 +75,8 @@ enum BodyRef {
     Monster(usize),
 }
 
-/// Nudges moving bodies apart so walkers do not pass through each other.
+/// Nudges moving bodies apart so walkers do not pass through each other, except a walker
+/// brushing past someone who stood in their way (`systems::blocking`).
 /// Bodies are pushed in order, each seeing the others' positions as already updated.
 pub fn separate(state: &mut SimState) {
     let nav = state.nav.clone();
@@ -86,8 +88,9 @@ pub fn separate(state: &mut SimState) {
             bodies.push(BodyRef::Character(index));
         }
     }
+    // The dragon flies over everyone's heads.
     for (index, m) in state.monsters.values().enumerate() {
-        if m.phase != MonsterPhase::Dying {
+        if m.phase != MonsterPhase::Dying && !m.kind.def().flies {
             bodies.push(BodyRef::Monster(index));
         }
     }
@@ -104,6 +107,11 @@ pub fn separate(state: &mut SimState) {
         let mut push_z = 0.0;
         for (oi, &other) in bodies.iter().enumerate() {
             if oi == mi {
+                continue;
+            }
+            if let (BodyRef::Character(a), BodyRef::Character(b)) = (mover, other)
+                && brushing_past(state, &state.characters[a], &state.characters[b])
+            {
                 continue;
             }
             let (other_pos, _) = read(state, other);

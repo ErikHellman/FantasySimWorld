@@ -29,8 +29,8 @@ export function AboutTechPanel() {
         <ul class="help-list">
           <li>
             <strong>Rust</strong>, on Tokio and Axum. The simulation moves the world forward 20 times a second: needs,
-            routines, walking, conversations, fights (with blocks and dodges) and fires. It is deterministic, so the
-            same start and the same commands always give the same village.
+            routines, walking, conversations, fights (with blocks and dodges), fires and the weather. It is deterministic,
+            so the same start and the same commands always give the same village.
           </li>
           <li><strong>SQLite</strong> holds the world, its history and the settings, with Litestream for backups.</li>
           <li><strong>Server-sent events</strong> carry the world to each browser as one long-lived stream.</li>
@@ -44,7 +44,8 @@ export function AboutTechPanel() {
           <li><strong>Preact</strong> with signals for the panes, the chat and windows like this one.</li>
           <li>
             The 3D models are the <a href="https://kaylousberg.com" target="_blank" rel="noopener noreferrer">KayKit</a>{' '}
-            collection by Kay Lousberg (CC0); the sounds and music are CC0, public domain or CC BY.
+            collection by Kay Lousberg (CC0), with a few things made for the game in Blender in the same style, the
+            dragon among them; the sounds and music are CC0, public domain or CC BY.
           </li>
         </ul>
 

@@ -1,6 +1,7 @@
 //! Port of `src/sim/drama.test.ts`.
 
 use fsw_core::time::TICKS_PER_DAY;
+use fsw_core::vec2;
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
 use fsw_sim::data::anims::AnimId;
@@ -174,8 +175,12 @@ fn a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend() {
         picked += spiteful;
         let state = &sim.state;
         let id = |name: &str| living(state).find(|c| first_name(c) == name).map(|c| c.id.clone());
+        // Spite alone does not turn him on his friend; a brawl Dorn starts and wins can, as in any world.
         if let (Some(garrick), Some(dorn)) = (id("Garrick"), id("Dorn")) {
-            assert!(state.characters[&garrick].relationships[&dorn].affinity > 0.0, "seed {seed}");
+            let wronged = state.characters[&garrick].memories.iter().any(|m| m.text.starts_with("Dorn beat me"));
+            if !wronged {
+                assert!(state.characters[&garrick].relationships[&dorn].affinity > 0.0, "seed {seed}");
+            }
         }
     }
     assert!(picked >= 6, "only {picked} quarrels picked");
@@ -348,7 +353,7 @@ fn bjarke() -> NewVillager {
 /// Kills Isolde on day one and runs until the road brings someone, with `on_wanted` run when the sim asks for a
 /// description. Returns the world and the newcomer.
 fn lose_isolde_and_wait(seed: u32, on_wanted: impl Fn(&mut World)) -> (World, String) {
-    // A world where nobody else dies in the next few days, which would put the newcomer off.
+    // Another death in the meantime puts the newcomer off a day or so, so the road is given six days.
     let mut w = World::new(seed);
     w.run(10);
     let victim = w.who("Isolde");
@@ -359,7 +364,7 @@ fn lose_isolde_and_wait(seed: u32, on_wanted: impl Fn(&mut World)) -> (World, St
     }
     assert_eq!(adult_count(&w.sim.state), 12);
     let mut asked = false;
-    for _ in 0..TICKS_PER_DAY * 4 {
+    for _ in 0..TICKS_PER_DAY * 6 {
         if w.sim.state.director.arrivals > 0 {
             break;
         }
@@ -437,6 +442,35 @@ fn a_description_whose_name_is_taken_is_dropped_and_told_to_the_sim_arrives_at_o
         _ => None,
     });
     assert!(wanted.is_some_and(|deadline| newcomer.arrived_tick < deadline), "arrived before the patience ran out");
+}
+
+#[test]
+fn someone_hailed_on_the_way_somewhere_carries_on_there_after_the_chat() {
+    let mut w = World::new(8);
+    w.run(3);
+    let (a, b) = (w.who("Rowan"), w.who("Isolde"));
+    let set = |w: &mut World, id: &str, action: IntentAction| {
+        let epoch = w.sim.state.characters[id].epoch;
+        let intents = vec![Intent::new(action, IntentSource::Llm)];
+        w.sim.enqueue(Command::SetIntents { id: id.into(), epoch, intents });
+    };
+    set(&mut w, &b, IntentAction::GoTo { place_id: "docks".into() });
+    w.run(40);
+    assert!(!w.sim.state.characters[&b].act.path.is_empty(), "Isolde is on her way to the docks");
+    let near = w.sim.state.characters[&b].pos;
+    w.sim.state.characters.get_mut(&a).unwrap().pos = vec2(near.x + 1.5, near.z);
+    let talk = IntentAction::Talk { target_id: b.clone(), opener: "A word, Isolde.".into(), tone: TalkTone::Friendly };
+    set(&mut w, &a, talk);
+    let b_id = b.clone();
+    w.run_until(6000, move |w| {
+        w.events.iter().any(|e| matches!(e, SimEvent::ConversationEnded { b, .. } if *b == b_id))
+    });
+    let b_id = b.clone();
+    w.run_until(6000, move |w| w.sim.state.characters[&b_id].intent.is_none());
+    let docks = fsw_world::places::find_place("docks").unwrap().door;
+    let isolde = &w.sim.state.characters[&b];
+    assert!(isolde.intent.is_none(), "she got there in the end");
+    assert!(fsw_core::math2d::dist(isolde.pos, docks) < 3.0, "and is at the docks, not where she was hailed");
 }
 
 #[test]

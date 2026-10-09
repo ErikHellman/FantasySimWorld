@@ -84,8 +84,8 @@ fn a_raid_comes_up_the_west_road_on_schedule() {
     let due = next_raid_tick(&sim.state);
     let hour = game_time(due).hour;
     assert!((9.0..16.0).contains(&hour), "by day: {hour}");
-    run_until(&mut sim, 20, |s| s.raid.is_some());
-    let band = sim.state.raid.clone().expect("a war band");
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
+    let band = sim.state.war_band.clone().expect("a war band");
     assert_eq!(band.started_tick, due);
     assert!((3..=6).contains(&band.size), "{} orcs", band.size);
     let road = get_place("west_road");
@@ -102,7 +102,7 @@ fn a_raid_comes_up_the_west_road_on_schedule() {
     assert_eq!(sim.state.director.raids, 1);
 
     // The village hears of it soon after.
-    run_until(&mut sim, 30 * 20, |s| s.raid.as_ref().is_some_and(|b| b.warned));
+    run_until(&mut sim, 30 * 20, |s| s.war_band.as_ref().is_some_and(|b| b.warned));
     assert!(sim.state.director.alarm_raid, "the alarm is for raiders");
 }
 
@@ -113,7 +113,7 @@ fn no_raid_comes_while_a_house_burns_or_on_a_village_too_small_to_notice() {
     let home = sim.state.characters["c1"].home_id.clone();
     with(&mut sim, |ctx| ignite(ctx, &home));
     run_until(&mut sim, 20, |_| false);
-    assert!(sim.state.raid.is_none(), "not with a house on fire");
+    assert!(sim.state.war_band.is_none(), "not with a house on fire");
     assert_eq!(sim.state.director.next_raid_tick, due + TICKS_PER_DAY, "it waits for the next day");
 
     let mut sim = before_the_first_raid(24);
@@ -122,7 +122,7 @@ fn no_raid_comes_while_a_house_burns_or_on_a_village_too_small_to_notice() {
     sim.state.characters.retain(|id, _| keep.contains(id));
     sim.state.order.retain(|id| keep.contains(id));
     run_until(&mut sim, 20, |_| false);
-    assert!(sim.state.raid.is_none(), "five villagers are beneath a war band's notice");
+    assert!(sim.state.war_band.is_none(), "five villagers are beneath a war band's notice");
     assert_eq!(sim.state.director.next_raid_tick, due + TICKS_PER_DAY);
 }
 
@@ -132,7 +132,7 @@ fn raiders_plunder_coin_goods_and_materials_and_a_plundered_place_yields_nothing
     sim.state.economy.stock_up(ItemId::Food, 2);
     sim.state.economy.stock_up(ItemId::Gift, 4);
     sim.state.stockpiles.entry("market".into()).or_default().add(Resource::Wood, 8, i64::MAX);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
     let purse = sim.state.economy.purse;
     // One of them is set on the market, right at its door.
@@ -141,17 +141,17 @@ fn raiders_plunder_coin_goods_and_materials_and_a_plundered_place_yields_nothing
     {
         let m = sim.state.monsters.get_mut(&raider).unwrap();
         m.pos = door;
-        m.raid = Some(RaidOrder { target: Some("market".into()), ..Default::default() });
+        m.errand = Some(RaidOrder { target: Some("market".into()), ..Default::default() });
     }
     run_until(&mut sim, 60 * 20, |s| plundered(s, "market"));
     assert!(plundered(&sim.state, "market"));
-    let haul = &sim.state.monsters[&raider].raid.as_ref().unwrap().haul;
+    let haul = &sim.state.monsters[&raider].errand.as_ref().unwrap().haul;
     assert_eq!(haul.coins, purse.min(12), "coin from the chest");
     assert_eq!(sim.state.economy.purse, purse - haul.coins);
     assert_eq!(haul.goods.values().sum::<i64>(), 3, "three things off the stalls");
     assert_eq!(haul.materials.get(Resource::Wood), 8, "the market's wood");
     assert_eq!(haul.goods.get(&ItemId::Food), Some(&2), "food first, then what else the stalls hold");
-    assert!(sim.state.raid.as_ref().unwrap().plundered.contains(&"market".to_owned()));
+    assert!(sim.state.war_band.as_ref().unwrap().plundered.contains(&"market".to_owned()));
     assert!(sim.state.chronicle.iter().any(|e| e.text.starts_with("Orc raiders plundered the market")));
     let until = sim.state.plundered["market"];
     assert!(until - sim.state.tick <= TICKS_PER_DAY, "for a day");
@@ -178,19 +178,19 @@ fn raiders_plunder_coin_goods_and_materials_and_a_plundered_place_yields_nothing
 fn the_band_turns_for_home_with_its_loot_when_half_has_fallen_and_at_five() {
     // With its loot.
     let mut sim = before_the_first_raid(27);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
-    let size = sim.state.raid.as_ref().unwrap().size;
-    sim.state.raid.as_mut().unwrap().plundered = (0..size).map(|i| format!("place{i}")).collect();
+    let size = sim.state.war_band.as_ref().unwrap().size;
+    sim.state.war_band.as_mut().unwrap().plundered = (0..size).map(|i| format!("place{i}")).collect();
     sim.step();
-    assert!(sim.state.raid.as_ref().unwrap().leaving);
+    assert!(sim.state.war_band.as_ref().unwrap().leaving);
     for id in orcs(&sim.state) {
-        assert!(sim.state.monsters[&id].raid.as_ref().unwrap().leaving);
+        assert!(sim.state.monsters[&id].errand.as_ref().unwrap().leaving);
     }
 
     // With half of it fallen.
     let mut sim = before_the_first_raid(28);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
     let band = orcs(&sim.state);
     let killer = sim.state.order[0].clone();
@@ -198,21 +198,21 @@ fn the_band_turns_for_home_with_its_loot_when_half_has_fallen_and_at_five() {
         with(&mut sim, |ctx| damage_monster(ctx, id, 10_000, &killer));
     }
     sim.step();
-    assert!(sim.state.raid.as_ref().unwrap().leaving, "half the band has fallen");
+    assert!(sim.state.war_band.as_ref().unwrap().leaving, "half the band has fallen");
 
     // At five in the afternoon.
     let mut sim = before_the_first_raid(29);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
     sim.state.tick = tick_at(game_time(sim.state.tick).day, 17.0);
     sim.step();
-    assert!(sim.state.raid.as_ref().unwrap().leaving, "the band goes home at five");
+    assert!(sim.state.war_band.as_ref().unwrap().leaving, "the band goes home at five");
 }
 
 #[test]
 fn a_band_that_gets_away_keeps_its_plunder_and_a_fallen_raider_drops_it() {
     let mut sim = before_the_first_raid(30);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
     let haul = || {
         let mut haul = Haul { coins: 7, ..Default::default() };
@@ -223,7 +223,7 @@ fn a_band_that_gets_away_keeps_its_plunder_and_a_fallen_raider_drops_it() {
     let band = orcs(&sim.state);
     let (fallen, away) = (band[0].clone(), band[1].clone());
     for id in [&fallen, &away] {
-        sim.state.monsters.get_mut(id).unwrap().raid = Some(RaidOrder { haul: haul(), ..Default::default() });
+        sim.state.monsters.get_mut(id).unwrap().errand = Some(RaidOrder { haul: haul(), ..Default::default() });
     }
 
     // One falls, on the green, away from the rest: its plunder lies where it fell.
@@ -261,11 +261,11 @@ fn a_band_that_gets_away_keeps_its_plunder_and_a_fallen_raider_drops_it() {
     // The rest run for the road; what they carry is gone with them.
     for id in orcs(&sim.state) {
         let m = sim.state.monsters.get_mut(&id).unwrap();
-        m.raid.get_or_insert_with(RaidOrder::default).leaving = true;
+        m.errand.get_or_insert_with(RaidOrder::default).leaving = true;
         m.pos = get_place("west_road").origin;
     }
-    run_until(&mut sim, 120 * 20, |s| s.raid.is_none());
-    assert!(sim.state.raid.is_none(), "the band is gone");
+    run_until(&mut sim, 120 * 20, |s| s.war_band.is_none());
+    assert!(sim.state.war_band.is_none(), "the band is gone");
     assert!(orcs(&sim.state).is_empty());
     let last = sim.state.chronicle.iter().rev().find(|e| e.text.contains("carried off")).expect("the news");
     assert!(last.text.contains("7 coins") && last.text.contains("2 food"), "{}", last.text);
@@ -274,7 +274,7 @@ fn a_band_that_gets_away_keeps_its_plunder_and_a_fallen_raider_drops_it() {
 #[test]
 fn raiders_neither_crumble_nor_are_buried_and_lie_where_they_fall() {
     let mut sim = before_the_first_raid(31);
-    run_until(&mut sim, 20, |s| s.raid.is_some());
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
     shut_in(&mut sim.state);
     run_until(&mut sim, 200, |_| false);
     assert!(orcs(&sim.state).iter().all(|id| sim.state.monsters[id].phase != MonsterPhase::Dying), "daylight");
@@ -294,9 +294,9 @@ fn raiders_neither_crumble_nor_are_buried_and_lie_where_they_fall() {
 #[test]
 fn a_save_in_the_middle_of_a_raid_comes_back_as_it_was() {
     let mut sim = before_the_first_raid(32);
-    run_until(&mut sim, 30 * 20, |s| s.raid.as_ref().is_some_and(|b| b.warned));
+    run_until(&mut sim, 30 * 20, |s| s.war_band.as_ref().is_some_and(|b| b.warned));
     run_until(&mut sim, 200, |_| false);
-    assert!(sim.state.raid.is_some());
+    assert!(sim.state.war_band.is_some());
     let json = serde_json::to_string(&sim.state).unwrap();
     let loaded: SimState = serde_json::from_str(&json).unwrap();
     assert!(loaded == sim.state);
@@ -319,8 +319,8 @@ fn a_called_raid_comes_at_once_by_day_at_nine_by_night_and_never_twice() {
     sim.state.characters.retain(|id, _| keep.contains(id));
     sim.state.order.retain(|id| keep.contains(id));
     sim.enqueue(Command::CallRaid);
-    run_until(&mut sim, 3, |s| s.raid.is_some());
-    assert!(sim.state.raid.is_some(), "the band comes when it is called");
+    run_until(&mut sim, 3, |s| s.war_band.is_some());
+    assert!(sim.state.war_band.is_some(), "the band comes when it is called");
     assert!(!sim.state.director.raid_called);
     // A second call while it is in the valley is ignored.
     sim.enqueue(Command::CallRaid);
@@ -332,9 +332,35 @@ fn a_called_raid_comes_at_once_by_day_at_nine_by_night_and_never_twice() {
     sim.state.tick = tick_at(2, 22.0);
     sim.enqueue(Command::CallRaid);
     sim.step();
-    assert!(sim.state.director.raid_called && sim.state.raid.is_none());
-    let came = run_until(&mut sim, TICKS_PER_DAY, |s| s.raid.is_some());
+    assert!(sim.state.director.raid_called && sim.state.war_band.is_none());
+    let came = run_until(&mut sim, TICKS_PER_DAY, |s| s.war_band.is_some());
     assert!(came < TICKS_PER_DAY);
-    let hour = game_time(sim.state.raid.as_ref().unwrap().started_tick).hour;
+    let hour = game_time(sim.state.war_band.as_ref().unwrap().started_tick).hour;
     assert!((9.0..9.1).contains(&hour), "at nine: {hour}");
+}
+
+#[test]
+fn nobody_slain_by_a_raider_comes_back_as_a_ghost() {
+    use fsw_sim::state::FightMode;
+    use fsw_sim::systems::combat::{Assailant, damage_character};
+    use fsw_sim::systems::ghosts::returns;
+
+    let mut sim = before_the_first_raid(35);
+    run_until(&mut sim, 20, |s| s.war_band.is_some());
+    let raider = orcs(&sim.state)[0].clone();
+    // Someone the ghosts would take back, were it one of the dead that killed them.
+    let seed = sim.state.seed;
+    let victim = sim
+        .state
+        .order
+        .iter()
+        .find(|id| returns(seed, id) && !sim.state.characters[*id].is_child())
+        .cloned()
+        .expect("one who would return");
+    with(&mut sim, |ctx| {
+        let by = Assailant { id: raider.clone(), label: "orc raider".into(), character: None };
+        damage_character(ctx, &victim, 10_000, by, FightMode::Monster)
+    });
+    assert!(!sim.state.characters.contains_key(&victim));
+    assert!(sim.state.ghosts.is_empty(), "orcs are not the dead");
 }

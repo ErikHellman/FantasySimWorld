@@ -6,16 +6,16 @@
 //! Nothing here draws from the RNG. A world that has never traded holds the starting chest and
 //! nothing on the stalls, and this module changes nothing in it until someone sells, buys or is paid.
 
-use fsw_core::Vec2;
 use fsw_core::math2d::dist;
 use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE};
+use fsw_core::{Vec2, vec2};
 
 use fsw_world::places::{PadKind, find_place, pads};
 
 use crate::data::activities::ITEM_CAP;
 use crate::data::economy::{
-    BUILD_WAGE, EXPAND_PRICE, LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100,
+    BUILD_WAGE, DRAGON_HOARD, EXPAND_PRICE, LOOT_COINS_LEAST, LOOT_COINS_OF_100, LOOT_DAYS, LOOT_NOTHING_OF_100,
     MAX_WAGE_PER_DEPOSIT, SELLER_KEEPS_FOOD_BELOW, TRADE_REACH, TRADER_HOUR, YARD_KINDS, base_price, keeps,
     market_float, material_price, material_reserve, price, yard_price,
 };
@@ -387,10 +387,22 @@ pub fn pay_builders(ctx: &mut Ctx, project: &Project) {
 }
 
 /// One of the dead has fallen: what it leaves is fixed by the monster and the tick, so every machine
-/// agrees and the RNG is not drawn. The necromancer and the golem always leave a relic. The killer is told.
+/// agrees and the RNG is not drawn. The necromancer and the golem always leave a relic; the dragon, its hoard.
+/// The killer is told.
 pub fn drop_loot(ctx: &mut Ctx, monster_id: &str, kind: MonsterKind, pos: Vec2, killer: &str) {
     let tick = ctx.tick();
     let roll = hash_string(&format!("{monster_id}@{tick}"));
+    if kind == MonsterKind::Dragon {
+        let coins = LootKind::Coins { count: DRAGON_HOARD + i64::from(roll % 11) };
+        for (left, offset) in [(LootKind::Relic, 1.2), (coins, -1.2)] {
+            let id = ctx.state.new_id("l:");
+            ctx.state.loot.insert(id, Loot { kind: left, pos: vec2(pos.x + offset, pos.z), since_tick: tick });
+        }
+        let text = format!("The dragon's hoard spilled where it fell, at {}: {}.", place_name_at(pos), coins.label());
+        ctx.remember(killer, text.clone(), 5.0, MemoryKind::Event, Vec::new());
+        ctx.stimulate(killer, StimulusKind::Loot, text, 0, None);
+        return;
+    }
     let left = if matches!(kind, MonsterKind::Necromancer | MonsterKind::SkeletonGolem) {
         LootKind::Relic
     } else {

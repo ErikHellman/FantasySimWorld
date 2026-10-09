@@ -532,6 +532,9 @@ pub struct Relationship {
     pub last_talk_tick: i64,
     /// tick of the last thing that made this character angry at the other
     pub last_offence_tick: i64,
+    /// tick the other last stood in this character's way (`systems::blocking`); left out of saves until then
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_blocked_tick: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -621,6 +624,8 @@ pub enum IntentAction {
         mode: FightMode,
     },
     Flee,
+    /// goes home (or to the tavern) out of the weather and stays in until it passes; see `systems::weather`
+    Shelter,
     Wait {
         minutes: f64,
     },
@@ -719,6 +724,7 @@ impl IntentAction {
             Self::Give { .. } => "give",
             Self::Fight { .. } => "fight",
             Self::Flee => "flee",
+            Self::Shelter => "shelter",
             Self::Wait { .. } => "wait",
             Self::Nap { .. } => "nap",
             Self::Stalk { .. } => "stalk",
@@ -840,6 +846,8 @@ pub enum StimulusKind {
     Music,
     /// something the dead left lying where they fell
     Loot,
+    /// the weather turning, for those who care for it or mind it, and hail on their heads
+    Weather,
 }
 
 /// Something that just happened to a character and may deserve a decision.
@@ -977,6 +985,31 @@ pub struct Character {
     /// in good spirits after a fine tune until this tick (`systems::music`); 0 when not
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub heartened_until_tick: i64,
+    /// brushing past someone who stood in the way (`systems::blocking`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passing: Option<Passing>,
+    /// stepping out of someone's way (`systems::blocking`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidestep: Option<Sidestep>,
+}
+
+/// A walker brushing past the one who stood in their way: the two are not pushed apart until `until_tick`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Passing {
+    pub id: Id,
+    pub until_tick: i64,
+}
+
+/// A short step out of a walker's way, after which the one stepping takes up what they were doing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sidestep {
+    pub to: Vec2,
+    /// the animation to go back to once out of the way
+    pub anim: AnimId,
+    /// given up after this tick, in case something keeps them from getting there
+    pub until_tick: i64,
 }
 
 impl Character {
@@ -1126,6 +1159,8 @@ pub enum MonsterOrigin {
     Turned,
     /// came up the west road with a war band
     Road,
+    /// the dragon, out of the sky
+    Sky,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1203,10 +1238,16 @@ pub struct Monster {
     pub defend_ready_tick: i64,
     /// an orc's orders in a raid; see `systems::raids`
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raid: Option<RaidOrder>,
+    pub errand: Option<RaidOrder>,
     /// a boss's: every villager who has struck it, for the chronicle when it falls
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub foes: Vec<Id>,
+    /// how high above the ground it flies, in metres; only the dragon leaves the ground
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub alt: f64,
+    /// the dragon's plan for its visit
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raid: Option<Raid>,
 }
 
 /// What one raider is about: the place it means to plunder, and what it carries off.
@@ -1307,6 +1348,114 @@ pub struct Band {
     /// the orc warchief who leads it, if one does; one of `members`, but not counted in `size`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warchief: Option<Id>,
+}
+
+/// Where the dragon is in its visit: flying in at a home, hanging over the village, or flying off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RaidPhase {
+    Strafe,
+    Hover,
+    Leave,
+}
+
+/// The dragon's visit: the homes it means to burn, in order, and where it leaves the valley.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Raid {
+    pub phase: RaidPhase,
+    /// home place ids, in the order it goes for them
+    pub targets: Vec<String>,
+    /// how many of `targets` it has already been to
+    pub done: usize,
+    /// what it hangs over between passes
+    pub hover: Vec2,
+    /// where it flies off to, off the map
+    pub exit: Vec2,
+    /// when it next breathes on someone below, while it hovers
+    pub next_breath_tick: i64,
+    /// when it moves on from hovering, if nobody is shooting at it
+    pub until_tick: i64,
+    /// the latest it stays to fight those shooting at it
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub last_tick: i64,
+    /// where the breath under way lands, and the home it sets alight (if it is a pass)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim: Option<Vec2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aim_home: Option<String>,
+}
+
+/// Where a ghost is in its few nights among the living. See `systems::ghosts`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GhostPhase {
+    /// dead, and not yet risen
+    Waiting,
+    /// walking the village by night
+    Abroad,
+    /// by its grave, unseen, until dusk
+    Resting,
+    /// at its last dawn, a moment before it is gone
+    Fading,
+}
+
+impl GhostPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Waiting => "waiting",
+            Self::Abroad => "abroad",
+            Self::Resting => "resting",
+            Self::Fading => "fading",
+        }
+    }
+}
+
+/// A villager slain by the dead who came back for a few nights: seen only after dark, a fright and a chill to
+/// whoever meets it, and harmless to the world otherwise. Nobody can fight one; it finds rest on its own.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ghost {
+    pub id: Id,
+    /// the villager it was
+    pub was_id: Id,
+    /// their full name
+    pub name: String,
+    pub look: Look,
+    pub pos: Vec2,
+    pub facing: f64,
+    pub moving: bool,
+    pub phase: GhostPhase,
+    pub since_tick: i64,
+    /// the earliest tick it may rise again
+    pub rise_tick: i64,
+    /// nights still to walk; 0 until it first rises
+    pub nights_left: i64,
+    /// where it waits by day: by its grave, or where it fell when it has none
+    pub rest: Vec2,
+    /// where it fell
+    pub fell: Vec2,
+    /// the homes it haunts: its own first, then those of the ones it loved
+    pub haunts: Vec<String>,
+    /// the living it was close to, who grieve rather than run when they see it
+    pub close: Vec<Id>,
+    pub path: Vec<Vec2>,
+    pub repath_tick: i64,
+    /// lingering where it stands until this tick
+    pub linger_until_tick: i64,
+    /// the home it lingers at, whose sleepers it troubles
+    pub lingering_at: Option<String>,
+    pub next_haunt_tick: i64,
+    /// the living one it drifts after
+    pub target_id: Option<Id>,
+    /// leaves the living alone until this tick, after it has passed through someone
+    pub calm_until_tick: i64,
+    /// who has met it, and the tick they last did
+    pub seen: IndexMap<Id, i64>,
+    /// the last night it was seen, so the chronicle tells of it once a night
+    pub sighted_night: i64,
+    pub anim: AnimId,
+    pub anim_seq: i64,
 }
 
 /// A monster's plan to burn a house while the village sleeps.
@@ -1818,6 +1967,12 @@ pub struct Director {
     /// the night from which a skeleton golem may rise; 0 until the first has (it comes from night 10)
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_golem_night: i64,
+    /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub next_dragon_tick: i64,
+    /// the alarm was raised for the dragon, not the dead
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub alarm_dragon: bool,
 }
 
 /// The size of the founding cast before it grew; worlds saved without a target keep it.
@@ -1841,6 +1996,87 @@ pub struct Tuning {
     pub script_wait_ticks: i64,
     /// ticks an attacker waits for a spare / finish decision
     pub mercy_wait_ticks: i64,
+}
+
+/// What the sky is doing; see `systems::weather`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherKind {
+    #[default]
+    Clear,
+    Rain,
+    Wind,
+    Hail,
+}
+
+impl WeatherKind {
+    pub const ALL: [WeatherKind; 4] = [Self::Clear, Self::Rain, Self::Wind, Self::Hail];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Clear => "clear",
+            Self::Rain => "rain",
+            Self::Wind => "wind",
+            Self::Hail => "hail",
+        }
+    }
+
+    /// Water falling from the sky, which keeps fires down.
+    pub fn wet(self) -> bool {
+        matches!(self, Self::Rain | Self::Hail)
+    }
+}
+
+/// A stretch of one kind of weather, as rolled: how hard it comes on, the wind with it, and when it ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Spell {
+    pub kind: WeatherKind,
+    /// how hard it rains, hails or blows at its height, 0..1
+    pub strength: f64,
+    /// the wind that comes with it, 0..1
+    pub wind: f64,
+    /// the way the wind blows toward, in radians from +x toward +z
+    pub wind_dir: f64,
+    pub until_tick: i64,
+}
+
+/// The weather over the valley. It moves toward the current spell a little each game minute, so rain
+/// comes on and dies away rather than starting and stopping; a change of kind lets the old one die
+/// away first. A world that has never seen weather is clear and calm, and is left out of a save.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// how hard it is raining, hailing or blowing right now, 0..1; 0 under a clear sky
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub intensity: f64,
+    /// what `intensity` is moving toward
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub target: f64,
+    /// the wind right now, 0..1, whatever the kind
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind_target: f64,
+    /// the way the wind blows toward, in radians from +x toward +z
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub wind_dir: f64,
+    /// the tick the current kind set in
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub since_tick: i64,
+    /// when the current spell ends and the next is rolled; 0 before the first
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub until_tick: i64,
+    /// the spell waiting for the current kind to die away
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<Spell>,
+}
+
+impl Weather {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1893,10 +2129,16 @@ pub struct SimState {
     pub loot: IndexMap<String, Loot>,
     /// the orc war band in the valley, if one is
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raid: Option<Band>,
+    pub war_band: Option<Band>,
     /// place id -> the tick it recovers from being plundered; until then work there yields no goods
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub plundered: IndexMap<String, i64>,
+    /// the weather over the valley; see [`Weather`] and `systems::weather`
+    #[serde(default, skip_serializing_if = "Weather::is_default")]
+    pub weather: Weather,
+    /// villagers slain by the dead who walk again for a few nights, by id (`g<n>`); see [`Ghost`]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub ghosts: Map<Ghost>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,

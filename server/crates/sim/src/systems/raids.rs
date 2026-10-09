@@ -75,7 +75,7 @@ pub fn plundered(state: &SimState, place_id: &str) -> bool {
 
 /// Whether an orc war band is in the valley.
 pub fn raid_on(state: &SimState) -> bool {
-    state.raid.is_some()
+    state.war_band.is_some()
 }
 
 /// When the first raid of a world is due: fixed by its seed, so nothing is drawn for it.
@@ -97,7 +97,7 @@ pub fn next_raid_tick(state: &SimState) -> i64 {
 /// An admin's call: the next raid comes as soon as it may. False when one is already on or on its way.
 pub fn call_raid(ctx: &mut Ctx) -> bool {
     let director = &ctx.state.director;
-    if director.founding || director.raid_called || ctx.state.raid.is_some() {
+    if director.founding || director.raid_called || ctx.state.war_band.is_some() {
         return false;
     }
     ctx.state.director.raid_called = true;
@@ -111,7 +111,7 @@ pub fn update_raids(ctx: &mut Ctx) {
     if tick % TICKS_PER_GAME_MINUTE == 0 && !ctx.state.plundered.is_empty() {
         ctx.state.plundered.retain(|_, until| *until > tick);
     }
-    if ctx.state.raid.is_some() {
+    if ctx.state.war_band.is_some() {
         run_band(ctx);
         return;
     }
@@ -176,7 +176,7 @@ fn spawn_band(ctx: &mut Ctx) {
         if !chief && (looks / 2).is_multiple_of(3) {
             m.look.hide.push("Orc_Warpack".into());
         }
-        m.raid = Some(RaidOrder::default());
+        m.errand = Some(RaidOrder::default());
         max_hp += kind.def().max_hp;
         members.push(id);
     }
@@ -186,7 +186,7 @@ fn spawn_band(ctx: &mut Ctx) {
     director.next_raid_tick = tick_at(day + gap, hour);
     director.raids += 1;
     director.raid_called = false;
-    ctx.state.raid = Some(Band {
+    ctx.state.war_band = Some(Band {
         started_tick: tick,
         size,
         members,
@@ -212,11 +212,11 @@ fn standing(state: &SimState, band: &Band) -> Vec<Id> {
 
 fn run_band(ctx: &mut Ctx) {
     let tick = ctx.tick();
-    let Some(band) = ctx.state.raid.as_ref() else { return };
+    let Some(band) = ctx.state.war_band.as_ref() else { return };
     if !band.warned && !band.leaving && tick >= band.started_tick + seconds_to_ticks(WARNING_SECONDS) {
         warn(ctx);
     }
-    let Some(band) = ctx.state.raid.as_ref() else { return };
+    let Some(band) = ctx.state.war_band.as_ref() else { return };
     let up = standing(ctx.state, band);
     if up.is_empty() {
         end_raid(ctx);
@@ -244,14 +244,14 @@ fn run_band(ctx: &mut Ctx) {
 
 /// The band makes for the road, every one of it.
 pub fn turn_for_home(ctx: &mut Ctx) {
-    let Some(band) = ctx.state.raid.as_mut() else { return };
+    let Some(band) = ctx.state.war_band.as_mut() else { return };
     if band.leaving {
         return;
     }
     band.leaving = true;
-    let up = standing(ctx.state, ctx.state.raid.as_ref().expect("a band"));
+    let up = standing(ctx.state, ctx.state.war_band.as_ref().expect("a band"));
     for id in &up {
-        let order = ctx.m(id).raid.get_or_insert_with(RaidOrder::default);
+        let order = ctx.m(id).errand.get_or_insert_with(RaidOrder::default);
         order.leaving = true;
         order.target = None;
         order.work_until_tick = 0;
@@ -263,11 +263,11 @@ pub fn turn_for_home(ctx: &mut Ctx) {
 /// The village hears of the band: a shout, the alarm, and everyone knows.
 fn warn(ctx: &mut Ctx) {
     let tick = ctx.tick();
-    let Some(band) = ctx.state.raid.as_mut() else { return };
+    let Some(band) = ctx.state.war_band.as_mut() else { return };
     band.warned = true;
     let size = band.size;
     let led = band.warchief.is_some();
-    let up = standing(ctx.state, ctx.state.raid.as_ref().expect("a band"));
+    let up = standing(ctx.state, ctx.state.war_band.as_ref().expect("a band"));
     let road = get_place("west_road");
     let pos = up.first().map_or(road.door, |id| ctx.state.monsters[id].pos);
     // Unless someone has seen them already and shouted it, the news comes up the road ahead of them.
@@ -295,7 +295,7 @@ fn warn(ctx: &mut Ctx) {
 }
 
 fn end_raid(ctx: &mut Ctx) {
-    let Some(band) = ctx.state.raid.take() else { return };
+    let Some(band) = ctx.state.war_band.take() else { return };
     let names: Vec<String> =
         band.plundered.iter().map(|id| find_place(id).map_or_else(|| id.clone(), |p| p.name.to_owned())).collect();
     let places = join_names(&names);
@@ -319,14 +319,14 @@ fn end_raid(ctx: &mut Ctx) {
 /// A raider reaches the edge of the valley and is gone, with whatever it carries.
 fn vanish(ctx: &mut Ctx, id: &str) {
     let Some(m) = ctx.state.monsters.shift_remove(id) else { return };
-    if let (Some(band), Some(order)) = (ctx.state.raid.as_mut(), m.raid) {
+    if let (Some(band), Some(order)) = (ctx.state.war_band.as_mut(), m.errand) {
         band.carried_off.add(&order.haul);
     }
 }
 
 /// A raider has fallen: one fewer in the band. When it is the warchief, the band breaks and makes for home.
 pub fn on_fallen(ctx: &mut Ctx, id: &str) {
-    let Some(band) = ctx.state.raid.as_mut() else { return };
+    let Some(band) = ctx.state.war_band.as_mut() else { return };
     if band.warchief.as_deref() == Some(id) {
         turn_for_home(ctx);
     } else {
@@ -366,7 +366,7 @@ fn choose_target(state: &SimState, id: &str) -> Option<String> {
         .monsters
         .values()
         .filter(|o| o.id != id)
-        .filter_map(|o| o.raid.as_ref().and_then(|r| r.target.as_deref()))
+        .filter_map(|o| o.errand.as_ref().and_then(|r| r.target.as_deref()))
         .collect();
     let empty_home =
         |home: &str| !state.houses.contains_key(home) && !living(state).any(|c| c.inside.as_deref() == Some(home));
@@ -423,11 +423,11 @@ fn plunder(ctx: &mut Ctx, id: &str, place_id: &str) {
     let m = ctx.m(id);
     let idle = m.kind.def().anims.idle;
     set_anim(m, idle, false);
-    let order = m.raid.get_or_insert_with(RaidOrder::default);
+    let order = m.errand.get_or_insert_with(RaidOrder::default);
     order.haul.add(&taken);
     order.target = None;
     order.work_until_tick = 0;
-    if let Some(band) = ctx.state.raid.as_mut()
+    if let Some(band) = ctx.state.war_band.as_mut()
         && !band.plundered.iter().any(|p| p == place_id)
     {
         band.plundered.push(place_id.to_owned());
@@ -466,12 +466,12 @@ fn walk_to(ctx: &mut Ctx, id: &str, goal: Vec2, speed_share: f64) -> Option<bool
 fn look_about(ctx: &mut Ctx, id: &str) {
     let m = &ctx.state.monsters[id];
     let def = m.kind.def();
-    let order = m.raid.clone().unwrap_or_default();
+    let order = m.errand.clone().unwrap_or_default();
     let beaten = m.hp < def.max_hp * ROUT_SHARE;
     if beaten && !band_mate_near(ctx.state, id, m.pos) {
         // Routed: it runs for the road and stops for nobody.
         let m = ctx.m(id);
-        let order = m.raid.get_or_insert_with(RaidOrder::default);
+        let order = m.errand.get_or_insert_with(RaidOrder::default);
         order.leaving = true;
         order.target = None;
         order.work_until_tick = 0;
@@ -499,7 +499,7 @@ fn look_about(ctx: &mut Ctx, id: &str) {
         let m = ctx.m(id);
         m.phase = MonsterPhase::Chase;
         m.target_id = Some(found);
-        let order = m.raid.get_or_insert_with(RaidOrder::default);
+        let order = m.errand.get_or_insert_with(RaidOrder::default);
         order.work_until_tick = 0;
     }
 }
@@ -527,7 +527,7 @@ pub fn update_orc(ctx: &mut Ctx, id: &str) {
         m.target_id = None;
     }
 
-    let order = ctx.state.monsters[id].raid.clone().unwrap_or_default();
+    let order = ctx.state.monsters[id].errand.clone().unwrap_or_default();
     if order.leaving {
         let exit = exit_point(ctx.state);
         // A routed raider runs; the rest walk off with their plunder.
@@ -541,7 +541,7 @@ pub fn update_orc(ctx: &mut Ctx, id: &str) {
 
     if order.work_until_tick > 0 {
         let Some(target) = order.target else {
-            ctx.m(id).raid.get_or_insert_with(RaidOrder::default).work_until_tick = 0;
+            ctx.m(id).errand.get_or_insert_with(RaidOrder::default).work_until_tick = 0;
             return;
         };
         if tick >= order.work_until_tick {
@@ -556,12 +556,12 @@ pub fn update_orc(ctx: &mut Ctx, id: &str) {
         Some(target) => target,
         None => match choose_target(ctx.state, id) {
             Some(target) => {
-                ctx.m(id).raid.get_or_insert_with(RaidOrder::default).target = Some(target.clone());
+                ctx.m(id).errand.get_or_insert_with(RaidOrder::default).target = Some(target.clone());
                 target
             }
             None => {
                 // Nothing left worth taking: home.
-                ctx.m(id).raid.get_or_insert_with(RaidOrder::default).leaving = true;
+                ctx.m(id).errand.get_or_insert_with(RaidOrder::default).leaving = true;
                 return;
             }
         },
@@ -574,10 +574,10 @@ pub fn update_orc(ctx: &mut Ctx, id: &str) {
             let m = ctx.m(id);
             face(m, origin);
             set_anim(m, AnimId::Interact, true);
-            m.raid.get_or_insert_with(RaidOrder::default).work_until_tick = tick + seconds_to_ticks(PLUNDER_SECONDS);
+            m.errand.get_or_insert_with(RaidOrder::default).work_until_tick = tick + seconds_to_ticks(PLUNDER_SECONDS);
         }
         // No way there: this raider gives up and goes home.
-        None => ctx.m(id).raid.get_or_insert_with(RaidOrder::default).leaving = true,
+        None => ctx.m(id).errand.get_or_insert_with(RaidOrder::default).leaving = true,
     }
 }
 
@@ -586,5 +586,6 @@ pub fn foe_noun(faction: Faction) -> &'static str {
     match faction {
         Faction::Undead => "the dead",
         Faction::Orc => "the raiders",
+        Faction::Dragon => "the dragon",
     }
 }

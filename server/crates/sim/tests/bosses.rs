@@ -196,7 +196,7 @@ fn the_warchief_leads_every_third_raid_from_day_12_and_his_fall_breaks_the_band(
         c.intent = Some(Intent::new(IntentAction::Wait { minutes: 900.0 }, IntentSource::Routine));
     }
     run(&mut sim, 5);
-    let band = sim.state.raid.clone().expect("a band");
+    let band = sim.state.war_band.clone().expect("a band");
     let chief = band.warchief.clone().expect("led by a warchief");
     assert_eq!(sim.state.monsters[&chief].kind, MonsterKind::OrcWarchief);
     assert!(band.members.contains(&chief));
@@ -204,7 +204,7 @@ fn the_warchief_leads_every_third_raid_from_day_12_and_his_fall_breaks_the_band(
 
     let killer = sim.state.order[0].clone();
     with(&mut sim, |ctx| damage_monster(ctx, &chief, 10_000, &killer));
-    let band = sim.state.raid.as_ref().unwrap();
+    let band = sim.state.war_band.as_ref().unwrap();
     assert!(band.leaving, "with the warchief fallen the band breaks");
     assert_eq!(band.fallen, 0, "and he is not one of its fallen");
 
@@ -215,14 +215,14 @@ fn the_warchief_leads_every_third_raid_from_day_12_and_his_fall_breaks_the_band(
     sim.state.director.next_raid_tick = tick_at(12, 10.0);
     sim.state.tick = next_raid_tick(&sim.state) - 2;
     run(&mut sim, 5);
-    assert!(sim.state.raid.as_ref().unwrap().warchief.is_none());
+    assert!(sim.state.war_band.as_ref().unwrap().warchief.is_none());
     let mut sim = quiet(46);
     at_least_ten(&mut sim);
     sim.state.director.raids = 2;
     sim.state.director.next_raid_tick = tick_at(8, 10.0);
     sim.state.tick = next_raid_tick(&sim.state) - 2;
     run(&mut sim, 5);
-    assert!(sim.state.raid.as_ref().unwrap().warchief.is_none(), "not before day 12");
+    assert!(sim.state.war_band.as_ref().unwrap().warchief.is_none(), "not before day 12");
     assert!(game_time(sim.state.tick).day < 12);
 }
 

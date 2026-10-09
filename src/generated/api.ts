@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 12;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -55,7 +55,7 @@ speed: number, protocolVersion: number,
  */
 worldHash: string, viewers: number, role: Role, };
 
-export type EntityKind = "villager" | "monster" | "corpse";
+export type EntityKind = "villager" | "monster" | "corpse" | "ghost";
 
 /**
  * How a character or monster is drawn (the sim's `Look`).
@@ -136,14 +136,18 @@ act: string | null,
 /**
  * asleep
  */
-z: boolean, };
+z: boolean, 
+/**
+ * height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
+ */
+y?: number, };
 
 export type Entity = { static: EntityStatic, dyn: Dyn, };
 
 /**
  * The fields of [`Dyn`] that changed this tick; absent means unchanged.
  */
-export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, };
+export type DynDelta = { id: string, p?: [number, number], f?: number, a?: [string, number], hp?: number, v?: boolean, mh?: string | null, oh?: string | null, act?: string | null, z?: boolean, y?: number | null, };
 
 /**
  * One `tick` event per sim tick. Empty lists are left out.
@@ -209,7 +213,11 @@ economy: Economy,
 /**
  * what the dead left lying about
  */
-loot: Array<Loot>, };
+loot: Array<Loot>, 
+/**
+ * what the sky is doing
+ */
+weather: Weather, };
 
 export type WorldReset = { 
 /**
@@ -219,7 +227,7 @@ reason: string, };
 
 export type Emote = "heart" | "anger" | "alert" | "thinking" | "sleep" | "grief" | "laugh" | "broken_heart" | "gift" | "music";
 
-export type Ranged = "arrow" | "bolt" | "magic" | "food";
+export type Ranged = "arrow" | "bolt" | "magic" | "food" | "fire";
 
 /**
  * How a blow ended for the one it was aimed at.
@@ -260,7 +268,7 @@ export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id
 /**
  * left out when the blow simply landed
  */
-outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, };
+outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -417,6 +425,25 @@ gone: boolean, };
 
 export type LootKind = "coins" | "trinket" | "relic" | "goods" | "materials";
 
+export type WeatherKind = "clear" | "rain" | "wind" | "hail";
+
+/**
+ * What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+ */
+export type Weather = { kind: WeatherKind, 
+/**
+ * how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+ */
+intensity: number, 
+/**
+ * the wind, whatever the kind, 0..100 in steps of 5
+ */
+wind: number, 
+/**
+ * the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+ */
+windDir: number, };
+
 /**
  * Raw materials in a villager's arms.
  */
@@ -443,7 +470,15 @@ export type Status = { llm: LlmStatus, viewers: number, speed: number,
 /**
  * the world is held at 1x because the model has a backlog
  */
-throttled: boolean, population: number, monsters: number, alarm: boolean, 
+throttled: boolean, population: number, 
+/**
+ * the dead abroad
+ */
+monsters: number, 
+/**
+ * the dragon is over the valley
+ */
+dragon: boolean, alarm: boolean, 
 /**
  * an orc war band is in the valley
  */
@@ -574,6 +609,10 @@ was: string | null,
  */
 lasting: boolean, 
 /**
+ * one of the walking dead (false for the dragon)
+ */
+undead: boolean, 
+/**
  * villagers it has slain
  */
 kills: number, 
@@ -586,7 +625,7 @@ blows: number,
  */
 damage: [number, number], 
 /**
- * one of the dead, or an orc raider
+ * one of the dead, an orc raider, or the dragon
  */
 faction: MonsterFaction, 
 /**
@@ -598,12 +637,41 @@ carrying: string | null,
  */
 boss: boolean, };
 
-export type MonsterFaction = "undead" | "orc";
+/**
+ * The inspector for a ghost, every label rendered on the server.
+ */
+export type GhostDetail = { id: string, 
+/**
+ * the full name of the villager it was
+ */
+name: string, 
+/**
+ * the villager it was
+ */
+wasId: string, 
+/**
+ * the day they died
+ */
+diedDay: number, 
+/**
+ * how they died, e.g. "slain by a Skeleton Warrior at the green"
+ */
+cause: string, 
+/**
+ * what it is doing now, e.g. "Haunting the village near the well"
+ */
+status: string, 
+/**
+ * nights it still has to walk, counting tonight; 0 before it first rises
+ */
+nightsLeft: number, };
+
+export type MonsterFaction = "undead" | "orc" | "dragon";
 
 /**
  * What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
  */
-export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail;
+export type Detail = { "kind": "villager" } & CharacterDetail | { "kind": "monster" } & MonsterDetail | { "kind": "ghost" } & GhostDetail;
 
 /**
  * What a site is: a place's building, or something the village put up on a pad.

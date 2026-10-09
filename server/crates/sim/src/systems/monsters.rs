@@ -1,4 +1,4 @@
-//! The walking dead: rising, roaming, chasing, striking, crumbling at dawn.
+//! The walking dead: rising, roaming, chasing, striking, crumbling at dawn. (The dragon is in `dragon`.)
 
 use fsw_core::jsmath::{cos, sin};
 use fsw_core::math2d::{clamp, dist};
@@ -14,6 +14,7 @@ use crate::events::HitOutcome;
 use crate::events::{Projectile, SimEvent};
 use crate::state::{ChronicleKind, Corpse, FightMode, Id, Look, Monster, MonsterOrigin, MonsterPhase, SimState};
 use crate::systems::combat::{Assailant, Blow, damage_character_with, villager_defends};
+use crate::systems::dragon::update_dragon;
 use crate::systems::fire::arson;
 use crate::systems::movement::{advance, face, route_to};
 use crate::systems::raids::{ORC_CORPSE_MINUTES, update_orc};
@@ -70,12 +71,14 @@ pub fn spawn_monster(ctx: &mut Ctx, kind: MonsterKind, pos: Vec2, facing: f64, o
         kills: 0,
         blows: 0,
         defend_ready_tick: 0,
-        raid: None,
+        errand: None,
         foes: Vec::new(),
+        alt: 0.0,
+        raid: None,
     };
     ctx.state.monsters.insert(id.clone(), monster);
-    // The dead claw their way out of the ground; a raider just walks up.
-    if def.anims.rise.is_some() {
+    // The dead claw their way out of the ground and the dragon roars; a raider just walks up.
+    if def.faction != Faction::Orc {
         ctx.emit(SimEvent::MonsterSpawn { id: id.clone(), pos });
     }
     id
@@ -292,6 +295,10 @@ pub fn update_monsters(ctx: &mut Ctx) {
     for id in monster_ids(ctx.state) {
         let Some(monster) = ctx.state.monsters.get_mut(&id) else { continue };
         let def = monster.kind.def();
+        if def.flies {
+            update_dragon(ctx, &id);
+            continue;
+        }
         monster.moving = false;
 
         if monster.phase == MonsterPhase::Dying {

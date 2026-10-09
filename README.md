@@ -22,12 +22,14 @@ The server migration is complete. The world, the language-model brain and every 
 - A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
 - Children: four or five live in the village from the day it is founded, and lovers who stay together have more. Children play, get into trouble (pinched food, a thrown apple, a hidden tool, a tall tale, a wander into the wilds at dusk, now and then a fire), never fight, and come of age after about a month as adults with a trade of their own ([the design](docs/superpowers/specs/2026-10-08-children-design.md)).
 - Combat: fighters with a shield or a blade can block a blow, the nimble can dodge one, and every week or so an orc war band comes up the west road by day to plunder the farm, the stores, the market and empty homes. A raider who falls drops what it carried; what the band gets away with is gone. Two bosses take the whole village to bring down: a skeleton golem that rises on some grim nights and does not crumble at dawn, and an orc warchief who leads every third raid ([the design](docs/superpowers/specs/2026-10-04-combat-design.md)).
+- Weather: clear skies, rain, wind and hail come and go. Each villager takes it their own way (some love the rain, some hate it), which shows in their mood; those who hate the rain go indoors when it pours, and hail, which hurts, sends everyone running for cover. Rain helps keep a fire down and wind fans it ([the design](docs/superpowers/specs/2026-10-08-weather-design.md)).
 - House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
 - Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
 - A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
 - Music: a few villagers can sing or play, and of an evening one of them strikes up outside the tavern (now and then on the green). Whoever is idle within earshot comes to stand and listen; the drinkers listen from their stools. A good tune leaves its listeners in good spirits for a few hours (slower to tire, quicker to heal, a little braver), a poor one draws heckles and empties the yard ([the design](docs/superpowers/specs/2026-10-08-music-design.md)).
 - Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
 - The dead have cards: click one of them and the inspector shows its health, what it is after, where and how it rose, who it once was and how many villagers it has slain.
+- Ghosts: about one in three villagers slain by the dead walks again, see-through and only after dark, for two or three nights. A ghost drifts between its grave and the homes of those it loved, troubles the sleepers inside and frightens whoever it meets; its touch chills and weakens but never kills, and nobody can fight one. Then it finds rest ([the design](docs/superpowers/specs/2026-10-08-ghosts-design.md)).
 - Five billboards around the village with a new slogan each morning. Villagers sometimes stop to read one, say what they think and, if it urges something, may go and do it; admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
 - The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
 - Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
@@ -44,7 +46,7 @@ Not yet done or not yet tried:
 - **Node.js 22** and **pnpm 10** (`corepack enable` picks the version in `package.json`), for the web client.
 - **Rust 1.88 or newer** (stable), for the server.
 - A browser with WebGPU or WebGL 2.
-- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props), and the KayKit collection (rebuilding the models).
+- Only for some tools: [Bun](https://bun.sh) (`pnpm audio` and the `.ts` tools), ffmpeg and bsdtar (`pnpm audio`), Blender (generated props and the dragon), and the KayKit collection (rebuilding the models).
 
 ## Run
 
@@ -77,11 +79,11 @@ set -a; . ./.env; set +a
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
-- Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead, or a raider, to follow it and read its card instead.
+- Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead, a raider or a ghost to follow it and read its card instead.
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.
 - Admins set the speed for everyone: Space pauses; 1, 2 and 3 set 1×, 2× and 4×.
-- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the dead, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
+- ❓ Help in the top bar, or the ? or H key, lists the controls and explains what is on the screen (the stores, the village chest, the banners) and how the village works: children, the weather, the dead and their ghosts, raids, fires, the changing valley and coin. Its **About the tech** button opens a short tour of what the world is built with and how the language and embedding models fit in.
 - `?renderer=webgl` or `?renderer=webgpu` forces a render backend; `?quality=low` or `?quality=high` forces the picture's quality (touch devices and machines with little memory get `low` by themselves: fewer pixels, a smaller shadow map, fewer lamps, thinner grass and 30 frames a second); `?debug=nav` shows the navigation grid and activity spots; `?render=off` follows the stream without drawing (for headless tests, where software WebGL is too slow).
 
 The admin panel (🛠) has the speed, export, import and "new world", **Call a raid** (an orc war band comes up the west road at once by day, or at nine the next morning by night; one at a time), the text on the billboards, the language model's configuration (read-only) and a connection test, and the server's health. The 🧠 pill in the top bar opens the model's decision log.
@@ -252,7 +254,7 @@ Other tools:
 | `src/audio`, `src/speech` | Ambient mixer, music and the speech bus |
 | `src/generated` | Wire types (from the Rust server), asset manifest, tile heights; never edited by hand |
 | `tests` | Client tests that span layers: architecture rules, stream replay, server data |
-| `tools` | Asset and audio builds, Blender prop generator, mock model endpoint, stream probe, world dump for the golden fixtures |
+| `tools` | Asset and audio builds, Blender prop and dragon generators, mock model endpoint, stream probe, world dump for the golden fixtures |
 | `server` | The Rust server, a Cargo workspace: `core` and `world` (shared maths and the static world), `sim` (the simulation), `brain` (the language model: client, queue, governor, prompts, casting, validation), `server` (HTTP, event stream, chat, guest seats and the admin's token, SQLite store), `testing` (the original cast, for tests) |
 | `deploy`, `Dockerfile`, `fly.toml` | The container image, Litestream and Fly.io settings ([docs/deploy.md](docs/deploy.md)) |
 
@@ -276,6 +278,12 @@ A few props the collection lacks at character scale (a wooden fence, wildflowers
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_props.py
+```
+
+The dragon is made the same way, in the KayKit style, with its own skeleton and six animations (flying, hovering, breathing fire, roaring, being hit and falling). The script writes `tools/blender/rigged/Dragon.glb`, and `pnpm assets` turns it into a character and a rig of its own (`dragon` in `tools/assets/asset-list.mjs`). The sim times the dragon's clips by that rig, since the medium rig has none of them.
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_dragon.py
 ```
 
 ## Working on the code

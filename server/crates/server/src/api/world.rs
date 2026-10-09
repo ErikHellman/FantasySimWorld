@@ -22,11 +22,11 @@ use tokio::sync::oneshot;
 
 use crate::AppState;
 use crate::api::wire::{
-    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, HealthReport, MonsterDetail, NewWorldRequest,
-    RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
+    BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, GhostDetail, HealthReport, MonsterDetail,
+    NewWorldRequest, RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
 };
 use crate::api::{ApiFailure, error};
-use crate::digest::{character_detail_of, detail_json, monster_detail_of, site_of};
+use crate::digest::{character_detail_of, detail_json, ghost_detail_of, monster_detail_of, site_of};
 use crate::encode::sim_tone;
 use crate::store::{SnapshotReason, now_ms};
 use crate::world_task::{Outgoing, SPEEDS, Watch, WorldInput};
@@ -79,6 +79,14 @@ pub async fn monster(
     monster_detail_of(&core.sim.state, &id)
         .map(Json)
         .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such monster".into()))
+}
+
+/// `GET /api/ghosts/{id}`: the card of a ghost.
+pub async fn ghost(State(app): State<Arc<AppState>>, Path(id): Path<String>) -> Result<Json<GhostDetail>, ApiFailure> {
+    let core = app.world.core.read();
+    ghost_detail_of(&core.sim.state, &id)
+        .map(Json)
+        .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "no such ghost".into()))
 }
 
 /// `GET /api/chronicle?before=<tick>&limit=<n>`: history from the database, oldest first.
@@ -139,7 +147,7 @@ pub async fn call_raid(State(app): State<Arc<AppState>>) -> Response {
         if state.director.founding {
             return error(StatusCode::CONFLICT, "The village is still being settled.");
         }
-        if state.raid.is_some() {
+        if state.war_band.is_some() {
             return error(StatusCode::CONFLICT, "A war band is already in the valley.");
         }
         if state.director.raid_called {

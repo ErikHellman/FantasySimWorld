@@ -235,7 +235,7 @@ async function buildBundle(bundle) {
 }
 
 async function buildCharacter(character) {
-  const doc = await io.read(path.join(ROOT, character.file));
+  const doc = await io.read(path.join(character.local ? REPO : ROOT, character.file));
   doc.setLogger?.(quiet);
   const material = doc.getRoot().listMaterials().find((m) => m.getBaseColorTexture());
   const texture = material ? textureId(material.getBaseColorTexture(), material) : (character.texture ?? null);
@@ -334,8 +334,8 @@ async function buildRig(rig, built) {
   let baseNodes = null;
   const clips = {};
 
-  for (const { file, clips: wanted } of rig.files) {
-    const doc = await io.read(path.join(ROOT, file));
+  for (const { file, local, clips: wanted } of rig.files) {
+    const doc = await io.read(path.join(local ? REPO : ROOT, file));
     doc.setLogger?.(quiet);
     stripMeshes(doc);
     const rename = new Map(wanted.map((clip) => (Array.isArray(clip) ? clip : [clip, clip])));

@@ -51,6 +51,14 @@ export const SOURCES = {
   campfire: nature('Campfire Crackling', 'Fire & Elemental/AMB_Nature Pack Vol 1_ Fire & Elemental_Campfire Crackling.mp3'),
   torch: nature('Torch Flame', 'Fire & Elemental/AMB_Nature Pack Vol 1_ Fire & Elemental_Torch Flame.mp3'),
 
+  rain: {
+    title: 'light rain and heavy rain',
+    author: 'haruta',
+    license: 'CC0',
+    page: 'https://opengameart.org/content/light-rain-and-heavy-rain',
+    url: `${OGA}light_rain_and_heavy_rain.mp3`,
+  },
+
   restaurant: {
     title: 'Restaurant ambience',
     author: 'stephan (PDSounds)',
@@ -177,6 +185,19 @@ export const AMBIENT: readonly AmbientLoop[] = [
       { source: 'anvil', gain: 0.9, at: [0.4, 1.15, 1.9, 2.65, 3.4, 7.2, 7.85, 8.5, 9.15, 12.1, 12.9, 13.7] },
       { source: 'hammer1', gain: 0.45, at: [4.3, 10.1] },
       { source: 'hammer2', gain: 0.4, at: [14.6] },
+    ],
+  },
+  // The recording's second half is the downpour; the mixer turns it down for lighter rain.
+  { slot: 'rain', seconds: 30, layers: [{ source: 'rain', from: 34 }] },
+  // No free recording of hail turned up: the downpour pitched up and stripped of its rumble patters hard and
+  // icy (stretched back to length so the loop is as long as asked), over a quieter copy of itself for the
+  // shower that comes with it.
+  {
+    slot: 'hail',
+    seconds: 20,
+    layers: [
+      { source: 'rain', from: 32, gain: 0.9, filter: 'asetrate=48000*1.5,aresample=48000,atempo=0.6667,highpass=f=1400,treble=g=5' },
+      { source: 'rain', from: 50, gain: 0.35 },
     ],
   },
   // Crackle is all peaks; compress it so it can be levelled with the other loops.

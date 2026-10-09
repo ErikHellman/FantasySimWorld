@@ -11,7 +11,7 @@ function fakeEngine(): { engine: AudioEngine; played: string[] } {
 }
 
 const listener = { x: 0, z: 0, distance: 10 };
-const attack = (ranged: 'arrow' | 'bolt' | 'magic' | 'food'): WireEvent =>
+const attack = (ranged: 'arrow' | 'bolt' | 'magic' | 'food' | 'fire'): WireEvent =>
   ({ type: 'attack', attackerId: 'c1', targetId: 'c2', ranged, from: { x: 0, z: 0 }, to: { x: 2, z: 0 } }) as WireEvent;
 
 const hit = (outcome?: 'blocked' | 'dodged'): WireEvent =>
@@ -42,5 +42,18 @@ describe('effects', () => {
     const raid = (phase: 'coming' | 'leaving' | 'gone'): WireEvent => ({ type: 'raid', phase }) as WireEvent;
     playEffects(engine, [raid('coming'), raid('leaving'), death('m1'), death('m2')], () => false, listener, (id) => id === 'm2');
     expect(played).toEqual(['war_horn', 'monster_death', 'death']);
+  });
+
+  it('plays a rush of fire for the breath of the dragon, not the twang of a bow', () => {
+    const { engine, played } = fakeEngine();
+    playEffects(engine, [attack('fire')], () => true, listener);
+    expect(played).toEqual(['magic_cast']);
+  });
+
+  it('rings the alarm when someone shouts for the dragon', () => {
+    const { engine, played } = fakeEngine();
+    const shout = { type: 'speech', speakerId: 'c1', text: 'A dragon! A dragon over the green! Take cover!', loud: true } as WireEvent;
+    playEffects(engine, [shout], () => true, listener);
+    expect(played).toEqual(['alarm']);
   });
 });

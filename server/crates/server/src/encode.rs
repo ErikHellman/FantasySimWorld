@@ -2,10 +2,10 @@
 //! at the `ts-sim-reference` tag): what each entity looks like on the wire, how a tick's changes
 //! become a `tick` frame, and which sim events viewers get.
 //!
-//! - Ids: villagers and monsters keep their sim ids; a corpse is
+//! - Ids: villagers, monsters and ghosts keep their sim ids; a corpse is
 //!   `corpse:<id of the dead>` (it appears in the tick its villager leaves).
 //! - Order: villagers in `state.order`, monsters in insertion order, corpses in
-//!   array order; `add`, `del` and `d` follow it.
+//!   array order, then ghosts in insertion order; `add`, `del` and `d` follow it.
 //! - Quantising: positions and facing ×100 and hit points, rounded the
 //!   JavaScript way; diffs compare quantised values, so an idle entity sends nothing.
 //! - "At ease": weapons are put away while sitting or lying, and a work tool
@@ -19,13 +19,14 @@ use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
-    ChronicleKind as SimChronicleKind, Corpse, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction, ItemId,
-    Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
-    VoiceProfile as SimVoice, WorldObject as SimWorldObject,
+    ChronicleKind as SimChronicleKind, Corpse, Ghost, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
+    ItemId, Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
+    VoiceProfile as SimVoice, WeatherKind as SimWeatherKind, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::built_fraction;
+use fsw_sim::systems::ghosts::{self, first_name_of};
 use fsw_sim::systems::world::{object_name, progress_of};
 use fsw_sim::util::{first_name, name_of};
 use fsw_world::places::{billboards, find_place, get_place};
@@ -34,8 +35,8 @@ use indexmap::IndexMap;
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
     Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HitOutcome, House, HousePhase, Look, Loot, LootKind,
-    Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, WireEvent, WorldObject,
-    WorldObjectKind,
+    Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind, WireEvent,
+    WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -102,6 +103,7 @@ pub fn character_dyn(c: &Character) -> Dyn {
         oh: if c.tool.as_deref().is_some_and(|t| !t.is_empty()) || ease { None } else { c.look.off_hand.clone() },
         act,
         z: c.asleep,
+        y: None,
     }
 }
 
@@ -131,6 +133,7 @@ pub fn monster_dyn(m: &Monster) -> Dyn {
         oh: m.look.off_hand.clone(),
         act: None,
         z: false,
+        y: (m.alt > 0.0).then(|| centi(m.alt)),
     }
 }
 
@@ -159,6 +162,38 @@ pub fn corpse_dyn(corpse: &Corpse) -> Dyn {
         oh: corpse.look.off_hand.clone(),
         act: None,
         z: false,
+        y: None,
+    }
+}
+
+/// A ghost keeps the name and the look of the villager it was, and carries nothing. It has no health to show.
+pub fn ghost_static(ghost: &Ghost) -> EntityStatic {
+    EntityStatic {
+        id: ghost.id.clone(),
+        kind: EntityKind::Ghost,
+        name: first_name_of(ghost).to_owned(),
+        look: look(&ghost.look),
+        max_hp: 1.0,
+        hostile: false,
+        voice: None,
+        boss: None,
+    }
+}
+
+/// Seen only while it walks by night, and at its last dawn as it fades.
+pub fn ghost_dyn(ghost: &Ghost) -> Dyn {
+    Dyn {
+        p: [centi(ghost.pos.x), centi(ghost.pos.z)],
+        f: centi(ghost.facing),
+        a: (ghost.anim.as_str().to_owned(), ghost.anim_seq as u32),
+        hp: 1,
+        v: ghosts::visible(ghost),
+        mh: None,
+        oh: None,
+        act: None,
+        z: false,
+        // Its float above the ground is the client's doing; the sim keeps it on the ground.
+        y: None,
     }
 }
 
@@ -175,6 +210,9 @@ pub fn entities_of(state: &SimState) -> Vec<Entity> {
     }
     for corpse in &state.corpses {
         result.push(Entity { fixed: corpse_static(corpse), state: corpse_dyn(corpse) });
+    }
+    for ghost in state.ghosts.values() {
+        result.push(Entity { fixed: ghost_static(ghost), state: ghost_dyn(ghost) });
     }
     result
 }
@@ -200,6 +238,7 @@ pub fn diff_dyn(id: &str, prev: &Dyn, next: &Dyn) -> Option<DynDelta> {
     field!(oh);
     field!(act);
     field!(z);
+    field!(y);
     changed.then_some(delta)
 }
 
@@ -222,6 +261,7 @@ pub fn apply_delta(dyn_: &Dyn, delta: &DynDelta) -> Dyn {
     field!(oh);
     field!(act);
     field!(z);
+    field!(y);
     next
 }
 
@@ -404,6 +444,24 @@ pub fn economy_of(state: &SimState) -> Economy {
     }
 }
 
+/// The weather, as viewers are told of it: rounded, so it changes in steps rather than every minute.
+pub fn weather_of(state: &SimState) -> Weather {
+    let w = &state.weather;
+    let step = |value: f64| (js_round(value.clamp(0.0, 1.0) * 20.0) * 5.0) as u8;
+    let degrees = js_round(w.wind_dir.to_degrees() / 15.0) * 15.0;
+    Weather {
+        kind: match w.kind {
+            SimWeatherKind::Clear => WeatherKind::Clear,
+            SimWeatherKind::Rain => WeatherKind::Rain,
+            SimWeatherKind::Wind => WeatherKind::Wind,
+            SimWeatherKind::Hail => WeatherKind::Hail,
+        },
+        intensity: step(w.intensity),
+        wind: step(w.wind),
+        wind_dir: (degrees.rem_euclid(360.0)) as u16,
+    }
+}
+
 pub fn billboard_tone(tone: BoardTone) -> BillboardTone {
     match tone {
         BoardTone::Uplifting => BillboardTone::Uplifting,
@@ -502,6 +560,7 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                     Projectile::Bolt => Ranged::Bolt,
                     Projectile::Magic => Ranged::Magic,
                     Projectile::Food => Ranged::Food,
+                    Projectile::Fire => Ranged::Fire,
                 }),
                 from: point(*from),
                 to: point(*to),
@@ -555,6 +614,7 @@ pub struct Tracker {
     stockpiles: Vec<Stockpile>,
     economy: Option<Economy>,
     loot: Vec<Loot>,
+    weather: Option<Weather>,
 }
 
 impl Tracker {
@@ -574,6 +634,7 @@ impl Tracker {
         self.stockpiles = stockpiles_of(state);
         self.economy = Some(economy_of(state));
         self.loot = loot_of(state);
+        self.weather = Some(weather_of(state));
     }
 
     /// What viewers currently know, in wire order (for a snapshot).
@@ -614,6 +675,11 @@ impl Tracker {
     /// What viewers have been told the chest and the stalls hold (for a snapshot).
     pub fn economy(&self) -> Economy {
         self.economy.clone().unwrap_or(Economy { purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 })
+    }
+
+    /// What viewers have been told of the weather (for a snapshot).
+    pub fn weather(&self) -> Weather {
+        self.weather.clone().unwrap_or(Weather { kind: WeatherKind::Clear, intensity: 0, wind: 0, wind_dir: 0 })
     }
 
     /// The frame for the tick the sim has just run; `events` are what it returned.
@@ -740,6 +806,12 @@ impl Tracker {
         if self.economy.as_ref() != Some(&economy) {
             frame.ev.push(WireEvent::Economy { economy: economy.clone() });
             self.economy = Some(economy);
+        }
+
+        let weather = weather_of(state);
+        if self.weather.as_ref() != Some(&weather) {
+            frame.ev.push(WireEvent::Weather { weather: weather.clone() });
+            self.weather = Some(weather);
         }
         frame
     }
@@ -1051,6 +1123,56 @@ mod tests {
         assert_eq!((told[0].purse, told[0].food, told[0].gift), (74, 3, 0));
         assert!(chests(&tracker.frame(&sim.state, &[])).is_empty());
         assert_eq!(tracker.economy(), economy_of(&sim.state));
+
+        // The weather: told when it changes by a step, not for every slight change, and the snapshot has the latest.
+        let skies = |frame: &TickFrame| -> Vec<Weather> {
+            frame
+                .ev
+                .iter()
+                .filter_map(|e| if let WireEvent::Weather { weather } = e { Some(weather.clone()) } else { None })
+                .collect()
+        };
+        assert!(skies(&tracker.frame(&sim.state, &[])).is_empty());
+        sim.state.weather.kind = SimWeatherKind::Rain;
+        sim.state.weather.intensity = 0.42;
+        sim.state.weather.wind_dir = std::f64::consts::FRAC_PI_2;
+        let told = skies(&tracker.frame(&sim.state, &[]));
+        assert_eq!(told, vec![Weather { kind: WeatherKind::Rain, intensity: 40, wind: 0, wind_dir: 90 }]);
+        sim.state.weather.intensity = 0.41;
+        assert!(skies(&tracker.frame(&sim.state, &[])).is_empty());
+        assert_eq!(tracker.weather(), weather_of(&sim.state));
+    }
+
+    #[test]
+    fn a_ghost_is_its_villager_unarmed_and_shown_only_while_it_walks() {
+        use fsw_sim::state::GhostPhase;
+        use fsw_sim::systems::death::kill_character;
+        use fsw_sim::systems::ghosts::{Haunt, bind};
+        use fsw_sim::util::Ctx;
+
+        let mut sim = Sim::new(create_test_state(3));
+        let victim = sim.state.order[0].clone();
+        let looked = sim.state.characters[&victim].look.clone();
+        let mut tracker = Tracker::new(&sim.state);
+        let id = {
+            let mut events = Vec::new();
+            let mut ctx = Ctx::new(&mut sim.state, &mut events);
+            let haunt = Haunt::of(&ctx, &victim);
+            kill_character(&mut ctx, &victim, "slain by a Skeleton Warrior at the green", None);
+            bind(&mut ctx, haunt)
+        };
+        let frame = tracker.frame(&sim.state, &[]);
+        let ghost = frame.add.iter().find(|e| e.fixed.id == id).expect("the ghost is added");
+        assert_eq!(ghost.fixed.kind, EntityKind::Ghost);
+        assert!(!ghost.fixed.hostile);
+        assert_eq!(ghost.fixed.look.model, looked.model);
+        assert_eq!((ghost.fixed.look.main_hand.as_deref(), ghost.state.mh.as_deref()), (None, None));
+        assert!(!ghost.state.v, "unseen until it rises");
+
+        sim.state.ghosts.get_mut(&id).unwrap().phase = GhostPhase::Abroad;
+        let frame = tracker.frame(&sim.state, &[]);
+        let delta = frame.d.iter().find(|d| d.id == id).expect("a delta for the ghost");
+        assert_eq!(delta.v, Some(true));
     }
 
     #[test]

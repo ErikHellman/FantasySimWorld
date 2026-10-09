@@ -17,9 +17,9 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 12;
 
-/// Character, monster, corpse and conversation ids (`c1`, `m7`, …).
+/// Character, monster, ghost, corpse and conversation ids (`c1`, `m7`, `g9`, …).
 pub type Id = String;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq)]
@@ -64,6 +64,8 @@ pub enum EntityKind {
     Villager,
     Monster,
     Corpse,
+    /// a villager slain by the dead, walking again for a few nights; drawn see-through, and seen only by night
+    Ghost,
 }
 
 /// How a character or monster is drawn (the sim's `Look`).
@@ -129,6 +131,10 @@ pub struct Dyn {
     pub act: Option<String>,
     /// asleep
     pub z: bool,
+    /// height above the ground × 100, rounded, for one in the air (the dragon); absent on the ground
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub y: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -170,6 +176,9 @@ pub struct DynDelta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub z: Option<bool>,
+    #[serde(default, with = "present", skip_serializing_if = "Option::is_none")]
+    #[ts(as = "Option<Option<i32>>", optional)]
+    pub y: Option<Option<i32>>,
 }
 
 /// A delta field that is present (possibly as `null`) reads as `Some(_)`; a missing one as `None`.
@@ -238,6 +247,8 @@ pub struct Snapshot {
     pub economy: Economy,
     /// what the dead left lying about
     pub loot: Vec<Loot>,
+    /// what the sky is doing
+    pub weather: Weather,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -275,6 +286,8 @@ pub enum Ranged {
     Magic,
     /// an apple thrown by a child
     Food,
+    /// the dragon's breath, from its mouth to the ground
+    Fire,
 }
 
 /// Where an orc raid has got to.
@@ -393,6 +406,32 @@ pub enum WireEvent {
     Loot {
         loot: Loot,
     },
+    /// the weather changed, or grew or eased
+    Weather {
+        weather: Weather,
+    },
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherKind {
+    Clear,
+    Rain,
+    Wind,
+    Hail,
+}
+
+/// What the sky is doing. Rounded, so weather coming on or dying away is told in a handful of steps.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Weather {
+    pub kind: WeatherKind,
+    /// how hard it rains, hails or blows, 0..100 in steps of 5; 0 under a clear sky
+    pub intensity: u8,
+    /// the wind, whatever the kind, 0..100 in steps of 5
+    pub wind: u8,
+    /// the way the wind blows toward, in degrees from +x toward +z, in steps of 15
+    pub wind_dir: u16,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -696,7 +735,10 @@ pub struct Status {
     /// the world is held at 1x because the model has a backlog
     pub throttled: bool,
     pub population: u32,
+    /// the dead abroad
     pub monsters: u32,
+    /// the dragon is over the valley
+    pub dragon: bool,
     pub alarm: bool,
     /// an orc war band is in the valley
     pub raid: bool,
@@ -895,13 +937,15 @@ pub struct MonsterDetail {
     pub was: Option<String>,
     /// does not crumble at dawn
     pub lasting: bool,
+    /// one of the walking dead (false for the dragon)
+    pub undead: bool,
     /// villagers it has slain
     pub kills: u32,
     /// blows it has landed on a villager
     pub blows: u32,
     /// the least and the most one of its blows takes
     pub damage: [u32; 2],
-    /// one of the dead, or an orc raider
+    /// one of the dead, an orc raider, or the dragon
     pub faction: MonsterFaction,
     /// a raider's plunder, e.g. "12 coins and 6 logs of wood"
     pub carrying: Option<String>,
@@ -914,6 +958,26 @@ pub struct MonsterDetail {
 pub enum MonsterFaction {
     Undead,
     Orc,
+    Dragon,
+}
+
+/// The inspector for a ghost, every label rendered on the server.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GhostDetail {
+    pub id: Id,
+    /// the full name of the villager it was
+    pub name: String,
+    /// the villager it was
+    pub was_id: Id,
+    /// the day they died
+    pub died_day: u32,
+    /// how they died, e.g. "slain by a Skeleton Warrior at the green"
+    pub cause: String,
+    /// what it is doing now, e.g. "Haunting the village near the well"
+    pub status: String,
+    /// nights it still has to walk, counting tonight; 0 before it first rises
+    pub nights_left: u32,
 }
 
 /// What `detail` on the stream carries: the inspector for whatever this viewer watches, tagged by `kind`.
@@ -923,6 +987,7 @@ pub enum Detail {
     // Boxed so the enum stays small whichever card is the bigger one.
     Villager(Box<CharacterDetail>),
     Monster(Box<MonsterDetail>),
+    Ghost(Box<GhostDetail>),
 }
 
 /// What a site is: a place's building, or something the village put up on a pad.
@@ -1349,6 +1414,8 @@ pub fn typescript() -> String {
         Economy,
         Loot,
         LootKind,
+        WeatherKind,
+        Weather,
         Goods,
         LlmState,
         LlmStatus,
@@ -1367,6 +1434,7 @@ pub fn typescript() -> String {
         CharacterDetail,
         NamedId,
         MonsterDetail,
+        GhostDetail,
         MonsterFaction,
         Detail,
         SiteKind,

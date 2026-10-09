@@ -78,9 +78,20 @@ export const ANIMS = {
   skeleton_walk: def('Skeletons_Walking', true),
   skeleton_taunt: def('Skeletons_Taunt', false),
   skeleton_death: def('Skeletons_Death', false),
+  dragon_fly: def('Dragon_Fly', true),
+  dragon_hover: def('Dragon_Hover', true),
+  dragon_breath: def('Dragon_Breath', false),
+  dragon_roar: def('Dragon_Roar', false),
+  dragon_hit: def('Dragon_Hit', false),
+  dragon_death: def('Dragon_Death', false),
 } as const satisfies Record<string, AnimDef>;
 
 export type AnimId = keyof typeof ANIMS;
+
+/** Whether a rig carries a clip: every rig a villager wears has the same ones, but the dragon's has its own. */
+export function hasClip(rig: string, clip: string): boolean {
+  return assetManifest.rigs[rig]?.clips[clip] !== undefined;
+}
 
 /** Seconds a clip lasts on a rig, before any playback speed. */
 export function clipSeconds(rig: string, clip: string): number {
@@ -92,5 +103,7 @@ export function clipSeconds(rig: string, clip: string): number {
 /** Seconds one play of the animation takes at its playback speed (the sim's timing). */
 export function animSeconds(id: AnimId): number {
   const anim: AnimDef = ANIMS[id];
-  return clipSeconds(TIMING_RIG, anim.clip) / (anim.speed ?? 1);
+  // The dragon's clips are timed by its own rig, as the sim does.
+  const rig = hasClip(TIMING_RIG, anim.clip) ? TIMING_RIG : 'dragon';
+  return clipSeconds(rig, anim.clip) / (anim.speed ?? 1);
 }
