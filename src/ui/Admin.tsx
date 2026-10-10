@@ -55,6 +55,12 @@ function WorldSection() {
     api.admin.callRaid().then((answer) => setMessage(answer.message), (error) => setMessage(errorText(error)));
   };
 
+  const callDragon = (): void => {
+    if (!confirm('Call the dragon over the hills? It will set homes alight, and villagers may die.')) return;
+    setMessage('');
+    api.admin.callDragon().then((answer) => setMessage(answer.message), (error) => setMessage(errorText(error)));
+  };
+
   return (
     <>
       <h3>World</h3>
@@ -79,6 +85,10 @@ function WorldSection() {
       <div class="row">
         <button onClick={callRaid} disabled={ui.raid.value}>Call a raid</button>
         <span class="muted">{ui.raid.value ? 'A war band is in the valley.' : 'Orcs come up the west road by day.'}</span>
+      </div>
+      <div class="row">
+        <button onClick={callDragon} disabled={ui.dragon.value}>Call the dragon</button>
+        <span class="muted">{ui.dragon.value ? 'The dragon is over the valley.' : 'It comes over the hills by day and sets homes alight.'}</span>
       </div>
       {message && <p class="test-result">{message}</p>}
       <details>

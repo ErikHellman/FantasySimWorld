@@ -798,6 +798,7 @@ async fn guests_watch_and_chat_without_signing_in_but_do_not_run_the_world() {
         ("GET", "/api/admin/health", ""),
         ("POST", "/api/admin/speed", r#"{"speed":0}"#),
         ("POST", "/api/admin/raid", "{}"),
+        ("POST", "/api/admin/dragon", "{}"),
     ] {
         let response = app.clone().oneshot(as_guest(method, uri, &cookie, body)).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {uri}");
@@ -926,5 +927,41 @@ async fn admins_call_a_raid_up_the_road_once() {
     }
     let again = app.clone().oneshot(call()).await.unwrap();
     assert_eq!(again.status(), StatusCode::CONFLICT, "one raid at a time");
+    shutdown.cancel();
+}
+
+#[tokio::test]
+async fn admins_call_the_dragon_over_the_hills_once() {
+    let (state, shutdown, _data) = state_with("dragon", &[("AUTH_TOKEN", TOKEN)]).await;
+    let app = router(state.clone());
+    let call = || json_request("POST", "/api/admin/dragon", "{}");
+
+    // Not while the village is still being settled.
+    state.world.core.write().sim.state.director.founding = true;
+    let settling = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(settling.status(), StatusCode::CONFLICT);
+    assert!(text(settling).await.contains("still being settled"));
+    state.world.core.write().sim.state.director.founding = false;
+
+    let called = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(called.status(), StatusCode::ACCEPTED);
+    let answer = text(called).await;
+    assert!(answer.contains("The dragon"), "{answer}");
+
+    // The call reaches the sim as a command at a tick boundary.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        {
+            let core = state.world.core.read();
+            let state = &core.sim.state;
+            if state.director.dragon_called || fsw_sim::systems::dragon::dragon(state).is_some() {
+                break;
+            }
+        }
+        assert!(tokio::time::Instant::now() < deadline, "the call never reached the world");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let again = app.clone().oneshot(call()).await.unwrap();
+    assert_eq!(again.status(), StatusCode::CONFLICT, "one dragon at a time");
     shutdown.cancel();
 }

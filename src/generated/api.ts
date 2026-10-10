@@ -244,6 +244,11 @@ export type HitOutcome = "hit" | "blocked" | "dodged";
 export type RaidCallAnswer = { message: string, };
 
 /**
+ * The answer to `POST /api/admin/dragon`: when the dragon will come.
+ */
+export type DragonCallAnswer = { message: string, };
+
+/**
  * Where an orc raid has got to.
  */
 export type RaidPhase = "coming" | "leaving" | "gone";
