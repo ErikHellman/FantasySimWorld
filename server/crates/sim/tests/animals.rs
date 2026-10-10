@@ -71,8 +71,30 @@ fn animals_draw_nothing_from_the_villagers_generator() {
 #[test]
 fn animals_keep_to_walkable_ground_for_three_days() {
     let mut sim = founded(3);
+    // Where each animal on the move last got somewhere, and when: one walking in place (two meeting head on in a
+    // narrow lane, or one stepping onto a corner and back off it) shows as a path that goes nowhere.
+    let mut progress: std::collections::BTreeMap<String, (Vec2, i64)> = Default::default();
     for tick in 0..(3 * 24 * 60 * 20) {
         sim.step();
+        if tick % 20 == 0 {
+            for animal in sim.state.animals.values() {
+                if animal.path.is_empty() || animal.rider.is_some() {
+                    progress.remove(&animal.id);
+                    continue;
+                }
+                let since = progress.entry(animal.id.clone()).or_insert((animal.pos, sim.state.tick));
+                if dist(since.0, animal.pos) > 0.5 {
+                    *since = (animal.pos, sim.state.tick);
+                }
+                assert!(
+                    sim.state.tick - since.1 < 400,
+                    "{} has walked in place at {:?} for 20 seconds, towards {:?}",
+                    animal.id,
+                    animal.pos,
+                    animal.path
+                );
+            }
+        }
         if tick % 200 != 0 {
             continue;
         }

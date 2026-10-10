@@ -528,7 +528,12 @@ pub fn pet_to_fuss(state: &SimState, id: &str) -> Option<Id> {
 }
 
 /// Off blocked ground at once: where the village has built on an animal (which then finds a new way), or where a
-/// stride cut a corner (which then carries on along its path).
+/// stride cut a corner (which then goes on to where its path was taking it).
+///
+/// The open ground it steps onto is the middle of the nearest open cell, which can be off its path: from there the
+/// straight line to the next point may cut the same corner again, and an animal that kept that path stepped onto
+/// blocked ground and back off it every stride without end. So it finds its way afresh from where it stands, and
+/// when that way is the one it had (the search's straight cut misses the corner too), it gives up on going there.
 fn step_off(state: &mut SimState, nav: &NavOverlay, id: &str, keep_path: bool) {
     let animal = state.animals.get_mut(id).expect("animal");
     if animal.rider.is_some() || animal.flight.is_some() || nav.is_walkable(animal.pos.x, animal.pos.z) {
@@ -537,13 +542,14 @@ fn step_off(state: &mut SimState, nav: &NavOverlay, id: &str, keep_path: bool) {
     if let Some(open) = nav.nearest_walkable(animal.pos, 3) {
         animal.pos = open;
     }
-    if !keep_path {
-        animal.path.clear();
-    }
+    let goal = animal.path.last().copied().filter(|_| keep_path);
+    let fresh = goal.and_then(|goal| route_to(nav, animal.pos, goal)).unwrap_or_default();
+    animal.path = if fresh == animal.path { Vec::new() } else { fresh };
 }
 
 /// Walks a stride along the animal's path; true once the path is done. A stride that lands on blocked ground (built
-/// over since the path was found, or a corner the path cuts) is put right by `step_off` straight after.
+/// over since the path was found, or a corner the path cuts) is put right by `step_off` straight after, which finds
+/// the rest of the way again.
 fn walk(animal: &mut Animal, speed: f64) -> bool {
     let mut path = std::mem::take(&mut animal.path);
     let done = advance(animal, &mut path, speed * STRIDE_F);
@@ -810,6 +816,11 @@ fn keep_to_owner(ctx: &mut Ctx, nav: &NavOverlay, id: &str, asleep: bool) {
 
 /// Keeps animals from standing in each other and in villagers, each on its own tick. Only animals move; the
 /// villagers' own paths are never pushed, so a world goes on the same with its animals as without.
+///
+/// Only an animal standing still is pushed. One on the move brushes past whoever is in its way, as villagers do,
+/// and the ones standing make room for it: pushing walkers too held two of them meeting head on in a lane one cell
+/// wide (or one walking into a villager who stood there) in place for good, their legs going and neither getting
+/// anywhere.
 fn nudge(state: &mut SimState, nav: &NavOverlay) {
     let tick = state.tick;
     let mut bodies: Vec<Vec2> = state.characters.values().filter(|c| c.inside.is_none()).map(|c| c.pos).collect();
@@ -817,7 +828,12 @@ fn nudge(state: &mut SimState, nav: &NavOverlay) {
     bodies.extend(state.animals.values().map(|a| a.pos));
     for (index, animal) in state.animals.values_mut().enumerate() {
         let def = animal.species.def();
-        if (tick + index as i64) % STRIDE != 0 || animal.rider.is_some() || animal.flight.is_some() || def.flies {
+        if (tick + index as i64) % STRIDE != 0
+            || animal.moving
+            || animal.rider.is_some()
+            || animal.flight.is_some()
+            || def.flies
+        {
             continue;
         }
         let me = first_animal + index;
