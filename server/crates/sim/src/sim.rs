@@ -37,6 +37,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::stalls::update_stalls;
 use crate::systems::weather::{sheltering_from_hail, update_weather};
 use crate::systems::world::{MAX_PROJECTS, job_accepts, update_world};
 use crate::util::{Ctx, get_monster, rel, set_anim};
@@ -418,6 +419,7 @@ impl Sim {
         update_perception(&mut ctx);
         update_blocking(&mut ctx);
         separate(ctx.state);
+        update_stalls(&mut ctx);
         update_needs(&mut ctx);
         events
     }

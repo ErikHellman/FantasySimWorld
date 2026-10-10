@@ -2252,6 +2252,9 @@ pub struct SimState {
     /// those driven from the valley after a trial, id -> full name, so the village can still name them
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub exiles: IndexMap<Id, String>,
+    /// those with a path to walk, by id, and when they last got anywhere (`systems::stalls`)
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub stalls: IndexMap<Id, Stall>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
@@ -2295,6 +2298,17 @@ pub struct Clue {
     pub weight: f64,
     /// who knows it, the one who found it first
     pub known_by: Vec<Id>,
+}
+
+/// Where someone with a path to walk last got somewhere, and since when.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stall {
+    pub at: Vec2,
+    pub since: i64,
+    /// times they have been helped on since they last got anywhere
+    #[serde(default)]
+    pub helped: u32,
 }
 
 /// Someone seen following someone else, by a third.
