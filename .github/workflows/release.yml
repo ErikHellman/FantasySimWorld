@@ -141,6 +141,11 @@ jobs:
   deploy:
     needs: release
     if: inputs.deploy
+    # A called workflow may ask for no more than its caller grants, and GitHub checks that before anything runs, even
+    # for jobs that will be skipped: deploy.yml's `checked` job reads Actions, so this job has to allow it.
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/deploy.yml
     with:
       ref: ${{ needs.release.outputs.tag }}
