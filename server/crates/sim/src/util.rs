@@ -206,9 +206,10 @@ pub fn name_of(state: &SimState, id: &str) -> String {
     if let Some(c) = state.characters.get(id) {
         return first_name(c).to_owned();
     }
-    match state.dead.get(id) {
-        Some(dead) => dead.name.split(' ').next().unwrap_or_default().to_owned(),
-        None => "someone".into(),
+    match (state.dead.get(id), state.exiles.get(id)) {
+        (Some(dead), _) => dead.name.split(' ').next().unwrap_or_default().to_owned(),
+        (None, Some(name)) => name.split(' ').next().unwrap_or_default().to_owned(),
+        _ => "someone".into(),
     }
 }
 

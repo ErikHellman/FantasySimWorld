@@ -1003,6 +1003,10 @@ pub struct Character {
     /// stepping out of someone's way (`systems::blocking`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidestep: Option<Sidestep>,
+    /// found guilty at a trial and on their way out of the valley by the west road since this tick
+    /// (`systems::cases`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exiled_since: Option<i64>,
 }
 
 /// A walker brushing past the one who stood in their way: the two are not pushed apart until `until_tick`.
@@ -2239,9 +2243,70 @@ pub struct SimState {
     /// villagers slain by the dead who walk again for a few nights, by id (`g<n>`); see [`Ghost`]
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub ghosts: Map<Ghost>,
+    /// unseen killings the village is trying to solve, and those it has given up on or closed; see [`Case`]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cases: Vec<Case>,
+    /// someone seen trailing after someone else today, which becomes a clue if the one followed is killed
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sightings: Vec<Sighting>,
+    /// those driven from the valley after a trial, id -> full name, so the village can still name them
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub exiles: IndexMap<Id, String>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
+}
+
+/// A killing nobody saw, and what the village makes of it (`systems::cases`). Its id is the victim's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Case {
+    pub victim: Id,
+    pub victim_name: String,
+    /// who did it; nobody in the village knows
+    pub killer: Id,
+    pub tick: i64,
+    pub pos: Vec2,
+    /// what the village has to go on
+    pub clues: Vec<Clue>,
+    /// whoever came upon the body first
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub found_by: Option<Id>,
+    /// trials held so far
+    #[serde(default)]
+    pub trials: i64,
+    /// those tried for it and let go
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cleared: Vec<Id>,
+    /// someone was found guilty, or the trail went cold
+    #[serde(default)]
+    pub closed: bool,
+}
+
+/// Something that points at someone, and who knows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Clue {
+    /// whom it points at
+    pub suspect: Id,
+    /// what it is, as a sentence of its own: "Bran was seen trailing after Edda near the mill that day"
+    pub fact: String,
+    /// how much it counts for, per person who knows it
+    pub weight: f64,
+    /// who knows it, the one who found it first
+    pub known_by: Vec<Id>,
+}
+
+/// Someone seen following someone else, by a third.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sighting {
+    pub witness: Id,
+    pub stalker: Id,
+    pub target: Id,
+    pub tick: i64,
+    /// where, as the village names it
+    pub place: String,
 }
 
 /// The coin side of the village: the chest the market pays from and is paid into, and the goods
@@ -2364,8 +2429,20 @@ impl LootKind {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum Rite {
-    Wedding { a: Id, b: Id },
-    Funeral { dead: Vec<Id> },
+    Wedding {
+        a: Id,
+        b: Id,
+    },
+    Funeral {
+        dead: Vec<Id>,
+    },
+    /// `accused` stands trial on the green for the killing the case is about; `accuser` lays out what the
+    /// village knows (`systems::cases`)
+    Trial {
+        accused: Id,
+        accuser: Id,
+        case_id: Id,
+    },
 }
 
 /// Where a ceremony has got to.

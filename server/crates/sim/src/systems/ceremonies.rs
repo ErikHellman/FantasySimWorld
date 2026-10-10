@@ -1,7 +1,9 @@
-//! Weddings and funerals. A couple who have lasted are married on the green
-//! before the whole village and move in together; the dead are buried the next
-//! morning with everyone at the graveside. Both call the village together the
-//! way a fire does, and nothing but a fight or a flight takes anyone away.
+//! Weddings, funerals and trials. A couple who have lasted are married on the
+//! green before the whole village and move in together; the dead are buried the
+//! next morning with everyone at the graveside; someone the village suspects of
+//! an unseen killing is tried on the green (`systems::cases`). All call the
+//! village together the way a fire does, and nothing but a fight or a flight
+//! takes anyone away.
 //!
 //! Nothing here draws from the RNG, or changes anything at all, until a couple
 //! is betrothed or someone has died, so a world with neither runs exactly as
@@ -18,12 +20,14 @@ use crate::data::ceremonies::{
     CHEERS, EULOGIES, FUNERAL_CLOSING, FUNERAL_OPENING, GRIEF, VOWS, WEDDING_CLOSING, WEDDING_OPENING, line,
 };
 use crate::data::classes::ClassId;
+use crate::data::trials::{ACCUSATIONS, ACQUITTED, AGAINST, FOR, GUILTY, PLEAS, TRIAL_OPENING};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
     ActPhase, Ceremony, CeremonyPhase, Character, ChronicleKind, Id, Intent, IntentAction, IntentSource, MemoryKind,
     MonsterPhase, Rite, SimState, Speech, StimulusKind,
 };
 use crate::systems::billboards::clean_text;
+use crate::systems::cases;
 use crate::systems::combat::max_hp;
 use crate::systems::death::detach;
 use crate::systems::director::tick_at;
@@ -65,6 +69,10 @@ pub const SPEECH_CAP: usize = 300;
 /// A pause between one speaker and the next.
 const PAUSE_TICKS: i64 = 20;
 const WEDDING_PLACE: &str = "green";
+const TRIAL_PLACE: &str = "green";
+/// When a trial is held, today if it is early enough, else tomorrow.
+pub const TRIAL_HOUR: f64 = 16.0;
+const TRIAL_SAME_DAY_BEFORE: f64 = 13.0;
 const FUNERAL_PLACE: &str = "graveyard";
 const FEAST_PLACE: &str = "tavern";
 /// Where on the green the couple stand, in the green's own frame: south of the well, clear of the benches.
@@ -88,6 +96,8 @@ pub fn speakers(ceremony: &Ceremony) -> Vec<Id> {
     match &ceremony.rite {
         Rite::Wedding { a, b } => vec![a.clone(), b.clone()],
         Rite::Funeral { .. } => vec![ceremony.officiant.clone()],
+        // A trial's words come from what the village knows, not from the model.
+        Rite::Trial { .. } => Vec::new(),
     }
 }
 
@@ -218,6 +228,69 @@ fn schedule_funeral(ctx: &mut Ctx) {
     ctx.emit(SimEvent::CeremonyScheduled { ceremony_id: id });
 }
 
+/// Someone is accused of the killing the case `case_id` is about: the village will try them on the green at
+/// four, today if it is early, else tomorrow. `accuser` lays out the case, or the one who speaks the rite does.
+pub fn schedule_trial(ctx: &mut Ctx, case_id: &str, accused: &str, accuser: Option<&str>) {
+    let day = ctx.time.day;
+    let today = ctx.time.hour < TRIAL_SAME_DAY_BEFORE;
+    let start_tick = if today { tick_at(day, TRIAL_HOUR) } else { tick_at(day + 1, TRIAL_HOUR) };
+    let except: Vec<&str> = std::iter::once(accused).chain(accuser).collect();
+    let officiant = officiant_for(ctx.state, &except);
+    let accuser = accuser.map_or_else(|| officiant.clone(), str::to_owned);
+    let id = ctx.state.new_id("y");
+    ctx.state.ceremony = Some(Ceremony {
+        id: id.clone(),
+        rite: Rite::Trial { accused: accused.to_owned(), accuser: accuser.clone(), case_id: case_id.to_owned() },
+        place_id: TRIAL_PLACE.into(),
+        start_tick,
+        phase: CeremonyPhase::Announced,
+        step: 0,
+        until_tick: 0,
+        officiant: officiant.clone(),
+        speeches: Vec::new(),
+        attendees: Vec::new(),
+        slips: 0,
+    });
+    let (accused_name, accuser_name) = (name_of(ctx.state, accused), name_of(ctx.state, &accuser));
+    let victim_name = name_of(ctx.state, case_id);
+    let when = if today { "this afternoon" } else { "tomorrow afternoon" };
+    ctx.remember(
+        accused,
+        format!("{accuser_name} accuses me of killing {victim_name}. The village will try me on the green {when}."),
+        9.0,
+        MemoryKind::Event,
+        vec![accuser.clone(), case_id.to_owned()],
+    );
+    ctx.stimulate(
+        accused,
+        StimulusKind::Hostility,
+        format!("You are accused of killing {victim_name}, and will be tried on the green {when}."),
+        2,
+        Some(&accuser),
+    );
+    for other in living_ids(ctx.state) {
+        if other == accused {
+            continue;
+        }
+        ctx.remember(
+            &other,
+            format!("{accused_name} is accused of killing {victim_name}. The trial is on the green {when} at four."),
+            6.0,
+            MemoryKind::Event,
+            vec![accused.to_owned(), case_id.to_owned()],
+        );
+    }
+    ctx.chronicle(
+        ChronicleKind::Conflict,
+        format!(
+            "{accuser_name} accuses {accused_name} of killing {victim_name}. The village will hear it on the green {when} at four."
+        ),
+        vec![accuser.clone(), accused.to_owned(), case_id.to_owned()],
+    );
+    ctx.emit(SimEvent::CeremonyScheduled { ceremony_id: id });
+    ctx.emit(SimEvent::SavePoint { reason: "accusation".into() });
+}
+
 /// A villager has died and has a grave: a wedding they were part of is off, and the funeral is arranged.
 pub fn on_death(ctx: &mut Ctx, victim_id: &str) {
     if let Some(ceremony) = &ctx.state.ceremony
@@ -272,6 +345,8 @@ fn arrange_funeral(ctx: &mut Ctx) {
             }
             ctx.chronicle(ChronicleKind::Death, format!("{names} will be buried at the same hour."), newly);
         }
+        // The trial goes ahead; the dead are buried when it is over.
+        Rite::Trial { .. } => {}
     }
 }
 
@@ -291,6 +366,7 @@ fn call_off(ctx: &mut Ctx, text: String) {
     let kind = match ceremony.rite {
         Rite::Wedding { .. } => ChronicleKind::Romance,
         Rite::Funeral { .. } => ChronicleKind::Death,
+        Rite::Trial { .. } => ChronicleKind::Conflict,
     };
     ctx.chronicle(kind, text, principals(&ceremony));
 }
@@ -314,8 +390,9 @@ pub fn hold_speech(ctx: &mut Ctx, ceremony_id: &str, speaker_id: &str, text: Str
 /// A cleric, a paladin or a druid, in that order of preference; otherwise the eldest. Never one of `except`,
 /// and never a child, whatever they will grow into.
 fn officiant_for(state: &SimState, except: &[&str]) -> Id {
-    let candidates: Vec<&Character> =
-        living(state).filter(|c| !c.is_child() && !except.contains(&c.id.as_str())).collect();
+    let candidates: Vec<&Character> = living(state)
+        .filter(|c| !c.is_child() && c.exiled_since.is_none() && !except.contains(&c.id.as_str()))
+        .collect();
     for class in [ClassId::Cleric, ClassId::Paladin, ClassId::Druid] {
         if let Some(c) = candidates.iter().find(|c| c.class_id == class) {
             return c.id.clone();
@@ -334,6 +411,7 @@ fn principals(ceremony: &Ceremony) -> Vec<Id> {
     match &ceremony.rite {
         Rite::Wedding { a, b } => vec![a.clone(), b.clone()],
         Rite::Funeral { dead } => dead.clone(),
+        Rite::Trial { accused, accuser, .. } => vec![accused.clone(), accuser.clone()],
     }
 }
 
@@ -352,7 +430,7 @@ fn from_centre(place: &Place, centre: Vec2, local: [f64; 2]) -> Vec2 {
 pub fn centre_of(state: &SimState, ceremony: &Ceremony) -> Vec2 {
     let place = get_place(&ceremony.place_id);
     match &ceremony.rite {
-        Rite::Wedding { .. } => from_centre(place, place.origin, WEDDING_SPOT),
+        Rite::Wedding { .. } | Rite::Trial { .. } => from_centre(place, place.origin, WEDDING_SPOT),
         Rite::Funeral { dead } => {
             let plots: Vec<Vec2> = dead
                 .iter()
@@ -379,6 +457,12 @@ fn spot_for(state: &SimState, ceremony: &Ceremony, id: &str) -> Vec2 {
         && (a == id || b == id)
     {
         if a == id { [-1.1, 0.0] } else { [1.1, 0.0] }
+    } else if let Rite::Trial { accused, accuser, .. } = &ceremony.rite
+        && (accused == id || accuser == id)
+        && ceremony.officiant != id
+    {
+        // The accused faces the one who accuses them, as a couple face each other.
+        if accuser == id { [-1.6, 0.0] } else { [1.6, 0.0] }
     } else if ceremony.officiant == id {
         [0.0, -2.2]
     } else {
@@ -396,6 +480,7 @@ fn is_principal(ceremony: &Ceremony, id: &str) -> bool {
     match &ceremony.rite {
         Rite::Wedding { a, b } => a == id || b == id,
         Rite::Funeral { .. } => ceremony.officiant == id,
+        Rite::Trial { accused, accuser, .. } => accused == id || accuser == id || ceremony.officiant == id,
     }
 }
 
@@ -446,6 +531,15 @@ fn still_stands(ctx: &mut Ctx) -> bool {
             return false;
         }
     }
+    if let Rite::Trial { accused, case_id, .. } = &ceremony.rite {
+        let open = ctx.state.cases.iter().any(|case| case.victim == *case_id && !case.closed);
+        let here = ctx.state.characters.get(accused).is_some_and(|c| c.exiled_since.is_none());
+        if !open || !here {
+            let text = format!("The trial of {} will not be held.", name_of(ctx.state, accused));
+            call_off(ctx, text);
+            return false;
+        }
+    }
     if !ctx.alive(&ceremony.officiant) {
         let principals = principals(&ceremony);
         let except: Vec<&str> = principals.iter().map(String::as_str).collect();
@@ -453,6 +547,13 @@ fn still_stands(ctx: &mut Ctx) -> bool {
         if let Some(c) = &mut ctx.state.ceremony {
             c.officiant = officiant;
         }
+    }
+    // An accuser who is gone leaves the one who speaks the rite to lay out the case.
+    if let Some(c) = &mut ctx.state.ceremony
+        && let Rite::Trial { accuser, .. } = &mut c.rite
+        && !ctx.state.characters.contains_key(accuser.as_str())
+    {
+        *accuser = c.officiant.clone();
     }
     true
 }
@@ -484,6 +585,7 @@ fn describe_rite(state: &SimState, ceremony: &Ceremony) -> (String, ChronicleKin
             (format!("The wedding of {} and {}", name_of(state, a), name_of(state, b)), ChronicleKind::Romance)
         }
         Rite::Funeral { dead } => (format!("The burial of {}", names_of(state, dead)), ChronicleKind::Death),
+        Rite::Trial { accused, .. } => (format!("The trial of {}", name_of(state, accused)), ChronicleKind::Conflict),
     }
 }
 
@@ -560,6 +662,12 @@ pub fn run_attend(ctx: &mut Ctx, id: &str, place_id: &str) {
             let look_at = match &ceremony.rite {
                 Rite::Wedding { a, b } if a == id => spot_for(ctx.state, &ceremony, b),
                 Rite::Wedding { a, b } if b == id => spot_for(ctx.state, &ceremony, a),
+                Rite::Trial { accused, accuser, .. } if accused == id && accuser != id => {
+                    spot_for(ctx.state, &ceremony, accuser)
+                }
+                Rite::Trial { accused, accuser, .. } if accuser == id && accused != id => {
+                    spot_for(ctx.state, &ceremony, accused)
+                }
                 _ => centre_of(ctx.state, &ceremony),
             };
             let c = ctx.c(id);
@@ -737,6 +845,76 @@ fn rite_step(ctx: &mut Ctx) {
                         conclude_funeral(ctx, &ceremony, &dead);
                     }
                 }
+            }
+        }
+        Rite::Trial { accused, accuser, case_id } => {
+            let (accused, accuser, case_id) = (accused.clone(), accuser.clone(), case_id.clone());
+            trial_step(ctx, &ceremony, &accused, &accuser, &case_id);
+        }
+    }
+}
+
+/// The trial, step by step: the charge, the case against them, their plea, a voice from each side of the crowd,
+/// and the verdict, which the attendees decide between them (`cases::votes`).
+fn trial_step(ctx: &mut Ctx, ceremony: &Ceremony, accused: &str, accuser: &str, case_id: &str) {
+    let officiant = ceremony.officiant.clone();
+    let (accused_name, victim_name) = (name_of(ctx.state, accused), name_of(ctx.state, case_id));
+    let clue = cases::strongest_clue(ctx, case_id, accused);
+    let fact = clue
+        .as_ref()
+        .map_or_else(|| format!("{accused_name} had no cause to be glad of {victim_name}"), |(_, fact)| fact.clone());
+    let names = [("accused", accused_name.as_str()), ("victim", victim_name.as_str()), ("fact", fact.as_str())];
+    let crowd: Vec<Id> = present(ctx.state, ceremony)
+        .into_iter()
+        .filter(|id| id != accused && id != accuser && *id != officiant)
+        .collect();
+    let voters: Vec<Id> = present(ctx.state, ceremony);
+    let (guilty, innocent) = cases::votes(ctx, case_id, accused, clue.as_ref().map(|(i, _)| *i), &voters);
+    match ceremony.step {
+        0 => {
+            let text = line(ctx.pick(&TRIAL_OPENING), &names);
+            speak(ctx, &officiant, text, None);
+        }
+        1 => {
+            let text = line(ctx.pick(&ACCUSATIONS), &names);
+            speak(ctx, accuser, text, Some(accused));
+            ctx.emit(SimEvent::Emote { id: accuser.to_owned(), emote: Emote::Anger });
+        }
+        2 => {
+            let text = line(ctx.pick(&PLEAS), &names);
+            speak(ctx, accused, text, None);
+        }
+        3 | 4 => {
+            // One voice from each side, the accusers first, if anyone in the crowd takes that side.
+            let (side, lines): (Vec<Id>, &[&str]) =
+                if ceremony.step == 3 { (guilty.clone(), &AGAINST) } else { (innocent.clone(), &FOR) };
+            let voices: Vec<Id> = side.into_iter().filter(|id| crowd.contains(id)).collect();
+            if voices.is_empty() {
+                if let Some(c) = &mut ctx.state.ceremony {
+                    c.step += 1;
+                }
+                return;
+            }
+            let voice = voices[ctx.pick_index(voices.len())].clone();
+            let text = line(ctx.pick(lines), &names);
+            speak(ctx, &voice, text, None);
+            let emote = if ceremony.step == 3 { Emote::Anger } else { Emote::Alert };
+            ctx.emit(SimEvent::Emote { id: voice, emote });
+        }
+        5 => {
+            let convicted = guilty.len() > innocent.len();
+            let text = line(ctx.pick(if convicted { &GUILTY[..] } else { &ACQUITTED[..] }), &names);
+            speak(ctx, &officiant, text, None);
+            let emote = if convicted { Emote::BrokenHeart } else { Emote::Alert };
+            ctx.emit(SimEvent::Emote { id: accused.to_owned(), emote });
+            cases::conclude_trial(ctx, case_id, accused, accuser, convicted, &voters);
+        }
+        _ => {
+            // No feast after a trial: the village goes back to its day.
+            let tick = ctx.tick();
+            if let Some(c) = &mut ctx.state.ceremony {
+                c.phase = CeremonyPhase::Feast;
+                c.until_tick = tick;
             }
         }
     }

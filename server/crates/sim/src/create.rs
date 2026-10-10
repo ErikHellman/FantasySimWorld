@@ -70,6 +70,9 @@ pub fn create_state(seed: u32) -> SimState {
         fauna: Default::default(),
         weather: Default::default(),
         ghosts: Default::default(),
+        cases: Vec::new(),
+        sightings: Vec::new(),
+        exiles: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {

@@ -8,6 +8,7 @@ use crate::data::anims::AnimId;
 use crate::events::{Emote, SimEvent};
 use crate::state::{ChronicleKind, Corpse, DeadRecord, Grave, MemoryKind, Quirk, StimulusKind};
 use crate::systems::billboards::{read_mark, reading};
+use crate::systems::cases;
 use crate::systems::ceremonies;
 use crate::systems::combat::witnesses;
 use crate::systems::conversation::abort_conversation;
@@ -223,6 +224,10 @@ pub fn kill_character(ctx: &mut Ctx, victim_id: &str, cause: &str, killer: Optio
     ctx.emit(SimEvent::SavePoint { reason: "death".into() });
 
     ctx.state.director.death_ticks.push(tick);
+    // A killing nobody saw becomes a case the village tries to solve.
+    if let Some(hidden) = hidden {
+        cases::open_case(ctx, &victim, hidden);
+    }
     // The funeral is arranged before the arrival is rolled, so the dice fall as they always did.
     ceremonies::on_death(ctx, victim_id);
     schedule_arrival_after_loss(ctx);

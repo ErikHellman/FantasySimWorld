@@ -12,7 +12,7 @@ const CUT_MARGIN = 20;
 const ROTATE_MARGIN = 15;
 
 /** What earns a "Happening now" card. */
-const CARD_KINDS: ReadonlySet<HotspotKind> = new Set<HotspotKind>(['dragon', 'boss', 'fire', 'raid', 'ceremony', 'brawl', 'battle']);
+const CARD_KINDS: ReadonlySet<HotspotKind> = new Set<HotspotKind>(['dragon', 'boss', 'fire', 'raid', 'ceremony', 'brawl', 'battle', 'stalking']);
 /** A kind that was just carded is not carded again this soon, so a fight that changes hands is one card. */
 const CARD_COOLDOWN_SECONDS = 90;
 /** How long a card stays up. */
@@ -86,6 +86,7 @@ export function hotspotIcon(kind: HotspotKind): string {
     case 'ceremony': return '🔔';
     case 'battle': return '⚔️';
     case 'brawl': return '👊';
+    case 'stalking': return '🗡️';
     case 'dead': return '🧟';
     case 'ghost': return '👻';
     case 'quarrel': return '💢';

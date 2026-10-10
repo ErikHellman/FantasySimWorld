@@ -735,6 +735,24 @@ fn ceremony_line(state: &SimState, c: &Character) -> Option<String> {
                 CeremonyPhase::Feast => format!("The wake for {names} is at {tavern}."),
             }
         }
+        Rite::Trial { accused, case_id, .. } => {
+            let (accused_name, victim) = (name_of(state, accused), name_of(state, case_id));
+            match ceremony.phase {
+                CeremonyPhase::Announced if *accused == c.id => format!(
+                    "You are accused of killing {victim}, and will be tried on the village green {day} at {clock}."
+                ),
+                CeremonyPhase::Announced => format!(
+                    "{accused_name} is accused of killing {victim} and will be tried on the village green {day} at {clock}."
+                ),
+                CeremonyPhase::Gathering | CeremonyPhase::Rite if *accused == c.id => {
+                    format!("You are on trial on the green for the killing of {victim}, before the whole village.")
+                }
+                CeremonyPhase::Gathering | CeremonyPhase::Rite => {
+                    format!("The village is gathered on the green to try {accused_name} for the killing of {victim}.")
+                }
+                CeremonyPhase::Feast => format!("The trial of {accused_name} is over."),
+            }
+        }
     })
 }
 
@@ -1506,7 +1524,7 @@ pub fn eulogy_prompt(state: &SimState, me: &Character, ceremony: &Ceremony) -> P
     let (day, clock) = when_held(state, ceremony);
     let dead: &[String] = match &ceremony.rite {
         Rite::Funeral { dead } => dead,
-        Rite::Wedding { .. } => &[],
+        Rite::Wedding { .. } | Rite::Trial { .. } => &[],
     };
     let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
     let names = join_names(&names);

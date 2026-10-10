@@ -15,4 +15,5 @@ pub mod jobs;
 pub mod monsters;
 pub mod names;
 pub mod smalltalk;
+pub mod trials;
 pub mod weather;

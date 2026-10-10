@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -332,12 +332,12 @@ fire: number,
  */
 built: number, };
 
-export type CeremonyKind = "wedding" | "funeral";
+export type CeremonyKind = "wedding" | "funeral" | "trial";
 
 export type CeremonyPhase = "announced" | "gathering" | "rite" | "feast" | "over";
 
 /**
- * A wedding or funeral the village has arranged, as viewers are told of it.
+ * A wedding, funeral or trial the village has arranged, as viewers are told of it.
  */
 export type Ceremony = { id: string, kind: CeremonyKind, phase: CeremonyPhase, 
 /**
@@ -345,7 +345,7 @@ export type Ceremony = { id: string, kind: CeremonyKind, phase: CeremonyPhase,
  */
 placeId: string, placeName: string, 
 /**
- * the couple, or the dead
+ * the couple, the dead, or the accused and their accuser
  */
 ids: Array<string>, 
 /**
@@ -475,7 +475,7 @@ export type Founding = { settled: number, total: number, };
 /**
  * What a hotspot is about; the client decides from it which ones earn a "Happening now" card.
  */
-export type HotspotKind = "dragon" | "boss" | "fire" | "raid" | "ceremony" | "battle" | "brawl" | "dead" | "ghost" | "quarrel" | "music" | "romance" | "daily";
+export type HotspotKind = "dragon" | "boss" | "fire" | "raid" | "ceremony" | "battle" | "brawl" | "stalking" | "dead" | "ghost" | "quarrel" | "music" | "romance" | "daily";
 
 /**
  * Something worth watching: what it is, whom to follow and where it is.
@@ -602,7 +602,11 @@ homeless: boolean,
 /**
  * the first name of the one they are married to
  */
-spouse: string | null, kills: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+spouse: string | null, kills: number, 
+/**
+ * what only viewers are told about them: that they are a murderer, and whom they have killed
+ */
+secret?: string, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */

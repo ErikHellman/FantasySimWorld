@@ -65,10 +65,11 @@ fn found_village_fills_the_village_from_the_sims_own_lists_and_ends_the_founding
     unique.sort();
     unique.dedup();
     assert_eq!(unique.len(), firsts.len(), "{firsts:?}");
+    assert!(living(state).filter(|c| c.has(Quirk::Murderous)).count() <= 1);
     for c in living(state) {
         assert!(c.home_id.starts_with("home_"));
         assert!(is_walkable(c.pos.x, c.pos.z), "{}", c.profile.name);
-        assert!(!c.has(Quirk::Murderous) && !c.has(Quirk::Occultist), "{}", c.profile.name);
+        assert!(!c.has(Quirk::Occultist), "{}", c.profile.name);
         assert_eq!(c.relationships.len(), state.order.len() - 1, "{}", c.profile.name);
         if !c.is_child() {
             assert_eq!(c.profile.traits.len(), 3);
@@ -212,4 +213,19 @@ fn keeps_the_village_populated_over_20_days() {
 #[ignore]
 fn keeps_the_village_populated_memories_bounded_and_killings_rare_over_200_days() {
     long_run(200);
+}
+
+#[test]
+fn now_and_then_a_new_world_hides_one_murderer_among_its_grown_founders() {
+    let mut with_one = 0;
+    for seed in 1..=30 {
+        let mut sim = Sim::new(create_state(seed));
+        sim.enqueue(Command::FoundVillage);
+        sim.step();
+        let murderers: Vec<_> = living(&sim.state).filter(|c| c.has(Quirk::Murderous)).collect();
+        assert!(murderers.len() <= 1, "seed {seed}");
+        assert!(murderers.iter().all(|c| !c.is_child()), "seed {seed}");
+        with_one += murderers.len();
+    }
+    assert!((4..=18).contains(&with_one), "{with_one} of 30 worlds");
 }

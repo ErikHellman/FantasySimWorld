@@ -42,6 +42,7 @@ fn doing(state: &SimState, c: &Character) -> String {
         return if c.asleep { "sleeping".into() } else { "standing about".into() };
     };
     match &intent.action {
+        IntentAction::GoTo { .. } if c.exiled_since.is_some() => "driven out, leaving the valley for good".into(),
         IntentAction::GoTo { place_id } => {
             format!("walking to {}", find_place(place_id).map_or("somewhere", |place| place.name))
         }
@@ -153,8 +154,8 @@ fn doing(state: &SimState, c: &Character) -> String {
             if c.anim == AnimId::SitFloor { "sitting on the ground, recovering" } else { "pausing a moment" }.into()
         }
         IntentAction::Nap { .. } => if c.asleep { "napping on the grass" } else { "looking for a spot to nap" }.into(),
-        // A stalker looks like anyone else taking the air.
-        IntentAction::Stalk { .. } => "strolling around the village".into(),
+        // Viewers are let in on it; the villagers only ever see someone taking the air.
+        IntentAction::Stalk { target_id } => format!("stalking {}", name_of(state, target_id)),
         IntentAction::FightFire { place_id } => {
             let name = find_place(place_id).map_or("the house", |place| place.name);
             if c.tool.is_some() {
@@ -186,6 +187,15 @@ fn doing(state: &SimState, c: &Character) -> String {
                         format!("at the graveside for {names}")
                     } else {
                         format!("on the way to the funeral of {names}")
+                    }
+                }
+                Some(Rite::Trial { accused, .. }) => {
+                    let accused_name = name_of(state, accused);
+                    match (there, accused == &c.id) {
+                        (true, true) => "on trial on the green".into(),
+                        (true, false) => format!("at the trial of {accused_name}"),
+                        (false, true) => "on the way to be tried on the green".into(),
+                        (false, false) => format!("on the way to the trial of {accused_name}"),
                     }
                 }
                 None => "going to the ceremony".into(),

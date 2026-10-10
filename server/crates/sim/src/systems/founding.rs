@@ -8,7 +8,7 @@
 
 use fsw_core::jsmath::js_round;
 use fsw_core::math2d::clamp;
-use fsw_core::rng::range;
+use fsw_core::rng::{hash_string, range};
 use fsw_world::places::{ActivityId, get_place};
 
 use crate::data::classes::ClassId;
@@ -307,8 +307,28 @@ fn conclude_founding(ctx: &mut Ctx) {
         format!("The village is founded: {souls} souls under the valley's sky."),
         Vec::new(),
     );
+    hide_a_murderer(ctx.state);
     found_children(ctx);
     ctx.emit(SimEvent::SavePoint { reason: "founded".into() });
+}
+
+/// One new world in this many starts with a murderer among its founders.
+const FOUNDING_MURDERER_ONE_IN: u32 = 3;
+
+/// Now and then one grown founder is secretly a murderer. Nobody tells the model (it described an ordinary
+/// villager), and it is settled by a hash of the world's seed, not the RNG, so the founding runs as before.
+fn hide_a_murderer(state: &mut SimState) {
+    if !hash_string(&format!("founding-murderer:{}", state.seed)).is_multiple_of(FOUNDING_MURDERER_ONE_IN) {
+        return;
+    }
+    let grown: Vec<Id> = state.order.iter().filter(|id| !state.characters[*id].is_child()).cloned().collect();
+    if grown.is_empty() {
+        return;
+    }
+    let pick = hash_string(&format!("founding-murderer-who:{}", state.seed)) as usize % grown.len();
+    if let Some(c) = state.characters.get_mut(&grown[pick]) {
+        c.quirks.push(Quirk::Murderous);
+    }
 }
 
 /// Settles one person during the founding and makes them known to everyone already here.
