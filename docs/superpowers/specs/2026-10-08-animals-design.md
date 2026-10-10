@@ -25,7 +25,8 @@ The valley has animals: a herd and hens at the windmill farm, ducks on the lake 
 - **The system** (`server/crates/sim/src/systems/animals.rs`, `update_animals` after `update_monsters` and `update_ghosts`):
   - **Animals keep apart from the villagers' story.** They draw only from `fauna.rng`, never from the villagers' generator, take no part in `separate`, and nudge only themselves out of the way. A world goes on as it would without them, except where a villager deals with one.
   - **Each animal moves every fourth tick (`STRIDE`), on a tick of its own**, by four ticks' worth. A ridden horse moves with its rider every tick.
-  - **They keep off blocked ground.** An animal that finds itself on it (built over where it stood, or a corner its path cut) steps off onto open ground in the same tick.
+  - **They keep off blocked ground.** An animal that finds itself on it (built over where it stood, or a corner its path cut) steps off onto open ground in the same tick, and finds its way afresh from there (or gives up on going there, if the fresh way is the one that cut the corner).
+  - **Only animals standing still are nudged apart.** One on the move brushes past animals and villagers in its way, and those standing make room. Pushing walkers too left two animals meeting head on in a narrow lane of the farmyard, or one walking into a villager standing in its way, walking in place for good.
 - **Villagers**:
   - `Tend` is run in `systems/intents.rs` like `Play`, with no slot. `tending_spot` and `hold_still` choose the animal and keep it still.
   - `run_pet` follows the pattern of picking up loot.
@@ -49,7 +50,7 @@ The valley has animals: a herd and hens at the windmill farm, ducks on the lake 
 
 `server/crates/sim/tests/animals.rs` covers:
 - the founding of the animals;
-- walkable ground over three days;
+- walkable ground over three days, with no animal walking in place;
 - running from the dead;
 - following a keeper, naming, the fallback name, rehoming;
 - a save round trip, sleep at night;

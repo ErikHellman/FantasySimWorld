@@ -64,8 +64,15 @@ fn chats_with_women(seed: u32, shyness: f64) -> usize {
 
 #[test]
 fn a_shy_villager_seldom_starts_a_conversation_with_a_woman() {
-    // Eight seeds: a few chats a seed is too few to tell shy from unlucky over four.
-    let total = |shyness: f64| (1..=8).map(|seed| chats_with_women(seed, shyness)).sum::<usize>();
+    // Sixteen seeds: a few chats a seed is too few to tell shy from unlucky over eight (seeds 1 to 8 alone came to
+    // 10 against 18 once the farm animals stopped getting stuck, against 4 and 32 for seeds 9 to 16). Each seed runs
+    // on a thread of its own, so the test takes no longer for it.
+    let total = |shyness: f64| {
+        std::thread::scope(|scope| {
+            let runs: Vec<_> = (1..=16).map(|seed| scope.spawn(move || chats_with_women(seed, shyness))).collect();
+            runs.into_iter().map(|run| run.join().unwrap()).sum::<usize>()
+        })
+    };
     let (shy, at_ease) = (total(0.85), total(0.0));
     assert!(shy * 2 <= at_ease, "shy {shy}, at ease {at_ease}");
 }
