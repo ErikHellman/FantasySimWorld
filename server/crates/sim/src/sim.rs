@@ -17,6 +17,7 @@ use crate::systems::billboards::{
     TEXT_CAP, board_index, clean_text, day_tone, has_read, react, reading, shown, wants_words,
 };
 use crate::systems::blocking::update_blocking;
+use crate::systems::cases::update_cases;
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
 use crate::systems::combat::{resolve_mercy, start_fight, start_flee};
@@ -411,6 +412,7 @@ impl Sim {
         update_animals(&mut ctx);
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
+        update_cases(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);

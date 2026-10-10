@@ -349,6 +349,7 @@ pub fn ceremony_of(state: &SimState) -> Option<Ceremony> {
     let (kind, ids) = match &ceremony.rite {
         Rite::Wedding { a, b } => (CeremonyKind::Wedding, vec![a.clone(), b.clone()]),
         Rite::Funeral { dead } => (CeremonyKind::Funeral, dead.clone()),
+        Rite::Trial { accused, accuser, .. } => (CeremonyKind::Trial, vec![accused.clone(), accuser.clone()]),
     };
     let when = game_time(ceremony.start_tick);
     Some(Ceremony {

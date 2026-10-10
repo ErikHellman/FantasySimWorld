@@ -235,7 +235,7 @@ export function App() {
       {ui.raid.value && !burning && <div class="alarm">⚔{'\uFE0F'} Orc raiders are in the valley</div>}
       {ui.alarm.value && !ui.raid.value && !burning && <div class="alarm">⚔{'\uFE0F'} The alarm has been raised</div>}
       {hail && !ui.alarm.value && !ui.raid.value && !burning && !alight && <div class="alarm">🌨️ Hail! Everyone is running for cover</div>}
-      {ceremony && !hail && !ui.alarm.value && !burning && !alight && <div class="alarm festive">{ceremonyBanner(ceremony)}</div>}
+      {ceremony && !hail && !ui.alarm.value && !burning && !alight && <div class={ceremony.kind === 'trial' ? 'alarm' : 'alarm festive'}>{ceremonyBanner(ceremony)}</div>}
       {ui.throttled.value && !hail && !ui.alarm.value && !burning && !alight && !ceremony && <div class="alarm calm">🧠 Slowed to 1× while the villagers think</div>}
     </>
   );

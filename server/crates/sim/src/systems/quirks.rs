@@ -146,7 +146,8 @@ const HUNT_MIN_POPULATION: usize = 10;
 fn killing_allowed(ctx: &Ctx, id: &str) -> bool {
     let tick = ctx.tick();
     let c = ctx.cr(id);
-    tick - c.arrived_tick >= TICKS_PER_DAY * 2
+    c.exiled_since.is_none()
+        && tick - c.arrived_tick >= TICKS_PER_DAY * 2
         && tick - ctx.state.director.last_lethal_tick >= TICKS_PER_DAY * 3
         && adult_count(ctx.state) >= HUNT_MIN_POPULATION
         && c.hp >= max_hp(c) * 0.7

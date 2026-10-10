@@ -1,6 +1,8 @@
 //! Newcomers: described by the server (the language model's work) or invented by the sim, and
 //! walked in by the west road.
 
+use fsw_core::rng::hash_string;
+use fsw_core::time::game_time;
 use fsw_core::vec2;
 use fsw_world::places::{get_place, homes};
 
@@ -155,6 +157,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         mounting: None,
         heartened_until_tick: 0,
         passing: None,
+        exiled_since: None,
         sidestep: None,
     }
 }
@@ -168,8 +171,25 @@ pub fn arrive(ctx: &mut Ctx) -> Id {
         Some(v) if !first_name_taken(ctx.state, &v.name) => *v,
         _ => invent_villager(ctx, false),
     };
-    let blueprint = Blueprint::from_villager(ctx, &villager);
+    let mut blueprint = Blueprint::from_villager(ctx, &villager);
+    if comes_to_kill(ctx.state, &villager.name) {
+        blueprint.quirks.push(Quirk::Murderous);
+    }
     arrive_with(ctx, &blueprint, &villager.bonds, &villager.reason)
+}
+
+/// The first day a newcomer may be a murderer: the village has a few days of peace first.
+const MURDERER_FROM_DAY: i64 = 3;
+/// One newcomer in this many is one, while nobody else in the valley is.
+const MURDERER_ONE_IN: u32 = 8;
+
+/// Whether this newcomer is secretly a murderer: rare, never a founder and never two at a time. Nobody tells
+/// the model (its description is of an ordinary traveller), and it is settled by a hash of the world's seed
+/// and the name, not the RNG, so a newcomer who is not a murderer arrives exactly as before.
+fn comes_to_kill(state: &SimState, name: &str) -> bool {
+    game_time(state.tick).day >= MURDERER_FROM_DAY
+        && !state.characters.values().any(|c| c.has(Quirk::Murderous))
+        && hash_string(&format!("murderer:{}:{name}", state.seed)).is_multiple_of(MURDERER_ONE_IN)
 }
 
 /// Walks this person in by the west road, with the ties they bring and, for the chronicle, why they came.

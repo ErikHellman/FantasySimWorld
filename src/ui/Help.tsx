@@ -27,7 +27,7 @@ export function HelpPanel() {
     ui.panel.value = 'none';
   };
   const banner = (
-    <li><strong>A banner</strong> across the top says when the alarm is up, orc raiders are in the valley, a house is on fire, hail is falling, a wedding or a burial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
+    <li><strong>A banner</strong> across the top says when the alarm is up, orc raiders are in the valley, a house is on fire, hail is falling, a wedding, a burial or a trial is coming or under way, and when the world has slowed to 1× while the villagers think.</li>
   );
   return (
     <div class="modal" onClick={close}>
@@ -79,14 +79,14 @@ export function HelpPanel() {
         <h3>The Auto camera</h3>
         <p>
           Leave the camera alone for half a minute, with nobody followed, and the Auto camera takes it: it follows whatever is
-          most worth watching (the dragon, a fire, a raid, a wedding, a fight, a quarrel, a tune with an audience, and on a quiet
+          most worth watching (the dragon, a fire, a raid, a wedding or a trial, a fight, a murderer stalking, a quarrel, a tune with an audience, and on a quiet
           day whoever is reading a billboard or riding out) and moves on when something better starts or the moment is over.
           The line {phone ? 'above the tabs' : 'at the bottom'} says what it is showing; {phone ? 'tap' : 'click'} it to follow
           them and open their page, or ✕ to turn the Auto camera off. {phone ? 'With it off, the same place offers 🎬 Auto camera to turn it back on.' : '🎬 Auto in the top bar turns it on and off.'} Moving
           the camera or choosing someone always wins.
         </p>
         <p>
-          When something big starts (the dragon, a boss, a fire, a raid, a wedding or a funeral, a fight), a <strong>Happening
+          When something big starts (the dragon, a boss, a fire, a raid, a wedding, a funeral or a trial, a fight, a murderer on the prowl), a <strong>Happening
           now</strong> card says so for a few seconds, with <strong>Watch</strong> to go and see.
         </p>
 
@@ -119,7 +119,7 @@ export function HelpPanel() {
         <ul class="help-list">
           <li><strong>Top bar</strong>: the day and time, 🎬 Auto (the Auto camera, on or off), how many people are watching 👁, villagers alive 👥, the dead and raiders abroad 💀 (and 🐉 while the dragon is over the valley), the graveyard 🪦 (click it to read the names), the stores of wood 🪵, stone 🪨 and ore ⛏ once the village has gathered any, and the village chest 🪙 with 🧺 what the market's stalls hold. 🧠 says whether the villagers think with a language model or run on their built-in routines.</li>
           <li><strong>Villagers</strong> (left): everyone alive, what they are doing, their health, ♥ for those with a partner, and a mark when they are fighting ⚔️, asleep 💤, talking 💬 or hurt 🩹. A 🧒 marks a child.</li>
-          <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights, raids and trades. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
+          <li><strong>Chronicle</strong> (bottom left): the village's news, newest first: births, weddings, deaths, fires, fights, raids, trades and trials, and, in red, what only you know: who really did a killing nobody saw. <strong>Voices</strong> next to it shows what the villagers have said aloud.</li>
           <li><strong>A villager's page</strong> (right): <em>About</em> has their story, wants, needs, what they carry and their gold; <em>Mind</em> their current thought and today's plan; <em>Bonds</em> how they feel about the others; <em>Memory</em> what they remember, with more dots for what mattered more.</li>
           <li><strong>One of the dead, a raider or the dragon</strong> (right, when you follow it): its health, what it is after, where and how it came, who it once was, what it is carrying off, and how many villagers it has slain.</li>
           <li><strong>A ghost</strong> (right, when you follow it): who it was, how they died, what it is about and how many nights it has left.</li>

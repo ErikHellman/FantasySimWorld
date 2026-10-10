@@ -11,7 +11,7 @@ use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
-    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Raid, RaidOrder, RaidPhase,
+    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Quirk, Raid, RaidOrder, RaidPhase,
     RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
@@ -19,7 +19,7 @@ use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
 use fsw_sim::systems::world::{beds_of, object_name, project_label};
-use fsw_sim::util::{first_name, living, name_of, place_name_at};
+use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
@@ -394,6 +394,24 @@ fn monster_rose(state: &SimState, m: &Monster) -> String {
     format!("{how} on day {} at {}", time.day, format_clock(time.minute_of_day))
 }
 
+/// What viewers are let in on and the village is not: a murderer, and the killings nobody saw.
+fn secret_of(state: &SimState, c: &Character) -> Option<String> {
+    if !c.has(Quirk::Murderous) {
+        return None;
+    }
+    let victims: Vec<String> = state
+        .cases
+        .iter()
+        .filter(|case| case.killer == c.id)
+        .map(|case| case.victim_name.split(' ').next().unwrap_or_default().to_owned())
+        .collect();
+    Some(if victims.is_empty() {
+        "A murderer, waiting for the chance to kill unseen.".into()
+    } else {
+        format!("A murderer. Killed {} unseen; the village does not know.", join_names(&victims))
+    })
+}
+
 /// The inspector for one living character.
 pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail> {
     let c = state.characters.get(id)?;
@@ -432,6 +450,7 @@ pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail
         spouse: c.spouse_id.as_deref().map(|spouse| name_of(state, spouse)),
         gold: c.gold.max(0) as u32,
         kills: c.kills.max(0) as u32,
+        secret: secret_of(state, c),
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),
             PlanSource::Llm => "llm".into(),

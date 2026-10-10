@@ -12,6 +12,11 @@ const funeral: Ceremony = {
   ids: ['c3', 'c4'], names: ['Garrick', 'Dorn'], day: 6, time: '09:00',
 };
 
+const trial: Ceremony = {
+  id: 'y3', kind: 'trial', phase: 'announced', placeId: 'green', placeName: 'the village green',
+  ids: ['c5', 'c6'], names: ['Bran', 'Edda'], day: 7, time: '16:00',
+};
+
 afterEach(() => {
   ui.ceremony.value = null;
 });
@@ -24,6 +29,8 @@ describe('the ceremony banner', () => {
     expect(ceremonyBanner(funeral)).toBe('🕯️ The village buries Garrick and Dorn at 09:00');
     expect(ceremonyBanner({ ...funeral, phase: 'rite' })).toBe('🕯️ The village is burying Garrick and Dorn');
     expect(ceremonyBanner({ ...funeral, phase: 'feast', names: ['Garrick'] })).toBe('🍻 The wake for Garrick is at the tavern');
+    expect(ceremonyBanner(trial)).toBe('⚖️ Bran is to be tried on the village green at 16:00');
+    expect(ceremonyBanner({ ...trial, phase: 'rite' })).toBe('⚖️ Bran is on trial on the village green');
   });
 });
 

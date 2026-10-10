@@ -428,6 +428,11 @@ fn finish(ctx: &mut Ctx, convo_id: &str) {
         }
     }
 
+    // Anyone who knows something about a killing nobody saw tells it to someone they are on speaking terms with.
+    if convo.tone != TalkTone::Hostile {
+        crate::systems::cases::share(ctx, &a, &b);
+    }
+
     let topic = if convo.topic.is_empty() { "this and that".to_owned() } else { convo.topic.clone() };
     if matches!(ctx.cr(&a).intent.as_ref().map(|i| &i.action), Some(IntentAction::Talk { .. })) {
         let c = ctx.c(&a);

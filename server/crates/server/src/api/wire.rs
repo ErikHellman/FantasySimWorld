@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// Character, monster, ghost, animal, corpse and conversation ids (`c1`, `m7`, `g9`, `a3`, …).
 pub type Id = String;
@@ -584,6 +584,8 @@ pub struct House {
 pub enum CeremonyKind {
     Wedding,
     Funeral,
+    /// someone tried on the green for a killing nobody saw; `ids` are the accused and the accuser
+    Trial,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -601,7 +603,7 @@ pub enum CeremonyPhase {
     Over,
 }
 
-/// A wedding or funeral the village has arranged, as viewers are told of it.
+/// A wedding, funeral or trial the village has arranged, as viewers are told of it.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Ceremony {
@@ -611,7 +613,7 @@ pub struct Ceremony {
     /// where the rite is held
     pub place_id: String,
     pub place_name: String,
-    /// the couple, or the dead
+    /// the couple, the dead, or the accused and their accuser
     pub ids: Vec<Id>,
     /// their first names, in the same order
     pub names: Vec<String>,
@@ -781,12 +783,14 @@ pub enum HotspotKind {
     Fire,
     /// an orc war band in the valley
     Raid,
-    /// a wedding or a funeral under way
+    /// a wedding, a funeral or a trial under way
     Ceremony,
     /// villagers fighting the dead or raiders
     Battle,
     /// villagers fighting each other
     Brawl,
+    /// a murderer trailing after their next victim, unseen by the village
+    Stalking,
     /// the dead abroad, with nobody fighting them yet
     Dead,
     /// a ghost walking the village
@@ -968,6 +972,10 @@ pub struct CharacterDetail {
     /// the first name of the one they are married to
     pub spouse: Option<String>,
     pub kills: u32,
+    /// what only viewers are told about them: that they are a murderer, and whom they have killed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub secret: Option<String>,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
     pub relations: Vec<RelationRow>,

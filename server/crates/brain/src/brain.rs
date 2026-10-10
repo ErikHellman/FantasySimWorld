@@ -1345,6 +1345,8 @@ impl Brain {
                             vows_prompt(state, me, partner, ceremony)
                         }
                         Rite::Funeral { .. } => eulogy_prompt(state, me, ceremony),
+                        // Nobody is asked to write for a trial (`ceremonies::speakers`).
+                        Rite::Trial { .. } => return None,
                     };
                     built(prompt, ())
                 },

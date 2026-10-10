@@ -1,7 +1,7 @@
-//! What is worth watching right now: the dragon, a boss, a fire, a raid, a wedding, a fight, a quarrel, a
-//! tune with an audience. The digest ranks them once a second and sends the best few in `Status`; the client's
-//! Auto camera follows the top one while its viewer leaves the camera alone, and the biggest earn a
-//! "Happening now" card. Read-only: nothing here touches the sim.
+//! What is worth watching right now: the dragon, a boss, a fire, a raid, a wedding or a trial, a fight, a murderer
+//! on the prowl, a quarrel, a tune with an audience. The digest ranks them once a second and sends the best few in
+//! `Status`; the client's Auto camera follows the top one while its viewer leaves the camera alone, and the
+//! biggest earn a "Happening now" card. Read-only: nothing here touches the sim.
 
 use fsw_core::Vec2 as SimVec2;
 use fsw_sim::state::{
@@ -93,6 +93,13 @@ pub fn hotspots_of(state: &SimState) -> Vec<Hotspot> {
                 let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
                 (ceremony.officiant.clone(), format!("The village buries {}", names.join(" and ")))
             }
+            Rite::Trial { accused, case_id, .. } => {
+                let victim = state.cases.iter().find(|case| &case.victim == case_id).map_or_else(
+                    || "a neighbour".to_owned(),
+                    |case| case.victim_name.split(' ').next().unwrap_or_default().to_owned(),
+                );
+                (accused.clone(), format!("{} is on trial for killing {victim}", name_of(state, accused)))
+            }
         };
         let score = match ceremony.phase {
             CeremonyPhase::Rite => 85,
@@ -114,26 +121,29 @@ pub fn hotspots_of(state: &SimState) -> Vec<Hotspot> {
                 battle = Some((battle.map_or(c, |(first, _)| first), count));
             }
             FightMode::Brawl | FightMode::Lethal => {
-                // A murderer's strike is kept from viewers as it is from the chronicle: following it would name them.
-                let murder = mode == FightMode::Lethal
-                    && (c.has(Quirk::Murderous)
-                        || state.characters.get(target).is_some_and(|t| t.has(Quirk::Murderous)));
-                if murder {
-                    continue;
-                }
                 // One line per pair: the one whose id sorts first tells it.
                 if state.characters.get(target).is_some_and(|t| fighting(t).is_some_and(|(back, _)| back == c.id))
                     && target < c.id.as_str()
                 {
                     continue;
                 }
-                let (text, score) = if mode == FightMode::Lethal {
+                let murder = mode == FightMode::Lethal && c.has(Quirk::Murderous);
+                let (text, score) = if murder {
+                    (format!("{} is striking down {}", first_name(c), name_of(state, target)), 92)
+                } else if mode == FightMode::Lethal {
                     (format!("{} and {} are fighting to the death", first_name(c), name_of(state, target)), 88)
                 } else {
                     (format!("{} and {} are brawling", first_name(c), name_of(state, target)), 72)
                 };
                 found.push(spot(HotspotKind::Brawl, Some(&c.id), c.pos, text, score));
             }
+        }
+    }
+    // A murderer trailing after their next victim: the village does not see it, the viewers do.
+    for c in living(state) {
+        if let Some(IntentAction::Stalk { target_id }) = c.intent.as_ref().map(|i| &i.action) {
+            let text = format!("{} is stalking {}", first_name(c), name_of(state, target_id));
+            found.push(spot(HotspotKind::Stalking, Some(&c.id), c.pos, text, 64));
         }
     }
     if let Some((c, count)) = battle {
@@ -255,6 +265,25 @@ mod tests {
         assert_eq!(fire.subject, None);
         assert!(fire.text.ends_with("is on fire"), "{}", fire.text);
         assert_eq!(fire.score, 84);
+    }
+
+    #[test]
+    fn viewers_see_the_murderer_stalking() {
+        let mut state = create_test_state(1);
+        let mut events = Vec::new();
+        let hesper = fsw_testing::admit(&mut fsw_sim::util::Ctx::new(&mut state, &mut events), "hesper");
+        let kael = state.characters.values().find(|c| first_name(c) == "Kael").unwrap().id.clone();
+        state.characters.get_mut(&hesper).unwrap().intent = Some(fsw_sim::state::Intent::new(
+            IntentAction::Stalk { target_id: kael },
+            fsw_sim::state::IntentSource::Routine,
+        ));
+        let spots = hotspots_of(&state);
+        let stalking = spots.iter().find(|h| h.kind == HotspotKind::Stalking).expect("a stalking hotspot");
+        assert_eq!(stalking.subject.as_deref(), Some(hesper.as_str()));
+        assert!(stalking.text.ends_with("is stalking Kael"), "{}", stalking.text);
+        let detail = crate::digest::character_detail_of(&state, &hesper).unwrap();
+        assert!(detail.secret.is_some_and(|s| s.starts_with("A murderer")));
+        assert!(detail.status.starts_with("stalking Kael"), "{}", detail.status);
     }
 
     #[test]

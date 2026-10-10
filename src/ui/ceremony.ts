@@ -5,10 +5,19 @@ function joined(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** The banner for the wedding or funeral the village has arranged, in its current phase. */
+/** The banner for the wedding, funeral or trial the village has arranged, in its current phase. */
 export function ceremonyBanner(ceremony: Ceremony): string {
   const names = joined(ceremony.names);
   const place = ceremony.placeName;
+  if (ceremony.kind === 'trial') {
+    const accused = ceremony.names[0] ?? 'someone';
+    switch (ceremony.phase) {
+      case 'announced': return `⚖️ ${accused} is to be tried on ${place} at ${ceremony.time}`;
+      case 'gathering':
+      case 'rite': return `⚖️ ${accused} is on trial on ${place}`;
+      default: return `⚖️ The trial of ${accused} is over`;
+    }
+  }
   if (ceremony.kind === 'wedding') {
     switch (ceremony.phase) {
       case 'announced': return `💍 ${names} marry on ${place} at ${ceremony.time}`;

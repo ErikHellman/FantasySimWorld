@@ -4,6 +4,7 @@ pub mod animals;
 pub mod arrivals;
 pub mod billboards;
 pub mod blocking;
+pub mod cases;
 pub mod ceremonies;
 pub mod charm;
 pub mod children;
