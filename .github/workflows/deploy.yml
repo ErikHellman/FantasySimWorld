@@ -21,14 +21,34 @@ permissions:
   contents: read
 
 jobs:
-  # The same checks as every push, so a red commit cannot reach the live world.
-  checks:
+  # main's own CI run has usually checked this very commit already. Asking saves running the whole suite again.
+  checked:
     if: inputs.ref == ''
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    outputs:
+      passed: ${{ steps.ci.outputs.passed }}
+    steps:
+      - id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event push --commit "$GITHUB_SHA" \
+            --status success --json databaseId --jq length)"
+          if [ "$runs" -gt 0 ]; then passed=true; else passed=false; fi
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+
+  # The same checks as every push, so a red commit cannot reach the live world; skipped when CI already passed on it.
+  checks:
+    needs: checked
+    if: needs.checked.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
 
   deploy:
-    needs: checks
-    # Runs after the checks pass, or without them when the release workflow, which ran them, calls this one.
+    needs: [checked, checks]
+    # Runs after the checks pass, without them when main's CI already passed on this commit, or when the release
+    # workflow, which saw to the checks, calls this one.
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
     # Holds FLY_API_TOKEN. Required reviewers or a branch rule can be added to it in the repository settings.

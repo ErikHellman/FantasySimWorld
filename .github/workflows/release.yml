@@ -28,13 +28,34 @@ permissions:
   contents: read
 
 jobs:
-  # The same checks as every push, so a red commit is never released.
-  checks:
+  # main's own CI run has usually checked this very commit already. Asking saves running the whole suite again.
+  checked:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    outputs:
+      passed: ${{ steps.ci.outputs.passed }}
+    steps:
+      - id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event push --commit "$GITHUB_SHA" \
+            --status success --json databaseId --jq length)"
+          if [ "$runs" -gt 0 ]; then passed=true; else passed=false; fi
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+
+  # The same checks as every push, so a red commit is never released; skipped when CI already passed on this commit.
+  checks:
+    needs: checked
+    if: needs.checked.outputs.passed != 'true'
     uses: ./.github/workflows/ci.yml
 
   release:
-    needs: checks
+    needs: [checked, checks]
+    # Runs after the checks pass, or without them when main's CI already passed on this commit.
+    if: ${{ !failure() && !cancelled() && needs.checked.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -45,7 +66,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      # The checks ran on the commit the workflow started from; refuse to release anything newer that they did not see.
+      # The checks ran (or had passed) on the commit the workflow started from; refuse to release anything newer that they did not see.
       - name: Check main has not moved
         run: |
           if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then

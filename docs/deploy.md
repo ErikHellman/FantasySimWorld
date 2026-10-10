@@ -38,7 +38,7 @@ In the repository settings, create an environment called `production` and add th
 
 To deploy, open **Actions → Deploy to Fly.io → Run workflow** and pick the branch or tag. The workflow:
 
-1. runs the same checks as every push (`ci.yml`), and stops if any fail;
+1. runs the same checks as CI (`ci.yml`), and stops if any fail, unless CI on `main` has already passed on that very commit;
 2. runs `fly deploy --remote-only --ha=false`, so the image is built on Fly's builder (which keeps the Docker layer cache between deploys) and the app stays on its one machine, and labels the image with the commit;
 3. waits for the new machine to pass the health check in `fly.toml`, then asks `https://<app>.fly.dev/healthz` once more.
 
@@ -52,7 +52,7 @@ A release is cut from `main` by the **Release** workflow (`.github/workflows/rel
 - **summary**: one optional line on what the release brings, which goes at the top of the notes and in the tag's message;
 - **deploy**: tick it to deploy the release to Fly.io straight afterwards, through the deploy workflow above.
 
-The workflow runs the same checks as every push, moves the version in `package.json`, the Cargo workspace and `Cargo.lock` (with `tools/release/bump-version.mjs`, which can also be run by hand), commits that to `main` as "Release vX.Y.Z" and tags it. It then builds the web client and a Linux server and publishes a GitHub release with both, a checksum file, and notes that list the pull requests merged since the last release. It stops without releasing if `main` moved on while the checks ran or the tag already exists.
+The workflow runs the same checks as CI (skipping them when CI on `main` has already passed on that commit), moves the version in `package.json`, the Cargo workspace and `Cargo.lock` (with `tools/release/bump-version.mjs`, which can also be run by hand), commits that to `main` as "Release vX.Y.Z" and tags it. It then builds the web client and a Linux server and publishes a GitHub release with both, a checksum file, and notes that list the pull requests merged since the last release. It stops without releasing if `main` moved on while the checks ran or the tag already exists.
 
 The workflow pushes to `main` with the repository's own Actions token. If `main` is ever protected so that only pull requests may change it, allow GitHub Actions to bypass that rule, or the push step fails and nothing is released.
 

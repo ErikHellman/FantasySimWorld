@@ -31,6 +31,10 @@ await_holding_lock = "deny"
 opt-level = 3
 [profile.dev.package.fsw-world]
 opt-level = 3
+[profile.dev.package.fsw-core]
+opt-level = 3
+[profile.dev.package.libm]
+opt-level = 3
 
 [profile.release]
 lto = "thin"
