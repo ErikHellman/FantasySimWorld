@@ -140,7 +140,8 @@ function BillboardsSection() {
     <>
       <h3>Billboards</h3>
       <p class="muted">
-        Each board shows a new slogan every morning unless you put something up. The tone colours the board and how the
+        Each board shows something new every morning unless you put something up: words the language model wrote for it
+        from what has lately happened, or a stock slogan without a model. The tone colours the board and how the
         villagers take it. Readers may also do what a board urges: words such as pray, eat, ale, rest, fish, buy, market,
         train, work, neighbour or friend send some of them off to do it. While the world is paused, a change shows when it
         resumes.

@@ -277,6 +277,13 @@ pub fn interpret_speech(calls: &[ToolCall]) -> Option<String> {
     tidy(call.args.get("text"), ceremonies::SPEECH_CAP)
 }
 
+/// The words the model painted on a billboard with `write_billboard`, tidied like a spoken line and kept to what a
+/// board holds. `None` when nothing usable was written.
+pub fn interpret_billboard(calls: &[ToolCall]) -> Option<String> {
+    let call = calls.iter().find(|c| c.name == "write_billboard")?;
+    tidy(call.args.get("text"), fsw_sim::systems::billboards::TEXT_CAP)
+}
+
 fn tidy(value: Option<&Value>, max: usize) -> Option<String> {
     let Some(Value::String(text)) = value else { return None };
     let text = strip_spans(&strip_spans(text, '*', '*'), '(', ')');

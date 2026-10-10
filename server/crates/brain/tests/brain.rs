@@ -805,3 +805,41 @@ async fn no_speech_is_asked_for_while_the_model_is_off() {
     assert!(h.speeches().is_empty());
     assert!(h.log("Sylvi", RequestKind::Ceremony).is_none());
 }
+
+#[tokio::test]
+async fn the_model_writes_the_days_billboards_from_what_has_happened() {
+    let mut h = harness(
+        continue_otherwise(|tools, _| {
+            tools.iter().any(|t| t == "write_billboard").then(
+                || json!([{ "name": "write_billboard", "args": { "text": "\"Lost: one pike. Rowan has it.\"" } }]),
+            )
+        }),
+        ConversationMode::Batched,
+    );
+    {
+        let mut sim = h.link.sim.lock();
+        let rowan = living(&sim.state).find(|c| first_name(c) == "Rowan").unwrap().id.clone();
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        ctx.chronicle(fsw_sim::state::ChronicleKind::Social, "Rowan caught a pike as long as a dog.", vec![rowan]);
+    }
+    h.settle().await;
+    let boards = fsw_world::places::billboards().len();
+    for _ in 0..boards * 3 {
+        h.brain.update(true);
+        h.wait().await;
+        h.step(1);
+    }
+    let sim = h.link.sim.lock();
+    for index in 0..boards {
+        let shown = fsw_sim::systems::billboards::shown(&sim.state, index);
+        assert_eq!(shown.text, "Lost: one pike. Rowan has it.", "board {index}");
+        assert!(!shown.custom);
+    }
+    drop(sim);
+    let asks: Vec<String> =
+        h.transport.bodies().iter().map(Value::to_string).filter(|b| b.contains("write_billboard")).collect();
+    assert_eq!(asks.len(), boards, "each board is asked once a day");
+    assert!(asks.iter().all(|b| b.contains("Rowan caught a pike as long as a dog.")), "the prompt tells what happened");
+    assert_eq!(h.log("—", RequestKind::Slogan).expect("a slogan request").status, LogStatus::Ok);
+}

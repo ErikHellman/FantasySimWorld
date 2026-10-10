@@ -64,7 +64,7 @@ fn scatter_is_deterministic_decoration() {
 fn billboards_have_unique_ids_and_two_reading_spots_each() {
     let ids: HashSet<&str> = billboards().iter().map(|b| b.id.as_str()).collect();
     assert_eq!(ids.len(), billboards().len());
-    assert_eq!(billboards().len(), 5);
+    assert_eq!(billboards().len(), 7);
     for board in billboards() {
         assert!(find_billboard(&board.id).is_some());
         assert_eq!(board.slot_ids.len(), 2, "{}", board.id);

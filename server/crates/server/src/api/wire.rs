@@ -1097,6 +1097,8 @@ pub enum RequestKind {
     Decide,
     PlanDay,
     Billboard,
+    /// the day's words for a billboard
+    Slogan,
     Ceremony,
     /// a name for a new pet
     Name,

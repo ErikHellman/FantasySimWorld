@@ -8,13 +8,13 @@ use fsw_core::time::{game_time, minutes_to_ticks};
 use fsw_world::places::{ActivityId, Billboard, billboards, get_place};
 
 use crate::data::activities::{ActivityKind, activity};
-use crate::data::billboards::{Advice, DECK, advice_in, lines};
+use crate::data::billboards::{Advice, DECK, WATCHER_DECK, advice_in, lines};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
-    ActPhase, BoardReaction, BoardTone, Character, Intent, IntentAction, IntentSource, MemoryKind, Profile, SimState,
-    TalkTone,
+    ActPhase, BoardReaction, BoardTone, Character, ChronicleKind, Intent, IntentAction, IntentSource, MemoryKind,
+    Profile, SimState, TalkTone,
 };
-use crate::util::{Ctx, is_approachable, living};
+use crate::util::{Ctx, first_name, is_approachable, living};
 
 /// The most a billboard's text may hold, in UTF-16 code units.
 pub const TEXT_CAP: usize = 90;
@@ -24,6 +24,9 @@ const LEISURE_REACH: f64 = 60.0;
 const PASSING_REACH: f64 = 20.0;
 /// How far someone urged to be friendly looks for somebody to be friendly to.
 const MINGLE_REACH: f64 = 20.0;
+/// One board-day in this many, on average, hints that someone beyond the world is watching the village: with
+/// seven boards, about one hint every other day.
+const WATCHER_ODDS: u32 = 14;
 
 /// What a board shows right now.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,20 +37,63 @@ pub struct Shown {
     pub custom: bool,
     /// what it urges its readers to do, if anything
     pub advice: Option<Advice>,
+    /// it hints that someone beyond the world is watching the village (never an admin's notice)
+    pub watchers: bool,
 }
 
-/// What the board at `index` in `billboards()` shows. Without a notice it is the day's slogan, which depends
-/// only on the seed, the day and the board, so it takes nothing from the RNG and nothing needs saving.
+/// Whether the board at `index` hints at the watchers beyond the world on `day`. Like the slogans it is worked
+/// out from the seed, the day and the board, so it draws nothing from the RNG.
+pub fn hints_at_watchers(seed: u32, day: i64, index: usize) -> bool {
+    hash_string(&format!("watchers:{seed}:{day}:{index}")).is_multiple_of(WATCHER_ODDS)
+}
+
+/// The stock slogan for a board on a day: from the deck, or on a day it hints at the watchers, from theirs.
+fn stock(seed: u32, day: i64, index: usize) -> (&'static str, BoardTone, Option<Advice>) {
+    let turn = i64::from(seed) + day * 13 + index as i64 * 7;
+    if hints_at_watchers(seed, day, index) {
+        return WATCHER_DECK[turn.rem_euclid(WATCHER_DECK.len() as i64) as usize];
+    }
+    // 13 and 7 share no factor with the deck's 40, so every board changes daily and no two match on a day.
+    DECK[turn.rem_euclid(DECK.len() as i64) as usize]
+}
+
+/// The tone the board at `index` takes today, which the model writes in when it writes the day's words.
+pub fn day_tone(state: &SimState, index: usize) -> BoardTone {
+    stock(state.seed, game_time(state.tick).day, index).1
+}
+
+/// The day the board at `index` is waiting for the model's words for: today, unless an admin's notice is up or
+/// the model has already written today's.
+pub fn wants_words(state: &SimState, index: usize) -> Option<i64> {
+    let day = game_time(state.tick).day;
+    let board = billboards().get(index)?;
+    match state.billboards.get(&board.id) {
+        Some(notice) if notice.day.is_none_or(|written| written == day) => None,
+        _ => Some(day),
+    }
+}
+
+/// What the board at `index` in `billboards()` shows: an admin's notice; else the words the model wrote for
+/// today; else the day's stock slogan, which depends only on the seed, the day and the board, so it takes nothing
+/// from the RNG and nothing needs saving.
 pub fn shown(state: &SimState, index: usize) -> Shown {
+    let day = game_time(state.tick).day;
     if let Some(notice) = billboards().get(index).and_then(|board| state.billboards.get(&board.id)) {
         let advice = advice_in(&notice.text);
-        return Shown { text: notice.text.clone(), tone: notice.tone, custom: true, advice };
+        match notice.day {
+            None => {
+                return Shown { text: notice.text.clone(), tone: notice.tone, custom: true, advice, watchers: false };
+            }
+            Some(written) if written == day => {
+                let watchers = hints_at_watchers(state.seed, day, index);
+                return Shown { text: notice.text.clone(), tone: notice.tone, custom: false, advice, watchers };
+            }
+            // Yesterday's words have come down.
+            Some(_) => {}
+        }
     }
-    let day = game_time(state.tick).day;
-    // 13 and 7 share no factor with the deck's 40, so every board changes daily and no two match on a day.
-    let at = (i64::from(state.seed) + day * 13 + index as i64 * 7).rem_euclid(DECK.len() as i64) as usize;
-    let (text, tone, advice) = DECK[at];
-    Shown { text: text.to_owned(), tone, custom: false, advice }
+    let (text, tone, advice) = stock(state.seed, day, index);
+    Shown { text: text.to_owned(), tone, custom: false, advice, watchers: hints_at_watchers(state.seed, day, index) }
 }
 
 pub fn board_index(board_id: &str) -> Option<usize> {
@@ -108,6 +154,23 @@ pub fn template_reaction(profile: &Profile, tone: BoardTone) -> BoardReaction {
     }
 }
 
+/// How someone takes a board that hints at the watchers beyond the world: the hot-headed are furious at being
+/// spied on, the timid frightened, everyone else curious.
+pub fn watcher_reaction(profile: &Profile) -> BoardReaction {
+    if profile.temper > 0.6 {
+        BoardReaction::Angry
+    } else if profile.bravery < 0.4 {
+        BoardReaction::Shocked
+    } else {
+        BoardReaction::Intrigued
+    }
+}
+
+/// How someone takes what a board shows when no model says otherwise.
+pub fn stock_reaction(profile: &Profile, shown: &Shown) -> BoardReaction {
+    if shown.watchers { watcher_reaction(profile) } else { template_reaction(profile, shown.tone) }
+}
+
 /// How likely someone is to do what a board urges, by how they took it, when no model decides for them.
 pub fn follow_chance(reaction: BoardReaction) -> f64 {
     match reaction {
@@ -115,7 +178,9 @@ pub fn follow_chance(reaction: BoardReaction) -> f64 {
         BoardReaction::Uneasy => 0.4,
         BoardReaction::Laugh => 0.25,
         BoardReaction::Scoff => 0.15,
-        BoardReaction::Annoyed => 0.0,
+        BoardReaction::Annoyed | BoardReaction::Angry => 0.0,
+        BoardReaction::Shocked => 0.3,
+        BoardReaction::Intrigued => 0.2,
     }
 }
 
@@ -196,15 +261,43 @@ pub fn react(
         BoardReaction::Scoff => (Emote::Thinking, 0.0, 0.0, "I didn't think much of it.", 2.0),
         BoardReaction::Annoyed => (Emote::Anger, -3.0, 0.0, "It annoyed me.", 3.0),
         BoardReaction::Uneasy => (Emote::Alert, -2.0, -2.0, "It left me uneasy.", 3.0),
+        // Being watched from beyond the world is news: these memories weigh enough to come up in talk.
+        BoardReaction::Shocked => {
+            (Emote::Alert, -2.0, -3.0, "It hinted that someone beyond the world is watching us. It frightened me.", 5.0)
+        }
+        BoardReaction::Intrigued => {
+            (Emote::Thinking, 3.0, 0.0, "It hinted that someone beyond the world is watching us. I wonder who.", 5.0)
+        }
+        BoardReaction::Angry => {
+            (Emote::Anger, -3.0, 0.0, "It hinted that someone beyond the world is watching us. How dare they.", 5.0)
+        }
     };
     ctx.emit(SimEvent::Emote { id: id.into(), emote });
     let c = ctx.c(id);
     c.needs.social = (c.needs.social + social).clamp(0.0, 100.0);
     c.needs.energy = (c.needs.energy + energy).clamp(0.0, 100.0);
-    if let Some(thought) = thought.filter(|t| !t.is_empty()) {
+    let stock_thought = match reaction {
+        BoardReaction::Shocked => Some("Someone out there is watching us. Every moment. Every one of us."),
+        BoardReaction::Intrigued => Some("Who is watching us, and what do they want to see?"),
+        BoardReaction::Angry => Some("Nobody has the right to spy on this village."),
+        _ => None,
+    };
+    if let Some(thought) = thought.filter(|t| !t.is_empty()).or_else(|| stock_thought.map(str::to_owned)) {
         c.thought = thought;
     }
-    c.boards_read.insert(board.id.clone(), hash_string(&shown.text));
+    if shown.watchers && matches!(reaction, BoardReaction::Shocked | BoardReaction::Intrigued | BoardReaction::Angry) {
+        let name = first_name(ctx.cr(id)).to_owned();
+        let place = get_place(&board.place_id).name;
+        let took = match reaction {
+            BoardReaction::Shocked => "is shaken",
+            BoardReaction::Intrigued => "is intrigued",
+            _ => "is furious",
+        };
+        let text =
+            format!("{name} read the billboard at {place} and {took}: it says someone beyond the world is watching.");
+        ctx.chronicle(ChronicleKind::World, text, vec![id.to_owned()]);
+    }
+    ctx.c(id).boards_read.insert(board.id.clone(), hash_string(&shown.text));
     // The RNG is only drawn from when there is advice this person could take and a chance they would.
     let heeded = advice_for(ctx.state, ctx.cr(id), index).filter(|_| match follow {
         Some(follow) => follow,
