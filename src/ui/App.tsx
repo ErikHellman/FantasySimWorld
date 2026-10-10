@@ -5,6 +5,7 @@ import { BossBar } from './BossBar';
 import { BrainLog } from './BrainLog';
 import { ChatPanel } from './Chat';
 import { FoundingDialog } from './Founding';
+import { AutoChip, AutoPill, HappeningCards } from './Happening';
 import { HelpPanel } from './Help';
 import { Inspector } from './Inspector';
 import { SitePanel } from './SitePanel';
@@ -66,6 +67,7 @@ function TopBar() {
       )}
       <div class="pills">
         {connection !== 'live' && <span class="pill danger" title="The connection to the server">{connection === 'down' ? 'offline' : 'reconnecting…'}</span>}
+        <AutoPill />
         <span class="pill" title="People watching">👁 {ui.viewers.value}</span>
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
@@ -213,8 +215,10 @@ export function App() {
           <Inspector />
           <SitePanel />
           <ChatPanel />
+          <AutoChip phone={false} />
         </>
       )}
+      <HappeningCards />
       {ui.panel.value === 'settings' && <SettingsPanel />}
       {ui.panel.value === 'admin' && isAdmin() && <AdminPanel />}
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}

@@ -1,6 +1,7 @@
 import type { RefObject } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ChatPanel } from './Chat';
+import { AutoChip } from './Happening';
 import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SitePanel, capitalised } from './SitePanel';
@@ -163,6 +164,7 @@ export function MobileHud() {
     <>
       <TopBar />
       <FollowChip />
+      <AutoChip phone />
       {sheet !== 'none' && (
         <section class={`panel sheet sheet-${sheet}`} aria-label="Pane" ref={sheetRef}>
           <SheetBody sheet={sheet} />
