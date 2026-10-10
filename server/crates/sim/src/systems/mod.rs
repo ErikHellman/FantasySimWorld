@@ -28,6 +28,7 @@ pub mod quirks;
 pub mod raids;
 pub mod relationships;
 pub mod routine;
+pub mod sky;
 pub mod stalls;
 pub mod weather;
 pub mod world;

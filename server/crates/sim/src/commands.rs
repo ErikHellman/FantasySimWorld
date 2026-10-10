@@ -88,6 +88,11 @@ pub enum Command {
         day: i64,
         text: String,
     },
+    /// How many are watching the village from beyond the world, as `systems::sky::crowd_of` buckets the server's
+    /// viewer count.
+    Audience {
+        crowd: u8,
+    },
     /// The model's front page of the Valley Herald for `day`; ignored unless the Herald is still waiting for it.
     WriteHerald {
         day: i64,

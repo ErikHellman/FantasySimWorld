@@ -12,7 +12,7 @@ use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
     ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
     Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Quirk, Raid, RaidOrder, RaidPhase,
-    RelationLabel as SimLabel, Resource, SimState, WorldObject as SimWorldObject,
+    RelationLabel as SimLabel, Resource, SimState, Stance, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
@@ -25,7 +25,7 @@ use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 use crate::api::wire::{
     AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory,
     LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow, RelationLabel,
-    RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
+    RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, SkyStance, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 use crate::hotspots::hotspots_of;
@@ -451,6 +451,11 @@ pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail
         gold: c.gold.max(0) as u32,
         kills: c.kills.max(0) as u32,
         secret: secret_of(state, c),
+        sky: c.sky.stance.map(|stance| match stance {
+            Stance::Believer => SkyStance::Believer,
+            Stance::Defiant => SkyStance::Defiant,
+            Stance::Sceptic => SkyStance::Sceptic,
+        }),
         plan_source: match c.plan_source {
             PlanSource::Routine => "routine".into(),
             PlanSource::Llm => "llm".into(),
@@ -910,15 +915,37 @@ pub mod task {
         }
     }
 
+    /// Tells the sim when the number watching moves into another of the steps the village can feel
+    /// (`fsw_sim::systems::sky::crowd_of`). `told` is the last step sent, so a command not yet applied is not sent
+    /// again.
+    pub fn tell_the_crowd(app: &AppState, told: &mut Option<u8>) {
+        let crowd = fsw_sim::systems::sky::crowd_of(app.viewers.load(Ordering::Relaxed));
+        let known = app.world.core.read().sim.state.audience.crowd;
+        if crowd == known || *told == Some(crowd) {
+            if crowd == known {
+                *told = None;
+            }
+            return;
+        }
+        let command = fsw_sim::Command::Audience { crowd };
+        if app.world.inputs.try_send(crate::world_task::WorldInput::Command { command, source: "viewers" }).is_ok() {
+            *told = Some(crowd);
+        }
+    }
+
     pub fn spawn(app: Arc<AppState>, shutdown: CancellationToken) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(PERIOD);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut last_status_at = None;
+            let mut told = None;
             loop {
                 tokio::select! {
                     () = shutdown.cancelled() => break,
-                    _ = interval.tick() => digest(&app, &mut last_status_at),
+                    _ = interval.tick() => {
+                        digest(&app, &mut last_status_at);
+                        tell_the_crowd(&app, &mut told);
+                    }
                 }
             }
         })
