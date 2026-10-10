@@ -388,6 +388,9 @@ async fn the_world_answers_its_rest_calls() {
 
     let page = text(app.clone().oneshot(authed("/api/chronicle?limit=5")).await.unwrap()).await;
     assert!(page.contains("A new day dawns over the valley."), "{page}");
+    // No Herald on the first day.
+    let herald = text(app.clone().oneshot(authed("/api/herald")).await.unwrap()).await;
+    assert_eq!(herald, r#"{"issues":[]}"#);
 
     let speed = app.clone().oneshot(json_request("POST", "/api/admin/speed", r#"{"speed":3}"#)).await.unwrap();
     assert_eq!(speed.status(), StatusCode::BAD_REQUEST);

@@ -2255,9 +2255,30 @@ pub struct SimState {
     /// those with a path to walk, by id, and when they last got anywhere (`systems::stalls`)
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub stalls: IndexMap<Id, Stall>,
+    /// the Valley Herald's issues, oldest first, the last few dozen kept (`systems::herald`)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub herald: Vec<HeraldIssue>,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
+}
+
+/// One morning's front page of the Valley Herald, about the day before (`systems::herald`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeraldIssue {
+    /// the day it came out; it tells of the day before
+    pub day: i64,
+    pub headline: String,
+    /// the other stories on the page, the biggest first
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stories: Vec<String>,
+    /// a line of gossip at the foot of the page
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gossip: Option<String>,
+    /// the model wrote it, rather than the sim setting it from the chronicle
+    #[serde(default)]
+    pub by_model: bool,
 }
 
 /// A killing nobody saw, and what the village makes of it (`systems::cases`). Its id is the victim's.

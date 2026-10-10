@@ -9,8 +9,8 @@ use crate::commands::Command;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
-    ActivityId, BoardNotice, BoardReaction, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock,
-    PlanSource, SimState, WorldJob,
+    ActivityId, BoardNotice, BoardReaction, ChronicleKind, FightMode, HeraldIssue, Intent, IntentAction, MemoryKind,
+    PlanBlock, PlanSource, SimState, WorldJob,
 };
 use crate::systems::animals::{self, update_animals};
 use crate::systems::billboards::{
@@ -28,6 +28,7 @@ use crate::systems::economy::{Commission, affordable, update_economy};
 use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::ghosts::update_ghosts;
+use crate::systems::herald::{self, update_herald};
 use crate::systems::intents::{fresh_act, leave_building, update_intents};
 use crate::systems::monsters::update_monsters;
 use crate::systems::movement::separate;
@@ -306,6 +307,9 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             };
             ctx.state.billboards.insert(board_id, notice);
         }
+        Command::WriteHerald { day, headline, stories, gossip } => {
+            herald::publish(ctx, HeraldIssue { day, headline, stories, gossip, by_model: true });
+        }
         Command::BillboardReaction { id, board_id, reaction, say, thought, follow } => {
             let Some(c) = ctx.state.characters.get(&id) else { return };
             let Some(index) = reading(c) else { return };
@@ -414,6 +418,7 @@ impl Sim {
         update_fire(&mut ctx);
         update_ceremonies(&mut ctx);
         update_cases(&mut ctx);
+        update_herald(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);

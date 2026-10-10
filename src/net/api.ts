@@ -1,5 +1,5 @@
 import type {
-  AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
+  AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, HeraldArchive, GuestAnswer, GuestRequest,
   DragonCallAnswer, GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
   SpeedRequest, WatchRequest,
 } from '../generated/api';
@@ -54,6 +54,8 @@ export const api = {
   /** takes a chat name, if nobody connected has it */
   chatName: (body: ChatRename) => request<ChatYou>('POST', '/api/chat/name', body),
   chronicle: (before: number, limit = 100) => request<ChroniclePage>('GET', `/api/chronicle?before=${before}&limit=${limit}`),
+  /** the Valley Herald's issues kept with the world, newest first */
+  herald: () => request<HeraldArchive>('GET', '/api/herald'),
   admin: {
     speed: (body: SpeedRequest) => request<void>('POST', '/api/admin/speed', body),
     /** puts text up on a billboard, or without text gives it back to the daily slogans; the change comes back on the stream */

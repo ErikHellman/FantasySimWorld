@@ -156,6 +156,10 @@ pub enum SimEvent {
         animal_id: Id,
         owner_id: Id,
     },
+    /// The Valley Herald has come out with the issue for `day`, the last in `state.herald`.
+    Herald {
+        day: i64,
+    },
 }
 
 impl SimEvent {
@@ -182,6 +186,7 @@ impl SimEvent {
             Self::BillboardRead { .. } => "billboard_read",
             Self::NewcomerWanted { .. } => "newcomer_wanted",
             Self::PetAdopted { .. } => "pet_adopted",
+            Self::Herald { .. } => "herald",
         }
     }
 }

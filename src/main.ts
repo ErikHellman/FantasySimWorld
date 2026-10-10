@@ -22,7 +22,7 @@ import { CARD_SECONDS, CardDealer, IDLE_SECONDS, chooseShot, hotspotKey, type Sh
 import { watchLayout } from './ui/layout';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, isSiteId,
-  loadAuto, loadAudioSettings, loadChatSettings, saveAuto, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse, setWeather,
+  loadAuto, loadAudioSettings, loadChatSettings, saveAuto, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHerald, setHouse, setWeather,
   setStockpile, setWorldObject, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
@@ -197,6 +197,7 @@ async function start(): Promise<void> {
       else if (event.type === 'stockpile') setStockpile(event.stockpile);
       else if (event.type === 'economy') setEconomy(event.economy);
       else if (event.type === 'weather') setWeather(event.weather);
+      else if (event.type === 'herald') setHerald(event.issue);
       else if (event.type === 'world_object') {
         setWorldObject(event.object);
         // A built thing that is gone has no page; the server stops sending one too.

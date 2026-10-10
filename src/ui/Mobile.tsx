@@ -2,6 +2,7 @@ import type { RefObject } from 'preact';
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ChatPanel } from './Chat';
 import { AutoChip } from './Happening';
+import { HeraldPill } from './Herald';
 import { Inspector } from './Inspector';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SitePanel, capitalised } from './SitePanel';
@@ -97,6 +98,7 @@ function MenuSheet() {
       </div>
       {admin && <Speeds />}
       <nav class="menu-list">
+        <HeraldPill menu />
         {graves > 0 && <button onClick={() => togglePanel('graves')}>🪦 The graveyard ({graves})</button>}
         <button onClick={() => togglePanel('settings')}>⚙ Settings</button>
         <button onClick={() => togglePanel('help')}>❓ Help</button>

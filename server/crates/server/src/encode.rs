@@ -34,9 +34,9 @@ use indexmap::IndexMap;
 
 use crate::api::wire::{
     Billboard, BillboardTone, Ceremony, CeremonyKind, CeremonyPhase, ChronicleEntry, ChronicleKind, Dyn, DynDelta,
-    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HitOutcome, House, HousePhase, Look, Loot, LootKind,
-    Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind, WireEvent,
-    WorldObject, WorldObjectKind,
+    Economy, Emote, Entity, EntityKind, EntityStatic, Grave, HeraldIssue, HitOutcome, House, HousePhase, Look, Loot,
+    LootKind, Placed, RaidPhase, Ranged, Stockpile, TickFrame, Utterance, Vec2, VoiceProfile, Weather, WeatherKind,
+    WireEvent, WorldObject, WorldObjectKind,
 };
 
 pub fn corpse_id(id: &str) -> String {
@@ -635,10 +635,30 @@ pub fn wire_events(state: &SimState, events: &[SimEvent]) -> Vec<WireEvent> {
                 result.push(WireEvent::MonsterSpawn { id: id.clone(), pos: point(*pos) })
             }
             SimEvent::Chronicle { entry } => result.push(WireEvent::Chronicle { entry: chronicle_entry(entry) }),
+            SimEvent::Herald { day } => {
+                if let Some(issue) = state.herald.iter().rev().find(|issue| issue.day == *day) {
+                    result.push(WireEvent::Herald { issue: herald_issue(issue) });
+                }
+            }
             _ => {}
         }
     }
     result
+}
+
+pub fn herald_issue(issue: &fsw_sim::state::HeraldIssue) -> HeraldIssue {
+    HeraldIssue {
+        day: issue.day.max(0) as u32,
+        headline: issue.headline.clone(),
+        stories: issue.stories.clone(),
+        gossip: issue.gossip.clone(),
+        by_model: issue.by_model,
+    }
+}
+
+/// The Valley Herald's issues, newest first.
+pub fn herald_of(state: &SimState) -> Vec<HeraldIssue> {
+    state.herald.iter().rev().map(herald_issue).collect()
 }
 
 /// Remembers what every viewer has been told and turns the next tick into a
@@ -986,6 +1006,28 @@ mod tests {
             |e| matches!(e, WireEvent::Billboard { billboard } if billboard.text == "Cheese!" && billboard.custom)
         ));
         assert_eq!(tracker.billboards(), billboards_of(&sim.state));
+    }
+
+    #[test]
+    fn a_new_herald_is_announced_and_kept() {
+        let mut sim = Sim::new(create_test_state(3));
+        // The second morning, after dawn: the Herald is waiting for its first issue.
+        while fsw_sim::systems::herald::wants_issue(&sim.state).is_none() {
+            sim.state.tick += 20;
+        }
+        let mut tracker = Tracker::new(&sim.state);
+        sim.enqueue(fsw_sim::Command::WriteHerald {
+            day: 2,
+            headline: "Cheese!".into(),
+            stories: vec!["A wheel rolled down the hill.".into()],
+            gossip: None,
+        });
+        let events = sim.step();
+        let frame = tracker.frame(&sim.state, &events);
+        assert!(frame.ev.iter().any(
+            |e| matches!(e, WireEvent::Herald { issue } if issue.day == 2 && issue.headline == "Cheese!" && issue.by_model)
+        ));
+        assert_eq!(herald_of(&sim.state).len(), 1);
     }
 
     #[test]

@@ -50,6 +50,7 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/animals/{id}", get(world::animal))
         .route("/sites/{id}", get(world::site))
         .route("/chronicle", get(world::chronicle))
+        .route("/herald", get(world::herald))
         .route("/logout", post(auth::logout))
         .route("/chat", post(chat::post))
         .route("/chat/name", post(chat::rename))

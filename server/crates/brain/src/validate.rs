@@ -284,6 +284,20 @@ pub fn interpret_billboard(calls: &[ToolCall]) -> Option<String> {
     tidy(call.args.get("text"), fsw_sim::systems::billboards::TEXT_CAP)
 }
 
+/// The front page the model wrote with `write_herald`: the headline, the stories and the gossip, each tidied
+/// like a spoken line and kept to what the page holds. `None` without a headline and at least one story.
+pub fn interpret_herald(calls: &[ToolCall]) -> Option<(String, Vec<String>, Option<String>)> {
+    use fsw_sim::systems::herald::{HEADLINE_CAP, STORY_CAP};
+    let call = calls.iter().find(|c| c.name == "write_herald")?;
+    let headline = tidy(call.args.get("headline"), HEADLINE_CAP)?;
+    let stories: Vec<String> =
+        ["story1", "story2"].iter().filter_map(|key| tidy(call.args.get(*key), STORY_CAP)).collect();
+    if stories.is_empty() {
+        return None;
+    }
+    Some((headline, stories, tidy(call.args.get("gossip"), STORY_CAP)))
+}
+
 fn tidy(value: Option<&Value>, max: usize) -> Option<String> {
     let Some(Value::String(text)) = value else { return None };
     let text = strip_spans(&strip_spans(text, '*', '*'), '(', ')');

@@ -27,7 +27,7 @@ use crate::auth::Viewer;
 use crate::auth::guest::still_valid;
 use crate::chat::{ChatKey, ChatOut};
 use crate::digest::{chronicle_tail, is_alarm, is_site_id, roster_of};
-use crate::encode::grave_of;
+use crate::encode::{grave_of, herald_issue};
 use crate::world_task::{Core, Outgoing, World};
 
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
@@ -90,6 +90,7 @@ pub fn snapshot_of(core: &Core, world: &World) -> Snapshot {
         economy: core.tracker.economy(),
         loot: core.tracker.loot(),
         weather: core.tracker.weather(),
+        herald: state.herald.last().map(herald_issue),
     }
 }
 

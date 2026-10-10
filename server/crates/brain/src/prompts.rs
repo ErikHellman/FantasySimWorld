@@ -21,6 +21,7 @@ use fsw_sim::systems::charm;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::economy;
 use fsw_sim::systems::fire;
+use fsw_sim::systems::herald;
 use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
@@ -1442,6 +1443,50 @@ pub fn slogan_prompt(state: &SimState, index: usize) -> Prompt {
     Prompt {
         messages: vec![ChatMessage::system(SIGNWRITER), ChatMessage::user(user)],
         tools: vec![TOOLS.write_billboard.clone()],
+        max_calls: 1,
+    }
+}
+
+const EDITOR: &str = "You write the front page of the Valley Herald, a little newspaper about a small fantasy village in a valley. It is read each morning by those who watch the village from beyond it, and they know everything the chronicle says, secrets included. No villager ever reads it.
+
+How to write:
+- Like a lively small-town paper: a punchy headline, short stories in plain words, and a wry line of gossip.
+- Lead with the biggest news: a death, a fire, a fight, a wedding, a trial. A quiet day can make a gentle front page.
+- Only report what the news you are given says. Never invent events, and only name people and places that appear in the message.
+- Answer only by calling the tool you are given. No narration.";
+
+/// The most of yesterday's news the editor is given, the weightiest kept.
+const HERALD_NEWS: usize = 40;
+
+/// The editor's brief for the Herald's issue for `day`: yesterday's chronicle, in the order it happened, and the
+/// villagers' names.
+pub fn herald_prompt(state: &SimState, day: i64) -> Prompt {
+    let mut news = herald::news(state, day);
+    if news.len() > HERALD_NEWS {
+        // Keep the weightiest, then put them back in the order they happened.
+        news.sort_by_key(|entry| std::cmp::Reverse(herald::weight(entry.kind)));
+        news.truncate(HERALD_NEWS);
+        news.sort_by_key(|entry| entry.tick);
+    }
+    let lines: Vec<String> = news
+        .iter()
+        .map(|entry| format!("- {} {}", format_clock(game_time(entry.tick).minute_of_day), entry.text))
+        .collect();
+    let people: Vec<&str> = living(state).take(24).map(first_name).collect();
+    let parts = [
+        format!("It is the morning of day {day}."),
+        if lines.is_empty() {
+            "Hardly anything happened yesterday; make the most of it.".to_owned()
+        } else {
+            format!("What happened yesterday, day {}, in the order it happened:\n{}", day - 1, lines.join("\n"))
+        },
+        if people.is_empty() { String::new() } else { format!("Villagers: {}.", people.join(", ")) },
+        "Write today's front page: a headline, a lead story, a second story if there is more news, and a line of gossip if there is any. One tool call.".to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt {
+        messages: vec![ChatMessage::system(EDITOR), ChatMessage::user(user)],
+        tools: vec![TOOLS.write_herald.clone()],
         max_calls: 1,
     }
 }

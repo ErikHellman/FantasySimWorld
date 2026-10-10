@@ -24,11 +24,12 @@ use tokio::sync::oneshot;
 use crate::AppState;
 use crate::api::wire::{
     AnimalDetail, BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, DragonCallAnswer, GhostDetail,
-    HealthReport, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
+    HealthReport, HeraldArchive, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail, SpeedRequest,
+    WatchRequest,
 };
 use crate::api::{ApiFailure, error};
 use crate::digest::{animal_detail_of, character_detail_of, detail_json, ghost_detail_of, monster_detail_of, site_of};
-use crate::encode::sim_tone;
+use crate::encode::{herald_of, sim_tone};
 use crate::store::{SnapshotReason, now_ms};
 use crate::world_task::{Outgoing, SPEEDS, Watch, WorldInput};
 
@@ -112,6 +113,12 @@ pub async fn chronicle(
     // Entries of the last second are still buffered; a page must not miss them.
     app.store.flush().await?;
     Ok(Json(app.store.chronicle_page(world_id, before, limit).await?))
+}
+
+/// `GET /api/herald`: the Valley Herald's issues kept with the world, newest first.
+pub async fn herald(State(app): State<Arc<AppState>>) -> Json<HeraldArchive> {
+    let core = app.world.core.read();
+    Json(HeraldArchive { issues: herald_of(&core.sim.state) })
 }
 
 /// `POST /api/admin/speed`

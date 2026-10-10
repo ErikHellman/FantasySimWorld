@@ -63,6 +63,7 @@ pub struct Tools {
     pub reflection: ToolDef,
     pub billboard: ToolDef,
     pub write_billboard: ToolDef,
+    pub write_herald: ToolDef,
     pub speech: ToolDef,
     pub work_on: ToolDef,
     pub pick_up: ToolDef,
@@ -258,6 +259,17 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
             }
         }),
         &["text"],
+    ),
+    write_herald: tool(
+        "write_herald",
+        "Set this morning's front page of the Valley Herald.",
+        json!({
+            "headline": { "type": "string", "description": "The headline: at most 80 characters, no quotation marks." },
+            "story1": { "type": "string", "description": "The lead story: one to three short sentences." },
+            "story2": { "type": "string", "description": "Optional. A second story: one to three short sentences." },
+            "gossip": { "type": "string", "description": "Optional. One line of gossip for the foot of the page." }
+        }),
+        &["headline", "story1"],
     ),
     work_on: tool(
         "work_on",
