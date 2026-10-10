@@ -144,6 +144,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         next_social_tick: 0,
         next_perception_tick: 0,
         boards_read: Default::default(),
+        sky: Default::default(),
         quirks: entry.quirks.clone(),
         quirk_state: QuirkState::default(),
         child: entry.child.as_ref().map(|child| Childhood {

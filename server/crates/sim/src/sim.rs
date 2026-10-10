@@ -38,6 +38,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::sky::{self, update_sky};
 use crate::systems::stalls::update_stalls;
 use crate::systems::weather::{sheltering_from_hail, update_weather};
 use crate::systems::world::{MAX_PROJECTS, job_accepts, update_world};
@@ -307,6 +308,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             };
             ctx.state.billboards.insert(board_id, notice);
         }
+        Command::Audience { crowd } => sky::set_audience(ctx, crowd),
         Command::WriteHerald { day, headline, stories, gossip } => {
             herald::publish(ctx, HeraldIssue { day, headline, stories, gossip, by_model: true });
         }
@@ -419,6 +421,7 @@ impl Sim {
         update_ceremonies(&mut ctx);
         update_cases(&mut ctx);
         update_herald(&mut ctx);
+        update_sky(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);

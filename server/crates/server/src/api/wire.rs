@@ -428,6 +428,15 @@ pub enum WireEvent {
     },
 }
 
+/// What a villager has come to make of the hints that someone beyond the sky is watching.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SkyStance {
+    Believer,
+    Defiant,
+    Sceptic,
+}
+
 /// One morning's front page of the Valley Herald, about the day before.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -999,6 +1008,11 @@ pub struct CharacterDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub secret: Option<String>,
+    /// what they make of the watchers beyond the sky, once they have settled on it: "believer", "defiant" or
+    /// "sceptic"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sky: Option<SkyStance>,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
     pub relations: Vec<RelationRow>,
@@ -1550,6 +1564,7 @@ pub fn typescript() -> String {
         WeatherKind,
         Weather,
         HeraldIssue,
+        SkyStance,
         Goods,
         LlmState,
         LlmStatus,

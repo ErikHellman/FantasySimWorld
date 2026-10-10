@@ -479,6 +479,11 @@ gossip?: string,
 byModel: boolean, };
 
 /**
+ * What a villager has come to make of the hints that someone beyond the sky is watching.
+ */
+export type SkyStance = "believer" | "defiant" | "sceptic";
+
+/**
  * Raw materials in a villager's arms.
  */
 export type Goods = { wood: number, stone: number, ore: number, };
@@ -631,7 +636,12 @@ spouse: string | null, kills: number,
 /**
  * what only viewers are told about them: that they are a murderer, and whom they have killed
  */
-secret?: string, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+secret?: string, 
+/**
+ * what they make of the watchers beyond the sky, once they have settled on it: "believer", "defiant" or
+ * "sceptic"
+ */
+sky?: SkyStance, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */

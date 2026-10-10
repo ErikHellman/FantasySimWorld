@@ -297,6 +297,9 @@ pub fn react(
             format!("{name} read the billboard at {place} and {took}: it says someone beyond the world is watching.");
         ctx.chronicle(ChronicleKind::World, text, vec![id.to_owned()]);
     }
+    if shown.watchers {
+        crate::systems::sky::took_hint(ctx, id, reaction);
+    }
     ctx.c(id).boards_read.insert(board.id.clone(), hash_string(&shown.text));
     // The RNG is only drawn from when there is advice this person could take and a chance they would.
     let heeded = advice_for(ctx.state, ctx.cr(id), index).filter(|_| match follow {

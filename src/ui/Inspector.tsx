@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
 import { actions, closeSheet, ui, type AnimalDetail, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
+import type { SkyStance } from '../generated/api';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -44,10 +45,18 @@ function Relation({ row }: { row: RelationRow }) {
   );
 }
 
+/** What a villager has come to make of the watchers beyond the sky, in a line for their page. */
+const SKY_STANCE: Record<SkyStance, string> = {
+  believer: '👁 Believes someone beyond the sky is watching the village',
+  defiant: '👁 Sure someone beyond the sky is spying on the village, and furious about it',
+  sceptic: '👁 Thinks the talk of watchers beyond the sky is nonsense',
+};
+
 function About({ d }: { d: CharacterDetail }) {
   return (
     <div class="tab-body">
       {d.secret && <p class="secret" title="Only viewers know this; the village does not">🗡️ {d.secret}</p>}
+      {d.sky && <p class="sky-stance" title="What they make of the billboards' hints that someone is watching (you)">{SKY_STANCE[d.sky]}</p>}
       <p class="backstory">{d.backstory}</p>
       <div class="chips">{d.traits.map((trait) => <span class="chip">{trait}</span>)}</div>
       <h3>Wants</h3>

@@ -25,6 +25,7 @@ use fsw_sim::systems::herald;
 use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::sky;
 use fsw_sim::systems::weather;
 use fsw_sim::systems::world;
 use fsw_sim::util::{first_name, join_names, living, name_of, openness, place_name_at, rel_or_default};
@@ -528,6 +529,7 @@ fn header(state: &SimState, c: &Character) -> String {
     lines.extend(ceremony_line(state, c));
     lines.extend(materials_lines(state, c));
     lines.extend(market_line(state));
+    lines.extend(sky::stance_line(state, c));
     lines.join("\n")
 }
 

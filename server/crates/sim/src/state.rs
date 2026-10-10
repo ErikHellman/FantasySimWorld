@@ -181,6 +181,61 @@ pub enum BondKind {
     Rival,
 }
 
+/// What someone has come to make of the billboards' hints that someone beyond the sky watches the village
+/// (`systems::sky`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stance {
+    /// sure the watchers are there, and glad or awed
+    Believer,
+    /// sure the watchers are there, and furious at being spied on
+    Defiant,
+    /// sure it is nonsense
+    Sceptic,
+}
+
+/// How someone has taken the hints about the watchers so far, and the stance they settled on.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkyView {
+    /// hints that intrigued or frightened them
+    #[serde(default)]
+    pub awe: u8,
+    /// hints that made them angry
+    #[serde(default)]
+    pub anger: u8,
+    /// hints they laughed off or thought little of
+    #[serde(default)]
+    pub doubt: u8,
+    /// settled after a couple of hints, and for good
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stance: Option<Stance>,
+}
+
+impl SkyView {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// How many are watching the village from beyond it, as the server tells the sim (`systems::sky`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Audience {
+    /// 0: nobody, 1: one or two, 2: a few, 3: a crowd
+    #[serde(default)]
+    pub crowd: u8,
+    /// the last day someone remarked on the crowd coming or going
+    #[serde(default)]
+    pub remarked_day: i64,
+}
+
+impl Audience {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// Bookkeeping for quirks, kept with the character so it survives a save.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -978,6 +1033,9 @@ pub struct Character {
     /// billboard id -> hash of the text last read there, so nobody reads the same thing twice
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub boards_read: IndexMap<String, u32>,
+    /// what they make of the hints that someone beyond the sky is watching
+    #[serde(default, skip_serializing_if = "SkyView::is_default")]
+    pub sky: SkyView,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub quirks: Vec<Quirk>,
     #[serde(default, skip_serializing_if = "QuirkState::is_default")]
@@ -2255,6 +2313,9 @@ pub struct SimState {
     /// those with a path to walk, by id, and when they last got anywhere (`systems::stalls`)
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub stalls: IndexMap<Id, Stall>,
+    /// how many are watching from beyond the world, as the believers feel it (`systems::sky`)
+    #[serde(default, skip_serializing_if = "Audience::is_default")]
+    pub audience: Audience,
     /// the Valley Herald's issues, oldest first, the last few dozen kept (`systems::herald`)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub herald: Vec<HeraldIssue>,
