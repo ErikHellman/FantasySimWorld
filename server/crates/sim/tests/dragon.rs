@@ -13,7 +13,7 @@ use fsw_sim::state::{
 };
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::director::tick_at;
-use fsw_sim::systems::dragon::{FIRST_DAY, HOURS, come};
+use fsw_sim::systems::dragon::{FIRST_DAY, HOURS, come, dragon};
 use fsw_sim::systems::fire::MAX_FIRES;
 use fsw_sim::util::{Ctx, living, living_ids};
 use fsw_testing::create_test_state;
@@ -261,4 +261,37 @@ fn it_is_due_by_day_from_day_eight_and_waiting_for_it_draws_nothing_from_the_rng
         assert_eq!(waiting.state.rng, never.state.rng, "tick {}", waiting.state.tick);
     }
     assert!(living(&waiting.state).count() > 0);
+}
+
+#[test]
+fn a_called_dragon_comes_at_once_by_day_waits_for_daylight_by_night_and_never_twice() {
+    // By day it comes on the next tick, long before it is due, and the schedule stays as it was.
+    let mut sim = late_morning(41);
+    sim.enqueue(Command::CallDragon);
+    run_until(&mut sim, 3, |s| dragon(s).is_some());
+    assert!(dragon(&sim.state).is_some(), "the dragon comes when it is called");
+    assert!(!sim.state.director.dragon_called);
+    assert_eq!(sim.state.director.next_dragon_tick, i64::MAX);
+    // A second call while it is abroad is ignored.
+    sim.enqueue(Command::CallDragon);
+    sim.step();
+    assert!(!sim.state.director.dragon_called, "one dragon at a time");
+
+    // By night it waits for the day.
+    let mut sim = late_morning(42);
+    sim.state.tick = tick_at(FIRST_DAY + 1, 22.0);
+    sim.enqueue(Command::CallDragon);
+    sim.step();
+    assert!(sim.state.director.dragon_called && dragon(&sim.state).is_none());
+    let came = run_until(&mut sim, TICKS_PER_DAY, |s| dragon(s).is_some());
+    assert!(came < TICKS_PER_DAY);
+    let hour = game_time(sim.state.tick).hour;
+    assert!((HOURS[0]..HOURS[0] + 0.1).contains(&hour), "as the day allows: {hour}");
+
+    // Not while the village is being settled.
+    let mut sim = late_morning(43);
+    sim.state.director.founding = true;
+    sim.enqueue(Command::CallDragon);
+    sim.step();
+    assert!(!sim.state.director.dragon_called);
 }

@@ -244,6 +244,11 @@ export type HitOutcome = "hit" | "blocked" | "dodged";
 export type RaidCallAnswer = { message: string, };
 
 /**
+ * The answer to `POST /api/admin/dragon`: when the dragon will come.
+ */
+export type DragonCallAnswer = { message: string, };
+
+/**
  * Where an orc raid has got to.
  */
 export type RaidPhase = "coming" | "leaving" | "gone";
@@ -783,7 +788,7 @@ stockpile: Goods | null,
  */
 history: Array<ChronicleEntry>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "name" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "slogan" | "ceremony" | "name" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 

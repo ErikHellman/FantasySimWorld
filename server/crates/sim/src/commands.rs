@@ -81,6 +81,13 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         notice: Option<BoardNotice>,
     },
+    /// The model's words for a billboard for `day`, in the tone the sim gives that board that day; ignored when an
+    /// admin's notice is up, the day has passed or the board already has the day's words.
+    WriteBillboard {
+        board_id: String,
+        day: i64,
+        text: String,
+    },
     /// How someone reading a billboard takes it; ignored unless they are still reading it and have not reacted.
     BillboardReaction {
         id: Id,
@@ -107,6 +114,10 @@ pub enum Command {
     /// An admin calls an orc raid: it comes as soon as it may (by day, with no house burning and room on the
     /// road). Ignored while the village is being founded, while a band is in the valley or one is already called.
     CallRaid,
+    /// An admin calls the dragon: it comes as soon as it may (by day, with no house burning and a home left
+    /// standing), off its own schedule. Ignored while the village is being founded, while it is abroad or when it
+    /// is already called.
+    CallDragon,
     /// Words the model wrote for someone to say at a ceremony; ignored unless the ceremony still stands and
     /// the speaker still speaks at it.
     CeremonySpeech {

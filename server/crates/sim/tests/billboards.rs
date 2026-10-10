@@ -3,14 +3,18 @@
 use std::collections::HashSet;
 
 use fsw_core::rng::hash_string;
-use fsw_core::time::TICKS_PER_DAY;
+use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::Command;
 use fsw_sim::commands::TuningPatch;
+use fsw_sim::data::billboards::WATCHER_DECK;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActivityId, BoardNotice, BoardReaction, BoardTone, Intent, IntentAction, IntentSource, MemoryKind, SimState,
+    ActivityId, BoardNotice, BoardReaction, BoardTone, ChronicleKind, Intent, IntentAction, IntentSource, MemoryKind,
+    SimState,
 };
-use fsw_sim::systems::billboards::{TEXT_CAP, clean_text, shown};
+use fsw_sim::systems::billboards::{
+    TEXT_CAP, clean_text, day_tone, hints_at_watchers, shown, stock_reaction, wants_words, watcher_reaction,
+};
 use fsw_sim::util::{first_name, living};
 use fsw_sim::{Sim, SimEvent};
 use fsw_testing::create_test_state;
@@ -147,7 +151,7 @@ fn read_with(text: &str, reaction: BoardReaction, follow: Option<bool>) -> (Worl
     w.sim.enqueue(Command::Tuning { tuning: TuningPatch { script_wait_ticks: Some(400), ..Default::default() } });
     w.sim.enqueue(Command::SetBillboard {
         board_id: "green_board".into(),
-        notice: Some(BoardNotice { text: text.into(), tone: BoardTone::Wholesome }),
+        notice: Some(BoardNotice { text: text.into(), tone: BoardTone::Wholesome, day: None }),
     });
     w.run_until(3, |_| false);
     let id = w.who("Rowan");
@@ -242,11 +246,15 @@ fn admins_put_text_up_and_take_it_down() {
 
     w.sim.enqueue(Command::SetBillboard {
         board_id: "green_board".into(),
-        notice: Some(BoardNotice { text: "  Fresh\n\tbread  at the market! ".into(), tone: BoardTone::Pushy }),
+        notice: Some(BoardNotice {
+            text: "  Fresh\n\tbread  at the market! ".into(),
+            tone: BoardTone::Pushy,
+            day: None,
+        }),
     });
     w.sim.enqueue(Command::SetBillboard {
         board_id: "no_such_board".into(),
-        notice: Some(BoardNotice { text: "Hello".into(), tone: BoardTone::Absurd }),
+        notice: Some(BoardNotice { text: "Hello".into(), tone: BoardTone::Absurd, day: None }),
     });
     w.run_until(1, |_| false);
     let now = shown(&w.sim.state, index);
@@ -258,7 +266,7 @@ fn admins_put_text_up_and_take_it_down() {
     let long = "word ".repeat(40);
     w.sim.enqueue(Command::SetBillboard {
         board_id: "green_board".into(),
-        notice: Some(BoardNotice { text: long, tone: BoardTone::Absurd }),
+        notice: Some(BoardNotice { text: long, tone: BoardTone::Absurd, day: None }),
     });
     w.run_until(1, |_| false);
     assert_eq!(shown(&w.sim.state, index).text.encode_utf16().count(), TEXT_CAP);
@@ -311,7 +319,7 @@ fn a_world_with_a_notice_up_survives_a_save_and_load() {
     let mut sim = Sim::new(create_test_state(9));
     sim.enqueue(Command::SetBillboard {
         board_id: "market_board".into(),
-        notice: Some(BoardNotice { text: "Cheese! Now with holes!".into(), tone: BoardTone::Absurd }),
+        notice: Some(BoardNotice { text: "Cheese! Now with holes!".into(), tone: BoardTone::Absurd, day: None }),
     });
     for _ in 0..TICKS_PER_DAY / 2 {
         sim.step();
@@ -320,4 +328,144 @@ fn a_world_with_a_notice_up_survives_a_save_and_load() {
     assert!(json.contains("\"billboards\""));
     let loaded: SimState = serde_json::from_str(&json).unwrap();
     assert!(loaded == sim.state);
+}
+
+#[test]
+fn the_model_writes_a_board_for_the_day_and_it_comes_down_at_midnight() {
+    let mut w = World::new(3);
+    let index = green_index();
+    let day = game_time(w.sim.state.tick).day;
+    let slogan = shown(&w.sim.state, index);
+    assert_eq!(wants_words(&w.sim.state, index), Some(day));
+
+    w.sim.enqueue(Command::WriteBillboard { board_id: "green_board".into(), day, text: " Pray\nfor rain. ".into() });
+    w.run_until(1, |_| false);
+    let now = shown(&w.sim.state, index);
+    assert_eq!(now.text, "Pray for rain.");
+    assert_eq!(now.tone, day_tone(&w.sim.state, index));
+    assert_eq!(now.tone, slogan.tone, "the model writes in the day's tone");
+    assert!(!now.custom);
+    assert_eq!(wants_words(&w.sim.state, index), None);
+
+    // Once written, the day's words stay; and words for another day are refused.
+    w.sim.enqueue(Command::WriteBillboard { board_id: "green_board".into(), day, text: "Again!".into() });
+    w.sim.enqueue(Command::WriteBillboard { board_id: "market_board".into(), day: day - 1, text: "Late!".into() });
+    w.run_until(1, |_| false);
+    assert_eq!(shown(&w.sim.state, index).text, "Pray for rain.");
+    let market = billboards().iter().position(|b| b.id == "market_board").unwrap();
+    assert_ne!(shown(&w.sim.state, market).text, "Late!");
+
+    // At midnight they come down, and the board waits for the new day's words.
+    let mut tomorrow = w.sim.state.clone();
+    tomorrow.tick += TICKS_PER_DAY;
+    assert_ne!(shown(&tomorrow, index).text, "Pray for rain.");
+    assert_eq!(wants_words(&tomorrow, index), Some(day + 1));
+}
+
+#[test]
+fn an_admin_notice_wins_over_the_models_words() {
+    let mut w = World::new(3);
+    let index = green_index();
+    let day = game_time(w.sim.state.tick).day;
+    w.sim.enqueue(Command::SetBillboard {
+        board_id: "green_board".into(),
+        notice: Some(BoardNotice { text: "Market day!".into(), tone: BoardTone::Pushy, day: Some(day) }),
+    });
+    w.run_until(1, |_| false);
+    assert_eq!(wants_words(&w.sim.state, index), None);
+    w.sim.enqueue(Command::WriteBillboard { board_id: "green_board".into(), day, text: "Something else".into() });
+    w.run_until(1, |_| false);
+    let now = shown(&w.sim.state, index);
+    assert_eq!(now.text, "Market day!");
+    assert!(now.custom, "an admin's notice never comes down on its own");
+    let mut later = w.sim.state.clone();
+    later.tick += TICKS_PER_DAY * 3;
+    assert_eq!(shown(&later, index).text, "Market day!");
+}
+
+#[test]
+fn now_and_then_a_board_hints_at_the_watchers() {
+    let mut state: SimState = create_test_state(11);
+    let start = game_time(state.tick).day;
+    let mut hints = 0;
+    for day in start..start + 60 {
+        for index in 0..billboards().len() {
+            let shown = shown(&state, index);
+            assert_eq!(shown.watchers, hints_at_watchers(state.seed, day, index));
+            if shown.watchers {
+                hints += 1;
+                assert!(WATCHER_DECK.iter().any(|(text, _, _)| *text == shown.text), "{}", shown.text);
+            }
+        }
+        state.tick += TICKS_PER_DAY;
+    }
+    // About one board-day in fourteen: some, but not every day.
+    assert!((10..=60).contains(&hints), "{hints} hints in 60 days");
+}
+
+#[test]
+fn the_watchers_shock_the_timid_anger_the_hot_headed_and_intrigue_the_rest() {
+    let state = create_test_state(3);
+    let mut profile = state.characters.values().next().unwrap().profile.clone();
+    profile.temper = 0.9;
+    assert_eq!(watcher_reaction(&profile), BoardReaction::Angry);
+    profile.temper = 0.2;
+    profile.bravery = 0.1;
+    assert_eq!(watcher_reaction(&profile), BoardReaction::Shocked);
+    profile.bravery = 0.6;
+    assert_eq!(watcher_reaction(&profile), BoardReaction::Intrigued);
+    let ordinary = shown(&state, green_index());
+    if !ordinary.watchers {
+        assert_ne!(stock_reaction(&profile, &ordinary), BoardReaction::Intrigued);
+    }
+}
+
+/// A seed whose first day has the green's board hinting at the watchers.
+fn watched_seed() -> u32 {
+    (1..2000)
+        .find(|&seed| {
+            let state = create_test_state(seed);
+            hints_at_watchers(state.seed, game_time(state.tick).day, green_index())
+        })
+        .expect("some seed hints on its first day")
+}
+
+#[test]
+fn a_reader_of_a_hint_at_the_watchers_takes_it_to_heart() {
+    let mut w = World::new(watched_seed());
+    w.sim.enqueue(Command::Tuning { tuning: TuningPatch { script_wait_ticks: Some(400), ..Default::default() } });
+    w.run_until(3, |_| false);
+    assert!(shown(&w.sim.state, green_index()).watchers);
+    let id = w.who("Rowan");
+    w.send_to_read(&id);
+    let reader = id.clone();
+    w.run_until(4000, move |w| w.started_reading(&reader));
+    assert!(w.started_reading(&id), "never got to the board");
+    w.sim.enqueue(Command::BillboardReaction {
+        id: id.clone(),
+        board_id: "green_board".into(),
+        reaction: BoardReaction::Intrigued,
+        say: Some("Hello up there!".into()),
+        thought: None,
+        follow: Some(false),
+    });
+    let reader = id.clone();
+    w.run_until(1000, move |w| w.sim.state.characters[&reader].intent.is_none());
+    assert_eq!(w.lines_from(&id), vec!["Hello up there!".to_owned()]);
+    let c = &w.sim.state.characters[&id];
+    let memory = c.memories.iter().find(|m| m.text.starts_with("Read the billboard")).expect("a memory of it");
+    assert!(memory.text.contains("someone beyond the world is watching us"), "{}", memory.text);
+    assert!(memory.importance >= 5);
+    assert_eq!(c.thought, "Who is watching us, and what do they want to see?");
+    let entry = w.sim.state.chronicle.iter().rev().find(|e| e.ids.contains(&id)).expect("a chronicle entry");
+    assert_eq!(entry.kind, ChronicleKind::World);
+    assert!(entry.text.contains("is intrigued"), "{}", entry.text);
+}
+
+#[test]
+fn only_a_hint_at_the_watchers_can_shock_anyone() {
+    let (w, id) = read_with("Fresh bread at the market!", BoardReaction::Shocked, Some(false));
+    let c = &w.sim.state.characters[&id];
+    assert!(c.memories.iter().any(|m| m.text.ends_with("It left me uneasy.")));
+    assert!(!w.sim.state.chronicle.iter().any(|e| e.text.contains("beyond the world")));
 }

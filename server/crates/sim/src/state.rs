@@ -2062,6 +2062,9 @@ pub struct Director {
     /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_dragon_tick: i64,
+    /// an admin has called the dragon: it comes as soon as it may
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dragon_called: bool,
     /// the alarm was raised for the dragon, not the dead
     #[serde(default, skip_serializing_if = "is_false")]
     pub alarm_dragon: bool,
@@ -2460,10 +2463,25 @@ pub enum BoardReaction {
     Scoff,
     Annoyed,
     Uneasy,
+    /// the board hints that someone outside the world is watching, and it frightens them
+    Shocked,
+    /// the same hint makes them curious about who is out there
+    Intrigued,
+    /// the same hint makes them furious at being spied on
+    Angry,
 }
 
 impl BoardReaction {
-    pub const ALL: [BoardReaction; 5] = [Self::Laugh, Self::Love, Self::Scoff, Self::Annoyed, Self::Uneasy];
+    pub const ALL: [BoardReaction; 8] = [
+        Self::Laugh,
+        Self::Love,
+        Self::Scoff,
+        Self::Annoyed,
+        Self::Uneasy,
+        Self::Shocked,
+        Self::Intrigued,
+        Self::Angry,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -2472,6 +2490,9 @@ impl BoardReaction {
             Self::Scoff => "scoff",
             Self::Annoyed => "annoyed",
             Self::Uneasy => "uneasy",
+            Self::Shocked => "shocked",
+            Self::Intrigued => "intrigued",
+            Self::Angry => "angry",
         }
     }
 
@@ -2480,11 +2501,15 @@ impl BoardReaction {
     }
 }
 
-/// Text put up on a billboard from outside the sim.
+/// Text put up on a billboard from outside the sim: by an admin, or written by the model for one day.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BoardNotice {
     pub text: String,
     pub tone: BoardTone,
+    /// the day the model wrote it for; it comes down when that day ends. An admin's notice has none and stays
+    /// up until an admin takes it down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day: Option<i64>,
 }
 
 /// The browser's export file: `{version, savedAt, state}`.

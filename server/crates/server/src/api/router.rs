@@ -28,6 +28,7 @@ pub fn router(app: Arc<AppState>) -> Router {
         .route("/speed", post(world::speed))
         .route("/billboards", post(world::billboard))
         .route("/raid", post(world::call_raid))
+        .route("/dragon", post(world::call_dragon))
         .route("/world/new", post(world::new_world))
         .route("/world/import", post(world::import).layer(DefaultBodyLimit::max(IMPORT_LIMIT)))
         .route("/world/export", get(world::export))

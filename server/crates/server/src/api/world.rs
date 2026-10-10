@@ -15,6 +15,7 @@ use fsw_core::jsmath::utf16_len;
 use fsw_core::time::game_time;
 use fsw_sim::state::{BoardNotice, SAVE_VERSION, SaveFile};
 use fsw_sim::systems::billboards::{TEXT_CAP, clean_text};
+use fsw_sim::systems::dragon;
 use fsw_sim::systems::raids::RAID_HOURS;
 use fsw_sim::{Command, create_state};
 use fsw_world::places::find_billboard;
@@ -22,8 +23,8 @@ use tokio::sync::oneshot;
 
 use crate::AppState;
 use crate::api::wire::{
-    AnimalDetail, BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, GhostDetail, HealthReport,
-    MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
+    AnimalDetail, BillboardRequest, BillboardTone, CharacterDetail, ChroniclePage, DragonCallAnswer, GhostDetail,
+    HealthReport, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail, SpeedRequest, WatchRequest,
 };
 use crate::api::{ApiFailure, error};
 use crate::digest::{animal_detail_of, character_detail_of, detail_json, ghost_detail_of, monster_detail_of, site_of};
@@ -139,7 +140,7 @@ pub async fn billboard(State(app): State<Arc<AppState>>, Json(body): Json<Billbo
             if utf16_len(&text) > TEXT_CAP {
                 return error(StatusCode::BAD_REQUEST, &format!("a billboard holds at most {TEXT_CAP} characters"));
             }
-            Some(BoardNotice { text, tone: sim_tone(body.tone.unwrap_or(BillboardTone::Absurd)) })
+            Some(BoardNotice { text, tone: sim_tone(body.tone.unwrap_or(BillboardTone::Absurd)), day: None })
         }
     };
     let command = Command::SetBillboard { board_id: body.id, notice };
@@ -173,6 +174,35 @@ pub async fn call_raid(State(app): State<Arc<AppState>>) -> Response {
     };
     match app.world.inputs.send(WorldInput::Command { command: Command::CallRaid, source: "admin" }).await {
         Ok(()) => (StatusCode::ACCEPTED, Json(RaidCallAnswer { message })).into_response(),
+        Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
+    }
+}
+
+/// `POST /api/admin/dragon`: calls the dragon over the hills. As with a raid, the sim decides; what is checked
+/// here is only so the admin hears why nothing will come.
+pub async fn call_dragon(State(app): State<Arc<AppState>>) -> Response {
+    let message = {
+        let core = app.world.core.read();
+        let state = &core.sim.state;
+        if state.director.founding {
+            return error(StatusCode::CONFLICT, "The village is still being settled.");
+        }
+        if dragon::dragon(state).is_some() {
+            return error(StatusCode::CONFLICT, "The dragon is already over the village.");
+        }
+        if state.director.dragon_called {
+            return error(StatusCode::CONFLICT, "The dragon is already on its way.");
+        }
+        let hour = game_time(state.tick).hour;
+        if (dragon::HOURS[0]..dragon::HOURS[1]).contains(&hour) {
+            "The dragon is coming over the hills.".to_owned()
+        } else {
+            let [from, _] = dragon::HOURS;
+            format!("The dragon will come at {}:{:02}, by day.", from as i64, (from.fract() * 60.0).round() as i64)
+        }
+    };
+    match app.world.inputs.send(WorldInput::Command { command: Command::CallDragon, source: "admin" }).await {
+        Ok(()) => (StatusCode::ACCEPTED, Json(DragonCallAnswer { message })).into_response(),
         Err(_) => error(StatusCode::SERVICE_UNAVAILABLE, "the world is stopping"),
     }
 }

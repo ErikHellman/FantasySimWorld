@@ -650,6 +650,13 @@ pub struct RaidCallAnswer {
     pub message: String,
 }
 
+/// The answer to `POST /api/admin/dragon`: when the dragon will come.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DragonCallAnswer {
+    pub message: String,
+}
+
 /// `POST /api/admin/billboards`: puts text up on a billboard, or with no text gives it back to the daily slogans.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -1097,6 +1104,8 @@ pub enum RequestKind {
     Decide,
     PlanDay,
     Billboard,
+    /// the day's words for a billboard
+    Slogan,
     Ceremony,
     /// a name for a new pet
     Name,
@@ -1425,6 +1434,7 @@ pub fn typescript() -> String {
         Ranged,
         HitOutcome,
         RaidCallAnswer,
+        DragonCallAnswer,
         RaidPhase,
         Utterance,
         WireEvent,

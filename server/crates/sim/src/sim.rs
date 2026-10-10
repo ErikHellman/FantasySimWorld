@@ -9,11 +9,13 @@ use crate::commands::Command;
 use crate::data::anims::AnimId;
 use crate::events::SimEvent;
 use crate::state::{
-    ActivityId, BoardNotice, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock, PlanSource,
-    SimState, WorldJob,
+    ActivityId, BoardNotice, BoardReaction, ChronicleKind, FightMode, Intent, IntentAction, MemoryKind, PlanBlock,
+    PlanSource, SimState, WorldJob,
 };
 use crate::systems::animals::{self, update_animals};
-use crate::systems::billboards::{TEXT_CAP, board_index, clean_text, has_read, react, reading};
+use crate::systems::billboards::{
+    TEXT_CAP, board_index, clean_text, day_tone, has_read, react, reading, shown, wants_words,
+};
 use crate::systems::blocking::update_blocking;
 use crate::systems::ceremonies::{self, attending, update_ceremonies};
 use crate::systems::children::{daily_children, fetching, update_children};
@@ -278,7 +280,7 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
             }
             let notice = notice.and_then(|notice| {
                 let text = clean_text(&notice.text)?;
-                Some(BoardNotice { text: utf16_truncate(&text, TEXT_CAP).to_owned(), tone: notice.tone })
+                Some(BoardNotice { text: utf16_truncate(&text, TEXT_CAP).to_owned(), tone: notice.tone, day: None })
             });
             match notice {
                 Some(notice) => {
@@ -289,12 +291,33 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
                 }
             }
         }
+        Command::WriteBillboard { board_id, day, text } => {
+            let Some(index) = board_index(&board_id) else { return };
+            if wants_words(ctx.state, index) != Some(day) {
+                return;
+            }
+            let Some(text) = clean_text(&text) else { return };
+            let notice = BoardNotice {
+                text: utf16_truncate(&text, TEXT_CAP).to_owned(),
+                tone: day_tone(ctx.state, index),
+                day: Some(day),
+            };
+            ctx.state.billboards.insert(board_id, notice);
+        }
         Command::BillboardReaction { id, board_id, reaction, say, thought, follow } => {
             let Some(c) = ctx.state.characters.get(&id) else { return };
             let Some(index) = reading(c) else { return };
             if board_index(&board_id) != Some(index) || has_read(ctx.state, c, index) {
                 return;
             }
+            // Only a board that hints at the watchers beyond the world can be taken as one.
+            let reaction = match reaction {
+                _ if shown(ctx.state, index).watchers => reaction,
+                BoardReaction::Shocked => BoardReaction::Uneasy,
+                BoardReaction::Intrigued => BoardReaction::Scoff,
+                BoardReaction::Angry => BoardReaction::Annoyed,
+                reaction => reaction,
+            };
             let say = say.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 160).to_owned());
             let thought = thought.and_then(|s| clean_text(&s)).map(|s| utf16_truncate(&s, 240).to_owned());
             let ticks = react(ctx, &id, index, reaction, say, thought, follow);
@@ -306,6 +329,9 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
         Command::FoundVillage => fill_village(ctx),
         Command::CallRaid => {
             crate::systems::raids::call_raid(ctx);
+        }
+        Command::CallDragon => {
+            crate::systems::dragon::call_dragon(ctx);
         }
         Command::NewcomerDraft(villager) => {
             if !first_name_taken(ctx.state, &villager.name) {

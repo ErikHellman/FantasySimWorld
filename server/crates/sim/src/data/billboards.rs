@@ -62,6 +62,21 @@ pub static DECK: [(&str, BoardTone, Option<Advice>); 40] = [
     ("Rest when you need to. The fields will wait.", Wholesome, Some(Do(Rest))),
 ];
 
+/// Slogans for the days a board hints that someone beyond the world is looking in, when the model has not
+/// written one. Each keeps one of the five tones, so it still reads like a billboard.
+pub static WATCHER_DECK: [(&str, BoardTone, Option<Advice>); 10] = [
+    ("Smile! You are being watched from beyond the sky.", Uplifting, None),
+    ("Wave to the faces in the clouds. They wave back.", Wholesome, None),
+    ("Somebody up there is rooting for you. Several, in fact.", Wholesome, Some(Mingle)),
+    ("This village is being watched. Live accordingly.", Ominous, Some(Do(Pray))),
+    ("They see the whole valley at once. Lock your door anyway.", Ominous, Some(Do(Rest))),
+    ("Notice to our audience: the village is not a play.", Absurd, None),
+    ("If you can read this, so can they.", Absurd, None),
+    ("Do something interesting. You have an audience.", Pushy, Some(Work)),
+    ("Our watchers love a busy market. Buy something!", Pushy, Some(Do(Shop))),
+    ("You are never alone. Statistically, never.", Uplifting, None),
+];
+
 /// Words in a notice put up from outside that urge something. The first word of the notice that is one of these,
 /// or one of these with a plain ending ("praying", "meals"), decides.
 pub static ADVICE_WORDS: [(&str, Advice); 24] = [
@@ -134,6 +149,24 @@ pub fn lines(reaction: BoardReaction) -> &'static [&'static str] {
             "Who wrote that? Who's watching?",
             "I'll be locking my door tonight.",
         ],
+        Shocked => &[
+            "Watched? By whom? From where?",
+            "Gods above... or whoever's up there.",
+            "I felt eyes on me all week. I knew it!",
+            "Don't look up. Don't look up.",
+        ],
+        Intrigued => &[
+            "Hello? Is somebody out there?",
+            "Watchers beyond the sky... I'd like a word with them.",
+            "Well now. I wonder what they make of us.",
+            "If they're watching, I'd best give them something to see.",
+        ],
+        Angry => &[
+            "Whoever's spying on us, show yourselves!",
+            "Watching us? Get your own village!",
+            "I've a mind to shake my fist at the sky.",
+            "No one asked to be stared at. No one!",
+        ],
     }
 }
 
@@ -148,8 +181,11 @@ mod tests {
         for (text, _, _) in &DECK {
             assert!(utf16_len(text) <= 70, "{text}");
         }
-        let unique: std::collections::HashSet<_> = DECK.iter().map(|(text, _, _)| text).collect();
-        assert_eq!(unique.len(), DECK.len());
+        let unique: std::collections::HashSet<_> = DECK.iter().chain(&WATCHER_DECK).map(|(text, _, _)| text).collect();
+        assert_eq!(unique.len(), DECK.len() + WATCHER_DECK.len());
+        for (text, _, _) in &WATCHER_DECK {
+            assert!(utf16_len(text) <= 70, "{text}");
+        }
     }
 
     #[test]

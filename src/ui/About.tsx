@@ -60,7 +60,8 @@ export function AboutTechPanel() {
             <strong>A language model</strong> makes their choices. The server asks it only at turning points: a plan for
             the day on waking, what to say in a conversation, whether to fight or flee, what to make of something that
             just happened, and a reflection each night. It answers by picking from a fixed set of actions (tool calls)
-            rather than in free text.
+            rather than in free text. It also writes each day's words for the billboards, from what has lately happened
+            in the village.
           </li>
           <li>
             <strong>An embedding model</strong> turns each memory into a list of numbers that captures its meaning. When

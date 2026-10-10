@@ -976,7 +976,7 @@ mod tests {
 
         sim.enqueue(fsw_sim::Command::SetBillboard {
             board_id: "market_board".into(),
-            notice: Some(fsw_sim::state::BoardNotice { text: "Cheese!".into(), tone: BoardTone::Absurd }),
+            notice: Some(fsw_sim::state::BoardNotice { text: "Cheese!".into(), tone: BoardTone::Absurd, day: None }),
         });
         let events = sim.step();
         let frame = tracker.frame(&sim.state, &events);

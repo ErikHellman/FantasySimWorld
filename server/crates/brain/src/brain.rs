@@ -21,7 +21,7 @@ use fsw_sim::state::{
     BoardReaction, CeremonyPhase, ConversationLine, FightMode, Id, Intent, IntentAction, IntentSource, Map, PlanSource,
     Rite, SimState, StimulusKind,
 };
-use fsw_sim::systems::billboards::{advice_for, advice_label, has_read, reading, shown};
+use fsw_sim::systems::billboards::{advice_for, advice_label, has_read, reading, shown, wants_words};
 use fsw_sim::systems::ceremonies::{attending, speakers};
 use fsw_sim::systems::fire::fighting_fire;
 use fsw_sim::systems::weather::sheltering_from_hail;
@@ -39,13 +39,13 @@ use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protoco
 use crate::prompts::{
     Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, mercy_prompt,
     name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt,
-    vows_prompt,
+    slogan_prompt, vows_prompt,
 };
 use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
-    feeling, interpret_conversation, interpret_decision, interpret_pet_name, interpret_plan, interpret_speech,
-    reflection_relationships, spoken,
+    feeling, interpret_billboard, interpret_conversation, interpret_decision, interpret_pet_name, interpret_plan,
+    interpret_speech, reflection_relationships, spoken,
 };
 
 const RETRY_AFTER: Duration = Duration::from_secs(60);
@@ -65,6 +65,8 @@ pub enum RequestKind {
     Decide,
     PlanDay,
     Billboard,
+    /// the day's words for a billboard
+    Slogan,
     /// a speech for a wedding or a funeral, asked for hours ahead
     Ceremony,
     /// a name for a pet that has come to live with someone
@@ -82,6 +84,7 @@ impl RequestKind {
             Self::Decide => "decide",
             Self::PlanDay => "plan_day",
             Self::Billboard => "billboard",
+            Self::Slogan => "slogan",
             Self::Ceremony => "ceremony",
             Self::Name => "name",
             Self::Reflect => "reflect",
@@ -96,7 +99,7 @@ impl RequestKind {
             Self::Decide => 4,
             Self::PlanDay => 5,
             Self::Billboard => 6,
-            Self::Ceremony | Self::Name => 7,
+            Self::Ceremony | Self::Name | Self::Slogan => 7,
             Self::Reflect => 8,
         }
     }
@@ -198,6 +201,8 @@ struct BrainInner {
     last_scan: Option<Instant>,
     /// pets their keepers have been asked to name, so each is asked once
     asked_names: HashSet<Id>,
+    /// (board id, day) the model has been asked to write, so each board is asked once a day
+    asked_boards: HashSet<(String, i64)>,
     tokens: u64,
     last_error: String,
     /// the embedding model and its vectors, when memories are recalled by meaning
@@ -314,6 +319,7 @@ impl Brain {
                     turns: HashMap::new(),
                     last_scan: None,
                     asked_names: HashSet::new(),
+                    asked_boards: HashSet::new(),
                     tokens: 0,
                     last_error: String::new(),
                     memory: None,
@@ -718,7 +724,61 @@ impl Brain {
         }
         self.scan(now, &queue);
         self.name_pets(&queue);
+        self.write_boards(&queue);
         self.publish();
+    }
+
+    /// Billboards still waiting for today's words: asks the model to write them, one board per scan, while it has
+    /// room to spare. Each board is asked once a day; one that gets no answer keeps its stock slogan.
+    fn write_boards(&self, queue: &JobQueue) {
+        let (today, wanted): (i64, Vec<(usize, i64)>) = read(&*self.inner.link, |state| {
+            let wanted = (0..billboards().len()).filter_map(|i| wants_words(state, i).map(|day| (i, day))).collect();
+            (game_time(state.tick).day, wanted)
+        });
+        self.inner.state.lock().asked_boards.retain(|&(_, day)| day >= today);
+        for (index, day) in wanted {
+            let board_id = billboards()[index].id.clone();
+            let key = format!("b:{board_id}");
+            let asked = (board_id.clone(), day);
+            if queue.has(&key) || self.inner.state.lock().asked_boards.contains(&asked) {
+                continue;
+            }
+            let allowed = {
+                let s = self.inner.state.lock();
+                s.queue.is_some() && s.governor.allow(Tier::Idle)
+            };
+            if !allowed || self.backlogged() {
+                return;
+            }
+            self.inner.state.lock().asked_boards.insert(asked);
+            self.request(
+                RequestKind::Slogan,
+                key,
+                None,
+                Duration::from_secs(300),
+                None,
+                move |state, _| {
+                    (wants_words(state, index) == Some(day))
+                        .then(|| slogan_prompt(state, index))
+                        .and_then(|p| built(p, ()))
+                },
+                move |state, response, ()| {
+                    if wants_words(state, index) != Some(day) {
+                        return Applied::stale("the board has its words already, or the day is over");
+                    }
+                    let Some(text) = interpret_billboard(&response.calls) else {
+                        return Applied::fallback("no usable words; the stock slogan stays up");
+                    };
+                    Applied::ok(
+                        format!("\u{201c}{text}\u{201d}"),
+                        vec![Command::WriteBillboard { board_id, day, text }],
+                    )
+                },
+                None,
+                None,
+            );
+            return;
+        }
     }
 
     /// Unnamed pets whose keepers have not yet been asked: ask, while the model has room and before the sim names
@@ -1372,9 +1432,10 @@ impl Brain {
                 let c = state.characters.get(&build_id)?;
                 let index = reading(c).filter(|&i| billboards()[i].id == board && !has_read(state, c, i))?;
                 let place = get_place(&billboards()[index].place_id).name;
-                let text = shown(state, index).text;
+                let shown = shown(state, index);
                 let advice = advice_for(state, c, index).map(advice_label);
-                built(billboard_prompt(state, c, place, &text, advice), billboards()[index].id.clone())
+                let prompt = billboard_prompt(state, c, place, &shown.text, advice, shown.watchers);
+                built(prompt, billboards()[index].id.clone())
             },
             move |_, response, board_id| {
                 let Some(call) = response.calls.iter().find(|c| c.name == "react_to_billboard") else {

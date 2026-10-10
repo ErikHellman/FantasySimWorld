@@ -21,7 +21,7 @@ use crate::state::{
     MemoryKind, MonsterPhase, Quirk, SimState, StimulusKind, TalkTone,
 };
 use crate::systems::animals;
-use crate::systems::billboards::{has_read, react, reading, shown, template_reaction};
+use crate::systems::billboards::{has_read, react, reading, shown, stock_reaction};
 use crate::systems::ceremonies::run_attend;
 use crate::systems::children::run_fetch;
 use crate::systems::combat::{max_hp, run_fight, sneak_attack, witnesses};
@@ -510,7 +510,7 @@ fn run_activity(ctx: &mut Ctx, id: &str, activity_id: ActivityId, place_id: Opti
             let reader = ctx.cr(id);
             match reading(reader) {
                 Some(index) if !has_read(ctx.state, reader, index) => {
-                    let reaction = template_reaction(&reader.profile, shown(ctx.state, index).tone);
+                    let reaction = stock_reaction(&reader.profile, &shown(ctx.state, index));
                     let ticks = react(ctx, id, index, reaction, None, None, None);
                     // Stay a moment for the line before moving on.
                     ctx.c(id).act.until_tick = tick + ticks.min(160);

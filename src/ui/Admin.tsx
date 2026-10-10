@@ -55,6 +55,12 @@ function WorldSection() {
     api.admin.callRaid().then((answer) => setMessage(answer.message), (error) => setMessage(errorText(error)));
   };
 
+  const callDragon = (): void => {
+    if (!confirm('Call the dragon over the hills? It will set homes alight, and villagers may die.')) return;
+    setMessage('');
+    api.admin.callDragon().then((answer) => setMessage(answer.message), (error) => setMessage(errorText(error)));
+  };
+
   return (
     <>
       <h3>World</h3>
@@ -79,6 +85,10 @@ function WorldSection() {
       <div class="row">
         <button onClick={callRaid} disabled={ui.raid.value}>Call a raid</button>
         <span class="muted">{ui.raid.value ? 'A war band is in the valley.' : 'Orcs come up the west road by day.'}</span>
+      </div>
+      <div class="row">
+        <button onClick={callDragon} disabled={ui.dragon.value}>Call the dragon</button>
+        <span class="muted">{ui.dragon.value ? 'The dragon is over the valley.' : 'It comes over the hills by day and sets homes alight.'}</span>
       </div>
       {message && <p class="test-result">{message}</p>}
       <details>
@@ -140,7 +150,8 @@ function BillboardsSection() {
     <>
       <h3>Billboards</h3>
       <p class="muted">
-        Each board shows a new slogan every morning unless you put something up. The tone colours the board and how the
+        Each board shows something new every morning unless you put something up: words the language model wrote for it
+        from what has lately happened, or a stock slogan without a model. The tone colours the board and how the
         villagers take it. Readers may also do what a board urges: words such as pray, eat, ale, rest, fish, buy, market,
         train, work, neighbour or friend send some of them off to do it. While the world is paused, a change shows when it
         resumes.

@@ -62,6 +62,7 @@ pub struct Tools {
     pub finish: ToolDef,
     pub reflection: ToolDef,
     pub billboard: ToolDef,
+    pub write_billboard: ToolDef,
     pub speech: ToolDef,
     pub work_on: ToolDef,
     pub pick_up: ToolDef,
@@ -238,14 +239,25 @@ pub static TOOLS: LazyLock<Tools> = LazyLock::new(|| Tools {
         json!({
             "reaction": {
                 "type": "string",
-                "enum": ["laugh", "love", "scoff", "annoyed", "uneasy"],
-                "description": "laugh: it amuses you. love: it moves or cheers you. scoff: you think little of it. annoyed: it irritates you. uneasy: it unsettles you.",
+                "enum": ["laugh", "love", "scoff", "annoyed", "uneasy", "shocked", "intrigued", "angry"],
+                "description": "laugh: it amuses you. love: it moves or cheers you. scoff: you think little of it. annoyed: it irritates you. uneasy: it unsettles you. Only when it hints that someone beyond the world is watching: shocked: it frightens you. intrigued: you want to know who. angry: you hate being spied on.",
             },
             "say": { "type": "string", "description": "Optional. What you mutter or say aloud about it: one short sentence in your own voice, no quotation marks." },
             "follow": { "type": "boolean", "description": "Optional, only when the board urges something. true: you go and do it now. false: you do not." },
             "thought": thought(),
         }),
         &["reaction"],
+    ),
+    write_billboard: tool(
+        "write_billboard",
+        "Paint today's words on the billboard.",
+        json!({
+            "text": {
+                "type": "string",
+                "description": "The words on the board: one or two short sentences, at most 70 characters, no quotation marks."
+            }
+        }),
+        &["text"],
     ),
     work_on: tool(
         "work_on",
