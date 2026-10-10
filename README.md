@@ -226,7 +226,7 @@ Character speech is not implemented yet, but the seam is in place: every spoken 
 
 ## Tests and tools
 
-What CI runs ([.github/workflows/ci.yml](.github/workflows/ci.yml)) on every push and pull request:
+What CI runs ([.github/workflows/ci.yml](.github/workflows/ci.yml)) on every pull request and every push to `main` (it runs the Rust tests with `cargo nextest run`, which runs the same tests side by side):
 
 ```bash
 pnpm typecheck && pnpm test     # the client

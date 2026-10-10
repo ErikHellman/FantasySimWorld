@@ -1,0 +1,13 @@
+# cargo nextest (what CI runs the Rust tests with) starts these first: each runs for minutes, and started last
+# it would hold up the whole run long after every other test has finished.
+[[profile.default.overrides]]
+filter = """
+test(=a_spiteful_villager_picks_quarrels_without_a_grudge_but_spares_his_friend)
+| test(=a_shy_villager_seldom_starts_a_conversation_with_a_woman)
+| test(=a_charmer_starts_flirting_on_her_own)
+| test(=keeps_the_village_populated_over_20_days)
+| test(=the_village_does_not_level_itself_in_twenty_days)
+| test(=a_stump_grows_back_into_a_tree_on_the_clock)
+| test(=a_table_taken_apart_frees_the_ground_and_yields_a_log)
+"""
+priority = 100

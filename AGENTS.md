@@ -15,7 +15,7 @@ Design and history: [the design](docs/superpowers/specs/2026-10-01-fantasy-sim-w
 
 ## Commands
 
-Run these before calling a change done; CI runs exactly these on every push.
+Run these before calling a change done; CI runs the same checks on every pull request and on `main`.
 
 ```bash
 pnpm install
@@ -23,7 +23,7 @@ pnpm typecheck && pnpm test                     # the client (vitest)
 cd server && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 ```
 
-- `cargo test` takes a while the first time: the sim and world crates build at `opt-level = 3` even in debug so the long soak tests stay fast. `cargo test -- --ignored` adds the 200-day soak and a test that needs `node tools/mock-llm.mjs` running.
+- `cargo test` takes a while the first time: the sim, world and core crates build at `opt-level = 3` even in debug so the long soak tests stay fast. CI runs the same tests with `cargo nextest run`, which runs every binary's tests side by side and finishes much sooner; `cargo install cargo-nextest --locked` gives you the same locally. `cargo test -- --ignored` adds the 200-day soak and a test that needs `node tools/mock-llm.mjs` running.
 - When piping test output (`pnpm test | tail`), use `set -o pipefail`, or a failure looks like a pass.
 - A server for manual checks: `pnpm build`, then in `server/` `AUTH_MODE=off PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist DATA_DIR=<a scratch dir> cargo run`. Use a scratch `DATA_DIR` so you do not touch the developer's `server/data/world.db`. With `pnpm dev` on :5173 next to it, leave `PUBLIC_ORIGIN` unset instead.
 - For the model path without a real model: `node tools/mock-llm.mjs`, then start the server with `LLM_BASE_URL=http://localhost:8787/v1 LLM_MODEL=mock`.

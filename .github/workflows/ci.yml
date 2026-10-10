@@ -1,14 +1,25 @@
 name: CI
 
 on:
+  # Branches are checked through their pull request; a push to a branch as well would run everything twice.
   push:
+    branches: [main]
   pull_request:
-  # The deploy workflow runs these checks first.
+  # The deploy and release workflows run these checks first.
   workflow_call:
+
+# A new push to a pull request makes the run for the old commit pointless, so it is cancelled. Runs on main, and
+# runs started by the deploy and release workflows, always finish.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   server:
     runs-on: ubuntu-24.04
+    # Line tables are enough for a panic's backtrace; full debug info only makes linking slower and the cache bigger.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     defaults:
       run:
         working-directory: server
@@ -20,10 +31,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
+      # cargo test runs one test binary at a time, so a binary whose last long test is still going leaves the other
+      # cores idle; nextest runs every test of every binary side by side. It runs the same tests (there are no
+      # doc-tests to lose).
+      - uses: taiki-e/install-action@nextest
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       # Includes the check that src/generated/api.ts matches the wire types.
-      - run: cargo test --locked
+      - run: cargo nextest run --locked --no-fail-fast
 
   web:
     runs-on: ubuntu-24.04
