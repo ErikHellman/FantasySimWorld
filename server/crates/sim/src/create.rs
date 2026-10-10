@@ -73,6 +73,7 @@ pub fn create_state(seed: u32) -> SimState {
         cases: Vec::new(),
         sightings: Vec::new(),
         exiles: Default::default(),
+        stalls: Default::default(),
         nav: Default::default(),
     };
     state.chronicle.push(ChronicleEntry {
