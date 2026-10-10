@@ -79,6 +79,10 @@ export function AboutTechPanel() {
             their routine instead.
           </li>
           <li>Everything that changes goes out on the stream, and your browser draws it.</li>
+          <li>
+            Once a second the server also ranks what is most worth watching; the Auto camera in your browser follows the
+            best of it while you leave the camera alone.
+          </li>
         </ol>
         <p class="muted">
           With no model connected (🧠 says “local minds”), the villagers live by their built-in routines alone, and the

@@ -14,6 +14,7 @@ pub mod config;
 pub mod digest;
 pub mod encode;
 pub mod guests;
+pub mod hotspots;
 pub mod store;
 pub mod world_task;
 

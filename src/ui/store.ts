@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, Hotspot, House, LlmStatus, Me,
   RosterEntry,
   SiteDetail, Snapshot, Status, Stockpile, Utterance, Weather, WorldObject,
 } from '../generated/api';
@@ -138,7 +138,23 @@ export const ui = {
   sheet: signal<Sheet>('none'),
   /** pixels the phone's tab bar or open pane covers along the right and bottom edges; the camera centres on the rest */
   covered: signal({ right: 0, bottom: 0 }),
+  /** what is worth watching right now, best first, as the server ranks it */
+  hotspots: signal<Hotspot[]>([]),
+  /** the Auto camera may take over while the viewer leaves the camera alone (remembered in this browser) */
+  auto: signal(true),
+  /** what the Auto camera is showing right now; null while the viewer has the camera */
+  autoShot: signal<Hotspot | null>(null),
+  /** "Happening now" cards on screen, oldest first */
+  cards: signal<HappeningCard[]>([]),
 };
+
+/** A "Happening now" card: a big hotspot that has just started, with a Watch button. */
+export interface HappeningCard {
+  id: number;
+  spot: Hotspot;
+  /** `performance.now()` when it goes away */
+  until: number;
+}
 
 export const isAdmin = (): boolean => ui.me.value?.role === 'admin';
 /** Watching with a guest seat, as everyone but the admin does. */
@@ -154,6 +170,10 @@ export interface UiActions {
   sendChat(text: string): Promise<void>;
   /** resolves to the name as the server stored it */
   renameChat(name: string): Promise<string>;
+  /** follows a hotspot's subject, or looks at its place when it has none */
+  watch(spot: Hotspot): void;
+  /** turns the Auto camera on or off */
+  setAuto(on: boolean): void;
 }
 
 export const actions: UiActions = {
@@ -163,6 +183,8 @@ export const actions: UiActions = {
   applyAudio: () => {},
   sendChat: () => Promise.resolve(),
   renameChat: (name) => Promise.resolve(name),
+  watch: () => {},
+  setAuto: () => {},
 };
 
 let voiceId = 0;
@@ -202,6 +224,7 @@ export function fromStatus(status: Status): void {
   ui.alarm.value = status.alarm;
   ui.raid.value = status.raid;
   ui.founding.value = status.founding;
+  ui.hotspots.value = status.hotspots;
 }
 
 export function addChronicle(entry: ChronicleEntry): void {
@@ -356,5 +379,24 @@ export function saveChatSettings(settings: ChatSettings): void {
     localStorage.setItem(CHAT_KEY, JSON.stringify(settings));
   } catch {
     // storage blocked: the settings last until the page closes
+  }
+}
+
+/** Whether the Auto camera is on lives in this browser only; it starts on. */
+const AUTO_KEY = 'fsw.auto';
+
+export function loadAuto(): boolean {
+  try {
+    return localStorage.getItem(AUTO_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveAuto(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_KEY, on ? 'on' : 'off');
+  } catch {
+    // storage blocked: the choice lasts until the page closes
   }
 }
