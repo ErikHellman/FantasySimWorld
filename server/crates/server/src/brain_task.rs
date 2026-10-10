@@ -55,6 +55,7 @@ fn kind(kind: Kind) -> RequestKind {
         Kind::PlanDay => RequestKind::PlanDay,
         Kind::Billboard => RequestKind::Billboard,
         Kind::Slogan => RequestKind::Slogan,
+        Kind::Herald => RequestKind::Herald,
         Kind::Ceremony => RequestKind::Ceremony,
         Kind::Name => RequestKind::Name,
         Kind::Reflect => RequestKind::Reflect,

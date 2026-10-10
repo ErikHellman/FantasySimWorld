@@ -123,6 +123,16 @@ function respond(body) {
       : 'We lay a neighbour in the earth today, and the valley is smaller for it. Remember the work of their hands and the nights they stood with us. Go gently, and let the living hold each other a little closer.';
     return [{ name: 'speech', args: { text } }];
   }
+  if (names.includes('write_herald')) {
+    // The headline is the first piece of yesterday's news, so the page can be seen to follow the chronicle.
+    const news = /in the order it happened:\n- \d\d:\d\d (.+)/.exec(user)?.[1] ?? 'A quiet day in the valley';
+    return [{ name: 'write_herald', args: {
+      headline: news.length > 70 ? `${news.slice(0, 67)}...` : news,
+      story1: 'The valley went about its business, and the Herald was there to see it.',
+      gossip: pick(['Someone was seen whistling past the graveyard.', 'The miller swears the river talked back.']),
+    } }];
+  }
+  if (names.includes('write_billboard')) return [{ name: 'write_billboard', args: { text: pick(['Eat more turnips.', 'Fear nothing. Except the dark.', 'Smile: someone may be watching.']) } }];
   if (names.includes('name_pet')) return [{ name: 'name_pet', args: { name: pick(['Bramblepaw', 'Hob', 'Turnip', 'Clementine', 'Sixpence', 'Mossy']) } }];
   if (names.includes('reflection')) return [{ name: 'reflection', args: { summary: 'I am holding together, though the nights wear on me. I have more friends here than I thought.', insights: ['I should say what I feel before it is too late.'], relationships: [] } }];
   if (names.includes('create_villager')) return [{ name: 'create_villager', args: invent(body, user) }];

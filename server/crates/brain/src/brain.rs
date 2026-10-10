@@ -24,6 +24,7 @@ use fsw_sim::state::{
 use fsw_sim::systems::billboards::{advice_for, advice_label, has_read, reading, shown, wants_words};
 use fsw_sim::systems::ceremonies::{attending, speakers};
 use fsw_sim::systems::fire::fighting_fire;
+use fsw_sim::systems::herald::wants_issue;
 use fsw_sim::systems::weather::sheltering_from_hail;
 use fsw_sim::util::{first_name, is_fighting, living, name_of};
 use fsw_world::places::{billboards, get_place};
@@ -37,15 +38,15 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, mercy_prompt,
-    name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue, reply_prompt,
-    slogan_prompt, vows_prompt,
+    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, herald_prompt,
+    mercy_prompt, name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue,
+    reply_prompt, slogan_prompt, vows_prompt,
 };
 use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
 use crate::validate::{
-    feeling, interpret_billboard, interpret_conversation, interpret_decision, interpret_pet_name, interpret_plan,
-    interpret_speech, reflection_relationships, spoken,
+    feeling, interpret_billboard, interpret_conversation, interpret_decision, interpret_herald, interpret_pet_name,
+    interpret_plan, interpret_speech, reflection_relationships, spoken,
 };
 
 const RETRY_AFTER: Duration = Duration::from_secs(60);
@@ -67,6 +68,8 @@ pub enum RequestKind {
     Billboard,
     /// the day's words for a billboard
     Slogan,
+    /// the Valley Herald's front page for the day
+    Herald,
     /// a speech for a wedding or a funeral, asked for hours ahead
     Ceremony,
     /// a name for a pet that has come to live with someone
@@ -85,6 +88,7 @@ impl RequestKind {
             Self::PlanDay => "plan_day",
             Self::Billboard => "billboard",
             Self::Slogan => "slogan",
+            Self::Herald => "herald",
             Self::Ceremony => "ceremony",
             Self::Name => "name",
             Self::Reflect => "reflect",
@@ -99,7 +103,7 @@ impl RequestKind {
             Self::Decide => 4,
             Self::PlanDay => 5,
             Self::Billboard => 6,
-            Self::Ceremony | Self::Name | Self::Slogan => 7,
+            Self::Ceremony | Self::Name | Self::Slogan | Self::Herald => 7,
             Self::Reflect => 8,
         }
     }
@@ -203,6 +207,8 @@ struct BrainInner {
     asked_names: HashSet<Id>,
     /// (board id, day) the model has been asked to write, so each board is asked once a day
     asked_boards: HashSet<(String, i64)>,
+    /// the last day the model was asked for the Valley Herald, so each issue is asked for once
+    asked_herald: Option<i64>,
     tokens: u64,
     last_error: String,
     /// the embedding model and its vectors, when memories are recalled by meaning
@@ -320,6 +326,7 @@ impl Brain {
                     last_scan: None,
                     asked_names: HashSet::new(),
                     asked_boards: HashSet::new(),
+                    asked_herald: None,
                     tokens: 0,
                     last_error: String::new(),
                     memory: None,
@@ -725,6 +732,7 @@ impl Brain {
         self.scan(now, &queue);
         self.name_pets(&queue);
         self.write_boards(&queue);
+        self.write_herald(&queue);
         self.publish();
     }
 
@@ -779,6 +787,48 @@ impl Brain {
             );
             return;
         }
+    }
+
+    /// The Valley Herald waiting for today's issue: asks the model to write it, once a day, while it has room. An
+    /// issue the model has not written by eight is set by the sim from the chronicle.
+    fn write_herald(&self, queue: &JobQueue) {
+        let Some(day) = read(&*self.inner.link, wants_issue) else { return };
+        let key = format!("h:{day}");
+        if queue.has(&key) || self.inner.state.lock().asked_herald.is_some_and(|asked| asked >= day) {
+            return;
+        }
+        let allowed = {
+            let s = self.inner.state.lock();
+            s.queue.is_some() && s.governor.allow(Tier::Awaited)
+        };
+        if !allowed || self.backlogged() {
+            return;
+        }
+        self.inner.state.lock().asked_herald = Some(day);
+        self.request(
+            RequestKind::Herald,
+            key,
+            None,
+            Duration::from_secs(300),
+            None,
+            move |state, _| {
+                (wants_issue(state) == Some(day)).then(|| herald_prompt(state, day)).and_then(|p| built(p, ()))
+            },
+            move |state, response, ()| {
+                if wants_issue(state) != Some(day) {
+                    return Applied::stale("the Herald is out already");
+                }
+                let Some((headline, stories, gossip)) = interpret_herald(&response.calls) else {
+                    return Applied::fallback("no usable front page; the sim sets one from the chronicle");
+                };
+                Applied::ok(
+                    format!("\u{201c}{headline}\u{201d}"),
+                    vec![Command::WriteHerald { day, headline, stories, gossip }],
+                )
+            },
+            None,
+            None,
+        );
     }
 
     /// Unnamed pets whose keepers have not yet been asked: ask, while the model has room and before the sim names

@@ -221,7 +221,11 @@ loot: Array<Loot>,
 /**
  * what the sky is doing
  */
-weather: Weather, };
+weather: Weather, 
+/**
+ * the Valley Herald's latest issue, if one is out yet; earlier ones come from `GET /api/herald`
+ */
+herald: HeraldIssue | null, };
 
 export type WorldReset = { 
 /**
@@ -277,7 +281,7 @@ export type WireEvent = { "type": "speech" } & Utterance | { "type": "emote", id
 /**
  * left out when the blow simply landed
  */
-outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, };
+outcome?: HitOutcome, } | { "type": "death", id: string, name: string, pos: Vec2, monster: boolean, } | { "type": "monster_spawn", id: string, pos: Vec2, } | { "type": "raid", phase: RaidPhase, } | { "type": "chronicle", entry: ChronicleEntry, } | { "type": "grave", grave: Grave, } | { "type": "billboard", billboard: Billboard, } | { "type": "house", house: House, } | { "type": "ceremony", ceremony: Ceremony, } | { "type": "world_object", object: WorldObject, } | { "type": "stockpile", stockpile: Stockpile, } | { "type": "economy", economy: Economy, } | { "type": "loot", loot: Loot, } | { "type": "weather", weather: Weather, } | { "type": "herald", issue: HeraldIssue, };
 
 export type ChronicleKind = "world" | "social" | "romance" | "conflict" | "combat" | "death" | "arrival" | "fire" | "trade";
 
@@ -452,6 +456,27 @@ wind: number,
  * the way the wind blows toward, in degrees from +x toward +z, in steps of 15
  */
 windDir: number, };
+
+/**
+ * One morning's front page of the Valley Herald, about the day before.
+ */
+export type HeraldIssue = { 
+/**
+ * the day it came out; it tells of the day before
+ */
+day: number, headline: string, 
+/**
+ * the other stories on the page, the biggest first
+ */
+stories: Array<string>, 
+/**
+ * a line of gossip at the foot of the page
+ */
+gossip?: string, 
+/**
+ * the model wrote it, rather than the sim setting it from the chronicle
+ */
+byModel: boolean, };
 
 /**
  * Raw materials in a villager's arms.
@@ -824,7 +849,7 @@ stockpile: Goods | null,
  */
 history: Array<ChronicleEntry>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "slogan" | "ceremony" | "name" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "slogan" | "herald" | "ceremony" | "name" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 
@@ -936,6 +961,15 @@ entries: Array<ChronicleEntry>,
  * older entries exist
  */
 more: boolean, };
+
+/**
+ * `GET /api/herald`
+ */
+export type HeraldArchive = { 
+/**
+ * the issues kept, newest first
+ */
+issues: Array<HeraldIssue>, };
 
 /**
  * The body of every 4xx / 5xx answer from `/api`.

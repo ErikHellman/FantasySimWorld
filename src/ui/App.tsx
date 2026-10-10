@@ -7,6 +7,7 @@ import { ChatPanel } from './Chat';
 import { FoundingDialog } from './Founding';
 import { AutoChip, AutoPill, HappeningCards } from './Happening';
 import { HelpPanel } from './Help';
+import { HeraldPanel, HeraldPill } from './Herald';
 import { Inspector } from './Inspector';
 import { SitePanel } from './SitePanel';
 import { isTouchScreen } from './layout';
@@ -74,6 +75,7 @@ function TopBar() {
         {ui.dragon.value && <span class="pill danger" title="A dragon over the valley">🐉</span>}
         <Stores />
         <Chest />
+        <HeraldPill />
         {ui.graves.value.length > 0 && (
           <button class="pill" title="The graveyard" onClick={() => togglePanel('graves')}>
             🪦 {ui.graves.value.length}
@@ -224,6 +226,7 @@ export function App() {
       {ui.panel.value === 'brain' && isAdmin() && <BrainLog />}
       <FoundingDialog />
       {ui.panel.value === 'graves' && <Graves />}
+      {ui.panel.value === 'herald' && <HeraldPanel />}
       {ui.panel.value === 'help' && <HelpPanel />}
       {ui.panel.value === 'tech' && <AboutTechPanel />}
       {ui.notice.value && (

@@ -259,6 +259,8 @@ pub struct Snapshot {
     pub loot: Vec<Loot>,
     /// what the sky is doing
     pub weather: Weather,
+    /// the Valley Herald's latest issue, if one is out yet; earlier ones come from `GET /api/herald`
+    pub herald: Option<HeraldIssue>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
@@ -420,6 +422,27 @@ pub enum WireEvent {
     Weather {
         weather: Weather,
     },
+    /// the Valley Herald is out with a new issue
+    Herald {
+        issue: HeraldIssue,
+    },
+}
+
+/// One morning's front page of the Valley Herald, about the day before.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HeraldIssue {
+    /// the day it came out; it tells of the day before
+    pub day: u32,
+    pub headline: String,
+    /// the other stories on the page, the biggest first
+    pub stories: Vec<String>,
+    /// a line of gossip at the foot of the page
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub gossip: Option<String>,
+    /// the model wrote it, rather than the sim setting it from the chronicle
+    pub by_model: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -1165,6 +1188,8 @@ pub enum RequestKind {
     Billboard,
     /// the day's words for a billboard
     Slogan,
+    /// the Valley Herald's front page
+    Herald,
     Ceremony,
     /// a name for a new pet
     Name,
@@ -1339,6 +1364,13 @@ pub struct ChroniclePage {
     pub entries: Vec<ChronicleEntry>,
     /// older entries exist
     pub more: bool,
+}
+
+/// `GET /api/herald`
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+pub struct HeraldArchive {
+    /// the issues kept, newest first
+    pub issues: Vec<HeraldIssue>,
 }
 
 /// The body of every 4xx / 5xx answer from `/api`.
@@ -1517,6 +1549,7 @@ pub fn typescript() -> String {
         LootKind,
         WeatherKind,
         Weather,
+        HeraldIssue,
         Goods,
         LlmState,
         LlmStatus,
@@ -1557,6 +1590,7 @@ pub fn typescript() -> String {
         WatchRequest,
         Me,
         ChroniclePage,
+        HeraldArchive,
         ApiError,
         SpeedRequest,
         WireProtocol,

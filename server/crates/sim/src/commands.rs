@@ -88,6 +88,15 @@ pub enum Command {
         day: i64,
         text: String,
     },
+    /// The model's front page of the Valley Herald for `day`; ignored unless the Herald is still waiting for it.
+    WriteHerald {
+        day: i64,
+        headline: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        stories: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gossip: Option<String>,
+    },
     /// How someone reading a billboard takes it; ignored unless they are still reading it and have not reacted.
     BillboardReaction {
         id: Id,

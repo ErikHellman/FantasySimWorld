@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, Hotspot, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, HeraldIssue, Hotspot, House, LlmStatus, Me,
   RosterEntry,
   SiteDetail, Snapshot, Status, Stockpile, Utterance, Weather, WorldObject,
 } from '../generated/api';
@@ -45,7 +45,7 @@ const CHAT_VIEWS: readonly ChatView[] = ['expanded', 'collapsed', 'hidden'];
 export type Sheet = 'none' | 'villagers' | 'feed' | 'chat' | 'character' | 'menu';
 
 /** A window over the whole HUD: settings, help and the like. */
-export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'help' | 'tech';
+export type Panel = 'none' | 'settings' | 'admin' | 'brain' | 'graves' | 'herald' | 'help' | 'tech';
 
 /** What this browser remembers about the chat. */
 export interface ChatSettings {
@@ -110,6 +110,12 @@ export const ui = {
   stockpiles: signal<Stockpile[]>([]),
   /** the village chest and what the market's stalls hold */
   economy: signal<Economy>({ purse: 0, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }),
+  /** the Valley Herald's latest issue, once one is out */
+  herald: signal<HeraldIssue | null>(null),
+  /** a Herald issue this browser has not opened yet */
+  heraldUnread: signal(false),
+  /** the Herald was opened for a viewer back after missing an issue */
+  heraldAway: signal(false),
   /** what the sky is doing */
   weather: signal<Weather>({ kind: 'clear', intensity: 0, wind: 0, windDir: 0 }),
   /** the world's things that are alight right now (buildings as `b:<place>`, props as `p:<place>:<index>`) */
@@ -206,6 +212,7 @@ export function fromSnapshot(snapshot: Snapshot): void {
   ui.stockpiles.value = snapshot.stockpiles;
   ui.economy.value = snapshot.economy;
   ui.weather.value = snapshot.weather;
+  setHerald(snapshot.herald, true);
   ui.fires.value = snapshot.worldObjects.filter((object) => object.stage === 'burning');
   ui.alarm.value = snapshot.alarm;
   ui.llm.value = snapshot.llm;
@@ -315,6 +322,62 @@ const chatIsOpen = (): boolean => (ui.mobile.value ? ui.sheet.value === 'chat' :
 export function togglePanel(panel: Panel): void {
   ui.panel.value = ui.panel.value === panel ? 'none' : panel;
   if (ui.panel.value !== 'none') ui.sheet.value = 'none';
+  if (ui.panel.value === 'herald') markHeraldRead();
+  ui.heraldAway.value = false;
+}
+
+/** The last Herald issue this browser opened, by day, lives in this browser only. */
+const HERALD_KEY = 'fsw.herald';
+/** Whether this page has already looked for news that came out while the viewer was away. */
+let heraldLooked = false;
+
+function loadHeraldRead(): number | null {
+  try {
+    const stored = Number(localStorage.getItem(HERALD_KEY));
+    return stored > 0 ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveHeraldRead(day: number): void {
+  try {
+    localStorage.setItem(HERALD_KEY, String(day));
+  } catch {
+    // storage blocked: every visit is a first one
+  }
+}
+
+function markHeraldRead(): void {
+  ui.heraldUnread.value = false;
+  if (ui.herald.value) saveHeraldRead(ui.herald.value.day);
+}
+
+/**
+ * The Herald's latest issue, from a snapshot (`fromSnapshot`) or as it comes out. The first snapshot a page gets
+ * opens it for a viewer who has been here before and missed an issue ("While you were away"); a first visit only
+ * remembers where the viewer starts, and an issue that comes out while they watch is only marked as new.
+ */
+export function setHerald(issue: HeraldIssue | null | undefined, fromSnapshot = false): void {
+  ui.herald.value = issue ?? null;
+  if (!issue) return;
+  const read = loadHeraldRead();
+  if (fromSnapshot && !heraldLooked) {
+    heraldLooked = true;
+    // A new world starts its days again: count from where it is.
+    if (read === null || read > issue.day) {
+      saveHeraldRead(issue.day);
+      return;
+    }
+    if (read < issue.day && ui.panel.value === 'none') {
+      ui.panel.value = 'herald';
+      ui.heraldAway.value = true;
+      markHeraldRead();
+      return;
+    }
+  }
+  if (ui.panel.value === 'herald') markHeraldRead();
+  else ui.heraldUnread.value = read === null || read < issue.day;
 }
 
 /** Opens a phone pane, or closes it if it is already open; any other pane or window closes. */

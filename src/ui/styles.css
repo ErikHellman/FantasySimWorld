@@ -369,6 +369,16 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 .slots li.ok { color: var(--good); }
 code { background: rgba(0, 0, 0, 0.3); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .graves li { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.dialog.herald { width: min(560px, 100%); line-height: 1.45; }
+.herald-title { margin: 0 0 2px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; letter-spacing: 0.02em; text-align: center; border-bottom: 3px double var(--panel-border); padding-bottom: 6px; }
+.herald-away { margin: 0 0 4px; text-align: center; text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+.herald-date { margin: 4px 0 10px; text-align: center; font-size: 12px; }
+.herald-headline { margin: 0 0 8px; font-family: Georgia, 'Times New Roman', serif; font-size: 20px; line-height: 1.25; }
+.herald article p { margin: 0 0 8px; }
+.herald-gossip { font-style: italic; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px; }
+.herald-nav { display: flex; gap: 8px; margin-top: 10px; }
+.herald-nav .primary { margin-left: auto; }
+.pill.new { border-color: var(--accent); color: var(--accent); }
 .billboard-row .row + .row { margin-top: 6px; }
 .dialog.help { width: min(640px, 100%); line-height: 1.45; }
 .dialog.help > p { margin: 6px 0 8px; }

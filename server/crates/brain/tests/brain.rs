@@ -9,7 +9,7 @@ use fsw_brain::llm::transport::{FakeTransport, HttpResponse};
 use fsw_brain::recall::MemoryIndex;
 use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, WireProtocol};
 use fsw_core::Vec2;
-use fsw_core::time::TICKS_PER_DAY;
+use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::state::{
     Ceremony, CeremonyPhase, Intent, IntentAction, IntentSource, Memory, MemoryKind, Rite, SimState, Stimulus,
     StimulusKind, TalkTone,
@@ -842,4 +842,49 @@ async fn the_model_writes_the_days_billboards_from_what_has_happened() {
     assert_eq!(asks.len(), boards, "each board is asked once a day");
     assert!(asks.iter().all(|b| b.contains("Rowan caught a pike as long as a dog.")), "the prompt tells what happened");
     assert_eq!(h.log("—", RequestKind::Slogan).expect("a slogan request").status, LogStatus::Ok);
+}
+
+#[tokio::test]
+async fn the_model_writes_the_herald_from_yesterdays_chronicle() {
+    let mut h = harness(
+        continue_otherwise(|tools, _| {
+            tools.iter().any(|t| t == "write_herald").then(|| {
+                json!([{ "name": "write_herald", "args": {
+                    "headline": "Pike Panic at the River",
+                    "story1": "Rowan caught a pike as long as a dog.",
+                    "gossip": "Some say the pike caught Rowan."
+                } }])
+            })
+        }),
+        ConversationMode::Batched,
+    );
+    {
+        let mut sim = h.link.sim.lock();
+        let rowan = living(&sim.state).find(|c| first_name(c) == "Rowan").unwrap().id.clone();
+        let mut events = Vec::new();
+        let mut ctx = Ctx::new(&mut sim.state, &mut events);
+        ctx.chronicle(fsw_sim::state::ChronicleKind::Social, "Rowan caught a pike as long as a dog.", vec![rowan]);
+        // The next morning, after dawn.
+        let mut tick = sim.state.tick;
+        while !(game_time(tick).day == 2 && game_time(tick).minute_of_day >= 390.0) {
+            tick += 20;
+        }
+        sim.state.tick = tick;
+    }
+    h.settle().await;
+    for _ in 0..4 {
+        h.brain.update(true);
+        h.wait().await;
+        h.step(1);
+    }
+    let sim = h.link.sim.lock();
+    let issue = sim.state.herald.last().expect("no issue");
+    assert_eq!((issue.day, issue.headline.as_str(), issue.by_model), (2, "Pike Panic at the River", true));
+    assert_eq!(issue.gossip.as_deref(), Some("Some say the pike caught Rowan."));
+    drop(sim);
+    let asks: Vec<String> =
+        h.transport.bodies().iter().map(Value::to_string).filter(|b| b.contains("write_herald")).collect();
+    assert_eq!(asks.len(), 1, "the Herald is asked for once a day");
+    assert!(asks[0].contains("Rowan caught a pike as long as a dog."), "the prompt tells what happened yesterday");
+    assert_eq!(h.log("—", RequestKind::Herald).expect("a Herald request").status, LogStatus::Ok);
 }

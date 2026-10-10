@@ -13,7 +13,7 @@ const entity = (id: string, x: number): Entity => ({
 const snapshot = (tick: number, entities: Entity[]): Snapshot => ({
   tick, speed: 1, entities, roster: [], chronicle: [], graves: [], alarm: false, voices: [], billboards: [], houses: [], ceremony: null, worldObjects: [], stockpiles: [],
   economy: { purse: 80, food: 0, potion: 0, gift: 0, trinket: 0, relic: 0 }, loot: [],
-  weather: { kind: 'clear', intensity: 0, wind: 0, windDir: 0 },
+  weather: { kind: 'clear', intensity: 0, wind: 0, windDir: 0 }, herald: null,
   llm: { state: 'off', inFlight: 0, queued: 0, requests: 0, failures: 0, tokens: 0, latencyMs: 0, protocol: '', message: '' },
 });
 
