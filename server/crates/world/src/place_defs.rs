@@ -513,6 +513,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 slot(&[Pray, Rest], -2.0, 7.0, 180.0).anim("sit_chair"),
                 slot(&[Pray, Rest], 2.0, 7.0, 180.0).anim("sit_chair"),
             ],
+            billboards: vec![board("chapel_board", 5.6, 6.6, -35.0)],
             ..PlaceDef::default()
         },
         PlaceDef {
@@ -649,6 +650,7 @@ pub fn place_defs() -> Vec<PlaceDef> {
                 slot(&[Forage], 4.4, 6.4, 200.0).anim("pick_up"),
                 slot(&[Forage], -1.2, -7.0, 0.0).anim("pick_up"),
             ],
+            billboards: vec![board("glade_board", -6.0, 4.6, 40.0)],
             ..PlaceDef::default()
         },
         PlaceDef {

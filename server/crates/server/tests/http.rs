@@ -672,7 +672,7 @@ async fn admins_put_text_on_a_billboard_and_every_viewer_sees_it() {
     let snapshot = seen.split("event: snapshot\n").nth(1).unwrap();
     let data = snapshot.lines().find_map(|line| line.strip_prefix("data: ")).unwrap();
     let boards = serde_json::from_str::<serde_json::Value>(data).unwrap()["billboards"].clone();
-    assert_eq!(boards.as_array().unwrap().len(), 5, "{boards}");
+    assert_eq!(boards.as_array().unwrap().len(), 7, "{boards}");
     assert_eq!(boards[1]["id"], "green_board");
     assert_eq!(boards[1]["place"], "the village green");
     assert_eq!(boards[1]["custom"], false);

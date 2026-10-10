@@ -788,7 +788,7 @@ stockpile: Goods | null,
  */
 history: Array<ChronicleEntry>, };
 
-export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "ceremony" | "name" | "reflect";
+export type RequestKind = "mercy" | "react" | "reply" | "converse" | "decide" | "plan_day" | "billboard" | "slogan" | "ceremony" | "name" | "reflect";
 
 export type LogStatus = "ok" | "fallback" | "error" | "stale";
 

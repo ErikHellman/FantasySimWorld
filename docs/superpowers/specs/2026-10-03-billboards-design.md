@@ -1,6 +1,6 @@
 # Billboards
 
-Five large billboards stand around the village. For now they show funny catch-phrases and mock-motivational slogans; later they are meant to carry real adverts. Villagers sometimes walk up to one, read it, say what they think of it and react to it.
+Seven large billboards stand around the village. They show funny catch-phrases, mock-motivational slogans and mock adverts, written each day by the language model from what has lately happened (stock slogans without one); later they are meant to carry real adverts too. Villagers sometimes walk up to one, read it, say what they think of it and react to it.
 
 ## What was decided
 
@@ -14,7 +14,7 @@ Five large billboards stand around the village. For now they show funny catch-ph
 
 ## The pieces
 
-- **World** (both twins, `src/world` and `server/crates/world`): `PlaceDef.billboards` with an id, a local position and a rotation. Each board adds a box obstacle (3.4 × 0.5 m) and two `read_board` slots in front of it, appended after the authored slots so existing slot ids stay the same. Boards: the green, the market, the tavern, the training yard and the west road. No place was added, so scatter and the prompts' place list are unchanged.
+- **World** (both twins, `src/world` and `server/crates/world`): `PlaceDef.billboards` with an id, a local position and a rotation. Each board adds a box obstacle (3.4 × 0.5 m) and two `read_board` slots in front of it, appended after the authored slots so existing slot ids stay the same. Boards: the green, the market, the tavern, the training yard and the west road; the chapel and the Whispering Glade were added later (see below). No place was added, so scatter and the prompts' place list are unchanged.
 - **Sim**: `data/billboards.rs` (the deck with its advice, the advice words and the stock lines), `systems/billboards.rs` (what a board shows and urges, cleaning text, the stock reaction, reacting, following advice, wanting to read), the `ReadBoard` activity in `intents.rs` and `routine.rs`, and the two commands in `sim.rs`.
 - **Brain**: `RequestKind::Billboard`, `billboard_prompt`, the `react_to_billboard` tool (with `follow`).
 - **Server**: `Snapshot.billboards`, `WireEvent::Billboard` (sent by the tracker whenever what a board shows changes, at midnight or after an admin edit), and `POST /api/admin/billboards {id, text?, tone?}` (admins only, JSON, CSRF-checked; text is trimmed, whitespace collapsed, control characters refused, at most 90 UTF-16 units; no text returns the board to the slogans).
@@ -25,6 +25,14 @@ Five large billboards stand around the village. For now they show funny catch-ph
 - The board obstacles change the nav grid (a new `worldHash`) and the extra dice rolls change how every world plays out. 66 of the 69 cases in `server/crates/brain/tests/fixtures/prompts.json` now carry the Rust sim's text; their fixed wording (system text, place and activity lists, tool lists) did not change.
 - Old saves load unchanged (both new fields are optional and left out when empty).
 - No `PROTOCOL_VERSION` bump: older clients ignore the new event and field, and the changed world hash already tells a stale tab to reload.
+
+## Words from the model, and the watchers (October 2026)
+
+- **The model writes the day's words.** A board without an admin's notice waits for the day's words (`wants_words`). While the model has room to spare (`Tier::Idle`, not backlogged), the brain asks for one board per scan (`RequestKind::Slogan`, `slogan_prompt`, the `write_billboard` tool), each board once a day. The prompt gives the board's place, the tone, the chronicle of the last two days (newest eight entries), the villagers' names and what the other boards say today. The answer is `Command::WriteBillboard {boardId, day, text}`; the sim cleans it, caps it like any notice and keeps it in `SimState.billboards` with `day` set, so it comes down at midnight. An admin's notice (no `day`) always wins and stays until taken down. Without a model, or without an answer, the board shows the stock slogan, as before.
+- **The tones stay.** The sim decides each board's tone for the day (the stock slogan's tone, from seed, day and board) and the model writes in it, so the mix of uplifting, absurd, pushy, ominous and wholesome is the same with or without a model. What a written notice urges is read from its words, as for an admin's.
+- **The watchers.** About one board-day in fourteen (`hints_at_watchers`, from the seed, the day and the board, so nothing is drawn from the RNG) a board hints that someone beyond the world is watching the village, which is the viewers. The model is asked to slip the hint in; without one the board shows a line from `WATCHER_DECK`. Readers of such a board take it in one of three new ways: `shocked` (the timid), `angry` (the hot-headed) or `intrigued` (everyone else), or as the model says. These reactions leave a weightier memory (importance 5, so it comes up in talk), a stock thought when the model gives none, and a line in the chronicle. The sim only accepts these reactions for a board that hints; otherwise they become uneasy, scoff and annoyed.
+- **Two more boards**, by the chapel and in the Whispering Glade, in both world twins. They change the nav grid (a new `worldHash`), the golden fixtures and how worlds play out.
+- **The wire** only gains `slogan` in `RequestKind`, for the decision log. A model-written board is not `custom` (that still means an admin's notice). No `PROTOCOL_VERSION` bump.
 
 ## Later
 

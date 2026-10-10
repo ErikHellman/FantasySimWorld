@@ -262,6 +262,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { activities: ['pray', 'rest'], at: [-2.0, 7.0], face: 180, anim: 'sit_chair' },
       { activities: ['pray', 'rest'], at: [2.0, 7.0], face: 180, anim: 'sit_chair' },
     ],
+    billboards: [{ id: 'chapel_board', at: [5.6, 6.6], rot: -35 }],
   },
   {
     id: 'training_yard',
@@ -381,6 +382,7 @@ export const PLACE_DEFS: readonly PlaceDef[] = [
       { activities: ['forage'], at: [4.4, 6.4], face: 200, anim: 'pick_up' },
       { activities: ['forage'], at: [-1.2, -7.0], face: 0, anim: 'pick_up' },
     ],
+    billboards: [{ id: 'glade_board', at: [-6.0, 4.6], rot: 40 }],
   },
   {
     id: 'mine',

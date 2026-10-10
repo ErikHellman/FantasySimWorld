@@ -140,7 +140,7 @@ pub async fn billboard(State(app): State<Arc<AppState>>, Json(body): Json<Billbo
             if utf16_len(&text) > TEXT_CAP {
                 return error(StatusCode::BAD_REQUEST, &format!("a billboard holds at most {TEXT_CAP} characters"));
             }
-            Some(BoardNotice { text, tone: sim_tone(body.tone.unwrap_or(BillboardTone::Absurd)) })
+            Some(BoardNotice { text, tone: sim_tone(body.tone.unwrap_or(BillboardTone::Absurd)), day: None })
         }
     };
     let command = Command::SetBillboard { board_id: body.id, notice };
