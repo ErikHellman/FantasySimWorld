@@ -125,7 +125,8 @@ fn an_unseen_murder_opens_a_case_and_viewers_are_told_who_did_it() {
 #[test]
 fn the_village_tries_the_murderer_and_drives_them_out() {
     let (mut w, hesper, kael) = unseen_murder(7);
-    w.everyone_suspects(&kael, &hesper, 4.0);
+    // Damning enough that fondness for Hesper cannot outweigh it, whatever the day brought.
+    w.everyone_suspects(&kael, &hesper, 8.0);
     let tried = w.run_until(
         TICKS_PER_DAY * 3,
         |s| matches!(s.ceremony.as_ref().map(|c| &c.rite), Some(Rite::Trial { accused, .. }) if *accused == hesper),
