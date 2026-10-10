@@ -12,6 +12,7 @@ use crate::state::{
     ActivityId, BoardNotice, BoardReaction, ChronicleKind, FightMode, HeraldIssue, Intent, IntentAction, MemoryKind,
     PlanBlock, PlanSource, SimState, WorldJob,
 };
+use crate::systems::ambitions::update_ambitions;
 use crate::systems::animals::{self, update_animals};
 use crate::systems::billboards::{
     TEXT_CAP, board_index, clean_text, day_tone, has_read, react, reading, shown, wants_words,
@@ -422,6 +423,7 @@ impl Sim {
         update_cases(&mut ctx);
         update_herald(&mut ctx);
         update_sky(&mut ctx);
+        update_ambitions(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);

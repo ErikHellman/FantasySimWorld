@@ -36,6 +36,7 @@ function invent(body, user) {
     backstory: `${first} came up the road with little more than a trade and a grudge against the cold. Settled here because the tavern was warm and nobody asked questions.`,
     speechStyle: pick(['Plain and direct.', 'Dry, with a joke in most sentences.', 'Slow, as if weighing every word.']), timbre: pick(['low and even', 'bright and quick', 'husky']),
     traits, goals: ['find a place in the village', 'stay alive through the nights'],
+    ambition: pick([{ kind: 'wealth', words: 'I mean to die richer than I was born.' }, { kind: 'friends', words: 'I want friends who would walk through fire for me.' }, { kind: 'glory', words: 'Let the dead learn my name.' }]),
     temper: Math.round(Math.random() * 100) / 100, bravery: Math.round(Math.random() * 100) / 100, sociability: Math.round(Math.random() * 100) / 100,
     ...(Math.random() < 0.2 ? { quirk: pick(QUIRKS) } : {}),
     ...(user.includes('west road') ? { reason: pick(['looking for work', 'because the road ran out', 'hoping for a quieter life']) } : {}),

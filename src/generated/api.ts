@@ -484,6 +484,31 @@ byModel: boolean, };
 export type SkyStance = "believer" | "defiant" | "sceptic";
 
 /**
+ * A villager's ambition as their page shows it.
+ */
+export type AmbitionView = { 
+/**
+ * wealth, love, family, glory or friends
+ */
+kind: string, 
+/**
+ * in their own words
+ */
+words: string, 
+/**
+ * how far along, 0..1
+ */
+progress: number, 
+/**
+ * where they stand, or when it was won or given up, in a sentence
+ */
+detail: string, 
+/**
+ * "won" or "abandoned" once it is over
+ */
+outcome?: string, };
+
+/**
  * Raw materials in a villager's arms.
  */
 export type Goods = { wood: number, stone: number, ore: number, };
@@ -641,7 +666,11 @@ secret?: string,
  * what they make of the watchers beyond the sky, once they have settled on it: "believer", "defiant" or
  * "sceptic"
  */
-sky?: SkyStance, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+sky?: SkyStance, 
+/**
+ * the one long goal they have set their heart on; none for a child
+ */
+ambition?: AmbitionView, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */

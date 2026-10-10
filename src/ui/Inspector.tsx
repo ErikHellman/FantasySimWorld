@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { formatClock, gameTime } from '../core/time';
 import { actions, closeSheet, ui, type AnimalDetail, type CharacterDetail, type GhostDetail, type MonsterDetail, type RelationRow } from './store';
-import type { SkyStance } from '../generated/api';
+import type { AmbitionView, SkyStance } from '../generated/api';
 
 type Tab = 'about' | 'mind' | 'bonds' | 'memory';
 
@@ -52,6 +52,23 @@ const SKY_STANCE: Record<SkyStance, string> = {
   sceptic: '👁 Thinks the talk of watchers beyond the sky is nonsense',
 };
 
+const AMBITION_ICON: Record<string, string> = { wealth: '🪙', love: '💍', family: '👶', glory: '⚔️', friends: '🤝' };
+
+/** The one long goal a villager has set their heart on: their words, and how far along they are. */
+function AmbitionCard({ ambition }: { ambition: AmbitionView }) {
+  const over = ambition.outcome === 'won' ? ' won' : ambition.outcome === 'abandoned' ? ' given-up' : '';
+  return (
+    <div class={`ambition${over}`}>
+      <h3>{AMBITION_ICON[ambition.kind] ?? '★'} Ambition</h3>
+      <p class="ambition-words">“{ambition.words}”</p>
+      {!ambition.outcome && (
+        <span class="meter-track"><span class="meter-fill" style={{ width: `${Math.round(ambition.progress * 100)}%` }} /></span>
+      )}
+      <p class="muted ambition-detail">{ambition.detail}</p>
+    </div>
+  );
+}
+
 function About({ d }: { d: CharacterDetail }) {
   return (
     <div class="tab-body">
@@ -59,6 +76,7 @@ function About({ d }: { d: CharacterDetail }) {
       {d.sky && <p class="sky-stance" title="What they make of the billboards' hints that someone is watching (you)">{SKY_STANCE[d.sky]}</p>}
       <p class="backstory">{d.backstory}</p>
       <div class="chips">{d.traits.map((trait) => <span class="chip">{trait}</span>)}</div>
+      {d.ambition && <AmbitionCard ambition={d.ambition} />}
       <h3>Wants</h3>
       <ul class="goals">{d.goals.map((goal) => <li>{goal}</li>)}</ul>
       <h3>State</h3>
