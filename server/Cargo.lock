@@ -427,7 +427,7 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fsw-brain"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "fsw-core",
  "fsw-sim",
@@ -445,7 +445,7 @@ dependencies = [
 
 [[package]]
 name = "fsw-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "libm",
  "serde",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "fsw-server"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-stream",
  "aws-lc-rs",
@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "fsw-sim"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "fsw-core",
  "fsw-testing",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "fsw-testing"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "fsw-sim",
  "fsw-world",
@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "fsw-world"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "fsw-core",
