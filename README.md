@@ -80,6 +80,7 @@ set -a; . ./.env; set +a
 
 - Drag to pan, scroll to zoom, right-drag or Q / E to turn, WASD or arrows to move.
 - Shift or Option (Alt) + scroll, R / F, or right-drag up and down tilts the view, from low over the ground to straight down.
+- Leave the camera alone for half a minute, with nobody followed, and the **Auto camera** follows whatever the server ranks most worth watching (the dragon, a boss, a fire, a raid, a wedding or funeral, a fight, a quarrel, a tune with an audience, everyday life on a quiet day). 🎬 Auto in the top bar turns it on and off, in this browser. When something big starts, a **Happening now** card offers to take you there.
 - Click a villager to follow them and open the inspector (profile, needs, what they carry and their gold, plan, relationships, memories). Click one of the dead, a raider or a ghost to follow it and read its card instead.
 - On a touch screen, one finger pans, pinching zooms, twisting two fingers turns and dragging two fingers up or down tilts.
 - On a phone (either side under 600 or so pixels, portrait or landscape) the screen is simpler: a tab bar opens the villagers, the chronicle, the chat, the followed villager's page or the ☰ menu, one at a time. Tablets and opened foldables get the desktop layout.

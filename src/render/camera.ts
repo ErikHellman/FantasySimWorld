@@ -15,6 +15,8 @@ const KEY_ROTATE_SPEED = 1.6;
 const KEY_TILT_SPEED = 0.9; // radians per second
 const WHEEL_TILT_SPEED = 0.0013; // radians per wheel delta unit, about 9° per mouse-wheel notch
 const DRAG_TILT_SPEED = 0.004; // radians per pixel, for right-drag and two-finger drags alike
+/** The keys that move the camera, and so count as the viewer taking it. */
+const CAMERA_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE', 'KeyR', 'KeyF']);
 
 /**
  * Top-down camera: drag to pan, wheel to zoom, right-drag or Q/E to rotate,
@@ -56,6 +58,8 @@ export class CameraRig {
   private goalInset = { right: 0, bottom: 0 };
   /** called when the user clicks without dragging */
   onClick: ((event: PointerEvent) => void) | null = null;
+  /** `performance.now()` when the viewer last touched the camera; the Auto camera waits for them to leave it alone */
+  lastInputAt = -Infinity;
 
   constructor(private readonly element: HTMLElement) {
     element.addEventListener('pointerdown', this.onPointerDown);
@@ -73,6 +77,12 @@ export class CameraRig {
     this.goalTarget.set(x, 0, z);
     this.target.copy(this.goalTarget);
     if (distance !== undefined) this.distance = this.goalDistance = distance;
+  }
+
+  /** Moves the view smoothly to a point on the ground, as a pan would, and stops following. */
+  glideTo(x: number, z: number): void {
+    this.follow = null;
+    this.goalTarget.set(x, 0, z);
   }
 
   /** Follow a moving point until the user pans; pass null to stop. */
@@ -124,6 +134,7 @@ export class CameraRig {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.lastInputAt = performance.now();
     this.element.setPointerCapture(event.pointerId);
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (this.pointers.size === 1) this.drag = { button: event.button, moved: 0, multi: false };
@@ -170,6 +181,7 @@ export class CameraRig {
 
   private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();
+    this.lastInputAt = performance.now();
     if (event.shiftKey || event.altKey) {
       // macOS browsers turn Shift + wheel into horizontal scrolling, so the delta may arrive on x instead of y.
       const delta = event.deltaY || event.deltaX;
@@ -184,6 +196,7 @@ export class CameraRig {
     const element = event.target as HTMLElement | null;
     if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT')) return;
     this.keys.add(event.code);
+    if (CAMERA_KEYS.has(event.code)) this.lastInputAt = performance.now();
   };
 
   update(dt: number): void {

@@ -764,6 +764,57 @@ pub struct Status {
     pub ambient: AmbientCounts,
     /// the village is still being founded: how many of its founders have settled; `null` once it is
     pub founding: Option<Founding>,
+    /// what is worth watching right now, best first (at most five); the Auto camera and the "Happening now"
+    /// cards read it
+    pub hotspots: Vec<Hotspot>,
+}
+
+/// What a hotspot is about; the client decides from it which ones earn a "Happening now" card.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum HotspotKind {
+    /// the dragon over the valley
+    Dragon,
+    /// a skeleton golem or an orc warchief
+    Boss,
+    /// a house or something the village built on fire
+    Fire,
+    /// an orc war band in the valley
+    Raid,
+    /// a wedding or a funeral under way
+    Ceremony,
+    /// villagers fighting the dead or raiders
+    Battle,
+    /// villagers fighting each other
+    Brawl,
+    /// the dead abroad, with nobody fighting them yet
+    Dead,
+    /// a ghost walking the village
+    Ghost,
+    /// a heated conversation
+    Quarrel,
+    /// someone singing or playing to an audience
+    Music,
+    /// a romantic conversation
+    Romance,
+    /// everyday life: a friendly chat, someone making up, a ride, children at play, a billboard being read
+    Daily,
+}
+
+/// Something worth watching: what it is, whom to follow and where it is.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Hotspot {
+    pub kind: HotspotKind,
+    /// a villager, one of the dead, a raider, the dragon or a ghost to follow; `null` for a place that has
+    /// nobody to follow (a fire nobody is fighting yet)
+    pub subject: Option<Id>,
+    /// where it is, for a hotspot without a subject (and as a fallback when the subject is out of sight)
+    pub at: Vec2,
+    /// a short line for the card: "The tavern is on fire", "Bran and Edda are quarrelling"
+    pub text: String,
+    /// how much it is worth watching, 0 to 100
+    pub score: u8,
 }
 
 /// How far a new world's founding has come.
@@ -1463,6 +1514,8 @@ pub fn typescript() -> String {
         LlmStatus,
         AmbientCounts,
         Founding,
+        HotspotKind,
+        Hotspot,
         Status,
         Mood,
         RosterEntry,

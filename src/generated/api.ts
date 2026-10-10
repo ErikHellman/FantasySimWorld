@@ -473,6 +473,33 @@ export type AmbientCounts = { awake: number, eating: number, drinking: number, s
 export type Founding = { settled: number, total: number, };
 
 /**
+ * What a hotspot is about; the client decides from it which ones earn a "Happening now" card.
+ */
+export type HotspotKind = "dragon" | "boss" | "fire" | "raid" | "ceremony" | "battle" | "brawl" | "dead" | "ghost" | "quarrel" | "music" | "romance" | "daily";
+
+/**
+ * Something worth watching: what it is, whom to follow and where it is.
+ */
+export type Hotspot = { kind: HotspotKind, 
+/**
+ * a villager, one of the dead, a raider, the dragon or a ghost to follow; `null` for a place that has
+ * nobody to follow (a fire nobody is fighting yet)
+ */
+subject: string | null, 
+/**
+ * where it is, for a hotspot without a subject (and as a fallback when the subject is out of sight)
+ */
+at: Vec2, 
+/**
+ * a short line for the card: "The tavern is on fire", "Bran and Edda are quarrelling"
+ */
+text: string, 
+/**
+ * how much it is worth watching, 0 to 100
+ */
+score: number, };
+
+/**
  * Sent when it changes, at most once a second.
  */
 export type Status = { llm: LlmStatus, viewers: number, speed: number, 
@@ -499,7 +526,12 @@ part: string, ambient: AmbientCounts,
 /**
  * the village is still being founded: how many of its founders have settled; `null` once it is
  */
-founding: Founding | null, };
+founding: Founding | null, 
+/**
+ * what is worth watching right now, best first (at most five); the Auto camera and the "Happening now"
+ * cards read it
+ */
+hotspots: Array<Hotspot>, };
 
 export type Mood = "ok" | "fight" | "sleep" | "talk" | "hurt";
 

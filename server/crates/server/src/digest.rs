@@ -28,6 +28,7 @@ use crate::api::wire::{
     RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
+use crate::hotspots::hotspots_of;
 
 /// How many chronicle entries a snapshot carries; older ones come from `GET /api/chronicle`.
 pub const CHRONICLE_TAIL: usize = 120;
@@ -122,6 +123,7 @@ pub fn status_of(state: &SimState, extras: StatusExtras) -> Status {
             .director
             .founding
             .then_some(Founding { settled: state.order.len() as u32, total: state.director.population_target as u32 }),
+        hotspots: hotspots_of(state),
     }
 }
 

@@ -5,7 +5,7 @@ import { MoodTracker, inView } from './audio/mood';
 import { MUSIC_TRACKS } from './audio/musicTracks';
 import { AUDIO_SLOTS } from './audio/slots';
 import { gameTime } from './core/time';
-import type { AmbientCounts, Detail, WireEvent } from './generated/api';
+import type { AmbientCounts, Detail, Hotspot, WireEvent } from './generated/api';
 import { HttpError, api } from './net/api';
 import { GuestQueue } from './net/guestQueue';
 import { Playback } from './net/playback';
@@ -18,10 +18,11 @@ import { WorldView } from './render/scene';
 import { FrameStats } from './render/stats';
 import { SpeechBus } from './speech/speechBus';
 import { App } from './ui/App';
+import { CARD_SECONDS, CardDealer, IDLE_SECONDS, chooseShot, hotspotKey, type Shot } from './ui/director';
 import { watchLayout } from './ui/layout';
 import {
   actions, addBrainLog, addChat, addChronicle, addGrave, addVoice, closeSheet, fromChatWelcome, fromSnapshot, fromStatus, isSiteId,
-  loadAudioSettings, loadChatSettings, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse, setWeather,
+  loadAuto, loadAudioSettings, loadChatSettings, saveAuto, saveAudioSettings, saveChatSettings, setBillboard, setCeremony, setClock, setEconomy, setHouse, setWeather,
   setStockpile, setWorldObject, ui,
 } from './ui/store';
 import { worldHash } from './world/navgrid';
@@ -300,6 +301,60 @@ async function start(): Promise<void> {
     return you.name;
   };
 
+  // The Auto camera: while the viewer leaves the camera alone and follows nobody, it follows the best hotspot.
+  ui.auto.value = loadAuto();
+  const dealer = new CardDealer();
+  let shot: Shot | null = null;
+  let cardId = 0;
+  /** Whether a hotspot's subject is on this page and in sight (a villager indoors is not). */
+  const followable = (id: string): boolean => world.entities.get(id)?.visible ?? false;
+  const aim = (spot: Hotspot): void => {
+    if (spot.subject !== null && followable(spot.subject)) view.follow(spot.subject);
+    else view.rig.glideTo(spot.at.x, spot.at.z);
+  };
+  const direct = (now: number): void => {
+    const seconds = now / 1000;
+    const dealt = dealer.deal(ui.hotspots.value, seconds).map((spot) => ({ id: ++cardId, spot, until: now + CARD_SECONDS * 1000 }));
+    const cards = ui.cards.value.filter((card) => card.until > now);
+    if (dealt.length > 0 || cards.length !== ui.cards.value.length) ui.cards.value = [...cards, ...dealt].slice(-3);
+    const idle = (now - view.rig.lastInputAt) / 1000 >= IDLE_SECONDS;
+    if (!ui.auto.value || !idle || ui.selectedId.value !== null) {
+      shot = null;
+      if (ui.autoShot.value) ui.autoShot.value = null;
+      return;
+    }
+    const next = chooseShot(ui.hotspots.value, shot, seconds, followable);
+    if (!next) {
+      // Nothing worth watching: the camera stays where it is, and the chip stops naming what has ended.
+      if (ui.autoShot.value) ui.autoShot.value = null;
+      return;
+    }
+    const key = hotspotKey(next);
+    if (shot?.key !== key) {
+      shot = { key, since: seconds };
+      aim(next);
+    } else if (next.subject !== null && !view.rig.isFollowing) {
+      // The subject came back into sight, or the follow ended: pick it up again.
+      aim(next);
+    }
+    if (ui.autoShot.value !== next) ui.autoShot.value = next;
+  };
+  actions.watch = (spot) => {
+    if (spot.subject !== null && world.entities.has(spot.subject)) return select(spot.subject);
+    select(null);
+    view.rig.glideTo(spot.at.x, spot.at.z);
+    view.rig.lastInputAt = performance.now();
+  };
+  actions.setAuto = (on) => {
+    ui.auto.value = on;
+    saveAuto(on);
+    // Turning it on hands the camera over at once.
+    if (on) {
+      select(null);
+      view.rig.lastInputAt = -Infinity;
+    }
+  };
+
   const burning = (): boolean => ui.houses.value.some((house) => house.phase === 'burning');
   const updateMusic = (hour: number): void => {
     const spot = listener();
@@ -350,6 +405,7 @@ async function start(): Promise<void> {
       audioTimer = 0;
       audio.mix(ambientLevels(ambient, hour, listener(), [...world.houses.values()], world.weather));
       updateMusic(hour);
+      direct(now);
     }
     uiTimer += dt;
     if (uiTimer >= UI_REFRESH_SECONDS) {
