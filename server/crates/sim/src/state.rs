@@ -2062,6 +2062,9 @@ pub struct Director {
     /// when the dragon is next due (0: not yet worked out); see `systems::dragon`
     #[serde(default, skip_serializing_if = "is_zero_tick")]
     pub next_dragon_tick: i64,
+    /// an admin has called the dragon: it comes as soon as it may
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dragon_called: bool,
     /// the alarm was raised for the dragon, not the dead
     #[serde(default, skip_serializing_if = "is_false")]
     pub alarm_dragon: bool,

@@ -1,6 +1,6 @@
 import type {
   AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, GuestAnswer, GuestRequest,
-  GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
+  DragonCallAnswer, GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
   SpeedRequest, WatchRequest,
 } from '../generated/api';
 
@@ -60,6 +60,8 @@ export const api = {
     billboard: (body: BillboardRequest) => request<void>('POST', '/api/admin/billboards', body),
     /** calls an orc war band up the west road; the answer says when it will come */
     callRaid: () => request<RaidCallAnswer>('POST', '/api/admin/raid'),
+    /** calls the dragon over the hills; the answer says when it will come */
+    callDragon: () => request<DragonCallAnswer>('POST', '/api/admin/dragon'),
     llmSettings: () => request<LlmSettingsView>('GET', '/api/admin/settings/llm'),
     /** asks the model the server was started with for one decision */
     testLlm: () => request<LlmTestResult>('POST', '/api/admin/llm/test'),

@@ -51,6 +51,7 @@ pub fn create_state(seed: u32) -> SimState {
             alarm_raid: false,
             next_golem_night: 0,
             next_dragon_tick: 0,
+            dragon_called: false,
             alarm_dragon: false,
         },
         tuning: Tuning { chatter: 0.5, script_wait_ticks: 0, mercy_wait_ticks: 40 },

@@ -31,6 +31,8 @@ use crate::util::{Ctx, living, nearby_characters, set_anim};
 /// No dragon comes before this day, nor to a village of fewer than this many.
 pub const FIRST_DAY: i64 = 8;
 const MIN_ALIVE: usize = 6;
+/// A dragon an admin calls needs only this many in the village.
+const CALLED_MIN_ALIVE: usize = 3;
 /// The first visit falls within this many days of `FIRST_DAY`; later ones are this many days apart.
 const FIRST_SPREAD_DAYS: u32 = 10;
 const GAP_DAYS: [i64; 2] = [15, 30];
@@ -88,15 +90,26 @@ fn standing(state: &SimState, home: &str) -> bool {
     !state.houses.contains_key(home) && building_whole(state, home)
 }
 
-fn may_come(ctx: &Ctx) -> bool {
+fn may_come(ctx: &Ctx, least_alive: usize) -> bool {
     let state = &*ctx.state;
     (HOURS[0]..HOURS[1]).contains(&ctx.time.hour)
-        && living(state).count() >= MIN_ALIVE
+        && living(state).count() >= least_alive
         && burning(state).is_none()
         && burning_sites(state).len() < MAX_FIRES
         && dragon(state).is_none()
         && state.monsters.len() < MAX_MONSTERS
         && homes().iter().any(|home| standing(state, &home.id))
+}
+
+/// An admin's call: the dragon comes as soon as it may. False while the village is being founded, while it is
+/// abroad or when it is already called.
+pub fn call_dragon(ctx: &mut Ctx) -> bool {
+    let state = &*ctx.state;
+    if state.director.founding || state.director.dragon_called || dragon(state).is_some() {
+        return false;
+    }
+    ctx.state.director.dragon_called = true;
+    true
 }
 
 /// Works out when the dragon is next due, and sends it when it is. Called by the director once the
@@ -110,10 +123,16 @@ pub fn update_schedule(ctx: &mut Ctx) {
         ctx.state.director.next_dragon_tick = visit_on(seed, first);
         return;
     }
+    // A called dragon waits for the first chance and leaves the schedule as it was.
+    if ctx.state.director.dragon_called && may_come(ctx, CALLED_MIN_ALIVE) {
+        ctx.state.director.dragon_called = false;
+        come(ctx);
+        return;
+    }
     if tick < next {
         return;
     }
-    if may_come(ctx) {
+    if may_come(ctx, MIN_ALIVE) {
         come(ctx);
         let gap = GAP_DAYS[0] + i64::from(roll(seed, "gap", day) % (GAP_DAYS[1] - GAP_DAYS[0] + 1) as u32);
         ctx.state.director.next_dragon_tick = visit_on(seed, day + gap);

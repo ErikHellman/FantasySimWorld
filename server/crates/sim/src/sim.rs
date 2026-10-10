@@ -307,6 +307,9 @@ fn apply_command(ctx: &mut Ctx, command: Command) {
         Command::CallRaid => {
             crate::systems::raids::call_raid(ctx);
         }
+        Command::CallDragon => {
+            crate::systems::dragon::call_dragon(ctx);
+        }
         Command::NewcomerDraft(villager) => {
             if !first_name_taken(ctx.state, &villager.name) {
                 ctx.state.director.newcomer_draft = Some(villager);
