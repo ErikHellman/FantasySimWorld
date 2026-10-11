@@ -4,17 +4,18 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use axum::{Json, Router};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
+use crate::api::wire::AdsConfig;
 use crate::api::{chat, llm, stream, world};
 use crate::auth;
 
@@ -69,6 +70,7 @@ pub fn router(app: Arc<AppState>) -> Router {
 
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/ads.json", get(ads))
         .nest("/auth", sign_in)
         .nest("/api", api)
         .merge(static_files(&app.config.static_dir))
@@ -82,6 +84,11 @@ async fn healthz(State(app): State<Arc<AppState>>) -> Response {
         return (StatusCode::SERVICE_UNAVAILABLE, format!("stalled at tick {}", clock.tick)).into_response();
     }
     format!("ok tick {}", clock.tick).into_response()
+}
+
+/// `GET /ads.json`: open to everyone, seat or not, so the launch screen can show its ad while a guest waits.
+async fn ads(State(app): State<Arc<AppState>>) -> Json<Option<AdsConfig>> {
+    Json(app.config.ads.clone())
 }
 
 async fn api_not_found() -> Response {

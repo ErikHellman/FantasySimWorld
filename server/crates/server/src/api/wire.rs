@@ -1352,6 +1352,19 @@ pub struct Me {
     pub role: Role,
 }
 
+/// `GET /ads.json`: the ad units this server shows, or `null` when ads are off (`ADS_CLIENT` unset).
+/// Open to everyone, so the launch screen can show its ad while a guest waits in line.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AdsConfig {
+    /// the AdSense publisher id, `ca-pub-` and digits
+    pub client: String,
+    /// the ad unit on the launch screen, if any
+    pub start_slot: Option<String>,
+    /// the ad unit beside the chat on wide screens during play, if any
+    pub hud_slot: Option<String>,
+}
+
 /// `POST /auth/guest`: asks for a guest seat.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 pub struct GuestRequest {
@@ -1627,6 +1640,7 @@ pub fn typescript() -> String {
         ChatRename,
         WatchRequest,
         Me,
+        AdsConfig,
         ChroniclePage,
         HeraldArchive,
         ApiError,
