@@ -113,6 +113,7 @@ fn blueprint(entry: &CastEntry) -> Blueprint {
         quirks: entry.quirks.clone(),
         // The parents' ids are filled in once everyone has one (`create_test_state`).
         child: entry.child.as_ref().map(|child| ChildSeed { mischief: child.mischief, parents: Vec::new() }),
+        ambition: None,
     }
 }
 

@@ -14,6 +14,7 @@ use crate::state::{
     Bond, Character, Childhood, ChronicleKind, CombatState, FightMode, Id, Intent, IntentAction, IntentSource,
     Inventory, Look, MemoryKind, Needs, PlanSource, Quirk, QuirkState, SimState, StimulusKind,
 };
+use crate::systems::ambitions;
 use crate::systems::founding::{Blueprint, apply_bonds, first_name_taken, invent_villager};
 use crate::systems::intents::fresh_act;
 use crate::systems::relationships::{label_for, looks_welcome};
@@ -57,7 +58,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         energy: fsw_core::rng::range(rng, 88.0, 100.0),
         social: fsw_core::rng::range(rng, 45.0, 70.0),
     };
-    Character {
+    let mut c = Character {
         id,
         profile: entry.profile.clone(),
         class_id: entry.class_id,
@@ -145,6 +146,7 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         next_perception_tick: 0,
         boards_read: Default::default(),
         sky: Default::default(),
+        ambition: None,
         quirks: entry.quirks.clone(),
         quirk_state: QuirkState::default(),
         child: entry.child.as_ref().map(|child| Childhood {
@@ -160,7 +162,13 @@ pub fn make_character(state: &mut SimState, entry: &Blueprint, home_id: &str) ->
         passing: None,
         exiled_since: None,
         sidestep: None,
+    };
+    // Every grown villager sets out with an ambition: the model's, or one from their temperament.
+    if entry.child.is_none() {
+        let draft = entry.ambition.clone().unwrap_or_else(|| ambitions::stock(state.seed, &c.profile));
+        c.ambition = Some(ambitions::begin(state, &c, draft));
     }
+    c
 }
 
 /// A new face walks in by the west road: the one the server described, if a description is waiting

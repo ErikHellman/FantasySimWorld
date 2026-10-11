@@ -10,10 +10,11 @@ use fsw_sim::data::activities::activity;
 use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    ActPhase, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction, MemoryKind as SimMemoryKind,
-    Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Quirk, Raid, RaidOrder, RaidPhase,
-    RelationLabel as SimLabel, Resource, SimState, Stance, WorldObject as SimWorldObject,
+    ActPhase, AmbitionOutcome, Animal, AnimalAnim, Character, GhostPhase, HousePhase, IntentAction,
+    MemoryKind as SimMemoryKind, Monster, MonsterOrigin, MonsterPhase, PlanSource, ProjectKind, PropStage, Quirk, Raid,
+    RaidOrder, RaidPhase, RelationLabel as SimLabel, Resource, SimState, Stance, WorldObject as SimWorldObject,
 };
+use fsw_sim::systems::ambitions;
 use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
 use fsw_sim::systems::relationships::rung_of;
@@ -23,9 +24,9 @@ use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
-    AmbientCounts, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods, Inventory,
-    LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow, RelationLabel,
-    RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, SkyStance, Status,
+    AmbientCounts, AmbitionView, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods,
+    Inventory, LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow,
+    RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, SkyStance, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 use crate::hotspots::hotspots_of;
@@ -451,6 +452,26 @@ pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail
         gold: c.gold.max(0) as u32,
         kills: c.kills.max(0) as u32,
         secret: secret_of(state, c),
+        ambition: c.ambition.as_ref().map(|ambition| {
+            let (done, wanted) = ambitions::progress(state, c, ambition);
+            AmbitionView {
+                kind: ambition.kind.as_str().to_owned(),
+                words: ambition.words.clone(),
+                progress: if ambition.outcome == Some(AmbitionOutcome::Won) || wanted == 0 {
+                    1.0
+                } else {
+                    done as f64 / wanted as f64
+                },
+                detail: ambitions::progress_words(state, c, ambition),
+                outcome: ambition.outcome.map(|outcome| {
+                    match outcome {
+                        AmbitionOutcome::Won => "won",
+                        AmbitionOutcome::Abandoned => "abandoned",
+                    }
+                    .to_owned()
+                }),
+            }
+        }),
         sky: c.sky.stance.map(|stance| match stance {
             Stance::Believer => SkyStance::Believer,
             Stance::Defiant => SkyStance::Defiant,

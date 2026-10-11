@@ -347,6 +347,7 @@ fn bjarke() -> NewVillager {
         reason: "looking for his brother".into(),
         quirks: vec![Quirk::Fighter],
         bonds: vec![Bond { to: "Torvald Greymane".into(), relation: BondKind::Sibling, summary: "My brother.".into() }],
+        ambition: None,
     }
 }
 

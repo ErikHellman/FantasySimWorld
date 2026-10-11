@@ -157,6 +157,9 @@ pub struct NewVillager {
     /// people already here they know
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bonds: Vec<Bond>,
+    /// the one long goal they come with, as the model put it; the sim gives one when there is none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ambition: Option<AmbitionDraft>,
 }
 
 /// A tie a newcomer brings with them to someone living, by full name.
@@ -179,6 +182,74 @@ pub enum BondKind {
     Friend,
     Comrade,
     Rival,
+}
+
+/// The kind of thing someone has set their heart on (`systems::ambitions`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AmbitionKind {
+    /// put by a fortune
+    Wealth,
+    /// marry
+    Love,
+    /// raise a child of their own
+    Family,
+    /// fell the village's enemies
+    Glory,
+    /// make close friends
+    Friends,
+}
+
+impl AmbitionKind {
+    pub const ALL: [Self; 5] = [Self::Wealth, Self::Love, Self::Family, Self::Glory, Self::Friends];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Wealth => "wealth",
+            Self::Love => "love",
+            Self::Family => "family",
+            Self::Glory => "glory",
+            Self::Friends => "friends",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
+}
+
+/// An ambition as described, before it starts: what it is and how they put it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AmbitionDraft {
+    pub kind: AmbitionKind,
+    /// in their own words, in the first person
+    pub words: String,
+}
+
+/// How an ambition ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AmbitionOutcome {
+    Won,
+    Abandoned,
+}
+
+/// The one long goal someone has set their heart on, and how it went (`systems::ambitions`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ambition {
+    pub kind: AmbitionKind,
+    pub words: String,
+    /// the day they set out on it
+    pub since_day: i64,
+    /// where they started: their gold, their kills, their children
+    #[serde(default)]
+    pub baseline: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<AmbitionOutcome>,
+    /// the day it was won or given up
+    #[serde(default)]
+    pub outcome_day: i64,
 }
 
 /// What someone has come to make of the billboards' hints that someone beyond the sky watches the village
@@ -1036,6 +1107,9 @@ pub struct Character {
     /// what they make of the hints that someone beyond the sky is watching
     #[serde(default, skip_serializing_if = "SkyView::is_default")]
     pub sky: SkyView,
+    /// the one long goal they have set their heart on; none for a child
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ambition: Option<Ambition>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub quirks: Vec<Quirk>,
     #[serde(default, skip_serializing_if = "QuirkState::is_default")]

@@ -15,7 +15,8 @@ use crate::data::classes::ClassId;
 use crate::data::names::*;
 use crate::events::SimEvent;
 use crate::state::{
-    Bond, BondKind, ChronicleKind, Id, NewVillager, Profile, Pronouns, Quirk, RelationLabel, SimState, VoiceProfile,
+    AmbitionDraft, Bond, BondKind, ChronicleKind, Id, NewVillager, Profile, Pronouns, Quirk, RelationLabel, SimState,
+    VoiceProfile,
 };
 use crate::systems::arrivals::{free_home, make_character};
 use crate::systems::children::found_children;
@@ -42,6 +43,8 @@ pub struct Blueprint {
     pub quirks: Vec<Quirk>,
     /// set for a child; the class is the one they will grow into
     pub child: Option<ChildSeed>,
+    /// the one long goal they come with, if the model gave one; grown villagers without get one from the sim
+    pub ambition: Option<AmbitionDraft>,
 }
 
 /// A child as described: how naughty they are and who raises them.
@@ -114,6 +117,7 @@ impl Blueprint {
             },
             quirks: v.quirks.iter().copied().filter(|q| ALLOWED_QUIRKS.contains(q)).collect(),
             child: None,
+            ambition: v.ambition.clone(),
         }
     }
 }
@@ -469,5 +473,6 @@ pub fn invent_villager(ctx: &mut Ctx, founder: bool) -> NewVillager {
         reason,
         quirks,
         bonds,
+        ambition: None,
     }
 }

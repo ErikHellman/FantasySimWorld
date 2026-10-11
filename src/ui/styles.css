@@ -308,6 +308,13 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 .badge.bad { background: rgba(232, 115, 106, 0.22); color: var(--bad); }
 .badge.love { background: rgba(240, 143, 176, 0.25); color: var(--love); }
 .goals li { padding-left: 14px; position: relative; }
+.ambition { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--panel-border); border-radius: 8px; }
+.ambition h3 { margin: 0 0 4px; }
+.ambition-words { margin: 0 0 6px; font-style: italic; }
+.ambition .meter-track { display: block; }
+.ambition-detail { margin: 4px 0 0; font-size: 12px; }
+.ambition.won { border-color: var(--accent); }
+.ambition.given-up .ambition-words { text-decoration: line-through; opacity: 0.7; }
 .goals li::before { content: '›'; position: absolute; left: 2px; color: var(--accent); }
 .meter { display: grid; grid-template-columns: 68px 1fr 28px; gap: 8px; align-items: center; font-size: 12px; margin: 3px 0; }
 .meter-track { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }

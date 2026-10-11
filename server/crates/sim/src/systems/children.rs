@@ -195,6 +195,7 @@ fn child_of(ctx: &mut Ctx, parents: &[Id], age: i64) -> Blueprint {
             secret: String::new(),
         },
         quirks: Vec::new(),
+        ambition: None,
         child: Some(ChildSeed { mischief, parents: Vec::new() }),
     }
 }

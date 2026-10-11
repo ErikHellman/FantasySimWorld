@@ -12,7 +12,7 @@ use std::time::Duration;
 use fsw_core::jsmath::utf16_truncate;
 use fsw_core::time::{TICKS_PER_DAY, game_time};
 use fsw_sim::data::classes::ClassId;
-use fsw_sim::state::{Bond, BondKind, NewVillager, Pronouns, Quirk, SimState};
+use fsw_sim::state::{AmbitionDraft, AmbitionKind, Bond, BondKind, NewVillager, Pronouns, Quirk, SimState};
 use fsw_sim::systems::arrivals::free_home;
 use fsw_sim::systems::billboards::clean_text;
 use fsw_sim::systems::founding::ALLOWED_QUIRKS;
@@ -264,6 +264,16 @@ pub fn villager_tool() -> ToolDef {
                 "timbre": text("How their voice sounds, in a few words.", 40),
                 "traits": { "type": "array", "minItems": 2, "maxItems": 4, "items": text("One trait, a word or two.", 24) },
                 "goals": { "type": "array", "minItems": 2, "maxItems": 3, "items": text("Something they want, in the first person.", 80) },
+                "ambition": {
+                    "type": "object",
+                    "description": "The one thing they want most from life here, which the village can watch them win or give up on.",
+                    "properties": {
+                        "kind": { "type": "string", "enum": AmbitionKind::ALL.map(AmbitionKind::as_str), "description": "wealth: put by a fortune. love: marry. family: raise a child of their own. glory: fell the dead and the raiders. friends: make close friends." },
+                        "words": text("How they put it, in the first person, one sentence.", 100)
+                    },
+                    "required": ["kind", "words"],
+                    "additionalProperties": false
+                },
                 "secret": text("Optional. Something they hide from everyone, in the first person.", 200),
                 "temper": number("0 calm to 1 hot-headed."),
                 "bravery": number("0 timid to 1 fearless."),
@@ -288,7 +298,7 @@ pub fn villager_tool() -> ToolDef {
                     }
                 }
             },
-            "required": ["firstName", "lastName", "pronouns", "age", "class", "occupation", "backstory", "speechStyle", "timbre", "traits", "goals", "temper", "bravery", "sociability"],
+            "required": ["firstName", "lastName", "pronouns", "age", "class", "occupation", "backstory", "speechStyle", "timbre", "traits", "goals", "ambition", "temper", "bravery", "sociability"],
             "additionalProperties": false
         }),
     )
@@ -387,6 +397,11 @@ pub fn interpret_villager(call: &ToolCall, ctx: &CastingContext) -> Result<NewVi
                 .collect()
         })
         .unwrap_or_default();
+    // An ambition that will not read is left to the sim, which gives one from their temperament.
+    let ambition = args.get("ambition").and_then(Value::as_object).and_then(|ambition| {
+        let kind = AmbitionKind::parse(ambition.get("kind")?.as_str()?)?;
+        Some(AmbitionDraft { kind, words: text(ambition, "words", 100)? })
+    });
     Ok(NewVillager {
         class_id,
         name,
@@ -409,6 +424,7 @@ pub fn interpret_villager(call: &ToolCall, ctx: &CastingContext) -> Result<NewVi
         reason: text(args, "reason", 200).unwrap_or_default(),
         quirks,
         bonds,
+        ambition,
     })
 }
 
@@ -561,6 +577,18 @@ mod tests {
         assert_eq!((v.temper, v.bravery, v.sociability, v.looks), (0.2, 0.4, 0.7, 0.3));
         assert_eq!(v.secret, "I left a wife who was glad to see me go.");
         assert!(v.bonds.is_empty() && v.reason.is_empty());
+        // No ambition given: the sim will find one.
+        assert_eq!(v.ambition, None);
+
+        let mut ambitious = good_call();
+        ambitious.args.insert("ambition".into(), json!({ "kind": "family", "words": "  A grandchild   on my knee. " }));
+        let v = interpret_villager(&ambitious, &ctx).unwrap();
+        assert_eq!(
+            v.ambition,
+            Some(AmbitionDraft { kind: AmbitionKind::Family, words: "A grandchild on my knee.".into() })
+        );
+        ambitious.args.insert("ambition".into(), json!({ "kind": "fame", "words": "Everyone will know me." }));
+        assert_eq!(interpret_villager(&ambitious, &ctx).unwrap().ambition, None, "an unknown kind is left to the sim");
 
         let mut long = good_call();
         long.args.insert("backstory".into(), Value::String("x".repeat(700)));

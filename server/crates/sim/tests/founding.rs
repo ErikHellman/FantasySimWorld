@@ -33,6 +33,7 @@ fn villager(name: &str, class_id: ClassId) -> NewVillager {
         reason: String::new(),
         quirks: Vec::new(),
         bonds: Vec::new(),
+        ambition: None,
     }
 }
 

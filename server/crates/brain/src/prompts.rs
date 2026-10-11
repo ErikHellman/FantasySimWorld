@@ -15,6 +15,7 @@ use fsw_sim::state::{
     Animal, BoardTone, Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory,
     MonsterPhase, Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
 };
+use fsw_sim::systems::ambitions;
 use fsw_sim::systems::animals;
 use fsw_sim::systems::billboards as boards;
 use fsw_sim::systems::charm;
@@ -530,6 +531,7 @@ fn header(state: &SimState, c: &Character) -> String {
     lines.extend(materials_lines(state, c));
     lines.extend(market_line(state));
     lines.extend(sky::stance_line(state, c));
+    lines.extend(ambitions::ambition_line(state, c));
     lines.join("\n")
 }
 

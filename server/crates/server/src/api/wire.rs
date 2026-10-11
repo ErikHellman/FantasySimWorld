@@ -428,6 +428,24 @@ pub enum WireEvent {
     },
 }
 
+/// A villager's ambition as their page shows it.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AmbitionView {
+    /// wealth, love, family, glory or friends
+    pub kind: String,
+    /// in their own words
+    pub words: String,
+    /// how far along, 0..1
+    pub progress: f64,
+    /// where they stand, or when it was won or given up, in a sentence
+    pub detail: String,
+    /// "won" or "abandoned" once it is over
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub outcome: Option<String>,
+}
+
 /// What a villager has come to make of the hints that someone beyond the sky is watching.
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -1013,6 +1031,10 @@ pub struct CharacterDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub sky: Option<SkyStance>,
+    /// the one long goal they have set their heart on; none for a child
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ambition: Option<AmbitionView>,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
     pub relations: Vec<RelationRow>,
@@ -1565,6 +1587,7 @@ pub fn typescript() -> String {
         Weather,
         HeraldIssue,
         SkyStance,
+        AmbitionView,
         Goods,
         LlmState,
         LlmStatus,
