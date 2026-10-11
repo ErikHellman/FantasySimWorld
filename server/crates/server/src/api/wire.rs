@@ -17,7 +17,7 @@ use ts_rs::TS;
 
 /// Bumped whenever a change here is not backwards compatible; a client that
 /// sees a different number in `hello` reloads once.
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// Character, monster, ghost, animal, corpse and conversation ids (`c1`, `m7`, `g9`, `a3`, …).
 pub type Id = String;
@@ -636,6 +636,10 @@ pub enum CeremonyKind {
     Funeral,
     /// someone tried on the green for a killing nobody saw; `ids` are the accused and the accuser
     Trial,
+    /// a feast on the green: `ids` is empty and `feast` says which
+    Festival,
+    /// the village chooses its elder on the green; `ids` are the candidates, the sitting elder first if they stand
+    Election,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -670,6 +674,10 @@ pub struct Ceremony {
     /// the game day and clock ("14:00") the rite begins
     pub day: u32,
     pub time: String,
+    /// for a feast: "harvest" or "midwinter"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub feast: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -813,12 +821,30 @@ pub struct Status {
     pub raid: bool,
     /// "night", "early morning", "morning", "midday", "afternoon", "evening"
     pub part: String,
+    /// "spring", "summer", "autumn" or "winter": a year is four seasons of seven days, from spring on day 1
+    pub season: String,
+    /// the year, from 1
+    pub year: u32,
+    /// the elder the village chose, if it has one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub elder: Option<ElderView>,
     pub ambient: AmbientCounts,
     /// the village is still being founded: how many of its founders have settled; `null` once it is
     pub founding: Option<Founding>,
     /// what is worth watching right now, best first (at most five); the Auto camera and the "Happening now"
     /// cards read it
     pub hotspots: Vec<Hotspot>,
+}
+
+/// The village's elder, for the top bar.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ElderView {
+    pub id: Id,
+    pub name: String,
+    /// the day the village chose them
+    pub since: u32,
 }
 
 /// What a hotspot is about; the client decides from it which ones earn a "Happening now" card.
@@ -1035,6 +1061,10 @@ pub struct CharacterDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub ambition: Option<AmbitionView>,
+    /// the day the village chose them as its elder, while they are
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub elder_since: Option<u32>,
     pub plan_source: String,
     pub plan: Vec<PlanRow>,
     pub relations: Vec<RelationRow>,
@@ -1588,6 +1618,7 @@ pub fn typescript() -> String {
         House,
         CeremonyKind,
         CeremonyPhase,
+        ElderView,
         Ceremony,
         WorldObjectKind,
         Placed,

@@ -1,6 +1,6 @@
 // Generated from server/crates/server/src/api/wire.rs by `cargo run --bin export-api`. Do not edit.
 
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
 
 export type Vec2 = { x: number, z: number, };
 
@@ -336,9 +336,18 @@ fire: number,
  */
 built: number, };
 
-export type CeremonyKind = "wedding" | "funeral" | "trial";
+export type CeremonyKind = "wedding" | "funeral" | "trial" | "festival" | "election";
 
 export type CeremonyPhase = "announced" | "gathering" | "rite" | "feast" | "over";
+
+/**
+ * The village's elder, for the top bar.
+ */
+export type ElderView = { id: string, name: string, 
+/**
+ * the day the village chose them
+ */
+since: number, };
 
 /**
  * A wedding, funeral or trial the village has arranged, as viewers are told of it.
@@ -359,7 +368,11 @@ names: Array<string>,
 /**
  * the game day and clock ("14:00") the rite begins
  */
-day: number, time: string, };
+day: number, time: string, 
+/**
+ * for a feast: "harvest" or "midwinter"
+ */
+feast?: string, };
 
 export type WorldObjectKind = "tree" | "rock" | "prop" | "building" | "ground" | "built";
 
@@ -577,7 +590,19 @@ raid: boolean,
 /**
  * "night", "early morning", "morning", "midday", "afternoon", "evening"
  */
-part: string, ambient: AmbientCounts, 
+part: string, 
+/**
+ * "spring", "summer", "autumn" or "winter": a year is four seasons of seven days, from spring on day 1
+ */
+season: string, 
+/**
+ * the year, from 1
+ */
+year: number, 
+/**
+ * the elder the village chose, if it has one
+ */
+elder?: ElderView, ambient: AmbientCounts, 
 /**
  * the village is still being founded: how many of its founders have settled; `null` once it is
  */
@@ -670,7 +695,11 @@ sky?: SkyStance,
 /**
  * the one long goal they have set their heart on; none for a child
  */
-ambition?: AmbitionView, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
+ambition?: AmbitionView, 
+/**
+ * the day the village chose them as its elder, while they are
+ */
+elderSince?: number, planSource: string, plan: Array<PlanRow>, relations: Array<RelationRow>, 
 /**
  * newest first, at most 40
  */

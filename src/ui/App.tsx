@@ -18,7 +18,7 @@ import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
 import type { GuestEndReason } from '../generated/api';
 import { ceremonyBanner } from './ceremony';
-import { WeatherWord } from './Weather';
+import { SeasonWord, WeatherWord } from './Weather';
 import { actions, closeSheet, isAdmin, togglePanel, ui, villageStores } from './store';
 
 /** What the village has put by: wood, stone and ore in its stockpiles. Nothing is shown until it has gathered some. */
@@ -46,6 +46,17 @@ function Chest() {
   return <span class="pill" title={`The village chest: it pays for what villagers put down at the stores and sell at the market, and a passing trader fills it; ${stalls}`}>🪙 {economy.purse}{goods > 0 && ` · 🧺 ${goods}`}</span>;
 }
 
+/** The elder the village chose, if it has one; clicking follows them. */
+function ElderPill() {
+  const elder = ui.elder.value;
+  if (!elder) return null;
+  return (
+    <button type="button" class="pill" title={`The village's elder, chosen on day ${elder.since}`} onClick={() => actions.select(elder.id)}>
+      🎖️ {elder.name.split(' ')[0]}
+    </button>
+  );
+}
+
 function TopBar() {
   const clock = ui.clock.value;
   const admin = isAdmin();
@@ -58,6 +69,7 @@ function TopBar() {
       </div>
       <div class="clock" title={clock.part}>
         <span class="clock-day">Day {clock.day}</span>
+        <SeasonWord />
         <span class="clock-time">{clock.time}</span>
         <span class="clock-part">{clock.part}</span>
         <WeatherWord />
@@ -72,6 +84,7 @@ function TopBar() {
         <AutoPill />
         <span class="pill" title="People watching">👁 {ui.viewers.value}</span>
         <span class="pill" title="Villagers alive">👥 {ui.population.value}</span>
+        <ElderPill />
         {ui.monsters.value > 0 && <span class="pill danger" title="Monsters abroad">💀 {ui.monsters.value}</span>}
         {ui.dragon.value && <span class="pill danger" title="A dragon over the valley">🐉</span>}
         <Stores />

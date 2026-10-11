@@ -17,11 +17,27 @@ const trial: Ceremony = {
   ids: ['c5', 'c6'], names: ['Bran', 'Edda'], day: 7, time: '16:00',
 };
 
+const harvest: Ceremony = {
+  id: 'y4', kind: 'festival', phase: 'announced', placeId: 'green', placeName: 'the village green',
+  ids: [], names: [], day: 27, time: '18:00', feast: 'harvest',
+};
+const election: Ceremony = {
+  id: 'y5', kind: 'election', phase: 'announced', placeId: 'green', placeName: 'the village green',
+  ids: ['c1', 'c2'], names: ['Sylvi', 'Kael'], day: 29, time: '12:00',
+};
+
 afterEach(() => {
   ui.ceremony.value = null;
 });
 
 describe('the ceremony banner', () => {
+  it('names the feast and the candidates', () => {
+    expect(ceremonyBanner(harvest)).toBe('🌾 The village keeps the harvest festival on the village green at 18:00');
+    expect(ceremonyBanner({ ...harvest, feast: 'midwinter', phase: 'rite' })).toBe('❄️ The village is keeping midwinter on the village green');
+    expect(ceremonyBanner({ ...harvest, phase: 'feast' })).toBe('🍻 The harvest feast is on at the tavern');
+    expect(ceremonyBanner(election)).toBe('🎖️ The village chooses its elder on the village green at 12:00: Sylvi or Kael');
+  });
+
   it('says what is arranged, what is under way and what is on at the tavern', () => {
     expect(ceremonyBanner(wedding)).toBe('💍 Sylvi and Kael marry on the village green at 14:00');
     expect(ceremonyBanner({ ...wedding, phase: 'gathering' })).toBe('💍 Sylvi and Kael are being married on the village green');

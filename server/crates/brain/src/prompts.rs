@@ -12,8 +12,9 @@ use fsw_sim::data::economy::LOOT_REACH;
 use fsw_sim::data::monsters::Faction;
 use fsw_sim::describe::describe_activity;
 use fsw_sim::state::{
-    Animal, BoardTone, Ceremony, CeremonyPhase, Character, Conversation, ConversationLine, HousePhase, ItemId, Memory,
-    MonsterPhase, Pronouns, Relationship, Rite, SimState, TalkTone, WeatherKind,
+    Animal, BoardTone, Ceremony, CeremonyPhase, Character, ChronicleEntry, ChronicleKind, Conversation,
+    ConversationLine, FestivalKind, HousePhase, ItemId, Memory, MonsterPhase, Pronouns, Relationship, Rite, SimState,
+    TalkTone, WeatherKind,
 };
 use fsw_sim::systems::ambitions;
 use fsw_sim::systems::animals;
@@ -26,6 +27,7 @@ use fsw_sim::systems::herald;
 use fsw_sim::systems::music;
 use fsw_sim::systems::relationships::{RUNG_GRUDGE, RUNG_TENSION, Rung, brawl_unlocked, lethal_unlocked_read, rung_of};
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::seasons;
 use fsw_sim::systems::sky;
 use fsw_sim::systems::weather;
 use fsw_sim::systems::world;
@@ -508,10 +510,11 @@ fn header(state: &SimState, c: &Character) -> String {
     };
     let mut lines = vec![
         format!(
-            "It is day {}, {} ({}). You are at {}, {}.",
+            "It is day {}, {} ({}), in {}. You are at {}, {}.",
             time.day,
             format_clock(time.minute_of_day),
             part_of_day(time.hour),
+            seasons::season_of(time.day).as_str(),
             place_name_at(c.pos),
             describe_activity(state, c)
         ),
@@ -523,6 +526,7 @@ fn header(state: &SimState, c: &Character) -> String {
         ),
         danger,
     ];
+    lines.extend(elder_line(state, c));
     lines.extend(weather_line(state, c));
     lines.extend(music_line(c));
     lines.extend(animal_lines(state, c));
@@ -672,6 +676,16 @@ fn market_line(state: &SimState) -> Option<String> {
 }
 
 /// "today" or "tomorrow", and the clock, for the hour a ceremony is held.
+/// Who the village chose as its elder, if it has one.
+fn elder_line(state: &SimState, c: &Character) -> Option<String> {
+    let elder = seasons::elder(state)?;
+    Some(if elder.id == c.id {
+        format!("You are the village's elder, chosen by the village on day {}.", state.village.elder_day)
+    } else {
+        format!("The village's elder is {}.", name_of(state, &elder.id))
+    })
+}
+
 fn when_held(state: &SimState, ceremony: &Ceremony) -> (&'static str, String) {
     let now = game_time(state.tick);
     let then = game_time(ceremony.start_tick);
@@ -756,6 +770,38 @@ fn ceremony_line(state: &SimState, c: &Character) -> Option<String> {
                     format!("The village is gathered on the green to try {accused_name} for the killing of {victim}.")
                 }
                 CeremonyPhase::Feast => format!("The trial of {accused_name} is over."),
+            }
+        }
+        Rite::Festival { feast } => {
+            let name = seasons::festival_name(*feast);
+            match ceremony.phase {
+                CeremonyPhase::Announced => format!("The village keeps {name} on the green {day} at {clock}."),
+                CeremonyPhase::Gathering | CeremonyPhase::Rite => {
+                    format!("The village is gathered on the green for {name}.")
+                }
+                CeremonyPhase::Feast => format!("The feast for {name} is on at {tavern}."),
+            }
+        }
+        Rite::Election { candidates } => {
+            let mine = candidates.contains(&c.id);
+            let others: Vec<String> =
+                candidates.iter().filter(|id| **id != c.id).map(|id| name_of(state, id)).collect();
+            let others = join_names(&others);
+            match ceremony.phase {
+                CeremonyPhase::Announced if mine => format!(
+                    "You stand to be the village's elder against {others}; the village chooses on the green {day} at {clock}. \
+                     Each grown-up votes for whoever they think best of."
+                ),
+                CeremonyPhase::Announced => format!(
+                    "The village chooses its elder on the green {day} at {clock}, between {others}. You will vote for one of them."
+                ),
+                CeremonyPhase::Gathering | CeremonyPhase::Rite if mine => {
+                    format!("You are standing to be the village's elder against {others}, before the whole village.")
+                }
+                CeremonyPhase::Gathering | CeremonyPhase::Rite => {
+                    format!("The village is gathered on the green to choose its elder between {others}.")
+                }
+                CeremonyPhase::Feast => "The village has chosen its elder.".to_owned(),
             }
         }
     })
@@ -1573,7 +1619,7 @@ pub fn eulogy_prompt(state: &SimState, me: &Character, ceremony: &Ceremony) -> P
     let (day, clock) = when_held(state, ceremony);
     let dead: &[String] = match &ceremony.rite {
         Rite::Funeral { dead } => dead,
-        Rite::Wedding { .. } | Rite::Trial { .. } => &[],
+        Rite::Wedding { .. } | Rite::Trial { .. } | Rite::Festival { .. } | Rite::Election { .. } => &[],
     };
     let names: Vec<String> = dead.iter().map(|id| name_of(state, id)).collect();
     let names = join_names(&names);
@@ -1618,6 +1664,68 @@ pub fn eulogy_prompt(state: &SimState, me: &Character, ceremony: &Ceremony) -> P
         },
         "Write the eulogy you will speak: three or four short sentences, in your own voice, to those gathered at \
          the graveside. Name the dead. No stage directions. One tool call."
+            .to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(me, user), tools: vec![TOOLS.speech.clone()], max_calls: 1 }
+}
+
+/// Before a feast: what the one who speaks the rite will say to open it.
+pub fn festival_prompt(state: &SimState, me: &Character, ceremony: &Ceremony, feast: FestivalKind) -> Prompt {
+    let (day, clock) = when_held(state, ceremony);
+    let name = seasons::festival_name(feast);
+    let year: Vec<&ChronicleEntry> = state
+        .chronicle
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.kind,
+                ChronicleKind::Death | ChronicleKind::Romance | ChronicleKind::Fire | ChronicleKind::Arrival
+            )
+        })
+        .rev()
+        .take(8)
+        .collect();
+    let lines: Vec<String> =
+        year.iter().rev().map(|e| format!("- Day {}: {}", game_time(e.tick).day, e.text)).collect();
+    let what = match feast {
+        FestivalKind::Harvest => "the harvest is in, and the village feasts to mark it",
+        FestivalKind::Midwinter => "it is the longest night, and the village sets its quarrels down for one evening",
+    };
+    let parts = [
+        header(state, me),
+        format!("The village keeps {name} on the green {day} at {clock}: {what}. You will speak to open it."),
+        if lines.is_empty() {
+            String::new()
+        } else {
+            format!("What the village has lived through lately:\n{}", lines.join("\n"))
+        },
+        "Write what you will say to open the feast: two or three short sentences, in your own voice, to everyone \
+         gathered. You may remember those lost or what the village came through. No stage directions. One tool call."
+            .to_owned(),
+    ];
+    let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");
+    Prompt { messages: as_character(me, user), tools: vec![TOOLS.speech.clone()], max_calls: 1 }
+}
+
+/// Before the village chooses its elder: what a candidate will say for themselves.
+pub fn campaign_prompt(state: &SimState, me: &Character, ceremony: &Ceremony, candidates: &[String]) -> Prompt {
+    let (day, clock) = when_held(state, ceremony);
+    let rivals: Vec<&Character> =
+        candidates.iter().filter(|id| **id != me.id).filter_map(|id| state.characters.get(id)).collect();
+    let rival_lines: Vec<String> = rivals.iter().map(|r| person_line(state, me, r, false)).collect();
+    let sitting = seasons::elder(state).is_some_and(|e| e.id == me.id);
+    let parts = [
+        header(state, me),
+        format!(
+            "The village chooses its elder on the green {day} at {clock}, and you stand{}. Each grown-up there votes \
+             for whoever they think best of.",
+            if sitting { " again" } else { "" }
+        ),
+        format!("Standing against you:\n{}", rival_lines.join("\n")),
+        "Write what you will say for yourself before the vote: two or three short sentences, in your own voice, to \
+         everyone gathered. You may say what you would do, or what you have done; you may take a swipe at a rival. \
+         No stage directions. One tool call."
             .to_owned(),
     ];
     let user = parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n");

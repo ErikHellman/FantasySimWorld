@@ -40,6 +40,7 @@ use crate::systems::perception::update_perception;
 use crate::systems::quirks::update_quirks;
 use crate::systems::relationships::{brawl_unlocked, daily_relationships, lethal_unlocked};
 use crate::systems::routine::{block_at, update_routine};
+use crate::systems::seasons;
 use crate::systems::sky::{self, update_sky};
 use crate::systems::stalls::update_stalls;
 use crate::systems::weather::{sheltering_from_hail, update_weather};
@@ -397,6 +398,7 @@ impl Sim {
 
         if ctx.time.day != previous_day {
             daily_relationships(&mut ctx);
+            seasons::daily_seasons(&mut ctx);
             ceremonies::daily(&mut ctx);
             daily_children(&mut ctx);
             let day = ctx.time.day;

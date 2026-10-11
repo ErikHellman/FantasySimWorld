@@ -26,3 +26,15 @@ export function WeatherWord() {
     </span>
   );
 }
+
+const SEASON_ICON: Record<string, string> = { spring: '🌱', summer: '☀️', autumn: '🍂', winter: '❄️' };
+
+/** The season and the year, beside the day: a year is four seasons of seven days. */
+export function SeasonWord() {
+  const season = ui.season.value;
+  return (
+    <span class="clock-season" title={`Year ${ui.year.value}: a year is four seasons of seven days`}>
+      {SEASON_ICON[season] ?? ''} {season}
+    </span>
+  );
+}

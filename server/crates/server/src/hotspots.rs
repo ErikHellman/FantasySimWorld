@@ -9,6 +9,7 @@ use fsw_sim::state::{
     SimState, TalkTone,
 };
 use fsw_sim::systems::fire::{site_name, site_pos};
+use fsw_sim::systems::seasons;
 use fsw_sim::util::{first_name, is_present, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, get_place};
 
@@ -99,6 +100,15 @@ pub fn hotspots_of(state: &SimState) -> Vec<Hotspot> {
                     |case| case.victim_name.split(' ').next().unwrap_or_default().to_owned(),
                 );
                 (accused.clone(), format!("{} is on trial for killing {victim}", name_of(state, accused)))
+            }
+            Rite::Festival { feast } => {
+                let name = seasons::festival_name(*feast);
+                (ceremony.officiant.clone(), format!("The village keeps {name}"))
+            }
+            Rite::Election { candidates } => {
+                let names: Vec<String> = candidates.iter().map(|id| name_of(state, id)).collect();
+                let first = candidates.first().cloned().unwrap_or_default();
+                (first, format!("The village chooses its elder: {}", names.join(" or ")))
             }
         };
         let score = match ceremony.phase {

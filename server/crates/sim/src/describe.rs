@@ -198,6 +198,19 @@ fn doing(state: &SimState, c: &Character) -> String {
                         (false, false) => format!("on the way to the trial of {accused_name}"),
                     }
                 }
+                Some(Rite::Festival { feast }) => {
+                    let name = crate::systems::seasons::festival_name(*feast);
+                    if there {
+                        format!("keeping {name} on the green")
+                    } else {
+                        format!("on the way to {name} on the green")
+                    }
+                }
+                Some(Rite::Election { candidates }) => match (there, candidates.contains(&c.id)) {
+                    (true, true) => "standing to be the village's elder on the green".into(),
+                    (true, false) => "on the green to choose the village's elder".into(),
+                    (false, _) => "on the way to the green to choose the village's elder".into(),
+                },
                 None => "going to the ceremony".into(),
             }
         }
