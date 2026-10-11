@@ -17,7 +17,7 @@ dockerfile = "Dockerfile"
 PORT = "8080"
 DATA_DIR = "/data"
 # How many people may watch at once; the rest wait in line. 0 for no cap.
-MAX_VIEWERS = "25"
+MAX_VIEWERS = "150"
 # Fly's proxy sets Fly-Client-IP; the sign-in rate limit keys on it.
 TRUST_PROXY = "true"
 LOG_FORMAT = "json"
