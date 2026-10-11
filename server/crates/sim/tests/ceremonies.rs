@@ -35,6 +35,10 @@ impl World {
         let mut state = create_test_state(seed);
         state.tick = tick_at(4, 20.0);
         state.director.next_wave_tick = i64::MAX;
+        // Rowan, who officiates anyway, is already the elder, so no election falls in the middle of these tests.
+        let rowan = living(&state).find(|c| first_name(c) == "Rowan").expect("Rowan").id.clone();
+        state.village.elder = Some(rowan);
+        state.village.election_year = 1;
         let mut sim = Sim::new(state);
         sim.enqueue(Command::Tuning { tuning: TuningPatch { chatter: Some(0.0), ..Default::default() } });
         Self { sim, events: Vec::new() }
@@ -412,7 +416,9 @@ fn a_necromancy_victim_is_buried_only_once_a_grave_exists() {
 
 #[test]
 fn the_officiant_is_a_cleric_or_paladin_before_a_druid_and_the_eldest_otherwise() {
+    // Without an elder, who otherwise speaks the rite.
     let mut w = World::quiet(3);
+    w.sim.state.village.elder = None;
     let maren = w.admit("maren");
     let dorn = w.who("Dorn");
     w.run_to(4, 21.0);
