@@ -26,6 +26,7 @@ use crate::systems::conversation::{add_lines, force_local, update_conversations}
 use crate::systems::death::detach;
 use crate::systems::director::update_director;
 use crate::systems::economy::{Commission, affordable, update_economy};
+use crate::systems::feuds::update_feuds;
 use crate::systems::fire::{fighting_fire, update_fire};
 use crate::systems::founding::{fill_village, first_name_taken, settle_villager};
 use crate::systems::ghosts::update_ghosts;
@@ -424,6 +425,7 @@ impl Sim {
         update_herald(&mut ctx);
         update_sky(&mut ctx);
         update_ambitions(&mut ctx);
+        update_feuds(&mut ctx);
         update_world(&mut ctx);
         update_economy(&mut ctx);
         update_perception(&mut ctx);

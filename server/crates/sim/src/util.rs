@@ -226,6 +226,7 @@ pub fn new_relationship() -> Relationship {
         last_talk_tick: -1_000_000_000,
         last_offence_tick: -1_000_000_000,
         last_blocked_tick: None,
+        scene_tick: None,
     }
 }
 
