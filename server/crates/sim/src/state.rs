@@ -662,6 +662,9 @@ pub struct Relationship {
     /// tick the other last stood in this character's way (`systems::blocking`); left out of saves until then
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_blocked_tick: Option<i64>,
+    /// tick of the last scene this character made with the other (`systems::feuds`); left out of saves until then
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_tick: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

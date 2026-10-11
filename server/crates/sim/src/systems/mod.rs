@@ -15,6 +15,7 @@ pub mod death;
 pub mod director;
 pub mod dragon;
 pub mod economy;
+pub mod feuds;
 pub mod fire;
 pub mod founding;
 pub mod ghosts;

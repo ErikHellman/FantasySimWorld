@@ -31,6 +31,7 @@ use crate::systems::cases;
 use crate::systems::combat::max_hp;
 use crate::systems::death::detach;
 use crate::systems::director::tick_at;
+use crate::systems::feuds;
 use crate::systems::fire::{UNFIT, burning, fighting_fire, home_usable};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::relationships::{RelationDelta, adjust, marry};
@@ -794,8 +795,15 @@ fn rite_step(ctx: &mut Ctx) {
                     for id in [&a, &b] {
                         ctx.emit(SimEvent::Emote { id: id.clone(), emote: Emote::Heart });
                     }
-                    let guests: Vec<Id> =
+                    let mut guests: Vec<Id> =
                         present(ctx.state, &ceremony).into_iter().filter(|id| *id != a && *id != b).collect();
+                    // Someone in the crowd still sweet on one of them does not cheer.
+                    if let Some(at) =
+                        guests.iter().position(|id| feuds::heartbroken_at(ctx.state, id, &a, &b).is_some())
+                    {
+                        let guest = guests.remove(at);
+                        feuds::watch_them_wed(ctx, &guest, &a, &b);
+                    }
                     for id in &guests {
                         set_anim(ctx.c(id), AnimId::Cheer, true);
                     }
