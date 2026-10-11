@@ -193,3 +193,25 @@ fn a_heartbroken_guest_cannot_cheer_at_the_wedding() {
     assert_eq!(chronicled(&state, ChronicleKind::Romance, "with a broken heart"), 1);
     assert!(state.characters[&a].relationships[&c].grievance >= 10.0);
 }
+
+#[test]
+fn a_grudge_against_the_dead_makes_no_scene() {
+    let (mut state, ids) = morning(2);
+    set(&mut state, &ids[0], "gone", |r| (r.grievance, r.attraction) = (90.0, 90.0));
+    run(&mut state, WINDOW);
+    assert!(state.chronicle.iter().all(|e| e.kind != ChronicleKind::Conflict && e.kind != ChronicleKind::Romance));
+}
+
+#[test]
+fn nobody_is_called_out_in_the_middle_of_their_work() {
+    let (mut state, ids) = morning(4);
+    let (a, b) = (&ids[0], &ids[1]);
+    state.characters.get_mut(a).unwrap().profile.temper = 0.8;
+    set(&mut state, a, b, |r| r.grievance = 70.0);
+    state.characters.get_mut(b).unwrap().intent =
+        Some(fsw_sim::state::Intent::new(IntentAction::Shelter, fsw_sim::state::IntentSource::Routine));
+    run(&mut state, WINDOW);
+    let name = fsw_sim::util::first_name(&state.characters[a]).to_owned();
+    assert_eq!(chronicled(&state, ChronicleKind::Conflict, &format!("{name} challenged")), 0);
+    assert_eq!(chronicled(&state, ChronicleKind::Conflict, &format!("{name} and")), 1, "they have it out in words");
+}

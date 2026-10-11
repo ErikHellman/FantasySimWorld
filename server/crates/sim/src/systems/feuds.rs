@@ -13,7 +13,7 @@ use fsw_core::rng::hash_string;
 use fsw_core::time::{TICKS_PER_DAY, TICKS_PER_GAME_MINUTE};
 
 use crate::events::{Emote, SimEvent};
-use crate::state::{ChronicleKind, FightMode, Id, IntentSource, MemoryKind, SimState};
+use crate::state::{Character, ChronicleKind, FightMode, Id, IntentAction, IntentSource, MemoryKind, SimState};
 use crate::systems::ceremonies::cancel_wedding_of;
 use crate::systems::combat::{max_hp, start_fight, witnesses};
 use crate::systems::relationships::{
@@ -89,6 +89,14 @@ fn free(ctx: &Ctx, id: &str) -> bool {
         .is_some_and(|c| !c.is_child() && c.exiled_since.is_none() && is_approachable(c) && c.queue.is_empty())
 }
 
+/// Not in the middle of something a fight would wreck: work on the world, a fire, an errand, or shelter.
+fn on_hand(c: &Character) -> bool {
+    matches!(
+        c.intent.as_ref().map(|i| &i.action),
+        None | Some(IntentAction::GoTo { .. } | IntentAction::Activity { .. } | IntentAction::Wait { .. })
+    )
+}
+
 /// Whether `from` has made a scene with `to` lately.
 fn lately(ctx: &Ctx, from: &str, to: &str, gap: i64) -> bool {
     ctx.cr(from).relationships.get(to).and_then(|r| r.scene_tick).is_some_and(|at| ctx.tick() - at < gap)
@@ -116,7 +124,10 @@ pub fn update_feuds(ctx: &mut Ctx) {
             .cr(&id)
             .relationships
             .iter()
-            .filter(|(_, r)| r.grievance >= RUNG_TENSION || r.attraction >= PINING)
+            // Feelings outlive the people they are about: only the living count.
+            .filter(|(other, r)| {
+                (r.grievance >= RUNG_TENSION || r.attraction >= PINING) && ctx.state.characters.contains_key(*other)
+            })
             .map(|(other, r)| (other.clone(), r.grievance, r.attraction))
             .collect();
         for (other, grievance, attraction) in others {
@@ -150,7 +161,8 @@ fn confront(ctx: &mut Ctx, id: &str, other: &str, grievance: f64, hash: u32) -> 
     }
     let onlookers = witnesses(ctx, me.pos, &[id, other]);
     let fit = me.hp >= max_hp(me) * 0.6 && them.hp >= max_hp(them) * 0.6;
-    if grievance >= RUNG_FEUD && hot && fit && onlookers.len() >= AUDIENCE && brawl_unlocked(me, other) {
+    let at_hand = on_hand(me) && on_hand(them);
+    if grievance >= RUNG_FEUD && hot && fit && at_hand && onlookers.len() >= AUDIENCE && brawl_unlocked(me, other) {
         challenge(ctx, id, other, onlookers.len(), hash);
     } else if grievance >= RUNG_GRUDGE && onlookers.len() >= AUDIENCE {
         row(ctx, id, other, &onlookers, hash);
