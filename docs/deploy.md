@@ -80,6 +80,23 @@ The language model (`LLM_BASE_URL`, `LLM_MODEL` and the tuning variables `LLM_CO
 
 Guest seats need no secret: a seat is 32 random bytes in an HttpOnly cookie, and the server keeps only its SHA-256, in memory. See the [README](../README.md#guests).
 
+### Ads
+
+The site can show Google AdSense ads. They are off unless `ADS_CLIENT` is set, so a fork or a local run shows none. Nothing about them is secret, but setting them on the app keeps the publisher id out of the repository:
+
+```bash
+fly secrets set ADS_CLIENT=ca-pub-1234567890123456 ADS_SLOT_START=1111111111 ADS_SLOT_HUD=2222222222
+```
+
+- `ADS_CLIENT` is the publisher id from AdSense, `ca-pub-` and digits.
+- `ADS_SLOT_START` is a display ad unit for the launch screen. Everyone waiting for a seat or about to enter sees it; the admin does not.
+- `ADS_SLOT_HUD` is a display ad unit beside the chat during play. It shows only on windows at least 1000 by 700 pixels, steps aside while the viewer reads a page or a dialog, and can be folded away. Phones never see it.
+- Leave out either slot to leave that place empty. The browser reads all three from `GET /ads.json`, which is open to everyone.
+
+Each ad is asked for once per page load: AdSense does not allow refreshing an ad the viewer did not ask for, and viewers here stay on one page for a long time.
+
+Before the ads show, AdSense has to approve the site. Add the domain in AdSense, and publish an `ads.txt` at the root of the domain (for `fantasy-sim-world.hellsoft.se` that is `https://hellsoft.se/ads.txt`) with the line AdSense gives you (`google.com, pub-…, DIRECT, f08c47fec0942fa0`). Viewers in Europe must be asked before ads use their data: turn on the European regulations message in AdSense under **Privacy & messaging**; it loads with the ad script, and **⚙ Settings → Privacy and ad choices** opens it again. The site's privacy page is `public/privacy.html`, served at `/privacy.html`; give that address to AdSense, and keep it true if the ads change.
+
 ## Data, backups and restarts
 
 Everything lives in `/data/world.db` (SQLite in WAL mode): world snapshots, the chronicle, the command record, the decision log and settings.

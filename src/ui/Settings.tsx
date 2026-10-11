@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { SOUND_CREDITS } from '../audio/credits';
 import type { AudioSettings } from '../audio/engine';
 import { api } from '../net/api';
+import { showAdChoices } from './ads';
 import { chatError } from './Chat';
 import { actions, isGuest, ui } from './store';
 
@@ -131,6 +132,17 @@ export function SettingsPanel() {
               <span class="test-result">You are an admin.</span>
               <button onClick={() => void signOut()}>Sign out</button>
             </div>
+          </>
+        )}
+
+        {ui.ads.value && (
+          <>
+            <h3>Ads</h3>
+            <p class="muted">
+              Ads keep the valley running. They come from Google, which asks viewers in Europe what it may do with their data.{' '}
+              <a href="/privacy.html" target="_blank" rel="noreferrer">Privacy</a>.
+            </p>
+            <button onClick={() => showAdChoices()}>Privacy and ad choices</button>
           </>
         )}
 

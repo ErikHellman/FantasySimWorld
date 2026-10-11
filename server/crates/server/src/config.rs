@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use fsw_brain::settings::{ApiKey, ConversationMode, EmbedSettings, LlmSettings, ReasoningMode, WireProtocol};
 
+use crate::api::wire::AdsConfig;
 use crate::guests::{DEFAULT_SEATS, GuestLimits};
 
 /// How viewers are let in. The only mode without sign-in, [`AuthMode::Off`],
@@ -50,6 +51,9 @@ pub struct Config {
     pub embed_api_key: ApiKey,
     /// `MAX_VIEWERS`: how many guests may watch at once (default 25); `0` for no cap. The rest wait in line.
     pub guests: GuestLimits,
+    /// The AdSense units, from `ADS_CLIENT`, `ADS_SLOT_START` and `ADS_SLOT_HUD` (see `ads_from`). Off unless
+    /// `ADS_CLIENT` is set.
+    pub ads: Option<AdsConfig>,
 }
 
 impl Config {
@@ -125,6 +129,7 @@ impl Config {
 
         let llm = llm_from(&get)?;
         let embed = embed_from(&get)?;
+        let ads = ads_from(&get)?;
 
         Ok(Self {
             bind,
@@ -140,6 +145,7 @@ impl Config {
             embed,
             embed_api_key: ApiKey::new(get("EMBED_API_KEY").unwrap_or("")),
             guests: GuestLimits { seats },
+            ads,
         })
     }
 
@@ -237,6 +243,31 @@ fn embed_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<EmbedSetting
         return Err(format!("EMBED_BASE_URL must start with https:// or http://, got {base_url:?}"));
     }
     Ok(EmbedSettings { base_url, model })
+}
+
+/// The ad units. `ADS_CLIENT` turns ads on; each slot is optional, so a placement without one stays empty.
+/// The values end up in the page's HTML, so only the shapes AdSense uses are accepted.
+fn ads_from<'a>(get: &impl Fn(&str) -> Option<&'a str>) -> Result<Option<AdsConfig>, String> {
+    let digits = |text: &str| !text.is_empty() && text.len() <= 32 && text.bytes().all(|b| b.is_ascii_digit());
+    let slot = |name: &str| -> Result<Option<String>, String> {
+        match get(name) {
+            None => Ok(None),
+            Some(text) if digits(text) => Ok(Some(text.to_owned())),
+            Some(text) => Err(format!("{name} must be an AdSense ad unit id (digits only), got {text:?}")),
+        }
+    };
+    let start_slot = slot("ADS_SLOT_START")?;
+    let hud_slot = slot("ADS_SLOT_HUD")?;
+    let Some(client) = get("ADS_CLIENT") else {
+        if start_slot.is_some() || hud_slot.is_some() {
+            return Err("ADS_SLOT_START or ADS_SLOT_HUD is set but ADS_CLIENT is not".into());
+        }
+        return Ok(None);
+    };
+    if !client.strip_prefix("ca-pub-").is_some_and(digits) {
+        return Err(format!("ADS_CLIENT must be an AdSense publisher id like ca-pub-1234567890123456, got {client:?}"));
+    }
+    Ok(Some(AdsConfig { client: client.to_owned(), start_slot, hud_slot }))
 }
 
 #[cfg(test)]
@@ -368,6 +399,23 @@ mod tests {
         assert!(with(&[("LLM_PROTOCOL", "xml")]).unwrap_err().contains("LLM_PROTOCOL"));
         assert!(with(&[("LLM_REASONING", "high")]).is_err());
         assert!(with(&[("LLM_CONVERSATIONS", "maybe")]).is_err());
+    }
+
+    #[test]
+    fn ads_are_off_unless_configured() {
+        let with = |pairs: &[(&str, &str)]| {
+            let mut all = vec![("AUTH_TOKEN", "0123456789abcdef")];
+            all.extend_from_slice(pairs);
+            Config::from_vars(vars(&all))
+        };
+        assert_eq!(with(&[]).unwrap().ads, None);
+        let ads = with(&[("ADS_CLIENT", "ca-pub-1234567890"), ("ADS_SLOT_HUD", "987654")]).unwrap().ads.unwrap();
+        assert_eq!(ads.client, "ca-pub-1234567890");
+        assert_eq!((ads.start_slot, ads.hud_slot.as_deref()), (None, Some("987654")));
+        assert!(with(&[("ADS_CLIENT", "pub-1234")]).unwrap_err().contains("ADS_CLIENT"));
+        assert!(with(&[("ADS_CLIENT", "ca-pub-12\"><script>")]).is_err());
+        assert!(with(&[("ADS_CLIENT", "ca-pub-1"), ("ADS_SLOT_START", "abc")]).unwrap_err().contains("ADS_SLOT_START"));
+        assert!(with(&[("ADS_SLOT_START", "123")]).unwrap_err().contains("ADS_CLIENT"));
     }
 
     #[test]

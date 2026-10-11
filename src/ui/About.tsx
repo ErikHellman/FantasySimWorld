@@ -43,6 +43,10 @@ export function AboutTechPanel() {
           <li><strong>three.js</strong> draws the valley, with WebGPU where the browser has it and WebGL 2 where it does not.</li>
           <li><strong>Preact</strong> with signals for the panes, the chat and windows like this one.</li>
           <li>
+            Where the server is set up for it, <strong>Google AdSense</strong> shows one ad on the launch screen and one
+            beside the chat on big windows, never on a phone during play, to help pay for the server and the model.
+          </li>
+          <li>
             The 3D models are the <a href="https://kaylousberg.com" target="_blank" rel="noopener noreferrer">KayKit</a>{' '}
             collection by Kay Lousberg (CC0), with a few things made for the game in Blender in the same style, the
             animals and the dragon among them; the sounds and music are CC0, public domain or CC BY.
