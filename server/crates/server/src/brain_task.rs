@@ -195,16 +195,22 @@ pub async fn start(world: Arc<World>, store: Store, settings: LlmSettings, key: 
     brain
 }
 
-/// The embedding model with the vectors kept for it, or `None` when `EMBED_*` is not set.
-pub async fn start_memory(store: &Store, settings: EmbedSettings, key: ApiKey) -> Option<Arc<MemoryIndex>> {
+/// The embedding model with the vectors kept for the memories of the living, or `None` when `EMBED_*` is not set.
+pub async fn start_memory(
+    world: &World,
+    store: &Store,
+    settings: EmbedSettings,
+    key: ApiKey,
+) -> Option<Arc<MemoryIndex>> {
     if !settings.enabled() {
         return None;
     }
     let index = Arc::new(MemoryIndex::new(Embedder::new(settings, key, transport())));
-    match store.load_vectors(index.cache().model()).await {
+    let wanted = memory_texts(world).iter().map(|text| index.cache().key(text)).collect();
+    match store.load_vectors(index.cache().model(), wanted).await {
         Ok(rows) => {
             for (key, vector) in rows {
-                index.cache().insert(key, Arc::from(vector));
+                index.cache().insert(key, vector);
             }
         }
         Err(error) => tracing::error!(%error, "cannot load the memory vectors; they will be made again"),
@@ -391,7 +397,8 @@ mod tests {
         assert_eq!(index_once(&index, &world, &store, &mut failing).await, 0);
         assert_eq!(endpoint.requests().len(), requests, "nothing is embedded twice");
         assert!(index.cache().vector("Watched the bonfire on the green.").is_some());
-        assert_eq!(store.load_vectors("e1").await.unwrap().len(), index.cache().len());
+        let living: HashSet<i64> = memory_texts(&world).iter().map(|text| index.cache().key(text)).collect();
+        assert_eq!(store.load_vectors("e1", living).await.unwrap().len(), index.cache().len());
 
         let today = utc_day(now_ms());
         let usage = store.usage(today, today).await.unwrap();
@@ -414,7 +421,8 @@ mod tests {
         assert_eq!(index_once(&index, &world, &store, &mut failing).await, 0);
         assert!(failing);
         assert_eq!(endpoint.requests().len(), 1, "a failed request ends the pass");
-        assert!(store.load_vectors("e1").await.unwrap().is_empty());
+        let living: HashSet<i64> = memory_texts(&world).iter().map(|text| index.cache().key(text)).collect();
+        assert!(store.load_vectors("e1", living).await.unwrap().is_empty());
         assert_eq!(index.cache().len(), 0);
         let row = embed_usage(&store).await.expect("a usage row for the failure");
         assert_eq!((row.requests, row.failures), (1, 1));

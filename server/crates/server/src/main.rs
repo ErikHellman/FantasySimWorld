@@ -63,7 +63,7 @@ async fn main() -> ExitCode {
     let brain = brain_task::start(world.clone(), store.clone(), config.llm.clone(), config.llm_api_key.clone()).await;
     // Only prompts recall by meaning, so without the language model the indexer would embed memories nobody asks for.
     let memory = if config.llm.enabled {
-        brain_task::start_memory(&store, config.embed.clone(), config.embed_api_key.clone()).await
+        brain_task::start_memory(&world, &store, config.embed.clone(), config.embed_api_key.clone()).await
     } else {
         None
     };

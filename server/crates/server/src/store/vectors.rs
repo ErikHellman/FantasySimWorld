@@ -2,7 +2,10 @@
 //! apart from the world: saves and replay never see them, and losing them only costs
 //! requests to the embedding endpoint.
 
+use std::collections::HashSet;
 use std::sync::Arc;
+
+use rusqlite::types::ValueRef;
 
 use super::{DAY_MS, Result, Store, now_ms};
 
@@ -13,22 +16,28 @@ fn to_blob(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
-fn from_blob(blob: &[u8]) -> Option<Vec<f32>> {
+fn from_blob(blob: &[u8]) -> Option<Arc<[f32]>> {
     let (numbers, rest) = blob.as_chunks::<4>();
     (!numbers.is_empty() && rest.is_empty()).then(|| numbers.iter().map(|b| f32::from_le_bytes(*b)).collect())
 }
 
 impl Store {
-    /// Every kept vector made under this model, by key.
-    pub async fn load_vectors(&self, model: &str) -> Result<Vec<(i64, Vec<f32>)>> {
+    /// The kept vectors made under this model for the `wanted` keys. The table also holds the vectors of the dead
+    /// and the forgotten until maintenance sweeps them a week on, so it can be far larger than what the living
+    /// recall: reading all of it at start once took the server past its machine's memory before it could listen.
+    pub async fn load_vectors(&self, model: &str, wanted: HashSet<i64>) -> Result<Vec<(i64, Arc<[f32]>)>> {
         let model = model.to_owned();
         self.read(move |conn| {
             let mut stmt = conn.prepare("SELECT key, vec FROM memory_vectors WHERE model = ?1")?;
-            let rows = stmt.query_map([&model], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
+            let mut rows = stmt.query([&model])?;
             let mut vectors = Vec::new();
-            for row in rows {
-                let (key, blob) = row?;
-                if let Some(vector) = from_blob(&blob) {
+            while let Some(row) = rows.next()? {
+                let key = row.get::<_, i64>(0)?;
+                // The blob is read in place, and only for a wanted key.
+                if wanted.contains(&key)
+                    && let ValueRef::Blob(blob) = row.get_ref(1)?
+                    && let Some(vector) = from_blob(blob)
+                {
                     vectors.push((key, vector));
                 }
             }
@@ -92,18 +101,21 @@ mod tests {
             .await
             .unwrap();
         store.put_vectors("e2", vec![(3, Arc::from(vec![0.0f32, 1.0, 0.0]))]).await.unwrap();
-        let mut kept = store.load_vectors("e1").await.unwrap();
+        let all = || HashSet::from([1, 2, 3]);
+        let mut kept = store.load_vectors("e1", all()).await.unwrap();
         kept.sort_by_key(|(key, _)| *key);
-        assert_eq!(kept, vec![(1, vec![0.6, 0.8]), (2, vec![1.0, 0.0])]);
-        assert_eq!(store.load_vectors("e2").await.unwrap().len(), 1);
-        assert!(store.load_vectors("another").await.unwrap().is_empty());
+        assert_eq!(kept, vec![(1, Arc::from(vec![0.6, 0.8])), (2, Arc::from(vec![1.0, 0.0]))]);
+        assert_eq!(store.load_vectors("e2", all()).await.unwrap().len(), 1);
+        assert!(store.load_vectors("another", all()).await.unwrap().is_empty());
+        // Only the wanted keys are read.
+        assert_eq!(store.load_vectors("e1", HashSet::from([2])).await.unwrap(), vec![(2, Arc::from(vec![1.0, 0.0]))]);
 
         // A week on, only what was used lately is left.
         let later = now_ms() + VECTORS_TTL_MS + 1_000;
         store.touch_vectors(vec![1], later).await.unwrap();
         let report = store.prune(later).await.unwrap();
         assert_eq!(report.vectors, 2);
-        assert_eq!(store.load_vectors("e1").await.unwrap(), vec![(1, vec![0.6, 0.8])]);
+        assert_eq!(store.load_vectors("e1", all()).await.unwrap(), vec![(1, Arc::from(vec![0.6, 0.8]))]);
     }
 
     #[test]
