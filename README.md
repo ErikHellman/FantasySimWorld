@@ -122,7 +122,7 @@ The language model is configured only with environment variables on the server. 
 
 | Variable | Default | What it is |
 | --- | --- | --- |
-| `LLM_BASE_URL` | none | An OpenAI-compatible chat completions endpoint that supports tool calling, e.g. `https://api.openai.com/v1`. Set it together with `LLM_MODEL`. |
+| `LLM_BASE_URL` | none | An OpenAI-compatible chat completions endpoint that supports tool calling, e.g. `https://api.berget.ai/v1`. Set it together with `LLM_MODEL`. |
 | `LLM_MODEL` | none | The model's name at that endpoint |
 | `LLM_API_KEY` | none | The endpoint's key, sent as `Authorization: Bearer`. Local models need none. |
 | `LLM_CONCURRENCY` | `2` | Requests at once, 1 to 16 |
@@ -136,11 +136,14 @@ The language model is configured only with environment variables on the server. 
 | `LLM_MAX_TOKENS` | `600` | Output tokens per answer, 100 to 4000 |
 | `LLM_HEADERS` | none | Extra request headers, one `Name: value` per line (or separated by a literal `\n`) |
 
+We recommend [Berget AI](https://berget.ai): a Swedish provider of open models behind an OpenAI-compatible API, hosted in the EU. Create an account and an API key in the [Berget AI console](https://console.berget.ai) and point the server at `https://api.berget.ai/v1`, with any of their [chat models](https://berget.ai/en/models) for `LLM_MODEL` and, for [memory by meaning](#memory-by-meaning), one of their embedding models for `EMBED_MODEL`.
+
 The server makes every request. The key and header values never reach a browser and are never part of an export. **🛠 Admin → Language model** shows the configuration the server is running with (the key only as its last four characters) and has **Test connection**, which asks the model for one real decision.
 
 ```bash
-# A hosted model (on Fly.io: fly secrets set LLM_API_KEY=… LLM_BASE_URL=… LLM_MODEL=…)
-LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=<model> LLM_API_KEY=sk-… \
+# Berget AI (on Fly.io: fly secrets set LLM_API_KEY=… LLM_BASE_URL=… LLM_MODEL=…)
+LLM_BASE_URL=https://api.berget.ai/v1 LLM_MODEL=google/gemma-4-31B-it LLM_API_KEY=<your Berget AI key> \
+  EMBED_BASE_URL=https://api.berget.ai/v1 EMBED_MODEL=intfloat/multilingual-e5-large EMBED_API_KEY=<your Berget AI key> \
   AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 
 # Ollama or LM Studio, where the server can reach it (LM Studio is http://localhost:1234/v1)
@@ -187,12 +190,12 @@ Without `LLM_BASE_URL` and `LLM_MODEL`, or when the model fails three times runn
 
 ### Memory by meaning
 
-Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
+Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one such as [Berget AI](https://berget.ai). It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `EMBED_BASE_URL` | none | The embeddings endpoint, e.g. `http://localhost:1234/v1`. Set it together with `EMBED_MODEL`. |
-| `EMBED_MODEL` | none | The embedding model's name there, e.g. `text-embedding-nomic-embed-text-v1.5` |
+| `EMBED_BASE_URL` | none | The embeddings endpoint, e.g. `https://api.berget.ai/v1` or `http://localhost:1234/v1`. Set it together with `EMBED_MODEL`. |
+| `EMBED_MODEL` | none | The embedding model's name there, e.g. `intfloat/multilingual-e5-large` on Berget AI or `text-embedding-nomic-embed-text-v1.5` in LM Studio |
 | `EMBED_API_KEY` | none | Its key, if it needs one |
 
 The server embeds each new memory in the background (a few hundred short texts a day for a village), keeps the vectors in the database, and embeds what a decision, a reply or a morning plan is about when it asks the model. If the endpoint is slow (over two seconds) or down, recall falls back to shared words, and nothing else changes. The vectors are a cache: changing the model starts a fresh set, and vectors unused for a week are deleted. Embedding requests do not count against `LLM_MAX_REQUESTS_PER_DAY` or `LLM_MAX_TOKENS_PER_DAY`; **🛠 Admin → Language model → Test connection** tests both models. To check an endpoint first: `cargo run --release -p fsw-brain --bin probe -- <base-url> <model> 4 --embed <embed-model>`.
