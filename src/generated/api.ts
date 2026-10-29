@@ -989,24 +989,6 @@ id: string | null, };
 export type Me = { role: Role, };
 
 /**
- * `GET /ads.json`: the ad units this server shows, or `null` when ads are off (`ADS_CLIENT` unset).
- * Open to everyone, so the launch screen can show its ad while a guest waits in line.
- */
-export type AdsConfig = { 
-/**
- * the AdSense publisher id, `ca-pub-` and digits
- */
-client: string, 
-/**
- * the ad unit on the launch screen, if any
- */
-startSlot: string | null, 
-/**
- * the ad unit beside the chat on wide screens during play, if any
- */
-hudSlot: string | null, };
-
-/**
  * `GET /api/chronicle?before=<tick>&limit=<n>`
  */
 export type ChroniclePage = { 
