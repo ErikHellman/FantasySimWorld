@@ -7,7 +7,7 @@ version = "0.7.0"
 edition = "2024"
 rust-version = "1.88"
 publish = false
-license = "UNLICENSED"
+license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 fsw-core = { path = "crates/core" }
