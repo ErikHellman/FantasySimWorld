@@ -111,7 +111,6 @@ All settings come from environment variables, read at start:
 | `TRUST_PROXY` | `false` | Take the client's address from `Fly-Client-IP` / `X-Forwarded-For`; only behind a proxy that sets them |
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
-| `ADS_CLIENT`, `ADS_SLOT_START`, `ADS_SLOT_HUD` | off | Google AdSense: the publisher id (`ca-pub-…`) and the ad units for the launch screen and beside the chat ([docs/deploy.md](docs/deploy.md#ads)) |
 | `EMBED_*` | off | Memory by meaning ([below](#memory-by-meaning)) |
 
 A value the server cannot use stops it at start with a message naming the variable. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
