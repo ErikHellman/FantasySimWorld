@@ -38,9 +38,9 @@ use crate::llm::queue::{DailyUsage, Job, JobQueue};
 use crate::llm::transport::LlmTransport;
 use crate::llm::types::{LlmError, LlmErrorKind, LlmRequest, LlmResponse, Protocol};
 use crate::prompts::{
-    Prompt, billboard_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt, herald_prompt,
-    mercy_prompt, name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt, reflect_prompt, reply_cue,
-    reply_prompt, slogan_prompt, vows_prompt,
+    Prompt, billboard_prompt, campaign_prompt, conversation_prompt, decide_cue, decide_prompt, eulogy_prompt,
+    festival_prompt, herald_prompt, mercy_prompt, name_pet_prompt, plan_cue, plan_prompt, prompt_text, react_prompt,
+    reflect_prompt, reply_cue, reply_prompt, slogan_prompt, vows_prompt,
 };
 use crate::recall::{MemoryIndex, Recall};
 use crate::settings::{ApiKey, ConversationMode, LlmSettings};
@@ -1397,6 +1397,8 @@ impl Brain {
                         Rite::Funeral { .. } => eulogy_prompt(state, me, ceremony),
                         // Nobody is asked to write for a trial (`ceremonies::speakers`).
                         Rite::Trial { .. } => return None,
+                        Rite::Festival { feast } => festival_prompt(state, me, ceremony, *feast),
+                        Rite::Election { candidates } => campaign_prompt(state, me, ceremony, candidates),
                     };
                     built(prompt, ())
                 },

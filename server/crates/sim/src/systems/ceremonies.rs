@@ -1,13 +1,15 @@
-//! Weddings, funerals and trials. A couple who have lasted are married on the
-//! green before the whole village and move in together; the dead are buried the
-//! next morning with everyone at the graveside; someone the village suspects of
-//! an unseen killing is tried on the green (`systems::cases`). All call the
-//! village together the way a fire does, and nothing but a fight or a flight
-//! takes anyone away.
+//! Weddings, funerals, trials, feasts and the choosing of an elder. A couple who
+//! have lasted are married on the green before the whole village and move in
+//! together; the dead are buried the next morning with everyone at the
+//! graveside; someone the village suspects of an unseen killing is tried on the
+//! green (`systems::cases`); the harvest and midwinter are kept on the green, and
+//! now and then the village chooses its elder there (`systems::seasons`). All
+//! call the village together the way a fire does, and nothing but a fight or a
+//! flight takes anyone away.
 //!
 //! Nothing here draws from the RNG, or changes anything at all, until a couple
-//! is betrothed or someone has died, so a world with neither runs exactly as
-//! it did before.
+//! is betrothed, someone has died, a feast day comes or the village is ready to
+//! choose an elder.
 
 use fsw_core::jsmath::{cos, sin, utf16_truncate};
 use fsw_core::math2d::{dist, facing_to, rotate};
@@ -20,11 +22,12 @@ use crate::data::ceremonies::{
     CHEERS, EULOGIES, FUNERAL_CLOSING, FUNERAL_OPENING, GRIEF, VOWS, WEDDING_CLOSING, WEDDING_OPENING, line,
 };
 use crate::data::classes::ClassId;
+use crate::data::seasons::{CAMPAIGN, ELECTION_OPENING, ELECTION_RESULT, HARVEST_SPEECH, MIDWINTER_SPEECH, TOASTS};
 use crate::data::trials::{ACCUSATIONS, ACQUITTED, AGAINST, FOR, GUILTY, PLEAS, TRIAL_OPENING};
 use crate::events::{Emote, SimEvent};
 use crate::state::{
-    ActPhase, Ceremony, CeremonyPhase, Character, ChronicleKind, Id, Intent, IntentAction, IntentSource, MemoryKind,
-    MonsterPhase, Rite, SimState, Speech, StimulusKind,
+    ActPhase, Ceremony, CeremonyPhase, Character, ChronicleKind, FestivalKind, Id, Intent, IntentAction, IntentSource,
+    MemoryKind, MonsterPhase, Rite, SimState, Speech, StimulusKind,
 };
 use crate::systems::billboards::clean_text;
 use crate::systems::cases;
@@ -35,6 +38,7 @@ use crate::systems::feuds;
 use crate::systems::fire::{UNFIT, burning, fighting_fire, home_usable};
 use crate::systems::intents::{finish, fresh_act, leave_building, travel, travel_to};
 use crate::systems::relationships::{RelationDelta, adjust, marry};
+use crate::systems::seasons;
 use crate::util::{
     Ctx, bump_epoch, first_name, is_fighting, join_names, living, living_ids, name_of, rel_or_default, set_anim,
 };
@@ -74,6 +78,10 @@ const TRIAL_PLACE: &str = "green";
 /// When a trial is held, today if it is early enough, else tomorrow.
 pub const TRIAL_HOUR: f64 = 16.0;
 const TRIAL_SAME_DAY_BEFORE: f64 = 13.0;
+/// When a feast is held, and when the village chooses its elder; both on the green, and both arranged at midnight.
+pub const FESTIVAL_HOUR: f64 = 18.0;
+pub const ELECTION_HOUR: f64 = 12.0;
+const GREEN: &str = "green";
 const FUNERAL_PLACE: &str = "graveyard";
 const FEAST_PLACE: &str = "tavern";
 /// Where on the green the couple stand, in the green's own frame: south of the well, clear of the benches.
@@ -99,10 +107,13 @@ pub fn speakers(ceremony: &Ceremony) -> Vec<Id> {
         Rite::Funeral { .. } => vec![ceremony.officiant.clone()],
         // A trial's words come from what the village knows, not from the model.
         Rite::Trial { .. } => Vec::new(),
+        Rite::Festival { .. } => vec![ceremony.officiant.clone()],
+        Rite::Election { candidates } => candidates.clone(),
     }
 }
 
-/// At the midnight roll-over: bury any dead still waiting, and betroth a couple who have earned it.
+/// At the midnight roll-over: bury any dead still waiting, betroth a couple who have earned it, keep a feast
+/// that is due, or choose an elder, in that order of need; the village holds one ceremony at a time.
 pub fn daily(ctx: &mut Ctx) {
     if ctx.state.ceremony.is_none() && !ctx.state.director.awaiting_funeral.is_empty() {
         schedule_funeral(ctx);
@@ -110,6 +121,113 @@ pub fn daily(ctx: &mut Ctx) {
     if ctx.state.ceremony.is_none() {
         betrothals(ctx);
     }
+    let day = ctx.time.day;
+    if ctx.state.ceremony.is_none()
+        && !ctx.state.director.founding
+        && let Some(kind) = seasons::festival_due(ctx.state, day)
+    {
+        schedule_festival(ctx, kind);
+    }
+    if ctx.state.ceremony.is_none() && seasons::election_due(ctx.state, day) {
+        let candidates = seasons::candidates(ctx.state);
+        if candidates.len() >= 2 {
+            schedule_election(ctx, candidates);
+        }
+    }
+}
+
+/// A feast day: the village keeps it on the green this evening.
+fn schedule_festival(ctx: &mut Ctx, kind: FestivalKind) {
+    let day = ctx.time.day;
+    let officiant = officiant_for(ctx.state, &[]);
+    let id = ctx.state.new_id("y");
+    ctx.state.ceremony = Some(Ceremony {
+        id: id.clone(),
+        rite: Rite::Festival { feast: kind },
+        place_id: GREEN.into(),
+        start_tick: tick_at(day, FESTIVAL_HOUR),
+        phase: CeremonyPhase::Announced,
+        step: 0,
+        until_tick: 0,
+        officiant: officiant.clone(),
+        speeches: Vec::new(),
+        attendees: Vec::new(),
+        slips: 0,
+    });
+    let name = seasons::festival_name(kind);
+    let officiant_name = first_name(ctx.cr(&officiant)).to_owned();
+    for other in living_ids(ctx.state) {
+        ctx.remember(
+            &other,
+            format!("The village keeps {name} on the green this evening."),
+            4.0,
+            MemoryKind::Event,
+            Vec::new(),
+        );
+    }
+    ctx.chronicle(
+        ChronicleKind::Social,
+        format!("The village keeps {name} on the green this evening at six. {officiant_name} will speak."),
+        Vec::new(),
+    );
+    ctx.emit(SimEvent::CeremonyScheduled { ceremony_id: id });
+}
+
+/// The village chooses its elder on the green at noon, from `candidates`.
+fn schedule_election(ctx: &mut Ctx, candidates: Vec<Id>) {
+    let day = ctx.time.day;
+    let except: Vec<&str> = candidates.iter().map(String::as_str).collect();
+    let officiant = officiant_for(ctx.state, &except);
+    let id = ctx.state.new_id("y");
+    ctx.state.ceremony = Some(Ceremony {
+        id: id.clone(),
+        rite: Rite::Election { candidates: candidates.clone() },
+        place_id: GREEN.into(),
+        start_tick: tick_at(day, ELECTION_HOUR),
+        phase: CeremonyPhase::Announced,
+        step: 0,
+        until_tick: 0,
+        officiant,
+        speeches: Vec::new(),
+        attendees: Vec::new(),
+        slips: 0,
+    });
+    let names = names_of(ctx.state, &candidates);
+    for other in living_ids(ctx.state) {
+        if candidates.contains(&other) {
+            let rivals: Vec<Id> = candidates.iter().filter(|c| **c != other).cloned().collect();
+            let rival_names = names_of(ctx.state, &rivals);
+            ctx.remember(
+                &other,
+                format!("I stand to be the village's elder on the green at noon today, against {rival_names}."),
+                8.0,
+                MemoryKind::Event,
+                rivals.clone(),
+            );
+            ctx.stimulate(
+                &other,
+                StimulusKind::Talked,
+                format!("You stand to be the village's elder at noon against {rival_names}; win people over."),
+                1,
+                None,
+            );
+        } else {
+            ctx.remember(
+                &other,
+                format!("The village chooses its elder on the green at noon today, between {names}."),
+                5.0,
+                MemoryKind::Event,
+                candidates.clone(),
+            );
+        }
+    }
+    ctx.chronicle(
+        ChronicleKind::Social,
+        format!("The village chooses its elder on the green today at noon. {names} stand."),
+        candidates,
+    );
+    ctx.emit(SimEvent::CeremonyScheduled { ceremony_id: id });
+    ctx.emit(SimEvent::SavePoint { reason: "election".into() });
 }
 
 /// The first couple who have been together long enough and like each other well enough.
@@ -346,8 +464,8 @@ fn arrange_funeral(ctx: &mut Ctx) {
             }
             ctx.chronicle(ChronicleKind::Death, format!("{names} will be buried at the same hour."), newly);
         }
-        // The trial goes ahead; the dead are buried when it is over.
-        Rite::Trial { .. } => {}
+        // The trial, the feast or the choosing goes ahead; the dead are buried when it is over.
+        Rite::Trial { .. } | Rite::Festival { .. } | Rite::Election { .. } => {}
     }
 }
 
@@ -368,6 +486,7 @@ fn call_off(ctx: &mut Ctx, text: String) {
         Rite::Wedding { .. } => ChronicleKind::Romance,
         Rite::Funeral { .. } => ChronicleKind::Death,
         Rite::Trial { .. } => ChronicleKind::Conflict,
+        Rite::Festival { .. } | Rite::Election { .. } => ChronicleKind::Social,
     };
     ctx.chronicle(kind, text, principals(&ceremony));
 }
@@ -388,12 +507,15 @@ pub fn hold_speech(ctx: &mut Ctx, ceremony_id: &str, speaker_id: &str, text: Str
     ceremony.speeches.push(Speech { speaker_id: speaker_id.to_owned(), text });
 }
 
-/// A cleric, a paladin or a druid, in that order of preference; otherwise the eldest. Never one of `except`,
-/// and never a child, whatever they will grow into.
+/// The village's elder; otherwise a cleric, a paladin or a druid, in that order of preference; otherwise the
+/// eldest. Never one of `except`, and never a child, whatever they will grow into.
 fn officiant_for(state: &SimState, except: &[&str]) -> Id {
     let candidates: Vec<&Character> = living(state)
         .filter(|c| !c.is_child() && c.exiled_since.is_none() && !except.contains(&c.id.as_str()))
         .collect();
+    if let Some(elder) = seasons::elder(state).filter(|e| candidates.iter().any(|c| c.id == e.id)) {
+        return elder.id.clone();
+    }
     for class in [ClassId::Cleric, ClassId::Paladin, ClassId::Druid] {
         if let Some(c) = candidates.iter().find(|c| c.class_id == class) {
             return c.id.clone();
@@ -413,6 +535,8 @@ fn principals(ceremony: &Ceremony) -> Vec<Id> {
         Rite::Wedding { a, b } => vec![a.clone(), b.clone()],
         Rite::Funeral { dead } => dead.clone(),
         Rite::Trial { accused, accuser, .. } => vec![accused.clone(), accuser.clone()],
+        Rite::Festival { .. } => Vec::new(),
+        Rite::Election { candidates } => candidates.clone(),
     }
 }
 
@@ -431,7 +555,9 @@ fn from_centre(place: &Place, centre: Vec2, local: [f64; 2]) -> Vec2 {
 pub fn centre_of(state: &SimState, ceremony: &Ceremony) -> Vec2 {
     let place = get_place(&ceremony.place_id);
     match &ceremony.rite {
-        Rite::Wedding { .. } | Rite::Trial { .. } => from_centre(place, place.origin, WEDDING_SPOT),
+        Rite::Wedding { .. } | Rite::Trial { .. } | Rite::Festival { .. } | Rite::Election { .. } => {
+            from_centre(place, place.origin, WEDDING_SPOT)
+        }
         Rite::Funeral { dead } => {
             let plots: Vec<Vec2> = dead
                 .iter()
@@ -464,6 +590,11 @@ fn spot_for(state: &SimState, ceremony: &Ceremony, id: &str) -> Vec2 {
     {
         // The accused faces the one who accuses them, as a couple face each other.
         if accuser == id { [-1.6, 0.0] } else { [1.6, 0.0] }
+    } else if let Rite::Election { candidates } = &ceremony.rite
+        && let Some(at) = candidates.iter().position(|c| c == id)
+    {
+        // The candidates stand in a row before the crowd.
+        [(at as f64 - (candidates.len() as f64 - 1.0) / 2.0) * 2.2, 0.0]
     } else if ceremony.officiant == id {
         [0.0, -2.2]
     } else {
@@ -482,6 +613,8 @@ fn is_principal(ceremony: &Ceremony, id: &str) -> bool {
         Rite::Wedding { a, b } => a == id || b == id,
         Rite::Funeral { .. } => ceremony.officiant == id,
         Rite::Trial { accused, accuser, .. } => accused == id || accuser == id || ceremony.officiant == id,
+        Rite::Festival { .. } => ceremony.officiant == id,
+        Rite::Election { candidates } => candidates.iter().any(|c| c == id) || ceremony.officiant == id,
     }
 }
 
@@ -541,6 +674,20 @@ fn still_stands(ctx: &mut Ctx) -> bool {
             return false;
         }
     }
+    if let Rite::Election { candidates } = &ceremony.rite {
+        let standing: Vec<Id> = candidates
+            .iter()
+            .filter(|id| ctx.state.characters.get(*id).is_some_and(|c| c.exiled_since.is_none()))
+            .cloned()
+            .collect();
+        if standing.len() < 2 {
+            call_off(ctx, "The choosing of the village's elder is put off.".into());
+            return false;
+        }
+        if let Some(c) = &mut ctx.state.ceremony {
+            c.rite = Rite::Election { candidates: standing };
+        }
+    }
     if !ctx.alive(&ceremony.officiant) {
         let principals = principals(&ceremony);
         let except: Vec<&str> = principals.iter().map(String::as_str).collect();
@@ -587,6 +734,8 @@ fn describe_rite(state: &SimState, ceremony: &Ceremony) -> (String, ChronicleKin
         }
         Rite::Funeral { dead } => (format!("The burial of {}", names_of(state, dead)), ChronicleKind::Death),
         Rite::Trial { accused, .. } => (format!("The trial of {}", name_of(state, accused)), ChronicleKind::Conflict),
+        Rite::Festival { feast } => (capitalised(seasons::festival_name(*feast)), ChronicleKind::Social),
+        Rite::Election { .. } => ("The choosing of the village's elder".to_owned(), ChronicleKind::Social),
     }
 }
 
@@ -858,6 +1007,87 @@ fn rite_step(ctx: &mut Ctx) {
         Rite::Trial { accused, accuser, case_id } => {
             let (accused, accuser, case_id) = (accused.clone(), accuser.clone(), case_id.clone());
             trial_step(ctx, &ceremony, &accused, &accuser, &case_id);
+        }
+        Rite::Festival { feast } => festival_step(ctx, &ceremony, *feast),
+        Rite::Election { candidates } => {
+            let candidates = candidates.clone();
+            election_step(ctx, &ceremony, &candidates);
+        }
+    }
+}
+
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| first.to_uppercase().collect::<String>() + chars.as_str())
+}
+
+/// A feast, step by step: the speech, a toast from the crowd, then the feast itself at the tavern.
+fn festival_step(ctx: &mut Ctx, ceremony: &Ceremony, kind: FestivalKind) {
+    let officiant = ceremony.officiant.clone();
+    match ceremony.step {
+        0 => {
+            let lines: &[&str] = match kind {
+                FestivalKind::Harvest => &HARVEST_SPEECH,
+                FestivalKind::Midwinter => &MIDWINTER_SPEECH,
+            };
+            let text = speech_for(ctx, ceremony, &officiant, lines, &[]);
+            speak(ctx, &officiant, text, None);
+        }
+        1 => {
+            let crowd: Vec<Id> = present(ctx.state, ceremony).into_iter().filter(|id| *id != officiant).collect();
+            for id in &crowd {
+                set_anim(ctx.c(id), AnimId::Cheer, true);
+            }
+            if crowd.is_empty() {
+                if let Some(c) = &mut ctx.state.ceremony {
+                    c.step += 1;
+                }
+                return;
+            }
+            let voice = crowd[ctx.pick_index(crowd.len())].clone();
+            let text = ctx.pick(&TOASTS).to_owned();
+            speak(ctx, &voice, text, None);
+        }
+        _ => {
+            let guests = present(ctx.state, ceremony);
+            seasons::keep_festival(ctx, kind, &guests);
+            feast(ctx, &guests, 40.0, 35.0);
+            ctx.emit(SimEvent::SavePoint { reason: "festival".into() });
+            begin_feast(ctx);
+        }
+    }
+}
+
+/// The choosing, step by step: the opening, each candidate's speech, and the result, which those present decide
+/// between them (`seasons::tally`). No feast after: the village goes back to its day.
+fn election_step(ctx: &mut Ctx, ceremony: &Ceremony, candidates: &[Id]) {
+    let officiant = ceremony.officiant.clone();
+    let step = ceremony.step as usize;
+    if step == 0 {
+        let names = names_of(ctx.state, candidates);
+        let text = line(ctx.pick(&ELECTION_OPENING), &[("names", names.as_str())]);
+        speak(ctx, &officiant, text, None);
+    } else if step <= candidates.len() {
+        let candidate = candidates[step - 1].clone();
+        let text = speech_for(ctx, ceremony, &candidate, &CAMPAIGN, &[]);
+        speak(ctx, &candidate, text, None);
+    } else if step == candidates.len() + 1 {
+        let voters = present(ctx.state, ceremony);
+        let votes = seasons::tally(ctx.state, candidates, &voters);
+        let chosen = seasons::seat_elder(ctx, candidates, &votes, &voters);
+        let name = first_name(ctx.cr(&chosen)).to_owned();
+        let tally = seasons::votes_words(&votes);
+        let text = line(ctx.pick(&ELECTION_RESULT), &[("name", name.as_str()), ("votes", tally.as_str())]);
+        speak(ctx, &officiant, text, None);
+        for id in voters.iter().filter(|id| !candidates.contains(id)) {
+            set_anim(ctx.c(id), AnimId::Cheer, true);
+        }
+        ctx.emit(SimEvent::SavePoint { reason: "elder".into() });
+    } else {
+        let tick = ctx.tick();
+        if let Some(c) = &mut ctx.state.ceremony {
+            c.phase = CeremonyPhase::Feast;
+            c.until_tick = tick;
         }
     }
 }

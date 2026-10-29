@@ -19,8 +19,8 @@ use fsw_sim::events::{Emote as SimEmote, Projectile, SimEvent};
 use fsw_sim::state::BoardTone;
 use fsw_sim::state::{
     ActPhase, Animal, AnimalAnim, CeremonyPhase as SimCeremonyPhase, Character, ChronicleEntry as SimChronicleEntry,
-    ChronicleKind as SimChronicleKind, Corpse, Ghost, Grave as SimGrave, HousePhase as SimHousePhase, IntentAction,
-    ItemId, Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
+    ChronicleKind as SimChronicleKind, Corpse, FestivalKind, Ghost, Grave as SimGrave, HousePhase as SimHousePhase,
+    IntentAction, ItemId, Look as SimLook, Loot as SimLoot, LootKind as SimLootKind, Monster, Resource, Rite, SimState,
     VoiceProfile as SimVoice, WeatherKind as SimWeatherKind, WorldObject as SimWorldObject,
 };
 use fsw_sim::systems::billboards::shown;
@@ -350,6 +350,13 @@ pub fn ceremony_of(state: &SimState) -> Option<Ceremony> {
         Rite::Wedding { a, b } => (CeremonyKind::Wedding, vec![a.clone(), b.clone()]),
         Rite::Funeral { dead } => (CeremonyKind::Funeral, dead.clone()),
         Rite::Trial { accused, accuser, .. } => (CeremonyKind::Trial, vec![accused.clone(), accuser.clone()]),
+        Rite::Festival { .. } => (CeremonyKind::Festival, Vec::new()),
+        Rite::Election { candidates } => (CeremonyKind::Election, candidates.clone()),
+    };
+    let feast = match &ceremony.rite {
+        Rite::Festival { feast: FestivalKind::Harvest } => Some("harvest".to_owned()),
+        Rite::Festival { feast: FestivalKind::Midwinter } => Some("midwinter".to_owned()),
+        _ => None,
     };
     let when = game_time(ceremony.start_tick);
     Some(Ceremony {
@@ -367,6 +374,7 @@ pub fn ceremony_of(state: &SimState) -> Option<Ceremony> {
         ids,
         day: when.day.max(0) as u32,
         time: format_clock(when.minute_of_day),
+        feast,
     })
 }
 

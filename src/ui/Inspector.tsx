@@ -74,6 +74,7 @@ function About({ d }: { d: CharacterDetail }) {
     <div class="tab-body">
       {d.secret && <p class="secret" title="Only viewers know this; the village does not">🗡️ {d.secret}</p>}
       {d.sky && <p class="sky-stance" title="What they make of the billboards' hints that someone is watching (you)">{SKY_STANCE[d.sky]}</p>}
+      {d.elderSince !== undefined && <p class="elder-line">🎖️ Elder of the village since day {d.elderSince}</p>}
       <p class="backstory">{d.backstory}</p>
       <div class="chips">{d.traits.map((trait) => <span class="chip">{trait}</span>)}</div>
       {d.ambition && <AmbitionCard ambition={d.ambition} />}

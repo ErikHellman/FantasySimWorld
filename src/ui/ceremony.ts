@@ -5,7 +5,7 @@ function joined(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** The banner for the wedding, funeral or trial the village has arranged, in its current phase. */
+/** The banner for the wedding, funeral, trial, feast or election the village has arranged, in its current phase. */
 export function ceremonyBanner(ceremony: Ceremony): string {
   const names = joined(ceremony.names);
   const place = ceremony.placeName;
@@ -16,6 +16,23 @@ export function ceremonyBanner(ceremony: Ceremony): string {
       case 'gathering':
       case 'rite': return `⚖️ ${accused} is on trial on ${place}`;
       default: return `⚖️ The trial of ${accused} is over`;
+    }
+  }
+  if (ceremony.kind === 'festival') {
+    const [icon, feast] = ceremony.feast === 'midwinter' ? ['❄️', 'midwinter'] : ['🌾', 'the harvest festival'];
+    switch (ceremony.phase) {
+      case 'announced': return `${icon} The village keeps ${feast} on ${place} at ${ceremony.time}`;
+      case 'gathering':
+      case 'rite': return `${icon} The village is keeping ${feast} on ${place}`;
+      default: return `🍻 The ${feast === 'midwinter' ? 'midwinter' : 'harvest'} feast is on at the tavern`;
+    }
+  }
+  if (ceremony.kind === 'election') {
+    switch (ceremony.phase) {
+      case 'announced': return `🎖️ The village chooses its elder on ${place} at ${ceremony.time}: ${ceremony.names.join(' or ')}`;
+      case 'gathering':
+      case 'rite': return `🎖️ The village is choosing its elder on ${place}`;
+      default: return `🎖️ The village has chosen its elder`;
     }
   }
   if (ceremony.kind === 'wedding') {

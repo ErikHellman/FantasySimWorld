@@ -2396,6 +2396,9 @@ pub struct SimState {
     /// the Valley Herald's issues, oldest first, the last few dozen kept (`systems::herald`)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub herald: Vec<HeraldIssue>,
+    /// the village's elder and its feasts (`systems::seasons`)
+    #[serde(default, skip_serializing_if = "Village::is_default")]
+    pub village: Village,
     /// where one can walk, with `objects` applied: derived, never saved, refreshed by `nav::refresh`
     #[serde(skip)]
     pub nav: NavOverlay,
@@ -2598,7 +2601,8 @@ impl LootKind {
     }
 }
 
-/// What a ceremony is for: a couple to be wed, or the dead to be buried.
+/// What a ceremony is for: a couple to be wed, the dead to be buried, someone to be tried, a feast to be kept or an
+/// elder to be chosen.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum Rite {
@@ -2616,6 +2620,72 @@ pub enum Rite {
         accuser: Id,
         case_id: Id,
     },
+    /// a feast day on the green: the harvest at the end of autumn or midwinter (`systems::seasons`)
+    Festival {
+        feast: FestivalKind,
+    },
+    /// the village chooses its elder on the green from these, the sitting elder first if they stand
+    /// (`systems::seasons`)
+    Election {
+        candidates: Vec<Id>,
+    },
+}
+
+/// A feast day of the village's year.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FestivalKind {
+    Harvest,
+    Midwinter,
+}
+
+/// A quarter of the village's year (`systems::seasons`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Season {
+    Spring,
+    Summer,
+    Autumn,
+    Winter,
+}
+
+impl Season {
+    pub const ALL: [Season; 4] = [Self::Spring, Self::Summer, Self::Autumn, Self::Winter];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Spring => "spring",
+            Self::Summer => "summer",
+            Self::Autumn => "autumn",
+            Self::Winter => "winter",
+        }
+    }
+}
+
+/// The village's elder and its calendar of feasts and choosings (`systems::seasons`). A world from before them
+/// reads as the default: no elder, and nothing held yet.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Village {
+    /// the elder the village chose, while they live among it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elder: Option<Id>,
+    /// the day they were chosen
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub elder_day: i64,
+    /// the year of the last choosing, the last harvest festival and the last midwinter (years count from 1)
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub election_year: i64,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub harvest_year: i64,
+    #[serde(default, skip_serializing_if = "is_zero_tick")]
+    pub midwinter_year: i64,
+}
+
+impl Village {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Where a ceremony has got to.

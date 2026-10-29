@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, Founding, Grave, GuestEndReason, HeraldIssue, Hotspot, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, ElderView, Founding, Grave, GuestEndReason, HeraldIssue, Hotspot, House, LlmStatus, Me,
   RosterEntry,
   SiteDetail, Snapshot, Status, Stockpile, Utterance, Weather, WorldObject,
 } from '../generated/api';
@@ -79,6 +79,10 @@ export const ui = {
   /** the world's speed as the server runs it (0 = paused) */
   speed: signal(1),
   viewers: signal(0),
+  /** the season and the year, and the elder the village chose, from the server's status */
+  season: signal('spring'),
+  year: signal(1),
+  elder: signal<ElderView | null>(null),
   population: signal(0),
   monsters: signal(0),
   dragon: signal(false),
@@ -230,6 +234,9 @@ export function fromStatus(status: Status): void {
   ui.dragon.value = status.dragon;
   ui.alarm.value = status.alarm;
   ui.raid.value = status.raid;
+  ui.season.value = status.season;
+  ui.year.value = status.year;
+  if (ui.elder.value?.id !== status.elder?.id || ui.elder.value?.since !== status.elder?.since) ui.elder.value = status.elder ?? null;
   ui.founding.value = status.founding;
   ui.hotspots.value = status.hotspots;
 }

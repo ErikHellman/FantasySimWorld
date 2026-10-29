@@ -19,14 +19,15 @@ use fsw_sim::systems::combat::max_hp;
 use fsw_sim::systems::fire::{built_fraction, is_homeless, site_name};
 use fsw_sim::systems::relationships::rung_of;
 use fsw_sim::systems::routine::block_at;
+use fsw_sim::systems::seasons;
 use fsw_sim::systems::world::{beds_of, object_name, project_label};
 use fsw_sim::util::{first_name, join_names, living, name_of, place_name_at};
 use fsw_world::places::{ActivityId, PlaceKind, find_place, nearest_place};
 
 use crate::api::wire::{
-    AmbientCounts, AmbitionView, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, Founding, GhostDetail, Goods,
-    Inventory, LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs, PlanRow,
-    RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, SkyStance, Status,
+    AmbientCounts, AmbitionView, AnimalDetail, CharacterDetail, ChronicleEntry, Detail, ElderView, Founding,
+    GhostDetail, Goods, Inventory, LlmStatus, Memory, MemoryKind, MonsterDetail, MonsterFaction, Mood, NamedId, Needs,
+    PlanRow, RelationLabel, RelationRow, RosterEntry, SiteDetail, SiteKind, SiteNeed, SiteProject, SkyStance, Status,
 };
 use crate::encode::{chronicle_entry, object_facts};
 use crate::hotspots::hotspots_of;
@@ -119,6 +120,13 @@ pub fn status_of(state: &SimState, extras: StatusExtras) -> Status {
         alarm: is_alarm(state),
         raid: state.war_band.is_some(),
         part: part_of_day(game_time(state.tick).hour).into(),
+        season: seasons::season_now(state).as_str().into(),
+        year: seasons::year_of(game_time(state.tick).day).max(1) as u32,
+        elder: seasons::elder(state).map(|c| ElderView {
+            id: c.id.clone(),
+            name: name_of(state, &c.id),
+            since: state.village.elder_day.max(0) as u32,
+        }),
         ambient: ambient_of(state),
         founding: state
             .director
@@ -452,6 +460,9 @@ pub fn character_detail_of(state: &SimState, id: &str) -> Option<CharacterDetail
         gold: c.gold.max(0) as u32,
         kills: c.kills.max(0) as u32,
         secret: secret_of(state, c),
+        elder_since: seasons::elder(state)
+            .filter(|elder| elder.id == c.id)
+            .map(|_| state.village.elder_day.max(0) as u32),
         ambition: c.ambition.as_ref().map(|ambition| {
             let (done, wanted) = ambitions::progress(state, c, ambition);
             AmbitionView {

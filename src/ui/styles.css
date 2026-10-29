@@ -207,7 +207,7 @@ button.link { border: 0; background: none; padding: 0; font-weight: 700; text-de
 .clock-time { font-size: 18px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .clock-day { font-weight: 800; color: var(--accent); }
 .clock-part { color: var(--muted); font-size: 12px; }
-.clock-weather { font-size: 12px; color: var(--muted); }
+.clock-weather, .clock-season { font-size: 12px; color: var(--muted); }
 .speeds { display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--panel); border: 1px solid var(--panel-border); }
 .speeds button { border: 0; min-width: 34px; font-weight: 800; }
 .pills { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
@@ -302,6 +302,7 @@ button.chron-text:hover { text-decoration: underline; background: none; }
 .backstory { color: #dcd7c9; }
 .secret { color: var(--bad); font-weight: 700; }
 .sky-stance { color: var(--accent); font-style: italic; }
+.elder-line { color: var(--accent); font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip, .badge { padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .badge.good { background: rgba(127, 209, 139, 0.25); color: var(--good); }
