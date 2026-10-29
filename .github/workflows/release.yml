@@ -1,5 +1,5 @@
 # Cuts a release from main. Started by hand only (Actions → Release → Run workflow): pick how far the version
-# moves and, if you like, a one-line summary and a deploy. See docs/deploy.md ("Releasing").
+# moves and, if you like, a one-line summary. See docs/deploy.md ("Releasing").
 name: Release
 
 on:
@@ -14,10 +14,6 @@ on:
         description: One line on what the release brings (optional; goes at the top of the notes)
         type: string
         required: false
-      deploy:
-        description: Deploy the release to Fly.io afterwards
-        type: boolean
-        default: false
 
 # Two releases at once would both take the same next version.
 concurrency:
@@ -137,16 +133,3 @@ jobs:
             --notes "$notes" \
             --generate-notes \
             --verify-tag
-
-  deploy:
-    needs: release
-    if: inputs.deploy
-    # A called workflow may ask for no more than its caller grants, and GitHub checks that before anything runs, even
-    # for jobs that will be skipped: deploy.yml's `checked` job reads Actions, so this job has to allow it.
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/deploy.yml
-    with:
-      ref: ${{ needs.release.outputs.tag }}
-    secrets: inherit
