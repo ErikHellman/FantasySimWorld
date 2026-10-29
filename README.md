@@ -303,3 +303,17 @@ The dragon is made the same way, in the KayKit style, with its own skeleton and 
 ## Working on the code
 
 [AGENTS.md](AGENTS.md) has the rules a change has to keep (for people and coding agents alike), with more for the server in [server/AGENTS.md](server/AGENTS.md) and for the web client in [src/AGENTS.md](src/AGENTS.md).
+
+Bug reports, ideas and pull requests are welcome on GitHub. By sending a pull request you agree that your contribution is licensed under the same terms as the project (below).
+
+## License
+
+Copyright (C) 2026 Erik Hellman
+
+Fantasy Sim World is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. The full text is in [LICENSE](LICENSE).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+The AGPL covers use over a network: if you run a modified version of the server where others can reach it, you must offer those users the source of your version.
+
+The license covers the code. Assets made by others keep their own licenses: the KayKit models are CC0 ([Assets](#assets)), and the sounds and music are CC0, public domain or CC BY, each listed with its author in [public/audio/CREDITS.md](public/audio/CREDITS.md).
