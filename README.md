@@ -9,7 +9,9 @@ A 3D world in the KayKit style. A dozen fantasy villagers, each invented by a la
 
 Each villager has a name, a profile, a personality, relationships and a memory that grows as the simulation runs. A language model makes their decisions through tool calls on any OpenAI-compatible endpoint; walking, working and fighting are simulated by the server and never wait for the model. With no model connected, villagers run on built-in routines, so the world is alive either way.
 
-![The village by day, with the villager list, the chronicle and the inspector open (an earlier build)](docs/screenshots/village-day.jpg)
+[![A 30-second tour of the village: a morning at the market, one villager up close, the harvest and midwinter feasts on the green, and the dead attacking at night](docs/screenshots/village-day.jpg)](docs/media/fantasy-sim-world.mp4)
+
+*Click the picture for a 30-second tour: a morning in the village, one villager up close, the harvest and midwinter feasts, and a night when the dead come over the bridge. More stills are in [docs/screenshots](docs/screenshots).*
 
 The design is in [docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md).
 The move of the simulation, the language model and all state to a Rust server with authenticated viewers, and what was measured along the way, is in [docs/superpowers/specs/2026-10-02-backend-migration-plan.md](docs/superpowers/specs/2026-10-02-backend-migration-plan.md).
