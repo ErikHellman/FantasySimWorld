@@ -5,11 +5,11 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The deploy and release workflows run these checks first.
+  # The release workflow runs these checks first.
   workflow_call:
 
 # A new push to a pull request makes the run for the old commit pointless, so it is cancelled. Runs on main, and
-# runs started by the deploy and release workflows, always finish.
+# runs started by the release workflow, always finish.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

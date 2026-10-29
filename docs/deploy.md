@@ -26,31 +26,14 @@ curl -sI --http2 https://<your-app>.fly.dev/healthz        # HTTP/2 to the clien
 
 ## Deploying from GitHub
 
-After the first deployment, later ones can run from GitHub Actions instead of a laptop. The **Deploy to Fly.io** workflow (`.github/workflows/deploy.yml`) only ever runs by hand: nothing deploys on a push or a merge.
-
-Once, before the first run:
-
-```bash
-fly tokens create deploy --app <your-app> --expiry 8760h    # a token that can deploy this one app, for a year
-```
-
-In the repository settings, create an environment called `production` and add that token to it as the secret `FLY_API_TOKEN`. The environment is also where to add required reviewers if a deploy should wait for someone's approval. If the app is not the one named in `fly.toml` (because `fly launch --name` renamed it locally), set the repository variable `FLY_APP` to its name.
-
-To deploy, open **Actions → Deploy to Fly.io → Run workflow** and pick the branch or tag. The workflow:
-
-1. runs the same checks as CI (`ci.yml`), and stops if any fail, unless CI on `main` has already passed on that very commit;
-2. runs `fly deploy --remote-only --ha=false`, so the image is built on Fly's builder (which keeps the Docker layer cache between deploys) and the app stays on its one machine, and labels the image with the commit;
-3. waits for the new machine to pass the health check in `fly.toml`, then asks `https://<app>.fly.dev/healthz` once more.
-
-Only one deploy runs at a time; a second one started meanwhile waits for the first to finish. Secrets are still set with `fly secrets set`, not from GitHub.
+There is no deploy workflow: GitHub Actions only runs the checks and cuts releases. Deploy with `fly deploy` from a checkout of the branch or tag you want live.
 
 ## Releasing
 
 A release is cut from `main` by the **Release** workflow (`.github/workflows/release.yml`), which also runs only by hand. Open **Actions → Release → Run workflow** on `main` and choose:
 
 - **bump**: `minor` (the default) for new things in the village, `patch` for fixes only, `major` for a break with old saves or clients;
-- **summary**: one optional line on what the release brings, which goes at the top of the notes and in the tag's message;
-- **deploy**: tick it to deploy the release to Fly.io straight afterwards, through the deploy workflow above.
+- **summary**: one optional line on what the release brings, which goes at the top of the notes and in the tag's message.
 
 The workflow runs the same checks as CI (skipping them when CI on `main` has already passed on that commit), moves the version in `package.json`, the Cargo workspace and `Cargo.lock` (with `tools/release/bump-version.mjs`, which can also be run by hand), commits that to `main` as "Release vX.Y.Z" and tags it. It then builds the web client and a Linux server and publishes a GitHub release with both, a checksum file, and notes that list the pull requests merged since the last release. It stops without releasing if `main` moved on while the checks ran or the tag already exists.
 
