@@ -661,18 +661,5 @@ html.mobile {
   .mobile .happening { right: calc(var(--rail-w) + 8px); }
 }
 
-/* Ads (AdSense, when the server has ADS_CLIENT): a labelled 300×250 unit on the launch screen and, on wide screens,
-   one beside the chat that steps aside for the inspector and dialogs. Hidden, not removed, so it is never asked for twice. */
-.ad { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.ad-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.ad-unit { display: block; width: 300px; height: 250px; }
-.ad-start { margin: 14px auto 0; }
-/* With the ad the launch card can be taller than a phone held sideways: let it scroll from the top rather than lose its head. */
+/* The launch card can be taller than a phone held sideways: let it scroll from the top rather than lose its head. */
 .start { overflow-y: auto; place-items: safe center; }
-.ad-hud { position: absolute; right: 10px; bottom: calc(10px + var(--chat-h, 0px)); padding: 6px 8px 8px; }
-.ad-hud.hidden { visibility: hidden; }
-.ad-head { display: flex; align-self: stretch; align-items: center; justify-content: space-between; }
-.ad-fold { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 14px; line-height: 1; }
-.ad-tab { position: absolute; right: 10px; bottom: calc(10px + var(--chat-h, 0px)); color: var(--muted); }
-/* Too small for the ad beside the chat to keep out of the way: it stays hidden (but loaded) until the window grows. */
-@media (max-width: 999px), (max-height: 699px) { .ad-hud, .ad-tab { visibility: hidden; } }

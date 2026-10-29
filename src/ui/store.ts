@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { DEFAULT_AUDIO, type AudioSettings } from '../audio/engine';
 import { formatClock, gameTime, partOfDay } from '../core/time';
 import type {
-  AdsConfig, Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, ElderView, Founding, Grave, GuestEndReason, HeraldIssue, Hotspot, House, LlmStatus, Me,
+  Billboard, BrainLogRecord, Ceremony, ChatMessage, ChatWelcome, ChronicleEntry, Detail, Economy, ElderView, Founding, Grave, GuestEndReason, HeraldIssue, Hotspot, House, LlmStatus, Me,
   RosterEntry,
   SiteDetail, Snapshot, Status, Stockpile, Utterance, Weather, WorldObject,
 } from '../generated/api';
@@ -68,8 +68,6 @@ export const ui = {
   backend: signal(''),
   /** the picture's quality tier, `high` or `low` */
   quality: signal(''),
-  /** the ad units this server shows (`GET /ads.json`); null while ads are off or before it answers */
-  ads: signal<AdsConfig | null>(null),
   /** who is watching; null until /api/me answers */
   me: signal<Me | null>(null),
   /** waiting for a seat: this page's place in line (null before the server answers) and any trouble asking; null once seated */

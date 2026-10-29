@@ -1,5 +1,5 @@
 import type {
-  AdsConfig, AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, HeraldArchive, GuestAnswer, GuestRequest,
+  AnimalDetail, ApiError, BillboardRequest, BrainLogRecord, CharacterDetail, ChatPost, ChatRename, ChatYou, ChroniclePage, HeraldArchive, GuestAnswer, GuestRequest,
   DragonCallAnswer, GhostDetail, HealthReport, LlmSettingsView, LlmTestResult, Me, MonsterDetail, NewWorldRequest, RaidCallAnswer, SiteDetail,
   SpeedRequest, WatchRequest,
 } from '../generated/api';
@@ -39,8 +39,6 @@ export const api = {
   /** a guest seat (setting the guest cookie), or a place in line; ask again no sooner than the answer says */
   guest: (body: GuestRequest) => request<GuestAnswer>('POST', '/auth/guest', body),
   me: () => request<Me>('GET', '/api/me'),
-  /** the ad units to show, or null when the server has ads off; open to everyone, seated or not */
-  ads: () => request<AdsConfig | null>('GET', '/ads.json'),
   /** gives up the guest seat (or the admin's cookie) */
   logout: () => request<void>('POST', '/api/logout'),
   watch: (body: WatchRequest) => request<void>('POST', '/api/watch', body),

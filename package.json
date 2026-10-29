@@ -1,7 +1,8 @@
 {
   "name": "fantasy-sim-world",
   "private": true,
-  "version": "0.6.0",
+  "license": "AGPL-3.0-only",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

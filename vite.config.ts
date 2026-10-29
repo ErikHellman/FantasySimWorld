@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
-// The server (the Rust server in server/, or the reference server in tools/), for /api, /auth and /ads.json during development.
+// The server (the Rust server in server/, or the reference server in tools/), for /api and /auth during development.
 const serverTarget = process.env.SERVER_URL ?? 'http://localhost:8080';
 
 export default defineConfig({
@@ -21,7 +21,6 @@ export default defineConfig({
         },
       },
       '/auth': { target: serverTarget },
-      '/ads.json': { target: serverTarget },
     },
   },
   build: {

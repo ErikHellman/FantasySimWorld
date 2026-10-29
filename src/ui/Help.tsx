@@ -127,9 +127,6 @@ export function HelpPanel() {
           <li><strong>A building's page</strong> (right, when you click a building or something the village built): its condition, who lives and is there, the work on it and what the chronicle says about it.</li>
           {banner}
           <li><strong>Chat</strong> (bottom): talk with the other people watching. Click its title to open or fold it, ✕ to tuck it away. Your chat name is in ⚙ Settings, with the sound.</li>
-          {ui.ads.value?.hudSlot && (
-            <li><strong>Advertisement</strong> (bottom right, on a big enough window): it steps aside while you read a page or a window like this one, and ▾ folds it away until you reload. Your privacy choices for ads are in ⚙ Settings.</li>
-          )}
         </ul>
         )}
 

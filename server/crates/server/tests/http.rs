@@ -175,20 +175,6 @@ async fn health_check_reports_the_tick() {
 }
 
 #[tokio::test]
-async fn ads_are_open_to_everyone_and_off_by_default() {
-    let (app, _, _data) = app("ads-off").await;
-    let response = app.oneshot(get("/ads.json")).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(text(response).await, "null");
-
-    let settings = [("AUTH_TOKEN", TOKEN), ("ADS_CLIENT", "ca-pub-123"), ("ADS_SLOT_START", "456")];
-    let (app, _, _data) = app_with("ads-on", &settings).await;
-    let response = app.oneshot(get("/ads.json")).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(text(response).await, r#"{"client":"ca-pub-123","startSlot":"456","hudSlot":null}"#);
-}
-
-#[tokio::test]
 async fn api_needs_the_token() {
     let (app, _, _data) = app("auth").await;
     let response = app.clone().oneshot(get("/api/stream")).await.unwrap();

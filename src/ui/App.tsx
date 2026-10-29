@@ -12,7 +12,6 @@ import { Inspector } from './Inspector';
 import { SitePanel } from './SitePanel';
 import { isTouchScreen } from './layout';
 import { GuestLine } from './Line';
-import { HudAd, StartAd } from './AdSlot';
 import { MobileHud } from './Mobile';
 import { Chronicle, LlmPill, Roster, Speeds } from './Panes';
 import { SettingsPanel } from './Settings';
@@ -185,7 +184,6 @@ function StartOverlay() {
           <p class="muted small-text">The valley is being settled: {ui.founding.value.settled} of {ui.founding.value.total} villagers have arrived.</p>
         )}
         {!loading && isAdmin() && <p class="muted small-text">You are an admin.</p>}
-        <StartAd />
       </div>
     </div>
   );
@@ -233,7 +231,6 @@ export function App() {
           <SitePanel />
           <ChatPanel />
           <AutoChip phone={false} />
-          <HudAd />
         </>
       )}
       <HappeningCards />

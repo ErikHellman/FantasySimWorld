@@ -94,8 +94,6 @@ async function start(): Promise<void> {
   // The launch screen is up from the start: it shows the line for a seat, then what is loading.
   ui.loading.value = 'Finding you a seat…';
   render(h(App, null), root);
-  // Ads are the server's choice; without an answer the page simply shows none.
-  api.ads().then((ads) => (ui.ads.value = ads), () => {});
   try {
     await whoAmI();
   } catch {

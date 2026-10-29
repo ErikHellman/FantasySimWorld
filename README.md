@@ -14,39 +14,6 @@ Each villager has a name, a profile, a personality, relationships and a memory t
 The design is in [docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md](docs/superpowers/specs/2026-10-01-fantasy-sim-world-design.md).
 The move of the simulation, the language model and all state to a Rust server with authenticated viewers, and what was measured along the way, is in [docs/superpowers/specs/2026-10-02-backend-migration-plan.md](docs/superpowers/specs/2026-10-02-backend-migration-plan.md).
 
-## Status
-
-The server migration is complete. The world, the language-model brain and every piece of state live in the Rust server (`server/`); the browser is a viewer that draws the server's event stream (`src/`). What works today:
-
-- The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
-- A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
-- Children: four or five live in the village from the day it is founded, and lovers who stay together have more. Children play, get into trouble (pinched food, a thrown apple, a hidden tool, a tall tale, a wander into the wilds at dusk, now and then a fire), never fight, and come of age after about a month as adults with a trade of their own ([the design](docs/superpowers/specs/2026-10-08-children-design.md)).
-- Combat: fighters with a shield or a blade can block a blow, the nimble can dodge one, and every week or so an orc war band comes up the west road by day to plunder the farm, the stores, the market and empty homes. A raider who falls drops what it carried; what the band gets away with is gone. Two bosses take the whole village to bring down: a skeleton golem that rises on some grim nights and does not crumble at dawn, and an orc warchief who leads every third raid ([the design](docs/superpowers/specs/2026-10-04-combat-design.md)).
-- Weather: clear skies, rain, wind and hail come and go. Each villager takes it their own way (some love the rain, some hate it), which shows in their mood; those who hate the rain go indoors when it pours, and hail, which hurts, sends everyone running for cover. Rain helps keep a fire down and wind fans it ([the design](docs/superpowers/specs/2026-10-08-weather-design.md)).
-- House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
-- Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
-- A murder mystery: now and then a founder or a newcomer is secretly a murderer. When they kill someone unseen, the village has only what it can piece together: who was seen trailing after the victim, what the one who found the body noticed, who had a grudge. Clues spread as people talk, and when enough of the village points at one person they are tried on the green and, if found guilty, driven out by the west road, rightly or not. Viewers are told who did it from the start: the murderer's page says so, and the Auto camera shows them stalking ([the design](docs/superpowers/specs/2026-10-10-murder-mystery-design.md)).
-- A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
-- Music: a few villagers can sing or play, and of an evening one of them strikes up outside the tavern (now and then on the green). Whoever is idle within earshot comes to stand and listen; the drinkers listen from their stools. A good tune leaves its listeners in good spirits for a few hours (slower to tire, quicker to heal, a little braver), a poor one draws heckles and empties the yard ([the design](docs/superpowers/specs/2026-10-08-music-design.md)).
-- Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
-- The dead have cards: click one of them and the inspector shows its health, what it is after, where and how it rose, who it once was and how many villagers it has slain.
-- Ghosts: about one in three villagers slain by the dead walks again, see-through and only after dark, for two or three nights. A ghost drifts between its grave and the homes of those it loved, troubles the sleepers inside and frightens whoever it meets; its touch chills and weakens but never kills, and nobody can fight one. Then it finds rest ([the design](docs/superpowers/specs/2026-10-08-ghosts-design.md)).
-- Animals: a herd and hens at the windmill farm, ducks on the shore, birds and an owl, and a dog or a cat in about half the homes, named by their keepers. Farmers tend the herd for food, villagers make a fuss of their pets, and anyone setting off on a long walk rides a free horse ([the design](docs/superpowers/specs/2026-10-08-animals-design.md)).
-- Seven billboards around the village with something new each morning: with a language model it writes them from what has lately happened, otherwise they show stock slogans. Now and then one hints that someone beyond the sky is watching, and its readers are shocked, intrigued or angry; after a couple of these a villager becomes a believer, defiant or a sceptic for good, and believers can feel how many of you are watching ([believers and sceptics](docs/superpowers/specs/2026-10-10-believers-and-sceptics-design.md)). Villagers sometimes stop to read one, say what they think and, if it urges something, may go and do it; admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
-- Seasons, feasts and an elder: a year is four seasons of seven days. The village keeps a harvest festival late in autumn and midwinter in the winter, on the green with a speech, a toast and a feast. It chooses an elder by vote, again every spring, from the two grown-ups it thinks best of; the elder speaks at every ceremony ([the design](docs/superpowers/specs/2026-10-11-seasons-feasts-and-elder-design.md)).
-- Feuds and love triangles: bad blood shows. A villager snubs the one they resent, a grudge becomes a shouting match before onlookers, and at a feud the hot-headed challenge the other to fists while the cool-headed rob their house unseen. Someone sweet on a villager who is with another tells them so, and is turned away or now and then chosen instead; at the wedding, they cannot cheer ([the design](docs/superpowers/specs/2026-10-11-feuds-and-triangles-design.md)).
-- Ambitions: every grown villager wants one thing from life, in their own words (a fortune, a marriage, a child, glory against the dead or close friends). Their page shows how far along they are, and the chronicle says when one comes true or, after a month, when they give it up ([the design](docs/superpowers/specs/2026-10-10-ambitions-design.md)).
-- The Valley Herald 📰: each morning a front page about the day before, written by the language model from the chronicle (or set from the chronicle itself when there is no model, or no answer by eight). A viewer who comes back after missing an issue finds it open on what they missed, and the last thirty issues can be paged through ([the design](docs/superpowers/specs/2026-10-10-valley-herald-design.md)).
-- The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
-- Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
-- Ambient sound, effects and adaptive music.
-- A container image with Litestream backups and Fly.io settings, deployed from a GitHub Actions workflow started by hand, and a one-click release workflow that bumps the version, tags it and publishes the build ([docs/deploy.md](docs/deploy.md)).
-
-Not yet done or not yet tried:
-
-- **Models**: the figures under [Connecting a language model](#connecting-a-language-model) are from one local model (`qwen/qwen3.6-35b-a3b` in LM Studio). The deployed game uses hosted models (the help's tech tour says which), but they have not been measured the same way; run the `probe` tool against yours.
-- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch.
-
 ## What you need
 
 - **Node.js 22** and **pnpm 10** (`corepack enable` picks the version in `package.json`), for the web client.
@@ -112,10 +79,42 @@ All settings come from environment variables, read at start:
 | `TRUST_PROXY` | `false` | Take the client's address from `Fly-Client-IP` / `X-Forwarded-For`; only behind a proxy that sets them |
 | `LOG_FORMAT` | JSON lines | `pretty` for humans |
 | `LLM_*` | off | The language model ([below](#connecting-a-language-model)) |
-| `ADS_CLIENT`, `ADS_SLOT_START`, `ADS_SLOT_HUD` | off | Google AdSense: the publisher id (`ca-pub-…`) and the ad units for the launch screen and beside the chat ([docs/deploy.md](docs/deploy.md#ads)) |
 | `EMBED_*` | off | Memory by meaning ([below](#memory-by-meaning)) |
 
 A value the server cannot use stops it at start with a message naming the variable. Deploying to Fly.io, backups and health are in [docs/deploy.md](docs/deploy.md).
+
+## Status
+
+The server migration is complete. The world, the language-model brain and every piece of state live in the Rust server (`server/`); the browser is a viewer that draws the server's event stream (`src/`). What works today:
+
+- The village simulation at 20 ticks a second, with routines, needs, conversations, relationships, night attacks, fights, deaths, graves and newcomers. A world resumes where it was after a restart.
+- A new world founds itself: the language model invents each of its thirteen villagers, one request each, while viewers who join early watch the founding from a dialog; newcomers are invented the same way, in the background, when the road brings one. Without a model, the server invents them from its own lists (see [Founding and newcomers](#founding-and-newcomers)).
+- Children: four or five live in the village from the day it is founded, and lovers who stay together have more. Children play, get into trouble (pinched food, a thrown apple, a hidden tool, a tall tale, a wander into the wilds at dusk, now and then a fire), never fight, and come of age after about a month as adults with a trade of their own ([the design](docs/superpowers/specs/2026-10-08-children-design.md)).
+- Combat: fighters with a shield or a blade can block a blow, the nimble can dodge one, and every week or so an orc war band comes up the west road by day to plunder the farm, the stores, the market and empty homes. A raider who falls drops what it carried; what the band gets away with is gone. Two bosses take the whole village to bring down: a skeleton golem that rises on some grim nights and does not crumble at dawn, and an orc warchief who leads every third raid ([the design](docs/superpowers/specs/2026-10-04-combat-design.md)).
+- Weather: clear skies, rain, wind and hail come and go. Each villager takes it their own way (some love the rain, some hate it), which shows in their mood; those who hate the rain go indoors when it pours, and hail, which hurts, sends everyone running for cover. Rain helps keep a fire down and wind fans it ([the design](docs/superpowers/specs/2026-10-08-weather-design.md)).
+- House fires: when not one villager is awake, the dead set a home alight. Everyone is woken to carry water from the well or the lake; a house they cannot save burns down and is rebuilt over several days, while the people who lived there sleep rough by the campfire ([the design](docs/superpowers/specs/2026-10-03-house-fire-design.md)).
+- Weddings and funerals: a couple who stay together are married on the village green before everyone and move in together, and the dead are buried the next morning with the whole village at the graveside. The language model writes the vows and the eulogy ahead of time ([the design](docs/superpowers/specs/2026-10-08-weddings-funerals-design.md)).
+- A murder mystery: now and then a founder or a newcomer is secretly a murderer. When they kill someone unseen, the village has only what it can piece together: who was seen trailing after the victim, what the one who found the body noticed, who had a grudge. Clues spread as people talk, and when enough of the village points at one person they are tried on the green and, if found guilty, driven out by the west road, rightly or not. Viewers are told who did it from the start: the murderer's page says so, and the Auto camera shows them stalking ([the design](docs/superpowers/specs/2026-10-10-murder-mystery-design.md)).
+- A world that changes: woodcutters fell real trees (which sway, fall and grow back over a fortnight), miners break rocks, farmers mow and dig, and anything but the dead's and the lamps can be taken apart or set alight, by routine or by the model. Wood, stone and ore are carried to stockpiles, and the village spends them raising what fell, enlarging crowded cottages and putting up fences, benches and crates ([the design](docs/superpowers/specs/2026-10-07-dynamic-world-design.md)).
+- Music: a few villagers can sing or play, and of an evening one of them strikes up outside the tavern (now and then on the green). Whoever is idle within earshot comes to stand and listen; the drinkers listen from their stools. A good tune leaves its listeners in good spirits for a few hours (slower to tire, quicker to heal, a little braver), a poor one draws heckles and empties the yard ([the design](docs/superpowers/specs/2026-10-08-music-design.md)).
+- Coin: villagers are paid for what they put down at the stores and for what they sell at the market's stalls, and spend it there; a passing trader buys the surplus once a day and fills the village chest. The dead drop coin and trinkets that villagers pick up, neighbours buy from one another, and whoever has saved enough pays for a bigger cottage or a wagon, a strongbox or a scarecrow for the yard ([the design](docs/superpowers/specs/2026-10-08-economy-design.md)).
+- The dead have cards: click one of them and the inspector shows its health, what it is after, where and how it rose, who it once was and how many villagers it has slain.
+- Ghosts: about one in three villagers slain by the dead walks again, see-through and only after dark, for two or three nights. A ghost drifts between its grave and the homes of those it loved, troubles the sleepers inside and frightens whoever it meets; its touch chills and weakens but never kills, and nobody can fight one. Then it finds rest ([the design](docs/superpowers/specs/2026-10-08-ghosts-design.md)).
+- Animals: a herd and hens at the windmill farm, ducks on the shore, birds and an owl, and a dog or a cat in about half the homes, named by their keepers. Farmers tend the herd for food, villagers make a fuss of their pets, and anyone setting off on a long walk rides a free horse ([the design](docs/superpowers/specs/2026-10-08-animals-design.md)).
+- Seven billboards around the village with something new each morning: with a language model it writes them from what has lately happened, otherwise they show stock slogans. Now and then one hints that someone beyond the sky is watching, and its readers are shocked, intrigued or angry; after a couple of these a villager becomes a believer, defiant or a sceptic for good, and believers can feel how many of you are watching ([believers and sceptics](docs/superpowers/specs/2026-10-10-believers-and-sceptics-design.md)). Villagers sometimes stop to read one, say what they think and, if it urges something, may go and do it; admins can put their own text up ([the design](docs/superpowers/specs/2026-10-03-billboards-design.md)).
+- Seasons, feasts and an elder: a year is four seasons of seven days. The village keeps a harvest festival late in autumn and midwinter in the winter, on the green with a speech, a toast and a feast. It chooses an elder by vote, again every spring, from the two grown-ups it thinks best of; the elder speaks at every ceremony ([the design](docs/superpowers/specs/2026-10-11-seasons-feasts-and-elder-design.md)).
+- Feuds and love triangles: bad blood shows. A villager snubs the one they resent, a grudge becomes a shouting match before onlookers, and at a feud the hot-headed challenge the other to fists while the cool-headed rob their house unseen. Someone sweet on a villager who is with another tells them so, and is turned away or now and then chosen instead; at the wedding, they cannot cheer ([the design](docs/superpowers/specs/2026-10-11-feuds-and-triangles-design.md)).
+- Ambitions: every grown villager wants one thing from life, in their own words (a fortune, a marriage, a child, glory against the dead or close friends). Their page shows how far along they are, and the chronicle says when one comes true or, after a month, when they give it up ([the design](docs/superpowers/specs/2026-10-10-ambitions-design.md)).
+- The Valley Herald 📰: each morning a front page about the day before, written by the language model from the chronicle (or set from the chronicle itself when there is no model, or no answer by eight). A viewer who comes back after missing an issue finds it open on what they missed, and the last thirty issues can be paged through ([the design](docs/superpowers/specs/2026-10-10-valley-herald-design.md)).
+- The language model on the server, with a request queue, a speed governor, daily caps, a decision log for admins and a fallback to routines.
+- Everyone watches and chats as a guest, with a line when the seats are full (see [Guests](#guests)); admins hold a shared token. Local development without a token.
+- Ambient sound, effects and adaptive music.
+- A container image with Litestream backups and Fly.io settings, deployed from a GitHub Actions workflow started by hand, and a one-click release workflow that bumps the version, tags it and publishes the build ([docs/deploy.md](docs/deploy.md)).
+
+Not yet done or not yet tried:
+
+- **Models**: the figures under [Connecting a language model](#connecting-a-language-model) are from one local model (`qwen/qwen3.6-35b-a3b` in LM Studio). The deployed game uses hosted models (the help's tech tour says which), but they have not been measured the same way; run the `probe` tool against yours.
+- **Later**: spoken lines (text to speech; the seam is in place), new places built from scratch.
 
 ## Connecting a language model
 
@@ -123,7 +122,7 @@ The language model is configured only with environment variables on the server. 
 
 | Variable | Default | What it is |
 | --- | --- | --- |
-| `LLM_BASE_URL` | none | An OpenAI-compatible chat completions endpoint that supports tool calling, e.g. `https://api.openai.com/v1`. Set it together with `LLM_MODEL`. |
+| `LLM_BASE_URL` | none | An OpenAI-compatible chat completions endpoint that supports tool calling, e.g. `https://api.berget.ai/v1`. Set it together with `LLM_MODEL`. |
 | `LLM_MODEL` | none | The model's name at that endpoint |
 | `LLM_API_KEY` | none | The endpoint's key, sent as `Authorization: Bearer`. Local models need none. |
 | `LLM_CONCURRENCY` | `2` | Requests at once, 1 to 16 |
@@ -137,11 +136,14 @@ The language model is configured only with environment variables on the server. 
 | `LLM_MAX_TOKENS` | `600` | Output tokens per answer, 100 to 4000 |
 | `LLM_HEADERS` | none | Extra request headers, one `Name: value` per line (or separated by a literal `\n`) |
 
+We recommend [Berget AI](https://berget.ai): a Swedish provider of open models behind an OpenAI-compatible API, hosted in the EU. Create an account and an API key in the [Berget AI console](https://console.berget.ai) and point the server at `https://api.berget.ai/v1`, with any of their [chat models](https://berget.ai/en/models) for `LLM_MODEL` and, for [memory by meaning](#memory-by-meaning), one of their embedding models for `EMBED_MODEL`.
+
 The server makes every request. The key and header values never reach a browser and are never part of an export. **🛠 Admin → Language model** shows the configuration the server is running with (the key only as its last four characters) and has **Test connection**, which asks the model for one real decision.
 
 ```bash
-# A hosted model (on Fly.io: fly secrets set LLM_API_KEY=… LLM_BASE_URL=… LLM_MODEL=…)
-LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=<model> LLM_API_KEY=sk-… \
+# Berget AI (on Fly.io: fly secrets set LLM_API_KEY=… LLM_BASE_URL=… LLM_MODEL=…)
+LLM_BASE_URL=https://api.berget.ai/v1 LLM_MODEL=google/gemma-4-31B-it LLM_API_KEY=<your Berget AI key> \
+  EMBED_BASE_URL=https://api.berget.ai/v1 EMBED_MODEL=intfloat/multilingual-e5-large EMBED_API_KEY=<your Berget AI key> \
   AUTH_TOKEN=dev-token-0123456789 PUBLIC_ORIGIN=http://localhost:8080 STATIC_DIR=../dist cargo run --release
 
 # Ollama or LM Studio, where the server can reach it (LM Studio is http://localhost:1234/v1)
@@ -188,12 +190,12 @@ Without `LLM_BASE_URL` and `LLM_MODEL`, or when the model fails three times runn
 
 ### Memory by meaning
 
-Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one. It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
+Villagers recall memories by the people involved and the words they share with the moment. With an embedding model they recall by meaning instead, so a fire brings back "the flames at the mill" even when nobody said "fire". Any OpenAI-compatible `/v1/embeddings` endpoint works: LM Studio, Ollama or a hosted one such as [Berget AI](https://berget.ai). It can be a different server from the language model. Embeddings are used only while the language model is on: without it no prompt recalls anything, so nothing is embedded.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `EMBED_BASE_URL` | none | The embeddings endpoint, e.g. `http://localhost:1234/v1`. Set it together with `EMBED_MODEL`. |
-| `EMBED_MODEL` | none | The embedding model's name there, e.g. `text-embedding-nomic-embed-text-v1.5` |
+| `EMBED_BASE_URL` | none | The embeddings endpoint, e.g. `https://api.berget.ai/v1` or `http://localhost:1234/v1`. Set it together with `EMBED_MODEL`. |
+| `EMBED_MODEL` | none | The embedding model's name there, e.g. `intfloat/multilingual-e5-large` on Berget AI or `text-embedding-nomic-embed-text-v1.5` in LM Studio |
 | `EMBED_API_KEY` | none | Its key, if it needs one |
 
 The server embeds each new memory in the background (a few hundred short texts a day for a village), keeps the vectors in the database, and embeds what a decision, a reply or a morning plan is about when it asks the model. If the endpoint is slow (over two seconds) or down, recall falls back to shared words, and nothing else changes. The vectors are a cache: changing the model starts a fresh set, and vectors unused for a week are deleted. Embedding requests do not count against `LLM_MAX_REQUESTS_PER_DAY` or `LLM_MAX_TOKENS_PER_DAY`; **🛠 Admin → Language model → Test connection** tests both models. To check an endpoint first: `cargo run --release -p fsw-brain --bin probe -- <base-url> <model> 4 --embed <embed-model>`.
@@ -304,3 +306,17 @@ The dragon is made the same way, in the KayKit style, with its own skeleton and 
 ## Working on the code
 
 [AGENTS.md](AGENTS.md) has the rules a change has to keep (for people and coding agents alike), with more for the server in [server/AGENTS.md](server/AGENTS.md) and for the web client in [src/AGENTS.md](src/AGENTS.md).
+
+Bug reports, ideas and pull requests are welcome on GitHub. By sending a pull request you agree that your contribution is licensed under the same terms as the project (below).
+
+## License
+
+Copyright (C) 2026 Erik Hellman
+
+Fantasy Sim World is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. The full text is in [LICENSE](LICENSE).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+The AGPL covers use over a network: if you run a modified version of the server where others can reach it, you must offer those users the source of your version.
+
+The license covers the code. Assets made by others keep their own licenses: the KayKit models are CC0 ([Assets](#assets)), and the sounds and music are CC0, public domain or CC BY, each listed with its author in [public/audio/CREDITS.md](public/audio/CREDITS.md).
