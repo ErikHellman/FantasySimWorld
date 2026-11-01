@@ -3,10 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use fsw_core::Vec2;
 use fsw_core::math2d::dist;
-use fsw_core::time::TICKS_PER_DAY;
-use fsw_sim::state::{ActPhase, SimState};
+use fsw_core::time::{TICKS_PER_DAY, seconds_to_ticks};
+use fsw_core::{Vec2, vec2};
+use fsw_sim::state::{ActPhase, Intent, IntentAction, IntentSource, SimState, TalkTone};
+use fsw_sim::systems::intents::{fresh_act, update_intents};
+use fsw_sim::systems::movement::separate;
 use fsw_sim::systems::stalls::{STALL_SECONDS, update_stalls};
 use fsw_sim::util::Ctx;
 use fsw_sim::{Command, Sim, create_state};
@@ -16,6 +18,59 @@ use fsw_testing::create_test_state;
 const LOOK_EVERY: i64 = 20;
 /// Getting this far counts as getting somewhere.
 const PROGRESS: f64 = 0.5;
+
+/// Runs the intents and the body separation alone for `ticks`, with nothing else going on.
+fn walk(state: &mut SimState, ticks: i64) {
+    for _ in 0..ticks {
+        let mut events = Vec::new();
+        update_intents(&mut Ctx::new(state, &mut events));
+        separate(state);
+        state.tick += 1;
+    }
+}
+
+#[test]
+fn on_their_way_to_someone_busy_a_talker_waits_within_hailing_distance_instead_of_walking_into_them() {
+    let mut state = create_test_state(2);
+    state.tick = state.tick - state.tick % 20 + 20;
+    let tick = state.tick;
+    let green = fsw_world::places::get_place("green").origin;
+    let (a, b) = (state.order[0].clone(), state.order[1].clone());
+    for (id, dx) in [(&a, -14.0), (&b, 3.0)] {
+        let pos = state.nav.nearest_walkable(vec2(green.x + dx, green.z), 6).unwrap();
+        let c = state.characters.get_mut(id).unwrap();
+        c.inside = None;
+        c.asleep = false;
+        c.pos = pos;
+        c.act = fresh_act(tick);
+        c.intent = None;
+        c.queue.clear();
+    }
+    let (start, target) = (state.characters[&a].pos, state.characters[&b].pos);
+    assert!(dist(start, target) > 12.0, "out of hailing reach to begin with");
+    state.characters.get_mut(&b).unwrap().convo_id = Some("v-busy".into());
+    let talk = IntentAction::Talk { target_id: b.clone(), opener: String::new(), tone: TalkTone::Friendly };
+    state.characters.get_mut(&a).unwrap().intent = Some(Intent::new(talk, IntentSource::Routine));
+
+    walk(&mut state, seconds_to_ticks(10.0));
+    let waiting = state.characters[&a].pos;
+    walk(&mut state, seconds_to_ticks(20.0));
+    let ca = &state.characters[&a];
+    assert!(
+        matches!(ca.intent.as_ref().map(|i| &i.action), Some(IntentAction::Talk { .. })),
+        "gave up: {}",
+        ca.outcome
+    );
+    let d = dist(ca.pos, target);
+    assert!(dist(ca.pos, start) > 2.0 && d <= 9.0, "did not walk over: {d:.2} from them");
+    assert!(d > 1.5, "walked into them: {d:.2}");
+    assert!(ca.act.path.is_empty() && !ca.moving && dist(ca.pos, waiting) < 0.05, "walking in place");
+
+    state.characters.get_mut(&b).unwrap().convo_id = None;
+    walk(&mut state, 1);
+    let (ca, cb) = (&state.characters[&a], &state.characters[&b]);
+    assert!(ca.convo_id.is_some() && ca.convo_id == cb.convo_id, "not hailed");
+}
 
 /// Everything that has a path to walk right now, by id, with where it stands and a few words on what it is doing.
 fn walkers(state: &SimState) -> Vec<(String, Vec2, String)> {

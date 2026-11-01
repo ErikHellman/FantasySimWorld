@@ -718,6 +718,13 @@ fn run_talk(ctx: &mut Ctx, id: &str, target_id: &str, tone: TalkTone, opener: &s
             return;
         }
     }
+    if target_inside.is_none() && d <= TALK_REACH {
+        // Wait within hailing distance while they are busy; the hail closes the distance once they are free.
+        // The timeout above still bounds the wait to 45 minutes.
+        c.act.path.clear();
+        set_anim(c, AnimId::Idle, false);
+        return;
+    }
     if c.act.path.is_empty() || tick >= c.act.repath_tick {
         let goal = target_inside.as_deref().map_or(target_pos, |inside| get_place(inside).door);
         c.act.path = route_to(&nav, c.pos, goal).unwrap_or_default();
