@@ -16,7 +16,7 @@ use fsw_sim::state::{
 };
 use fsw_sim::systems::director::tick_at;
 use fsw_sim::systems::economy::wages_for;
-use fsw_sim::util::living;
+use fsw_sim::util::{first_name, living};
 use fsw_testing::create_test_state;
 
 fn quiet(seed: u32) -> Sim {
@@ -709,5 +709,43 @@ mod sponsor {
             assert!(fsw_world::assets::model_bounds(bundle, model).is_some(), "{bundle}/{model}");
             assert!(yard_price(kind) > 0);
         }
+    }
+}
+
+#[test]
+fn a_villager_who_gives_away_their_last_gift_is_told_they_gave_it() {
+    for gifts in [1, 2] {
+        let mut sim = quiet(1);
+        sim.state.tick = tick_at(1, 10.0);
+        let (giver, taker) = (sim.state.order[0].clone(), sim.state.order[1].clone());
+        let pos = sim.state.characters[&taker].pos;
+        for id in [&giver, &taker] {
+            let c = sim.state.characters.get_mut(id).unwrap();
+            c.inside = None;
+            c.asleep = false;
+        }
+        let c = sim.state.characters.get_mut(&giver).unwrap();
+        c.pos = pos;
+        c.inventory.gift = gifts;
+        let had = sim.state.characters[&taker].inventory.gift;
+        let name = first_name(&sim.state.characters[&taker]).to_owned();
+        let epoch = sim.state.characters[&giver].epoch;
+        let action = IntentAction::Give { target_id: taker.clone(), item: ItemId::Gift };
+        sim.enqueue(Command::SetIntents {
+            id: giver.clone(),
+            epoch,
+            intents: vec![Intent::new(action, IntentSource::Llm)],
+        });
+        // What the giver is told when the giving is over.
+        let mut told = String::new();
+        for _ in 0..200 {
+            sim.step();
+            if !sim.state.characters[&giver].outcome.is_empty() {
+                told = sim.state.characters[&giver].outcome.clone();
+                break;
+            }
+        }
+        assert_eq!(sim.state.characters[&taker].inventory.gift, had + 1, "the gift arrived (giver had {gifts})");
+        assert_eq!(told, format!("You gave {name} a small gift."), "giver had {gifts}");
     }
 }

@@ -743,7 +743,8 @@ pub fn describe_item(item: ItemId) -> &'static str {
 fn run_give(ctx: &mut Ctx, id: &str, target_id: &str, item: ItemId, said: bool) {
     let tick = ctx.tick();
     let nav = ctx.state.nav.clone();
-    let has_item = ctx.cr(id).inventory.get(item) > 0;
+    // Once the item has been handed over (Perform), the giver may hold no more of it.
+    let has_item = ctx.cr(id).act.phase == ActPhase::Perform || ctx.cr(id).inventory.get(item) > 0;
     let Some(target) = ctx.state.characters.get(target_id).filter(|_| has_item) else {
         let outcome = if ctx.alive(target_id) {
             format!("You had no {} to give.", item.as_str())
