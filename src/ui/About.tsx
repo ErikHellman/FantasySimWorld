@@ -72,7 +72,7 @@ export function AboutTechPanel() {
 
         <h3>How it fits together</h3>
         <ol class="help-list">
-          <li>The simulation runs the village tick by tick. Walking, working and fighting never wait for a model.</li>
+          <li>The simulation runs the village tick by tick. Walking, working and fighting never wait for a model. It also handles waiting to speak to someone busy and giving up if they stay occupied.</li>
           <li>When a villager reaches a decision, the server recalls what they remember about it and asks the language model what they do.</li>
           <li>
             The answer is checked against the world as it is by then and becomes a command, applied between two ticks. An
